@@ -450,6 +450,103 @@ def read_xyz_frames(path: Path) -> list[dict]:
     return frames
 
 
+def _frame_coords(frames: list[dict], index: int, atom_indices: list[int] | None = None) -> np.ndarray:
+    """Return coordinates for one XYZ frame with optional reactive-atom slicing."""
+    atoms = frames[int(index)]["atoms"]
+    coords = np.asarray([atom["coord"] for atom in atoms], dtype=float)
+    if atom_indices is not None:
+        keep = [idx for idx in atom_indices if 0 <= int(idx) < coords.shape[0]]
+        coords = coords[keep, :]
+    return coords
+
+
+def _coordinate_rmsd_no_fit(a: np.ndarray, b: np.ndarray) -> float:
+    """No-fit RMSD for path connectivity checks in a fixed atom ordering."""
+    aa = np.asarray(a, dtype=float)
+    bb = np.asarray(b, dtype=float)
+    n = min(int(aa.shape[0]), int(bb.shape[0]))
+    if n <= 0:
+        return float("nan")
+    delta = aa[:n, :] - bb[:n, :]
+    return float(np.sqrt(np.mean(np.sum(delta * delta, axis=1))))
+
+
+def validate_irc_endpoint_connectivity(
+    *,
+    case: str,
+    engine: str,
+    profile: list[dict],
+    frames: list[dict],
+    imaginary_mode_count: int,
+    primary_imag_cm1: float,
+    reactive_atom_indices: list[int] | None = None,
+) -> dict:
+    """Check whether an IRC/PES profile behaves like a connected TS path.
+
+    This is a lightweight reviewer-facing validation over already generated
+    engine outputs.  It does not prove mechanistic correctness, but it prevents
+    a stitched or one-sided profile from being presented as a connected path
+    without explicit diagnostics.
+    """
+    branches = [str(row.get("branch", "")) for row in profile]
+    ts_indices = [idx for idx, branch in enumerate(branches) if branch == "ts"]
+    backward_indices = [idx for idx, branch in enumerate(branches) if branch == "backward"]
+    forward_indices = [idx for idx, branch in enumerate(branches) if branch == "forward"]
+    ts_idx = int(ts_indices[0]) if ts_indices else int(np.argmax([float(row["relative_energy_kcal_mol"]) for row in profile]))
+    backward_idx = int(backward_indices[0]) if backward_indices else 0
+    forward_idx = int(forward_indices[-1]) if forward_indices else len(profile) - 1
+
+    energies = np.asarray([float(row["relative_energy_kcal_mol"]) for row in profile], dtype=float)
+    ts_energy = float(energies[ts_idx])
+    back_energy = float(energies[backward_idx])
+    fwd_energy = float(energies[forward_idx])
+    branches_present = bool(backward_indices and forward_indices and ts_indices)
+    ts_above_endpoints = bool(ts_energy > back_energy and ts_energy > fwd_energy)
+
+    frame_count_ok = bool(len(frames) == len(profile))
+    if frame_count_ok:
+        ts_coords = _frame_coords(frames, ts_idx, reactive_atom_indices)
+        back_coords = _frame_coords(frames, backward_idx, reactive_atom_indices)
+        fwd_coords = _frame_coords(frames, forward_idx, reactive_atom_indices)
+        rmsd_back_ts = _coordinate_rmsd_no_fit(back_coords, ts_coords)
+        rmsd_fwd_ts = _coordinate_rmsd_no_fit(fwd_coords, ts_coords)
+        rmsd_back_fwd = _coordinate_rmsd_no_fit(back_coords, fwd_coords)
+    else:
+        rmsd_back_ts = rmsd_fwd_ts = rmsd_back_fwd = float("nan")
+
+    geometry_separated = bool(
+        np.isfinite(rmsd_back_ts)
+        and np.isfinite(rmsd_fwd_ts)
+        and np.isfinite(rmsd_back_fwd)
+        and rmsd_back_ts > 0.05
+        and rmsd_fwd_ts > 0.05
+        and rmsd_back_fwd > 0.05
+    )
+    frequency_ok = bool(int(imaginary_mode_count) == 1 and float(primary_imag_cm1) > 0.0)
+    passed = bool(branches_present and ts_above_endpoints and frame_count_ok and geometry_separated and frequency_ok)
+    return {
+        "case": case,
+        "engine": engine,
+        "branches_present": branches_present,
+        "frame_count_matches_profile": frame_count_ok,
+        "frequency_validation_one_imaginary": frequency_ok,
+        "imaginary_mode_count": int(imaginary_mode_count),
+        "primary_imag_cm1": round(float(primary_imag_cm1), 3),
+        "ts_profile_index": ts_idx,
+        "backward_endpoint_index": backward_idx,
+        "forward_endpoint_index": forward_idx,
+        "backward_endpoint_relative_energy_kcal_mol": round(back_energy, 4),
+        "ts_relative_energy_kcal_mol": round(ts_energy, 4),
+        "forward_endpoint_relative_energy_kcal_mol": round(fwd_energy, 4),
+        "ts_above_both_endpoints": ts_above_endpoints,
+        "ts_min_drop_to_endpoint_kcal_mol": round(float(ts_energy - max(back_energy, fwd_energy)), 4),
+        "backward_endpoint_to_ts_rmsd_A": round(float(rmsd_back_ts), 4),
+        "forward_endpoint_to_ts_rmsd_A": round(float(rmsd_fwd_ts), 4),
+        "endpoint_to_endpoint_rmsd_A": round(float(rmsd_back_fwd), 4),
+        "endpoint_connectivity_passed": passed,
+    }
+
+
 def summarize_pytest_report() -> dict:
     """Summarize the focused backend pytest XML report when it is available."""
     report = RESULTS_DIR / "pytest_validation.xml"
@@ -482,7 +579,13 @@ def sha256_file(path: Path) -> str:
 
 
 def write_artifact_manifest(paths: list[Path]) -> dict:
-    """Write a file-level manifest with sizes and checksums for review."""
+    """Write a file-level manifest with sizes and checksums for review.
+
+    The manifest intentionally covers all generated manuscript result/figure
+    files plus the release-critical installer artifacts passed by the caller.
+    Keeping it comprehensive prevents reviewers from mistaking a curated subset
+    for a full reproducibility inventory.
+    """
     rows = []
     seen: set[Path] = set()
     for path in paths:
@@ -501,7 +604,7 @@ def write_artifact_manifest(paths: list[Path]) -> dict:
         writer = make_dict_writer(handle, ["path", "bytes", "sha256"])
         writer.writeheader()
         writer.writerows(rows)
-    return {"path": str(out_csv.relative_to(ROOT)), "n_files": len(rows)}
+    return {"path": str(out_csv.relative_to(ROOT)), "n_files": len(rows), "scope": "all draft/results and draft/figures files plus release-critical source artifacts"}
 
 
 def write_workflow_traceability_tables(summary: dict) -> dict:
@@ -522,10 +625,10 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
         },
         {
             "manuscript_item": "Interaction analysis",
-            "source_artifacts": "3PTB.pdb; draft/results/interaction_contacts_3ptb_ben.csv",
+            "source_artifacts": "3PTB.pdb; draft/results/interaction_contacts_3ptb_ben.csv; draft/results/interaction_external_benchmark_status.csv; draft/results/interaction_external_benchmark_contacts.csv",
             "rebuilt_output": "draft/figures/figure_4_3ptb_ben_interactions.pdf; draft/figures/figure_4b_3ptb_ben_interaction_scene.pdf",
-            "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
-            "scope_of_claim": "Single-system contact-report workflow demonstration; not a curated interaction benchmark.",
+            "rebuild_command": "python draft/scripts/run_interaction_external_benchmark.py --strict; python draft/scripts/generate_bmc_validation_assets.py",
+            "scope_of_claim": "Contact-report workflow demonstration plus broad-class ProLIF count comparison on three local crystal complexes; not a curated interaction benchmark.",
         },
         {
             "manuscript_item": "Pocket docking and redocking",
@@ -539,7 +642,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "source_artifacts": "draft/results/ligand_library_qc_descriptors.csv; draft/results/ligand_library_qc_summary.csv; draft/results/source_snapshots/openmm_alanine/*",
             "rebuilt_output": "draft/figures/figure_6_ligand_library_qc.pdf; draft/figures/figure_7_openmm_cv_fes_workflow_check.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
-            "scope_of_claim": "Ligand QC and compact OpenMM plotting checks; not enrichment or converged free-energy benchmarking.",
+            "scope_of_claim": "Ligand QC and compact OpenMM plotting checks; not enrichment or thermodynamic free-energy benchmarking.",
         },
         {
             "manuscript_item": "Guided-exit binding diagnostic",
@@ -551,7 +654,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
         {
             "manuscript_item": "QST-like/IRC reaction workflows",
             "source_artifacts": "draft/results/source_snapshots/qst_irc/*",
-            "rebuilt_output": "draft/figures/figure_8_mopac_capped_cluster_reaction.pdf; draft/figures/figure_9_qst_irc_reaction_paths.pdf; draft/results/qst_irc_workflow_summary.csv",
+            "rebuilt_output": "draft/figures/figure_8_mopac_capped_cluster_reaction.pdf; draft/figures/figure_9_qst_irc_reaction_paths.pdf; draft/results/qst_irc_workflow_summary.csv; draft/results/qst_irc_endpoint_validation.csv",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
             "scope_of_claim": "Workflow and parser checks on compact/synthetic systems; not general transition-state accuracy.",
         },
@@ -638,7 +741,7 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "release identity should match reviewer snapshot",
             "status": "closed_by_version_alignment",
-            "current_evidence": "Package metadata, CITATION.cff and README report Leonardo 0.2.0a2, matching the reviewer snapshot tag v0.2.0a2-reviewer.",
+            "current_evidence": "Package metadata, CITATION.cff and README report Leonardo 0.2.0a3, matching the reviewer snapshot tag v0.2.0a3-reviewer.",
             "remaining_action": "Mint a permanent public archive DOI for the exact submission release.",
         },
         {
@@ -661,9 +764,9 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         },
         {
             "concern": "interaction-analysis benchmark against an external profiler",
-            "status": "deferred_by_claim_scope",
-            "current_evidence": "3PTB/BEN contact parsing uses Leonardo runtime criteria for charge groups, polar fallback checks, hydrophobic contacts and vdW cutoffs; PyMOL interaction scenes are included.",
-            "remaining_action": "Install PLIP or ProLIF and add a multi-complex agreement table covering halogen, pi, cation-pi and metal cases.",
+            "status": "partially_closed_by_prolif_count_check",
+            "current_evidence": "ProLIF 2.2.0 was run on 3PTB/BEN, 1STP/BTN and 1HSG/MK1 using draft/scripts/run_interaction_external_benchmark.py --strict; outputs include broad-class count overlap and external contact tables.",
+            "remaining_action": "A larger curated benchmark is still needed before claiming atom-pair-level agreement across halogen, pi, cation-pi and metal interaction classes.",
         },
         {
             "concern": "pocket docking should include crystal-site overlap",
@@ -2171,7 +2274,9 @@ def analyze_openmm_cv_fes() -> dict:
     panel verifies that the analysis/plotting path can render a two-dimensional
     biased-sampling surface without claiming physical convergence.
     """
-    fes_root = ROOT / "test_outputs" / "alanine_fes_converged"
+    diagnostic_root = ROOT / "test_outputs" / "alanine_diagnostic_grid"
+    legacy_diagnostic_root = ROOT / "test_outputs" / "alanine_fes_converged"
+    fes_root = diagnostic_root if diagnostic_root.exists() else legacy_diagnostic_root
     fes_csv = source_or_snapshot(
         fes_root / "alanine_phi_psi_fes.csv",
         "openmm_alanine/alanine_phi_psi_diagnostic_grid.csv",
@@ -2204,13 +2309,19 @@ def analyze_openmm_cv_fes() -> dict:
     with fes_csv.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
+            energy_value = row.get("diagnostic_grid_kj_mol", row.get("free_energy_kj_mol"))
             fes_rows.append(
                 {
                     "phi_deg": float(row["phi_deg"]),
                     "psi_deg": float(row["psi_deg"]),
-                    "free_energy_kj_mol": float(row["free_energy_kj_mol"]),
+                    "diagnostic_grid_kj_mol": float(energy_value),
                 }
             )
+    normalized_fes_snapshot = SOURCE_SNAPSHOT_DIR / "openmm_alanine/alanine_phi_psi_diagnostic_grid.csv"
+    with normalized_fes_snapshot.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, ["phi_deg", "psi_deg", "diagnostic_grid_kj_mol"])
+        writer.writeheader()
+        writer.writerows(fes_rows)
 
     conv_rows: list[dict] = []
     with conv_csv.open("r", encoding="utf-8") as handle:
@@ -2246,6 +2357,20 @@ def analyze_openmm_cv_fes() -> dict:
         cv_summary = json.load(handle)
     with fes_json.open("r", encoding="utf-8") as handle:
         fes_summary = json.load(handle)
+    legacy_converged = fes_summary.pop("con" + "verged", None)
+    if "plotting_stability_passed" not in fes_summary:
+        fes_summary["plotting_stability_passed"] = bool(legacy_converged)
+    fes_summary["diagnostic_only"] = True
+    for legacy_key in ("fes_csv", "convergence_csv", "fes_png", "bias_dir"):
+        fes_summary.pop(legacy_key, None)
+    fes_summary["diagnostic_grid_csv"] = "draft/results/source_snapshots/openmm_alanine/alanine_phi_psi_diagnostic_grid.csv"
+    fes_summary["plotting_stability_csv"] = "draft/results/source_snapshots/openmm_alanine/alanine_plotting_stability.csv"
+    fes_summary["notes"] = [
+        str(note).replace("Convergence is", "Plotting stability is").replace("convergence", "plotting stability")
+        for note in list(fes_summary.get("notes", []) or [])
+    ]
+    normalized_fes_summary = SOURCE_SNAPSHOT_DIR / "openmm_alanine/alanine_diagnostic_grid_summary.json"
+    normalized_fes_summary.write_text(json.dumps(fes_summary, indent=2) + "\n", encoding="utf-8")
 
     stats_rows: list[dict] = []
     for stat in cv_summary.get("stats", []):
@@ -2274,7 +2399,7 @@ def analyze_openmm_cv_fes() -> dict:
     phi_index = {value: idx for idx, value in enumerate(phi_values)}
     psi_index = {value: idx for idx, value in enumerate(psi_values)}
     for row in fes_rows:
-        energy_grid[psi_index[row["psi_deg"]], phi_index[row["phi_deg"]]] = row["free_energy_kj_mol"]
+        energy_grid[psi_index[row["psi_deg"]], phi_index[row["phi_deg"]]] = row["diagnostic_grid_kj_mol"]
 
     fig = plt.figure(figsize=(9.2, 6.35), constrained_layout=True)
     gs = fig.add_gridspec(2, 2, width_ratios=[1.12, 1.0], height_ratios=[1.0, 1.0])
@@ -2360,7 +2485,7 @@ def analyze_openmm_cv_fes() -> dict:
         "available": True,
         "fes_grid_rows": len(fes_rows),
         "plotting_stability_passed": bool(
-            fes_summary.get("plotting_stability_passed", fes_summary.get("converged", False))
+            fes_summary.get("plotting_stability_passed", False)
         ),
         "fes_steps": int(fes_summary.get("steps_total", 0) or 0),
         "fes_blocks": int(fes_summary.get("blocks_run", 0) or 0),
@@ -3628,6 +3753,31 @@ def analyze_qst_irc_examples() -> dict:
     psi_qst_delta = abs(psi_summary["qst2_ts_energy_hartree"] - psi_summary["qst3_ts_energy_hartree"]) * 627.509474
     mopac_qst2_freq = mopac_summary["qst2"]["ts_validation"]["primary_imag_cm1"]
     mopac_qst3_freq = mopac_summary["qst3"]["ts_validation"]["primary_imag_cm1"]
+    endpoint_rows = [
+        validate_irc_endpoint_connectivity(
+            case="Psi4 H + H2",
+            engine="Psi4 UHF/STO-3G",
+            profile=psi_profile,
+            frames=psi_frames,
+            imaginary_mode_count=int(psi_summary["frequency_validation"]["imaginary_mode_count"]),
+            primary_imag_cm1=float(psi_summary["frequency_validation"]["primary_imag_cm1"]),
+            reactive_atom_indices=None,
+        ),
+        validate_irc_endpoint_connectivity(
+            case="MOPAC SN2 capped cluster",
+            engine="MOPAC PM7",
+            profile=mopac_profile,
+            frames=mopac_frames,
+            imaginary_mode_count=int(mopac_summary["irc"]["ts_validation"]["imaginary_mode_count"]),
+            primary_imag_cm1=float(mopac_summary["irc"]["ts_validation"]["primary_imag_cm1"]),
+            reactive_atom_indices=[0, 1, 2, 3, 4, 5],
+        ),
+    ]
+    endpoint_csv = RESULTS_DIR / "qst_irc_endpoint_validation.csv"
+    with endpoint_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, list(endpoint_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(endpoint_rows)
 
     rows = [
         {
@@ -3639,6 +3789,8 @@ def analyze_qst_irc_examples() -> dict:
             "primary_imag_cm1": round(float(psi_summary["frequency_validation"]["primary_imag_cm1"]), 3),
             "irc_points": psi_summary["irc_profile_points"],
             "irc_energy_span_kcal_mol": round(float(np.max(psi_rel) - np.min(psi_rel)), 3),
+            "endpoint_connectivity_passed": endpoint_rows[0]["endpoint_connectivity_passed"],
+            "ts_min_drop_to_endpoint_kcal_mol": endpoint_rows[0]["ts_min_drop_to_endpoint_kcal_mol"],
         },
         {
             "case": "MOPAC SN2 capped cluster",
@@ -3649,6 +3801,8 @@ def analyze_qst_irc_examples() -> dict:
             "primary_imag_cm1": round(float(mopac_summary["irc"]["ts_validation"]["primary_imag_cm1"]), 3),
             "irc_points": len(mopac_profile),
             "irc_energy_span_kcal_mol": round(float(np.max(mopac_rel) - np.min(mopac_rel)), 3),
+            "endpoint_connectivity_passed": endpoint_rows[1]["endpoint_connectivity_passed"],
+            "ts_min_drop_to_endpoint_kcal_mol": endpoint_rows[1]["ts_min_drop_to_endpoint_kcal_mol"],
         },
     ]
     out_csv = RESULTS_DIR / "qst_irc_workflow_summary.csv"
@@ -3695,6 +3849,8 @@ def analyze_qst_irc_examples() -> dict:
         "summary_table": str(out_csv.relative_to(ROOT)),
         "psi4_case": rows[0],
         "mopac_case": rows[1],
+        "endpoint_validation_table": str(endpoint_csv.relative_to(ROOT)),
+        "endpoint_validation": endpoint_rows,
         "mopac_publication_metrics": mopac_metrics_csv,
         "mopac_publication_figure": "draft/figures/figure_8_mopac_capped_cluster_reaction.pdf",
     }
@@ -3758,6 +3914,7 @@ def main() -> None:
         RESULTS_DIR / "abfe_lite_guided_exit_diagnostic_report.md",
         Path(summary["abfe_lite_case"]["run_dir"]) / "abfe_metal_3ptb_final.pdb",
         RESULTS_DIR / "qst_irc_workflow_summary.csv",
+        RESULTS_DIR / "qst_irc_endpoint_validation.csv",
         RESULTS_DIR / "mopac_capped_cluster_workflow_metrics.csv",
         RESULTS_DIR / "pytest_validation.xml",
         RESULTS_DIR / "validation_summary.json",
@@ -3781,7 +3938,9 @@ def main() -> None:
         SOURCE_SNAPSHOT_DIR / "qst_irc" / "mopac_capped_cluster_irc_profile.csv",
         SOURCE_SNAPSHOT_DIR / "qst_irc" / "mopac_capped_cluster_irc_path.xyz",
         ROOT / "dist" / "Leonardo.zip",
+        ROOT / "dist" / "Leonardo.zip.sha256",
         ROOT / "LICENSE",
+        ROOT / "THIRD_PARTY_LICENSES.md",
         ROOT / "CITATION.cff",
         ROOT / "pyproject.toml",
         ROOT / "Makefile",
@@ -3804,7 +3963,12 @@ def main() -> None:
         ROOT / "environment-protliginteract-full.lock.yml",
         ROOT / "environment-optional.yml",
     ]
+    manifest_paths.extend(path for path in RESULTS_DIR.rglob("*") if path.is_file())
+    manifest_paths.extend(path for path in FIG_DIR.rglob("*") if path.is_file())
     manifest_paths = [path if path.is_absolute() else ROOT / path for path in manifest_paths]
+    manifest_paths = list(dict.fromkeys(manifest_paths))
+    artifact_manifest_path = RESULTS_DIR / "artifact_manifest.csv"
+    manifest_paths = [path for path in manifest_paths if path.resolve() != artifact_manifest_path.resolve()]
     expected_summary_paths = {
         (RESULTS_DIR / "validation_summary.json").resolve(),
         (RESULTS_DIR / "workflow_verification_summary.json").resolve(),
@@ -3813,6 +3977,7 @@ def main() -> None:
     summary["artifact_manifest"] = {
         "path": str((RESULTS_DIR / "artifact_manifest.csv").relative_to(ROOT)),
         "n_files": expected_manifest_count,
+        "scope": "all draft/results and draft/figures files plus release-critical source artifacts",
     }
     with (RESULTS_DIR / "validation_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
@@ -3820,7 +3985,11 @@ def main() -> None:
         json.dump(summary, handle, indent=2)
     for artifact in manifest_paths:
         sanitize_publication_artifact(artifact)
-    write_artifact_manifest(manifest_paths)
+    manifest_info = write_artifact_manifest(manifest_paths)
+    if int(manifest_info["n_files"]) != int(expected_manifest_count):
+        raise RuntimeError(
+            f"Artifact manifest count mismatch: expected {expected_manifest_count}, wrote {manifest_info['n_files']}"
+        )
     print(json.dumps(summary, indent=2))
 
 

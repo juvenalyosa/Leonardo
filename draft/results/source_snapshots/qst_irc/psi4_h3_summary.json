@@ -6,8 +6,8 @@
   "method": "UHF/STO-3G",
   "qst2_note": "prod_map=element_order; guess=aligned_midpoint; path=linear_synchronous; scan_images=9; gradients=psi4_optking_ts",
   "qst3_note": "prod_map=element_order; guess=aligned_midpoint; path=quadratic_synchronous; scan_images=9; ts_map=element_order; ts_weight=0.80; gradients=psi4_optking_ts",
-  "qst2_ts_energy_hartree": -1.5471099539692998,
-  "qst3_ts_energy_hartree": -1.54711029222992,
+  "qst2_ts_energy_hartree": -1.547109953969299,
+  "qst3_ts_energy_hartree": -1.547110292229919,
   "frequency_validation": {
     "ok": true,
     "imaginary_mode_count": 1,

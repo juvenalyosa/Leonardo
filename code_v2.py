@@ -798,8 +798,8 @@ except Exception:
 # VERSION TAG
 # Keep version identifiers stable across the Python package, PyMOL plugin and
 # manuscript artifacts so reviewers can identify the exact pre-release build.
-PLUGIN_VERSION = "0.2.0a2"
-PLUGIN_BUILD = "2026-07-07-r2"
+PLUGIN_VERSION = "0.2.0a3"
+PLUGIN_BUILD = "2026-07-07-r3"
 SUITE_NAME = "Leonardo"
 PROJECT_MASTER_FILE_NAME = f"{SUITE_NAME}.project.json"
 PROJECT_STATE_FILE_NAME = "project_state.json"
@@ -1536,7 +1536,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Open Trajectory Tools": "Traj. Tools",
             "Compute Interactions": "Interactions",
             "Energy Discrimination": "Energy Disc.",
-            "ABFE-lite (Trajectory)": "ABFE-lite",
+            "Guided Exit Diagnostic": "ABFE-lite",
             "Launch Advanced Workflow": "Launch",
             "Run Simple Test": "Test",
             "System Setup...": "System...",
@@ -1557,7 +1557,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Import Result...": "Import...",
             "Parameterize Checked": "Parameterize",
             "Check Needs Param": "Needs Param",
-            "Free Energy (ABFE-lite, Trajectory)": "ABFE-lite",
+            "Guided Exit Diagnostic": "ABFE-lite",
             "Distribution for Selected Interaction": "Selected Distribution",
             "Distribution (All Interactions)": "All Distributions",
             "Open Prepared Notebook File": "Open Notebook",
@@ -5861,10 +5861,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 )
             self.btn_energy_disc.clicked.connect(self._run_trajectory_energy_discrimination)
             vbox.addWidget(self.btn_energy_disc)
-            self.btn_free_energy = QtWidgets.QPushButton("Free Energy (ABFE-lite, Trajectory)")
+            self.btn_free_energy = QtWidgets.QPushButton("Guided Exit Diagnostic")
             self.btn_free_energy.setToolTip(
-                "Estimate trajectory free energy with local interacting-region approximation "
-                "(auto GPU/CPU OpenMM, exp-averaging/cumulant + PMF plots)"
+                "Run the historical ABFE-lite guided-exit workflow as a trajectory/state-gating "
+                "diagnostic; production binding affinity is not reported."
             )
             self.btn_free_energy.clicked.connect(lambda _checked=False: self._run_trajectory_free_energy_calculation(source="traj"))
             vbox.addWidget(self.btn_free_energy)
@@ -6442,7 +6442,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_openmm_run_energy_disc = QtWidgets.QPushButton("Energy Discrimination")
             self.btn_openmm_run_energy_disc.clicked.connect(self._on_openmm_energy_discrimination)
             analysis_v.addWidget(self.btn_openmm_run_energy_disc, 1, 0)
-            self.btn_openmm_run_abfe_traj = QtWidgets.QPushButton("ABFE-lite (Trajectory)")
+            self.btn_openmm_run_abfe_traj = QtWidgets.QPushButton("Guided Exit Diagnostic")
             self.btn_openmm_run_abfe_traj.clicked.connect(self._on_openmm_abfe_lite)
             analysis_v.addWidget(self.btn_openmm_run_abfe_traj, 1, 1)
             analysis_v.setColumnStretch(0, 1)
@@ -6455,7 +6455,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_openmm_advanced = QtWidgets.QComboBox()
             self.cmb_openmm_advanced.addItem("Umbrella sampling", "umbrella")
             self.cmb_openmm_advanced.addItem("Metadynamics", "metadynamics")
-            self.cmb_openmm_advanced.addItem("Absolute binding free energy (ABFE)", "abfe")
+            self.cmb_openmm_advanced.addItem("Guided-exit binding diagnostic", "abfe")
             self.cmb_openmm_advanced.addItem("OpenMM-ML potential wrapper", "openmm_ml")
             row_adv.addWidget(self.cmb_openmm_advanced, 1)
             self.btn_openmm_run_advanced = QtWidgets.QPushButton("Launch Advanced Workflow")
@@ -49908,8 +49908,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     alpha=float(epmf.get("fill_alpha", 0.18)),
                 )
             ax_epmf.set_xlabel(str(epmf.get("xlabel", "Interaction Energy (kJ/mol)")))
-            ax_epmf.set_ylabel(str(epmf.get("ylabel", "PMF (kJ/mol)")))
-            ax_epmf.set_title(str(epmf.get("title", "PMF from Energy Distribution")))
+            ax_epmf.set_ylabel(str(epmf.get("ylabel", "Relative occupancy diagnostic")))
+            ax_epmf.set_title(str(epmf.get("title", "Energy-distribution diagnostic")))
             ax_epmf.grid(
                 color=str(theme.get("grid_color", "#E5E7EB")),
                 alpha=float(epmf.get("grid_alpha", 0.25)),
@@ -49942,8 +49942,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         alpha=0.9,
                     )
                 ax_rpmf.set_xlabel(str(rpmf.get("xlabel", dist_axis_label)))
-                ax_rpmf.set_ylabel(str(rpmf.get("ylabel", "PMF (kJ/mol)")))
-                ax_rpmf.set_title(str(rpmf.get("title", "PMF along ABFE Distance Coordinate")))
+                ax_rpmf.set_ylabel(str(rpmf.get("ylabel", "Relative occupancy diagnostic")))
+                ax_rpmf.set_title(str(rpmf.get("title", "Exit-coordinate diagnostic")))
                 ax_rpmf.grid(
                     color=str(theme.get("grid_color", "#E5E7EB")),
                     alpha=float(rpmf.get("grid_alpha", 0.25)),

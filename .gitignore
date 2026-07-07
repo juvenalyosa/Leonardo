@@ -18,8 +18,10 @@ external/
 build/
 dist/*
 !dist/Leonardo.zip
+!dist/Leonardo.zip.sha256
 *.zip
 !dist/Leonardo.zip
+!dist/Leonardo.zip.sha256
 *.egg-info/
 
 # Scientific run outputs

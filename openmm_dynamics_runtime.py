@@ -954,13 +954,13 @@ def _write_alanine_fes_csv(path, fes):
     phi_vals = np.linspace(-180.0, 180.0, int(n_phi), endpoint=False)
     psi_vals = np.linspace(-180.0, 180.0, int(n_psi), endpoint=False)
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write("phi_deg,psi_deg,free_energy_kj_mol\n")
+        fh.write("phi_deg,psi_deg,diagnostic_grid_kj_mol\n")
         for i, phi in enumerate(phi_vals):
             for j, psi in enumerate(psi_vals):
                 fh.write(f"{float(phi):.6f},{float(psi):.6f},{float(arr[i, j]):.10f}\n")
 
 
-def _plot_alanine_fes(path, fes, title="Alanine Dipeptide FES"):
+def _plot_alanine_fes(path, fes, title="Alanine dipeptide diagnostic grid"):
     import numpy as np
 
     plt = _load_matplotlib_pyplot()
@@ -978,7 +978,7 @@ def _plot_alanine_fes(path, fes, title="Alanine Dipeptide FES"):
         cmap="viridis",
     )
     cb = fig.colorbar(im, ax=ax)
-    cb.set_label("Free energy (kJ/mol)")
+    cb.set_label("Shifted diagnostic grid (kJ/mol)")
     ax.set_xlabel("phi (deg)")
     ax.set_ylabel("psi (deg)")
     ax.set_title(str(title))
@@ -1431,13 +1431,13 @@ def run_openmm_alanine_dipeptide_fes(
     random_seed=20260701,
 ):
     """
-    Run a compact alanine-dipeptide phi/psi metadynamics FES benchmark.
+    Run a compact alanine-dipeptide phi/psi metadynamics diagnostic-grid check.
 
-    Convergence is operationally defined as the RMSD between consecutive
-    shifted FES grids staying below `convergence_rmsd_kj_mol` for
-    `stable_blocks` blocks.  This is suitable for a Leonardo backend check; a
-    publication-grade alanine FES should use longer sampling and independent
-    convergence diagnostics.
+    Plotting stability is operationally defined as the RMSD between
+    consecutive shifted grids staying below `convergence_rmsd_kj_mol` for
+    `stable_blocks` blocks. This exercises Leonardo's OpenMM/CV backend and
+    plotting path; it is not a production PMF or a thermodynamic convergence
+    claim.
     """
     out_dir = str(output_dir or "").strip()
     if not out_dir:
@@ -1498,7 +1498,7 @@ def run_openmm_alanine_dipeptide_fes(
     stable_count = 0
     history = []
     final_fes = None
-    converged = False
+    plotting_stability_passed = False
     max_b = _clip_int(max_blocks, 40, 1, 10000)
     steps_b = _clip_int(block_steps, 250, 1, 1000000)
     threshold = _clip_float(convergence_rmsd_kj_mol, 2.0, 0.001, 100000.0)
@@ -1522,7 +1522,7 @@ def run_openmm_alanine_dipeptide_fes(
             }
         )
         if stable_count >= stable_needed:
-            converged = True
+            plotting_stability_passed = True
             break
     e1 = _potential_kj_mol(simulation, unit)
     if final_fes is None:
@@ -1540,15 +1540,20 @@ def run_openmm_alanine_dipeptide_fes(
                 f"{'' if rmsd is None else f'{float(rmsd):.10f}'},{int(row['stable_count'])}\n"
             )
     title = (
-        "Alanine dipeptide phi/psi FES"
-        + (f" | converged in {int(history[-1]['steps_total'])} steps" if converged else " | max blocks reached")
+        "Alanine dipeptide phi/psi diagnostic grid"
+        + (
+            f" | stability criterion passed at {int(history[-1]['steps_total'])} steps"
+            if plotting_stability_passed
+            else " | max blocks reached"
+        )
     )
     _plot_alanine_fes(fes_png, final_fes, title=title)
     bias_files = sorted(str(x) for x in os.listdir(meta_dir) if str(x).endswith(".npy"))
     summary = {
         "ok": True,
         "workflow": "alanine_dipeptide_phi_psi_metadynamics",
-        "converged": bool(converged),
+        "diagnostic_only": True,
+        "plotting_stability_passed": bool(plotting_stability_passed),
         "criterion": {
             "rmsd_kj_mol": float(threshold),
             "stable_blocks": int(stable_needed),
@@ -1569,7 +1574,7 @@ def run_openmm_alanine_dipeptide_fes(
         "bias_files": list(bias_files),
         "notes": [
             "ACE-ALA-NME built from SMILES and parametrized with OpenFF",
-            "Convergence is block-to-block shifted-FES RMSD; not a publication-grade production run.",
+            "The stability check is block-to-block shifted-grid RMSD; not a publication-grade production free-energy run.",
         ],
     }
     summary_json = os.path.join(out_dir, "alanine_fes_summary.json")

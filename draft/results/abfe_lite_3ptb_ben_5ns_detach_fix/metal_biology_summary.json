@@ -204,9 +204,9 @@
     "pull_k_max_kj_nm2": 8421.731517747405
   },
   "free_energy_proxy": {
-    "reweight_ess_unbound": 23.89943914612542,
     "selected_estimator": "bias_reweighted_hold_windows",
     "reweight_ess_bound": 158.6527556556323,
+    "reweight_ess_unbound": 23.89943914612542,
     "n_bound_hold": 339,
     "n_unbound_hold": 67,
     "reweight_ess_total": 181.66864715259925,

@@ -1,7 +1,6 @@
 {
   "ok": true,
   "workflow": "alanine_dipeptide_phi_psi_metadynamics",
-  "converged": false,
   "plotting_stability_passed": true,
   "convergence_scope": "block-to-block plotting stability criterion; not physical free-energy convergence",
   "criterion": {
@@ -289,16 +288,15 @@
       "stable_count": 5
     }
   ],
-  "fes_csv": "test_outputs/alanine_fes_converged/alanine_phi_psi_fes.csv",
-  "convergence_csv": "test_outputs/alanine_fes_converged/alanine_fes_convergence.csv",
-  "fes_png": "test_outputs/alanine_fes_converged/alanine_phi_psi_fes.png",
-  "bias_dir": "test_outputs/alanine_fes_converged/metadynamics_bias",
   "bias_files": [
     "bias_1426864787_1.npy",
     "bias_822157349_44.npy"
   ],
   "notes": [
     "ACE-ALA-NME built from SMILES and parametrized with OpenFF",
-    "Convergence is block-to-block shifted-FES RMSD; not a publication-grade production run."
-  ]
+    "Plotting stability is block-to-block shifted-FES RMSD; not a publication-grade production run."
+  ],
+  "diagnostic_only": true,
+  "diagnostic_grid_csv": "draft/results/source_snapshots/openmm_alanine/alanine_phi_psi_diagnostic_grid.csv",
+  "plotting_stability_csv": "draft/results/source_snapshots/openmm_alanine/alanine_plotting_stability.csv"
 }

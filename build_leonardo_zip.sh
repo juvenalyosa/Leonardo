@@ -7,6 +7,7 @@ DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/leonardo_pkg.XXXXXX")"
 PKG_DIR="$STAGE_DIR/Leonardo"
 TMP_ZIP="$STAGE_DIR/$OUT_NAME"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1783382400}"  # 2026-07-07T00:00:00Z
 
 cleanup() {
   rm -rf "$STAGE_DIR"
@@ -86,9 +87,66 @@ fi
 
 (
   cd "$STAGE_DIR"
-  zip -rq "$TMP_ZIP" "Leonardo"
+  python - "$TMP_ZIP" "$SOURCE_DATE_EPOCH" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+import time
+import zipfile
+from pathlib import Path
+
+zip_path = Path(sys.argv[1])
+source_date_epoch = int(sys.argv[2])
+root = Path("Leonardo")
+timestamp = time.gmtime(source_date_epoch)[:6]
+
+def entry_mode(path: Path) -> int:
+    if path.is_dir():
+        return 0o755
+    current = path.stat().st_mode
+    if current & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+        return 0o755
+    return 0o644
+
+def add_entry(zf: zipfile.ZipFile, path: Path) -> None:
+    arcname = path.as_posix()
+    if path.is_dir():
+        arcname = arcname.rstrip("/") + "/"
+    info = zipfile.ZipInfo(arcname, timestamp)
+    mode = entry_mode(path)
+    info.external_attr = (mode << 16) | (0x10 if path.is_dir() else 0)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    if path.is_dir():
+        zf.writestr(info, b"")
+    else:
+        with path.open("rb") as handle:
+            zf.writestr(info, handle.read())
+
+paths = [root]
+paths.extend(sorted(root.rglob("*"), key=lambda p: p.as_posix()))
+with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+    for path in paths:
+        if path.name in {".DS_Store", "__pycache__"}:
+            continue
+        if "__pycache__" in path.parts:
+            continue
+        add_entry(zf, path)
+
+digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+print(f"sha256  {digest}  {zip_path.name}")
+PY
 )
 
 mkdir -p "$DIST_DIR"
 mv "$TMP_ZIP" "$DIST_DIR/$OUT_NAME"
+python - "$DIST_DIR/$OUT_NAME" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+digest = hashlib.sha256(path.read_bytes()).hexdigest()
+path.with_suffix(path.suffix + ".sha256").write_text(f"{digest}  {path.name}\n", encoding="utf-8")
+PY
 echo "Created $DIST_DIR/$OUT_NAME"

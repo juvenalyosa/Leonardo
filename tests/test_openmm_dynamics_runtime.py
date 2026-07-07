@@ -218,7 +218,8 @@ def test_openmm_alanine_dipeptide_fes_smoke_writes_plot(tmp_path):
 
     assert out["ok"] is True
     assert out["workflow"] == "alanine_dipeptide_phi_psi_metadynamics"
-    assert out["converged"] is True
+    assert out["diagnostic_only"] is True
+    assert out["plotting_stability_passed"] is True
     assert (tmp_path / "alanine" / "alanine_phi_psi_fes.csv").is_file()
     assert (tmp_path / "alanine" / "alanine_phi_psi_fes.png").is_file()
     assert (tmp_path / "alanine" / "alanine_fes_convergence.csv").is_file()

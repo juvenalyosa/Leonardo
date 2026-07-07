@@ -12,7 +12,7 @@ Technical support and bug reports: thinkai.col@gmail.com
 
 ## Pre-release and Manuscript Verification Status
 
-This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a2`, build `2026-07-07-r2`), not a final stable production release.
+This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a3`, build `2026-07-07-r3`), not a final stable production release.
 
 It is being shared so users can:
 
@@ -35,6 +35,8 @@ When reporting a bug, include as much detail as possible:
 Compatibility note:
 - The visible suite name is `Leonardo`.
 - Some internal modules, folders, and environment names still use the legacy `ProtLigInteract` name for compatibility.
+- Third-party engine licenses, optional restrictions and validated versions are
+  summarized in `THIRD_PARTY_LICENSES.md`.
 
 ## Manuscript Verification Scope
 
@@ -406,6 +408,7 @@ The main runtime dependencies by workflow are:
 | Sequence bioinformatics | none | `biopython` | `blastp`, `hmmscan`, `clustalo`, `mafft` |
 | AlphaFold / ColabFold | none for inspection | none required to inspect outputs | `colabfold_batch`, `matplotlib`, GPU |
 | Docking | `smina`, `obabel` | none strictly required | `rdkit`, optional `prepare_receptor4.py`, `prepare_ligand4.py` |
+| Interaction external check | none | `prolif`, `rdkit`, `MDAnalysis` | optional `plip` executable |
 | Redocking | `smina`, `obabel` | none strictly required | `rdkit`, optional flexible-receptor scripts |
 | Virtual screening | `smina`, `obabel` | none strictly required | `rdkit`, `meeko` |
 | Lead optimization | `smina`, `obabel` | none strictly required | `rdkit`, `openmm`, `pymbar`, AmberTools |

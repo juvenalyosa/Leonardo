@@ -11,8 +11,8 @@ import sys
 from importlib import import_module
 
 
-__version__ = "0.2.0a2"
-__build__ = "2026-07-07-r2"
+__version__ = "0.2.0a3"
+__build__ = "2026-07-07-r3"
 PLUGIN_MENU_NAME = "Leonardo"
 _dialog = None
 _plugin_module = None

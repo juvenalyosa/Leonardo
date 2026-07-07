@@ -26,6 +26,7 @@ dependencies:
   - openff-forcefields
   - openff-amber-ff-ports
   - pdbfixer
+  - mdanalysis>=2.10,<3
   - pymbar
   - ambertools
   - mdtraj
@@ -70,6 +71,7 @@ dependencies:
   # Python extras used directly by the plugin/workflows
   - pip:
       - dimorphite-dl
+      - "prolif==2.2.0"                 # external protein-ligand interaction profiler used by reviewer benchmark
       - "opencv-python==4.13.0.92"       # matches the recorded protliginteract-full lockfile/test environment
       - "opencv-contrib-python==4.11.0.86"
       - "mediapipe>=0.10.0,<0.10.10"    # 0.10.10+ forces numpy>=2 which breaks pandas/prody

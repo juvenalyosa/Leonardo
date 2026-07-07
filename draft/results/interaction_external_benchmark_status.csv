@@ -1,2 +1,14 @@
-system,external_profiler,status,interaction_class,leonardo_count,external_count,note
-3PTB.pdb,PLIP/ProLIF,pending_dependency,all,15,,Install PLIP or ProLIF before reporting external agreement; this manuscript does not claim external-profiler agreement.
+system,external_profiler,status,interaction_class,leonardo_count,external_count,shared_min_count,count_overlap_jaccard,note
+3PTB/BEN,ProLIF,completed,hydrophobic,1,0,0,0.2667,ProLIF 2.2.0 completed.
+3PTB/BEN,ProLIF,completed,polar_or_hbond_candidate,4,1,1,0.2667,ProLIF 2.2.0 completed.
+3PTB/BEN,ProLIF,completed,salt_bridge,1,0,0,0.2667,ProLIF 2.2.0 completed.
+3PTB/BEN,ProLIF,completed,vdw,9,3,3,0.2667,ProLIF 2.2.0 completed.
+3PTB/BEN,ProLIF,completed,all,15,4,4,0.2667,Broad-class count overlap across retained residue-level Leonardo contacts and ProLIF residue contacts.
+1STP/BTN,ProLIF,completed,hydrophobic,6,0,0,0.2963,ProLIF 2.2.0 completed.
+1STP/BTN,ProLIF,completed,polar_or_hbond_candidate,8,2,2,0.2963,ProLIF 2.2.0 completed.
+1STP/BTN,ProLIF,completed,vdw,13,6,6,0.2963,ProLIF 2.2.0 completed.
+1STP/BTN,ProLIF,completed,all,27,8,8,0.2963,Broad-class count overlap across retained residue-level Leonardo contacts and ProLIF residue contacts.
+1HSG/MK1,ProLIF,completed,hydrophobic,14,0,0,0.303,ProLIF 2.2.0 completed.
+1HSG/MK1,ProLIF,completed,polar_or_hbond_candidate,7,2,2,0.303,ProLIF 2.2.0 completed.
+1HSG/MK1,ProLIF,completed,vdw,12,8,8,0.303,ProLIF 2.2.0 completed.
+1HSG/MK1,ProLIF,completed,all,33,10,10,0.303,Broad-class count overlap across retained residue-level Leonardo contacts and ProLIF residue contacts.

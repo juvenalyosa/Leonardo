@@ -1,0 +1,12 @@
+{
+  "status_table": "draft/results/interaction_external_benchmark_status.csv",
+  "contacts_table": "draft/results/interaction_external_benchmark_contacts.csv",
+  "external_profiler": "ProLIF",
+  "completed_systems": [
+    "1HSG/MK1",
+    "1STP/BTN",
+    "3PTB/BEN"
+  ],
+  "n_completed_systems": 3,
+  "strict_ready": true
+}
