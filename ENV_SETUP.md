@@ -53,6 +53,12 @@ From repo root:
 ./install_leonardo.sh
 ```
 
+Installer preflight without environment creation or PyMOL changes:
+
+```bash
+./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
+```
+
 Main + optional envs:
 
 ```bash

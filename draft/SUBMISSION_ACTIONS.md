@@ -7,7 +7,8 @@ before journal submission.
 
 ## Public release metadata
 
-- Create the public repository or anonymous reviewer repository.
+- Status: pending external credentials.
+- Create the private/public repository or anonymous reviewer repository.
 - Archive the exact submission release in Zenodo or an equivalent permanent
   software archive.
 - Replace the pending availability lines in `draft/manuscript/main.tex` with the
@@ -15,8 +16,9 @@ before journal submission.
 
 ## UI evidence
 
+- Status: partially closed.  `leonardo.png` is included as the suite-level UI
+  figure.
 - Capture real Leonardo screenshots, not mockups:
-  - main PyMOL/Leonardo launcher or module menu,
   - interaction-analysis or docking workflow window with object choices visible,
   - one result window or report popup showing parsed outputs.
 - Place PNG screenshots in `screenshots/`.
@@ -25,6 +27,10 @@ before journal submission.
 
 ## Interaction-analysis benchmark
 
+- Status: pending optional dependency and expanded dataset.
+- `draft/scripts/run_interaction_external_benchmark.py` writes a reviewer-facing
+  status/comparison table.  It currently records missing PLIP/ProLIF rather than
+  fabricating agreement values.
 - Install or add a reproducible optional dependency path for PLIP or ProLIF.
 - Compare Leonardo contact calls against PLIP/ProLIF for 3PTB/BEN.
 - Add 3-5 additional protein-ligand complexes covering interaction classes not
@@ -35,8 +41,10 @@ before journal submission.
 
 ## Pocket/redocking verification
 
-- For pocket docking, add crystal-ligand overlap or binding-site residue overlap
-  for the selected pocket.
+- Status: pocket overlap closed for one crystallographic case; broader benchmark
+  remains optional.
+- Pocket docking now includes a 1STP/biotin fpocket crystal-site overlap table:
+  `draft/results/pocket_1stp_crystal_overlap.csv`.
 - Keep smina internal RMSD separate from template/crystal RMSD in all tables and
   captions.
 - Either add a small multi-target redocking table or keep the claim explicitly
@@ -44,6 +52,8 @@ before journal submission.
 
 ## Free-energy and reaction-path scope
 
+- Status: manuscript scope is controlled; production benchmarks remain future
+  work.
 - Keep ABFE-lite as a guided-exit diagnostic workflow unless a real minimal ABFE
   calculation with standard-state/restraint corrections and uncertainty is added.
 - Keep the current MOPAC result described as a synthetic capped-cluster

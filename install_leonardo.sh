@@ -17,6 +17,7 @@ RUN_PAPER_ASSETS=0
 SKIP_ZIP=0
 INSTALL_PYMOL_LOADER=1
 ENV_SPEC_MODE="auto"
+CHECK_ONLY=0
 
 usage() {
   cat <<'EOF'
@@ -30,6 +31,7 @@ Options:
   --flexible        Install the main environment from environment.yml
   --full-tests      Run the complete pytest suite after installation
   --paper-assets    Regenerate manuscript figures/tables after installation
+  --check-only      Validate installer inputs and print the planned actions only
   --no-pymol-loader Do not install the PyMOL startup loader
   --skip-zip        Do not rebuild dist/Leonardo.zip
   -h, --help        Show this help
@@ -70,6 +72,10 @@ while [[ $# -gt 0 ]]; do
       RUN_PAPER_ASSETS=1
       shift
       ;;
+    --check-only)
+      CHECK_ONLY=1
+      shift
+      ;;
     --skip-zip)
       SKIP_ZIP=1
       shift
@@ -89,11 +95,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-if ! command -v conda >/dev/null 2>&1; then
-  echo "ERROR: conda was not found on PATH. Install Miniforge/Mambaforge/Miniconda first." >&2
-  exit 1
-fi
 
 env_name="$(awk -F': *' '/^name:/{print $2; exit}' environment.yml)"
 if [[ -z "${env_name:-}" ]]; then
@@ -126,6 +127,47 @@ case "$ENV_SPEC_MODE" in
     exit 2
     ;;
 esac
+
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+  echo "Leonardo installer check-only mode"
+  echo "Repository: $ROOT_DIR"
+  echo "Environment: $env_name"
+  echo "Environment spec mode: $ENV_SPEC_MODE"
+  echo "Conda on PATH: $(command -v conda >/dev/null 2>&1 && command -v conda || echo 'not found')"
+  required_files=(
+    environment.yml
+    environment-protliginteract-full.lock.yml
+    pyproject.toml
+    install_envs.sh
+    install_pymol_loader.sh
+    build_leonardo_zip.sh
+    launch_leonardo.sh
+    code_v2.py
+    ProtLigInteract.py
+  )
+  missing=0
+  for file in "${required_files[@]}"; do
+    if [[ -e "$file" ]]; then
+      echo "OK: $file"
+    else
+      echo "MISSING: $file"
+      missing=1
+    fi
+  done
+  echo "Planned actions without --check-only:"
+  echo "  install/update conda environment"
+  echo "  pip install -e . --no-build-isolation"
+  echo "  install PyMOL startup loader: $INSTALL_PYMOL_LOADER"
+  echo "  run full tests: $RUN_FULL_TESTS"
+  echo "  regenerate manuscript assets: $RUN_PAPER_ASSETS"
+  echo "  build plugin ZIP: $((1 - SKIP_ZIP))"
+  exit "$missing"
+fi
+
+if ! command -v conda >/dev/null 2>&1; then
+  echo "ERROR: conda was not found on PATH. Install Miniforge/Mambaforge/Miniconda first." >&2
+  exit 1
+fi
 
 echo "[1/6] Preparing conda environment: $env_name"
 "$ROOT_DIR/install_envs.sh" "${install_args[@]}"

@@ -73,6 +73,17 @@
       ],
       "padding": 2.0,
       "min_edge": 8.0
+    },
+    "crystal_ligand_overlap_check": {
+      "available": true,
+      "system": "1STP/biotin",
+      "best_pocket_id_by_crystal_overlap": 1,
+      "ligand_heavy_atoms": 16,
+      "best_median_ligand_to_alpha_sphere_A": 0.863,
+      "best_ligand_heavy_atom_fraction_within_4A": 1.0,
+      "best_ligand_heavy_atom_fraction_within_5A": 1.0,
+      "n_pockets": 4,
+      "overlap_table": "draft/results/pocket_1stp_crystal_overlap.csv"
     }
   },
   "redocking_case": {
@@ -178,8 +189,12 @@
     "traceability_csv": "draft/results/reproducibility_traceability.csv",
     "workflow_reproduction_commands": "draft/results/workflow_reproduction_commands.csv"
   },
+  "reviewer_concern_matrix": {
+    "matrix_csv": "draft/results/reviewer_concern_matrix.csv",
+    "n_concerns": 9
+  },
   "artifact_manifest": {
     "path": "draft/results/artifact_manifest.csv",
-    "n_files": 86
+    "n_files": 97
   }
 }

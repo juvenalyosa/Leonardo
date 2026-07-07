@@ -151,6 +151,27 @@ def save_image_figure(image_path: Path, stem: str, *, width_in: float = 7.2, bor
     save_figure(fig, stem)
 
 
+def make_dict_writer(handle, fieldnames: list[str]) -> csv.DictWriter:
+    """Write CSVs with stable LF line endings for cleaner git diffs."""
+    return csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
+
+
+def make_csv_writer(handle) -> csv.writer:
+    """Write plain CSV rows with the same line-ending policy as DictWriter."""
+    return csv.writer(handle, lineterminator="\n")
+
+
+def normalize_text_artifact(path: Path) -> None:
+    """Normalize generated text artifacts without changing parsed coordinates."""
+    if not path.exists() or path.is_dir():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[-1]:
+        lines.pop()
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
 def build_leonardo_suite_interface_figure() -> dict:
     """Include the real Leonardo screenshot as a framed manuscript figure."""
     screenshot = ROOT / "leonardo.png"
@@ -271,7 +292,7 @@ def write_artifact_manifest(paths: list[Path]) -> dict:
         )
     out_csv = RESULTS_DIR / "artifact_manifest.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["path", "bytes", "sha256"])
+        writer = make_dict_writer(handle, ["path", "bytes", "sha256"])
         writer.writeheader()
         writer.writerows(rows)
     return {"path": str(out_csv.relative_to(ROOT)), "n_files": len(rows)}
@@ -338,7 +359,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
     ]
     trace_csv = RESULTS_DIR / "reproducibility_traceability.csv"
     with trace_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(trace_rows[0].keys()))
+        writer = make_dict_writer(handle, list(trace_rows[0].keys()))
         writer.writeheader()
         writer.writerows(trace_rows)
 
@@ -378,13 +399,95 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
     ]
     commands_csv = RESULTS_DIR / "workflow_reproduction_commands.csv"
     with commands_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(command_rows[0].keys()))
+        writer = make_dict_writer(handle, list(command_rows[0].keys()))
         writer.writeheader()
         writer.writerows(command_rows)
     return {
         "traceability_csv": str(trace_csv.relative_to(ROOT)),
         "workflow_reproduction_commands": str(commands_csv.relative_to(ROOT)),
     }
+
+
+def write_reviewer_concern_matrix(summary: dict) -> dict:
+    """Record reviewer concerns, current evidence and remaining actions.
+
+    The manuscript itself stays concise; this CSV is a reviewer-facing audit
+    table that separates closed software-workflow evidence from items that need
+    external credentials, clean-host installation or expanded benchmarks.
+    """
+    pocket_overlap = (
+        summary.get("pocket_docking_case", {})
+        .get("crystal_ligand_overlap_check", {})
+    )
+    tests = summary.get("backend_test_report", {})
+    rows = [
+        {
+            "concern": "source availability and archival DOI",
+            "status": "pending_external_credentials",
+            "current_evidence": "The local git repository contains the source package and manuscript assets.",
+            "remaining_action": "Create the private/reviewer GitHub repository, push the commit and archive the exact release in Zenodo.",
+        },
+        {
+            "concern": "real Leonardo UI evidence",
+            "status": "partially_closed",
+            "current_evidence": "A real Leonardo suite screenshot is included as leonardo.png and Figure 0.",
+            "remaining_action": "Add real screenshots for interaction/docking object selection and one result/report popup.",
+        },
+        {
+            "concern": "interaction-analysis benchmark against an external profiler",
+            "status": "pending_optional_dependency",
+            "current_evidence": "3PTB/BEN contact parsing, charge guardrails and PyMOL interaction scene are included.",
+            "remaining_action": "Install PLIP or ProLIF and add a multi-complex agreement table covering halogen, pi, cation-pi and metal cases.",
+        },
+        {
+            "concern": "pocket docking should include crystal-site overlap",
+            "status": "closed_single_case",
+            "current_evidence": (
+                "1STP/biotin fpocket pocket "
+                f"{pocket_overlap.get('best_pocket_id_by_crystal_overlap', 'NA')} "
+                f"covers {100.0 * float(pocket_overlap.get('best_ligand_heavy_atom_fraction_within_4A', 0.0)):.1f}% "
+                "of ligand heavy atoms within 4 A."
+            ),
+            "remaining_action": "Keep claim limited to a single-case workflow check unless multi-target pocket benchmarks are added.",
+        },
+        {
+            "concern": "redocking should separate smina internal RMSD from template RMSD",
+            "status": "closed_single_case",
+            "current_evidence": "1STP/biotin 15-seed redocking reports template heavy-atom RMSD separately from smina internal RMSD intervals.",
+            "remaining_action": "Add multi-target redocking only if broader docking claims are desired.",
+        },
+        {
+            "concern": "ABFE-lite should not report BFE/Kd/IC50 without production ABFE corrections",
+            "status": "closed_by_scope_control",
+            "current_evidence": "Reviewer-facing ABFE-lite assets suppress affinity-like fields and report guided-exit state gating only.",
+            "remaining_action": "Implement standard-state/restraint corrections, uncertainty and replicated sampling before reporting binding affinity.",
+        },
+        {
+            "concern": "OpenMM alanine FES should not be presented as a biological benchmark",
+            "status": "closed_by_scope_control",
+            "current_evidence": "Text and figure captions describe the alanine example as backend/plotting/convergence diagnostics.",
+            "remaining_action": "Add replicated reference comparisons before claiming force-field or enhanced-sampling accuracy.",
+        },
+        {
+            "concern": "MOPAC capped-cluster result should not be called a full enzymatic reaction",
+            "status": "closed_by_scope_control",
+            "current_evidence": "The manuscript describes the MOPAC example as a synthetic capped-cluster reaction-path workflow check.",
+            "remaining_action": "Build a PDB-derived microcluster with residue provenance before using enzymatic-reaction language.",
+        },
+        {
+            "concern": "installation should be easy and testable",
+            "status": "partially_closed",
+            "current_evidence": "Installers include check-only preflight; CI validates shell syntax and installer inputs; backend tests report "
+            f"{tests.get('passed', 0)}/{tests.get('tests', 0)} passing.",
+            "remaining_action": "Run the installer on clean Linux/macOS/Windows hosts and attach logs.",
+        },
+    ]
+    out_csv = RESULTS_DIR / "reviewer_concern_matrix.csv"
+    with out_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    return {"matrix_csv": str(out_csv.relative_to(ROOT)), "n_concerns": len(rows)}
 
 
 def project_coords_for_figure(coords: np.ndarray) -> np.ndarray:
@@ -717,7 +820,7 @@ def build_mopac_publication_figure(mopac_summary: dict, mopac_profile: list[dict
     ]
     metrics_csv = RESULTS_DIR / "mopac_capped_cluster_workflow_metrics.csv"
     with metrics_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["metric", "value", "unit"])
+        writer = make_dict_writer(handle, ["metric", "value", "unit"])
         writer.writeheader()
         writer.writerows(metrics)
 
@@ -873,6 +976,105 @@ def parse_fpocket_info(path: Path) -> list[dict]:
     if current:
         pockets.append(current)
     return pockets
+
+
+def measure_1stp_crystal_pocket_overlap() -> dict:
+    """Measure whether fpocket pockets recover the 1STP biotin crystal site.
+
+    This is a post-hoc geometric check over stored fpocket output.  Manuscript
+    regeneration does not silently rerun fpocket, but the reviewer-facing CSV
+    records the exact command used to reproduce the pocket files.
+    """
+    root = RESULTS_DIR / "pocket_1stp_crystal_overlap"
+    out_dir = root / "receptor_1stp_no_btn_no_waters_out"
+    ligand_path = root / "btn_crystal_template.pdb"
+    receptor_path = root / "receptor_1stp_no_btn_no_waters.pdb"
+    info_path = out_dir / "receptor_1stp_no_btn_no_waters_info.txt"
+    pockets_dir = out_dir / "pockets"
+    out_csv = RESULTS_DIR / "pocket_1stp_crystal_overlap.csv"
+    rows: list[dict] = []
+    for artifact in [ligand_path, receptor_path, info_path, *pockets_dir.glob("pocket*_vert.pqr")]:
+        normalize_text_artifact(artifact)
+    ligand_atoms = [atom for atom in parse_pdb_atoms(ligand_path) if atom.get("element") != "H"]
+    pockets = parse_fpocket_info(info_path)
+
+    for pocket in pockets:
+        pocket_id = int(pocket["pocket_id"])
+        vertices = parse_pqr_points(pockets_dir / f"pocket{pocket_id}_vert.pqr")
+        distances = []
+        for atom in ligand_atoms:
+            if not vertices:
+                continue
+            distances.append(
+                min(float(np.linalg.norm(atom["coord"] - vert["coord"])) for vert in vertices)
+            )
+        if distances:
+            dist_arr = np.asarray(distances, dtype=float)
+            median_dist = float(np.median(dist_arr))
+            min_dist = float(np.min(dist_arr))
+            max_dist = float(np.max(dist_arr))
+            fraction_4a = float(np.mean(dist_arr <= 4.0))
+            fraction_5a = float(np.mean(dist_arr <= 5.0))
+        else:
+            median_dist = min_dist = max_dist = fraction_4a = fraction_5a = float("nan")
+        rows.append(
+            {
+                "system": "1STP/biotin",
+                "pocket_id": pocket_id,
+                "n_alpha_spheres": len(vertices),
+                "ligand_heavy_atoms": len(ligand_atoms),
+                "median_ligand_to_alpha_sphere_A": round(median_dist, 3),
+                "min_ligand_to_alpha_sphere_A": round(min_dist, 3),
+                "max_ligand_to_alpha_sphere_A": round(max_dist, 3),
+                "ligand_heavy_atom_fraction_within_4A": round(fraction_4a, 3),
+                "ligand_heavy_atom_fraction_within_5A": round(fraction_5a, 3),
+                "fpocket_score": pocket.get("score", ""),
+                "druggability_score": pocket.get("druggability_score", ""),
+                "rerun_command": (
+                    "cd draft/results/pocket_1stp_crystal_overlap && "
+                    "fpocket -f receptor_1stp_no_btn_no_waters.pdb"
+                ),
+            }
+        )
+
+    fieldnames = [
+        "system",
+        "pocket_id",
+        "n_alpha_spheres",
+        "ligand_heavy_atoms",
+        "median_ligand_to_alpha_sphere_A",
+        "min_ligand_to_alpha_sphere_A",
+        "max_ligand_to_alpha_sphere_A",
+        "ligand_heavy_atom_fraction_within_4A",
+        "ligand_heavy_atom_fraction_within_5A",
+        "fpocket_score",
+        "druggability_score",
+        "rerun_command",
+    ]
+    with out_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    if not rows:
+        return {
+            "available": False,
+            "reason": "Stored 1STP fpocket output was not found.",
+            "overlap_table": str(out_csv.relative_to(ROOT)),
+        }
+
+    best = min(rows, key=lambda row: float(row["median_ligand_to_alpha_sphere_A"]))
+    return {
+        "available": True,
+        "system": "1STP/biotin",
+        "best_pocket_id_by_crystal_overlap": int(best["pocket_id"]),
+        "ligand_heavy_atoms": int(best["ligand_heavy_atoms"]),
+        "best_median_ligand_to_alpha_sphere_A": float(best["median_ligand_to_alpha_sphere_A"]),
+        "best_ligand_heavy_atom_fraction_within_4A": float(best["ligand_heavy_atom_fraction_within_4A"]),
+        "best_ligand_heavy_atom_fraction_within_5A": float(best["ligand_heavy_atom_fraction_within_5A"]),
+        "n_pockets": len(rows),
+        "overlap_table": str(out_csv.relative_to(ROOT)),
+    }
 
 
 def parse_smina_modes_from_log(path: Path) -> list[dict]:
@@ -1200,7 +1402,7 @@ def analyze_3ptb_contacts() -> dict:
 
     out_csv = RESULTS_DIR / "interaction_contacts_3ptb_ben.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(contacts[0].keys()) if contacts else [])
+        writer = make_dict_writer(handle, list(contacts[0].keys()) if contacts else [])
         writer.writeheader()
         writer.writerows(contacts)
 
@@ -1355,7 +1557,7 @@ def analyze_redocking() -> dict:
 
     out_csv = RESULTS_DIR / "redocking_seed_summary_1stp_btn.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(seed_summary[0].keys()))
+        writer = make_dict_writer(handle, list(seed_summary[0].keys()))
         writer.writeheader()
         writer.writerows(seed_summary)
 
@@ -1537,7 +1739,7 @@ def analyze_ligand_libraries() -> dict:
 
     out_csv = RESULTS_DIR / "ligand_library_qc_descriptors.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer = make_dict_writer(handle, list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
@@ -1668,7 +1870,7 @@ def analyze_openmm_cv_fes() -> dict:
 
     out_csv = RESULTS_DIR / "openmm_cv_fes_summary.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(stats_rows[0].keys()))
+        writer = make_dict_writer(handle, list(stats_rows[0].keys()))
         writer.writeheader()
         writer.writerows(stats_rows)
 
@@ -1877,7 +2079,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
 
     windows_csv = RESULTS_DIR / "abfe_lite_diagnostic_windows.csv"
     with windows_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(window_rows[0].keys()))
+        writer = make_dict_writer(handle, list(window_rows[0].keys()))
         writer.writeheader()
         writer.writerows(window_rows)
 
@@ -1912,7 +2114,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
         )
     occupancy_csv = RESULTS_DIR / "abfe_lite_diagnostic_occupancy_profile.csv"
     with occupancy_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["exit_coordinate_A", "relative_minus_log_occupancy", "sample_count"])
+        writer = make_dict_writer(handle, ["exit_coordinate_A", "relative_minus_log_occupancy", "sample_count"])
         writer.writeheader()
         writer.writerows(occupancy_rows)
 
@@ -1929,7 +2131,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
             overlap[i, j] = float(np.sum(np.minimum(hi_row, hj_row)))
     overlap_csv = RESULTS_DIR / "abfe_lite_diagnostic_overlap.csv"
     with overlap_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
+        writer = make_csv_writer(handle)
         writer.writerow(["window"] + [f"w{idx + 1}" for idx in range(len(histograms))])
         for idx, row in enumerate(overlap):
             writer.writerow([f"w{idx + 1}"] + [round(float(v), 5) for v in row])
@@ -1982,7 +2184,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
     ]
     summary_csv = RESULTS_DIR / "abfe_lite_diagnostic_summary.csv"
     with summary_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["metric", "value", "unit"])
+        writer = make_dict_writer(handle, ["metric", "value", "unit"])
         writer.writeheader()
         writer.writerows(summary_rows)
 
@@ -2337,7 +2539,7 @@ def build_pocket_docking_workflow_figure() -> dict:
         "apolar_sasa",
     ]
     with pocket_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = make_dict_writer(handle, fieldnames)
         writer.writeheader()
         for pocket in pockets:
             writer.writerow({field: pocket.get(field, "") for field in fieldnames})
@@ -2348,7 +2550,7 @@ def build_pocket_docking_workflow_figure() -> dict:
     smina_modes = parse_smina_modes_from_log(log_path)
     pose_csv = RESULTS_DIR / "pocket_docking_smina_modes.csv"
     with pose_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["mode", "affinity_kcal_mol", "rmsd_lb_A", "rmsd_ub_A"])
+        writer = make_dict_writer(handle, ["mode", "affinity_kcal_mol", "rmsd_lb_A", "rmsd_ub_A"])
         writer.writeheader()
         writer.writerows(smina_modes)
 
@@ -2476,6 +2678,7 @@ def build_pocket_docking_workflow_figure() -> dict:
     panel_label(ax3, "C")
     panel_label(ax4, "D")
     save_figure(fig, "figure_11_pocket_docking_workflow_check")
+    crystal_overlap = measure_1stp_crystal_pocket_overlap()
 
     return {
         "available": bool(summary.get("ok", False)),
@@ -2486,6 +2689,7 @@ def build_pocket_docking_workflow_figure() -> dict:
         "pocket_table": str(pocket_csv.relative_to(ROOT)),
         "pose_table": str(pose_csv.relative_to(ROOT)),
         "grid": grid,
+        "crystal_ligand_overlap_check": crystal_overlap,
     }
 
 
@@ -2635,7 +2839,7 @@ def build_pipeline_classification() -> dict:
     ]
     out_csv = RESULTS_DIR / "pipeline_classification.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer = make_dict_writer(handle, list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
@@ -2658,7 +2862,7 @@ def build_pipeline_classification() -> dict:
 
     stats_csv = RESULTS_DIR / "pipeline_inventory_summary.csv"
     with stats_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(stats_rows[0].keys()))
+        writer = make_dict_writer(handle, list(stats_rows[0].keys()))
         writer.writeheader()
         writer.writerows(stats_rows)
 
@@ -3000,7 +3204,7 @@ def analyze_qst_irc_examples() -> dict:
     ]
     out_csv = RESULTS_DIR / "qst_irc_workflow_summary.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer = make_dict_writer(handle, list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
@@ -3065,6 +3269,7 @@ def main() -> None:
         "qst_irc_case": analyze_qst_irc_examples(),
     }
     summary["traceability"] = write_workflow_traceability_tables(summary)
+    summary["reviewer_concern_matrix"] = write_reviewer_concern_matrix(summary)
     manifest_paths = [
         *(FIG_DIR / f"{stem}.{ext}" for stem in CURRENT_FIGURE_STEMS for ext in ("pdf", "png")),
         FIG_DIR / "figure_4_3ptb_ben_pymol_binding_site.png",
@@ -3075,9 +3280,23 @@ def main() -> None:
         RESULTS_DIR / "pipeline_classification.csv",
         RESULTS_DIR / "pipeline_inventory_summary.csv",
         RESULTS_DIR / "interaction_contacts_3ptb_ben.csv",
+        RESULTS_DIR / "interaction_external_benchmark_status.csv",
         RESULTS_DIR / "redocking_seed_summary_1stp_btn.csv",
         RESULTS_DIR / "pocket_docking_fpocket_summary.csv",
         RESULTS_DIR / "pocket_docking_smina_modes.csv",
+        RESULTS_DIR / "pocket_1stp_crystal_overlap.csv",
+        RESULTS_DIR / "pocket_1stp_crystal_overlap" / "btn_crystal_template.pdb",
+        RESULTS_DIR / "pocket_1stp_crystal_overlap" / "receptor_1stp_no_btn_no_waters.pdb",
+        RESULTS_DIR
+        / "pocket_1stp_crystal_overlap"
+        / "receptor_1stp_no_btn_no_waters_out"
+        / "receptor_1stp_no_btn_no_waters_info.txt",
+        *(
+            RESULTS_DIR
+            / "pocket_1stp_crystal_overlap"
+            / "receptor_1stp_no_btn_no_waters_out"
+            / "pockets"
+        ).glob("pocket*_vert.pqr"),
         RESULTS_DIR / "ligand_library_qc_descriptors.csv",
         RESULTS_DIR / "openmm_cv_fes_summary.csv",
         RESULTS_DIR / "abfe_lite_diagnostic_windows.csv",
@@ -3095,7 +3314,9 @@ def main() -> None:
         RESULTS_DIR / "workflow_verification_summary.json",
         RESULTS_DIR / "reproducibility_traceability.csv",
         RESULTS_DIR / "workflow_reproduction_commands.csv",
+        RESULTS_DIR / "reviewer_concern_matrix.csv",
         DRAFT / "scripts" / "generate_bmc_validation_assets.py",
+        DRAFT / "scripts" / "run_interaction_external_benchmark.py",
         DRAFT / "manuscript" / "main.tex",
         ROOT / "redocking_real_1stp" / "redocking_summary.tsv",
         ROOT / "test_outputs" / "alanine_fes_converged" / "alanine_phi_psi_fes.csv",

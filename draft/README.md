@@ -43,6 +43,12 @@ From the repository root, the preferred reviewer command is:
 ./install_leonardo.sh --paper-assets
 ```
 
+A non-mutating installer preflight is also available:
+
+```bash
+./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
+```
+
 The manuscript figures can also be regenerated directly inside the validated environment:
 
 ```bash

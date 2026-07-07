@@ -213,6 +213,13 @@ For reviewers and most users, run the high-level installer:
 ./install_leonardo.sh
 ```
 
+To validate the installer inputs without creating environments or modifying
+PyMOL startup files:
+
+```bash
+./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
+```
+
 This creates or updates the main environment, installs the repository with
 `python -m pip install -e . --no-build-isolation`, installs the PyMOL startup
 loader, runs smoke tests, and rebuilds `dist/Leonardo.zip` for PyMOL's Plugin
