@@ -38,9 +38,11 @@ vs_test/
 test_abfe_3ptb_ben/*.dcd
 test_abfe_3ptb_ben/*_final.pdb
 test_abfe_3ptb_ben/*.prmtop
+!test_abfe_3ptb_ben/BEN_from_complex.prmtop
 test_abfe_3ptb_ben/*.inpcrd
 test_abfe_3ptb_ben/*.frcmod
 test_abfe_3ptb_ben/*.mol2
+!test_abfe_3ptb_ben/BEN_from_complex_gaff2.mol2
 test_abfe_3ptb_ben/*.xml
 test_abfe_3ptb_ben/*.json
 test_abfe_3ptb_ben/*.log
