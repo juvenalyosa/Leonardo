@@ -27,10 +27,47 @@ import time
 import urllib.request
 import argparse
 import glob
-from modeller import *
-from modeller.automodel import *
-from modeller.scripts import complete_pdb
-from modeller.parallel import *
+
+MODELLER_IMPORT_ERROR = None
+try:
+    from modeller import *
+    from modeller.automodel import *
+    from modeller.scripts import complete_pdb
+    from modeller.parallel import *
+except Exception as exc:
+    # MODELLER is license-gated.  CI and reviewer machines can install the
+    # package but still lack a valid license key, which raises at import time.
+    # Keep the wrapper importable so mocked unit tests and non-MODELLER UI
+    # paths still run; real modeling entrypoints fail with a targeted message.
+    MODELLER_IMPORT_ERROR = exc
+
+    class _UnavailableModellerSymbol:
+        def __init__(self, name):
+            self.name = str(name)
+
+        def __call__(self, *args, **kwargs):
+            _ = (args, kwargs)
+            raise RuntimeError(
+                "MODELLER is installed but could not be initialized. Configure "
+                "a valid MODELLER license key before running homology modeling. "
+                f"Original error: {MODELLER_IMPORT_ERROR}"
+            )
+
+        def __getattr__(self, attr):
+            if attr == "none":
+                return self
+            return _UnavailableModellerSymbol(f"{self.name}.{attr}")
+
+    log = _UnavailableModellerSymbol("log")
+    Environ = _UnavailableModellerSymbol("Environ")
+    Alignment = _UnavailableModellerSymbol("Alignment")
+    Model = _UnavailableModellerSymbol("Model")
+    AutoModel = _UnavailableModellerSymbol("AutoModel")
+    Job = _UnavailableModellerSymbol("Job")
+    LocalWorker = _UnavailableModellerSymbol("LocalWorker")
+    Selection = _UnavailableModellerSymbol("Selection")
+    complete_pdb = _UnavailableModellerSymbol("complete_pdb")
+    assess = _UnavailableModellerSymbol("assess")
 try:
     # Support package-relative imports when used as part of src package
     from .mutator import mutate_sequence, verify_and_print_alignment, MutationError
