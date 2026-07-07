@@ -1,0 +1,133 @@
+{
+  "pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/1STP.pdb",
+  "ligand": {
+    "resn": "BTN",
+    "chain": "A",
+    "resi": "300"
+  },
+  "repeats": 15,
+  "num_modes": 15,
+  "exhaustiveness": 16,
+  "seed0": 4001,
+  "grid_center": [
+    11.4195,
+    2.371,
+    -11.3725
+  ],
+  "grid_size": [
+    14.545,
+    14.004,
+    15.519
+  ],
+  "receptor_pdbqt": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdbqt",
+  "ligand_pdbqt": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_input_template.pdbqt",
+  "summary_tsv": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/redocking_summary.tsv",
+  "n_pose_rows": 225,
+  "repeat_rows": [
+    {
+      "seed": 4001,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.35444895612767713,
+      "best_rmsd_A": 0.35444895612767713
+    },
+    {
+      "seed": 4002,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.5,
+      "top_mode_rmsd_A": 0.3312874507131232,
+      "best_rmsd_A": 0.3312874507131232
+    },
+    {
+      "seed": 4003,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.3897446279296226,
+      "best_rmsd_A": 0.3897446279296226
+    },
+    {
+      "seed": 4004,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.37806084166440734,
+      "best_rmsd_A": 0.37806084166440734
+    },
+    {
+      "seed": 4005,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 1.0159912647262277,
+      "best_rmsd_A": 0.34507019213487566
+    },
+    {
+      "seed": 4006,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.34933177281776134,
+      "best_rmsd_A": 0.34933177281776134
+    },
+    {
+      "seed": 4007,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.37732545633709896,
+      "best_rmsd_A": 0.37732545633709896
+    },
+    {
+      "seed": 4008,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.3485167678892939,
+      "best_rmsd_A": 0.3485167678892939
+    },
+    {
+      "seed": 4009,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.37321516917188674,
+      "best_rmsd_A": 0.37321516917188674
+    },
+    {
+      "seed": 4010,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.38155487809750244,
+      "best_rmsd_A": 0.38155487809750244
+    },
+    {
+      "seed": 4011,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.3584953800260192,
+      "best_rmsd_A": 0.3584953800260192
+    },
+    {
+      "seed": 4012,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.3634348290959467,
+      "best_rmsd_A": 0.3634348290959467
+    },
+    {
+      "seed": 4013,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.5,
+      "top_mode_rmsd_A": 0.3555804233925145,
+      "best_rmsd_A": 0.3555804233925145
+    },
+    {
+      "seed": 4014,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.4,
+      "top_mode_rmsd_A": 0.37857883921318164,
+      "best_rmsd_A": 0.37857883921318164
+    },
+    {
+      "seed": 4015,
+      "n_modes": 15,
+      "top_affinity_kcal_mol": -7.5,
+      "top_mode_rmsd_A": 0.3451806592206463,
+      "best_rmsd_A": 0.3451806592206463
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "counts": {
+    "atoms": 18,
+    "residue_bonds": 18,
+    "bond_terms": 18,
+    "angle_terms": 27,
+    "torsion_terms": 45,
+    "torsion_rows_merged": 45,
+    "proper_torsion_terms": 36,
+    "improper_torsion_terms": 9
+  },
+  "charge": {
+    "sum_e": 0.9989999999999997,
+    "min_e": -0.46909999999999996,
+    "max_e": 0.5224,
+    "abs_sum_e": 4.2753999999999985
+  },
+  "lj": {
+    "sigma_min_nm": 0.1106496207546381,
+    "sigma_max_nm": 0.33152123100281,
+    "epsilon_min_kj_mol": 0.0418400000713784,
+    "epsilon_max_kj_mol": 0.7112799996555186,
+    "zero_epsilon_atoms": 0
+  },
+  "flags": {
+    "has_bonded_terms": true,
+    "has_lj_terms": true,
+    "has_nonzero_charge": true
+  },
+  "source_prmtop": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_smoke/parameterization/ligand.prmtop",
+  "residue_name": "BEN",
+  "source_system": {
+    "particles": 18,
+    "force_counts": {
+      "HarmonicBondForce": 1,
+      "HarmonicAngleForce": 1,
+      "PeriodicTorsionForce": 1,
+      "NonbondedForce": 1
+    },
+    "nonbonded_exceptions": 78
+  },
+  "roundtrip": {
+    "ok": true,
+    "tolerance": 1e-08,
+    "counts": {
+      "particles_source": 18,
+      "particles_target": 18,
+      "nonbonded_particles_source": 18,
+      "nonbonded_particles_target": 18,
+      "nonbonded_exceptions_source": 78,
+      "nonbonded_exceptions_target": 78,
+      "bonds_source": 18,
+      "bonds_target": 18,
+      "angles_source": 27,
+      "angles_target": 27,
+      "torsions_source": 45,
+      "torsions_target": 45
+    },
+    "force_counts_source": {
+      "HarmonicBondForce": 1,
+      "HarmonicAngleForce": 1,
+      "PeriodicTorsionForce": 1,
+      "NonbondedForce": 1
+    },
+    "force_counts_target": {
+      "HarmonicBondForce": 1,
+      "PeriodicTorsionForce": 1,
+      "NonbondedForce": 1,
+      "HarmonicAngleForce": 1
+    },
+    "force_counts_match": true,
+    "max_abs_diff": {
+      "particle_mass_da": 0.0,
+      "nonbonded_particles": 4.813927034774679e-13,
+      "nonbonded_exceptions": 3.7576138034456363e-10,
+      "bonds": 5.820766091346741e-11,
+      "angles": 5.684341886080802e-14,
+      "torsions": 0.0
+    },
+    "issues": []
+  }
+}

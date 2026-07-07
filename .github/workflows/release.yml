@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create plugin zip
+        run: |
+          set -e
+          chmod +x ./build_leonardo_zip.sh
+          ./build_leonardo_zip.sh Leonardo.zip
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+            files: dist/Leonardo.zip
+            generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,675 @@
+MODEL 1
+REMARK minimizedAffinity -7.43737888
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.827   1.220 -10.397  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      11.005   2.353  -8.958  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      10.236   1.059  -7.915  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      10.869  -0.260  -8.347  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      12.167  -0.495  -7.716  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      13.173  -0.539  -8.596  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1      14.392  -0.713  -8.381  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      12.669  -0.362  -9.838  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      11.221  -0.164  -9.828  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      12.287  -0.610  -6.745  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      13.216  -0.365 -10.656  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      11.546   1.475 -11.659  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1      11.682   2.860 -12.290  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      10.424   3.621 -12.406  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      10.373   4.539 -13.677  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       9.030   4.503 -14.315  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       8.018   5.071 -13.881  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       8.833   3.436 -15.066  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 2
+REMARK minimizedAffinity -6.60459375
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.698   1.196 -10.328  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      10.955   2.399  -8.959  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      10.316   1.132  -7.801  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      10.955  -0.186  -8.227  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      12.306  -0.354  -7.694  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      13.239  -0.409  -8.651  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1      14.477  -0.537  -8.530  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      12.631  -0.303  -9.854  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      11.182  -0.147  -9.734  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      12.508  -0.420  -6.733  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      13.109  -0.328 -10.714  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      11.305   1.414 -11.655  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1      11.836   2.766 -12.129  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      10.853   3.616 -12.827  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       9.599   2.821 -13.333  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       8.813   3.619 -14.312  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       9.101   4.762 -14.693  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       7.540   3.280 -14.366  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 3
+REMARK minimizedAffinity -6.38909864
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      11.038   1.510 -12.139  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1       9.314   0.958 -12.466  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1       9.723  -0.624 -11.638  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      10.530  -0.251 -10.398  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1       9.684   0.141  -9.272  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1       9.865   1.415  -8.905  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       9.297   2.054  -7.993  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      10.812   1.963  -9.699  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      11.315   1.021 -10.698  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1       9.048  -0.467  -8.830  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      11.128   2.891  -9.615  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      11.421   2.928 -12.278  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1      11.736   3.591 -13.618  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      10.826   4.686 -14.004  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       9.496   4.706 -13.172  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       8.309   4.522 -14.050  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       7.133   4.709 -13.707  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       8.510   3.667 -15.035  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 4
+REMARK minimizedAffinity -6.14564323
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      11.159   1.984  -9.463  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      12.813   1.180  -9.405  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      12.356   0.486  -7.773  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      10.915   0.003  -7.910  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      10.821  -1.321  -8.521  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      10.181  -1.308  -9.696  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       9.943  -2.262 -10.467  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       9.794  -0.040  -9.962  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      10.201   0.898  -8.918  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      11.188  -2.138  -8.110  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       9.294   0.222 -10.768  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      10.630   2.543 -10.721  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1      11.412   2.562 -12.033  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      11.097   3.686 -12.935  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       9.657   4.269 -12.714  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       8.823   4.122 -13.936  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       9.013   3.290 -14.834  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       8.194   5.229 -14.281  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 5
+REMARK minimizedAffinity -6.05135679
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1       7.927   3.660 -14.192  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1       7.276   2.365 -15.326  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1       5.715   2.391 -14.368  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1       5.409   3.862 -14.104  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1       4.747   4.510 -15.235  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1       5.480   5.491 -15.774  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       5.207   6.226 -16.747  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       6.636   5.596 -15.081  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1       6.729   4.618 -13.999  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1       3.856   4.253 -15.565  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       7.337   6.258 -15.282  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.141   4.425 -14.531  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1      10.349   4.549 -13.604  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      10.216   3.862 -12.306  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      11.292   2.741 -12.087  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1      11.227   2.194 -10.705  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1      10.476   2.606  -9.810  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1      12.345   1.610 -10.318  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 6
+REMARK minimizedAffinity -5.95993996
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.247   0.402  -9.980  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      10.443   1.993  -9.076  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      10.502   1.035  -7.516  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      11.389  -0.173  -7.799  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      12.814   0.135  -7.685  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      13.470  -0.002  -8.842  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1      14.681   0.191  -9.082  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      12.595  -0.410  -9.789  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      11.236  -0.551  -9.268  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      13.245   0.415  -6.845  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      12.844  -0.591 -10.724  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      10.433   0.330 -11.441  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.364   0.745 -12.451  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1       9.306   2.190 -12.743  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      10.332   2.639 -13.842  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1      11.174   3.768 -13.364  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1      11.198   4.901 -13.864  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1      12.261   3.381 -12.725  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 7
+REMARK minimizedAffinity -5.87268877
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1       9.353   2.586 -13.739  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1       9.825   4.011 -12.675  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1       9.777   5.070 -14.169  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1       8.528   4.653 -14.939  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1       7.314   5.286 -14.428  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1       6.438   4.406 -13.929  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       5.321   4.623 -13.414  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       6.951   3.163 -14.066  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1       8.276   3.170 -14.683  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1       7.157   6.258 -14.449  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       6.485   2.344 -13.781  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       8.878   1.320 -13.147  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.793   0.321 -12.441  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1       9.493   0.096 -11.015  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      10.762   0.176 -10.097  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1      11.189   1.585  -9.889  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1      10.458   2.500  -9.483  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1      12.220   1.939 -10.632  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 8
+REMARK minimizedAffinity -5.80537319
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.476   0.778 -10.148  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      10.808   2.219  -9.052  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      10.394   1.153  -7.621  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      11.067  -0.189  -7.889  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      12.479  -0.197  -7.510  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      13.297  -0.380  -8.553  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1      14.546  -0.428  -8.568  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      12.547  -0.521  -9.669  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      11.115  -0.413  -9.396  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      12.796  -0.079  -6.585  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      12.923  -0.679 -10.565  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      10.908   0.781 -11.558  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.957   0.568 -12.735  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1       9.204  -0.700 -12.710  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       7.760  -0.549 -12.117  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       7.396  -1.722 -11.277  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       6.257  -1.976 -10.862  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       8.403  -2.194 -10.568  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 9
+REMARK minimizedAffinity -5.70008183
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.433   0.935 -11.317  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      10.491   2.668 -10.701  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      11.517   3.093 -12.158  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      10.875   2.380 -13.345  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1       9.744   3.119 -13.902  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1       8.585   2.462 -13.787  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       7.444   2.819 -14.150  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       8.821   1.273 -13.186  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      10.230   1.092 -12.843  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1       9.827   4.008 -14.318  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       8.122   0.605 -13.001  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.464  -0.033 -10.772  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.790  -1.013  -9.645  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      11.221  -1.330  -9.486  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      11.909  -0.520  -8.333  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1      13.310  -0.164  -8.684  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1      14.321  -0.630  -8.142  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1      13.428   1.031  -9.229  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 10
+REMARK minimizedAffinity -5.6304388
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1       8.905  -0.947 -10.095  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1       9.636  -2.634 -10.014  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1       7.999  -3.306 -10.484  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1       7.476  -2.398 -11.593  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1       8.017  -2.744 -12.907  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1       8.767  -1.770 -13.434  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       9.373  -1.755 -14.527  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       8.786  -0.727 -12.574  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1       8.016  -0.991 -11.360  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1       7.846  -3.604 -13.356  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       9.266   0.115 -12.745  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.763   0.252 -10.116  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.852   1.249  -8.961  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      11.198   1.417  -8.382  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      11.906   0.055  -8.060  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1      13.277   0.011  -8.635  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1      14.219  -0.656  -8.184  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1      13.595   1.090  -9.324  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 11
+REMARK minimizedAffinity -5.58393097
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.316   2.699 -12.650  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1       9.133   1.300 -12.820  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      10.491   0.167 -12.343  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      11.216   0.845 -11.185  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      10.554   0.624  -9.900  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      10.099   1.755  -9.348  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       9.487   1.906  -8.269  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      10.410   2.788 -10.162  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      11.112   2.356 -11.369  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      10.455  -0.263  -9.484  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      10.189   3.727  -9.965  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.840   4.094 -12.596  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.467   4.909 -13.833  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1       8.549   4.237 -14.772  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       7.200   5.012 -14.976  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       6.097   4.390 -14.195  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       5.388   4.980 -13.369  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       6.237   3.088 -14.033  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 12
+REMARK minimizedAffinity -5.57197571
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.036  -0.084  -9.923  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      10.964   0.630 -11.342  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      11.237   2.135 -10.334  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      11.596   1.643  -8.935  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      13.006   1.281  -8.810  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      13.188  -0.017  -8.544  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1      14.261  -0.640  -8.388  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      11.978  -0.613  -8.455  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      10.878   0.320  -8.690  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      13.745   1.925  -8.911  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      11.852  -1.569  -8.255  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.716  -1.523  -9.872  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       8.503  -2.145 -10.562  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1       7.485  -1.183 -11.025  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       7.059  -1.407 -12.518  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       8.032  -0.783 -13.455  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       9.077  -1.314 -13.856  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       8.007   0.536 -13.440  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 13
+REMARK minimizedAffinity -5.34186983
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      10.001  -0.239  -9.777  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      10.836   0.587 -11.193  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      11.049   2.065 -10.132  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      11.483   1.542  -8.766  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      12.917   1.265  -8.699  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      13.187  -0.029  -8.493  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1      14.300  -0.589  -8.396  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1      12.019  -0.703  -8.392  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      10.857   0.168  -8.555  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      13.611   1.957  -8.796  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1      11.958  -1.672  -8.227  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.772  -1.696  -9.775  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       8.697  -2.385 -10.616  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1       8.186  -3.653 -10.062  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       6.805  -4.079 -10.671  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       5.677  -3.645  -9.804  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       5.001  -2.621  -9.973  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       5.752  -4.107  -8.571  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 14
+REMARK minimizedAffinity -5.23746014
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1       7.621   4.313 -15.090  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1       6.223   4.587 -13.926  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1       5.176   3.570 -15.033  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1       6.034   2.377 -15.443  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1       6.037   1.315 -14.439  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1       7.248   1.102 -13.911  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       7.584   0.279 -13.032  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       8.127   1.948 -14.493  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1       7.492   2.822 -15.478  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1       5.234   0.808 -14.179  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       9.087   1.974 -14.277  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1       9.009   4.619 -14.696  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1       9.465   4.751 -13.243  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      10.664   3.968 -12.890  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1      10.455   3.055 -11.631  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1      11.194   1.771 -11.768  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1      10.777   0.767 -12.362  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1      12.075   1.566 -10.807  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL
+MODEL 15
+REMARK minimizedAffinity -5.21791887
+REMARK minimizedRMSD -1
+REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  5 active torsions:
+REMARK  status: ('A' for Active; 'I' for Inactive)
+REMARK    1  A    between atoms: C_1  and  C_4
+REMARK    2  A    between atoms: C_4  and  C_5
+REMARK    3  A    between atoms: C_5  and  C_6
+REMARK    4  A    between atoms: C_6  and  C_7
+REMARK    5  A    between atoms: C_7  and  C_8
+REMARK                            x       y       z     vdW  Elec       q    Type
+REMARK                         _______ _______ _______ _____ _____    ______ ____
+ROOT
+ATOM      1  C   UNL     1      11.134   1.938  -9.116  0.00  0.00    +0.000 C 
+ATOM      2  S   UNL     1      12.798   1.205  -9.398  0.00  0.00    +0.000 S 
+ATOM      3  C   UNL     1      12.637   0.358  -7.782  0.00  0.00    +0.000 C 
+ATOM      4  C   UNL     1      11.208  -0.173  -7.727  0.00  0.00    +0.000 C 
+ATOM      5  N   UNL     1      11.053  -1.446  -8.431  0.00  0.00    +0.000 N 
+ATOM      6  C   UNL     1      10.229  -1.362  -9.481  0.00  0.00    +0.000 C 
+ATOM      7  O   UNL     1       9.895  -2.258 -10.286  0.00  0.00    +0.000 OA
+ATOM      8  N   UNL     1       9.766  -0.095  -9.567  0.00  0.00    +0.000 N 
+ATOM      9  C   UNL     1      10.311   0.770  -8.522  0.00  0.00    +0.000 C 
+ATOM     10  H   UNL     1      11.507  -2.276  -8.160  0.00  0.00    +0.000 HD
+ATOM     11  H   UNL     1       9.132   0.211 -10.255  0.00  0.00    +0.000 HD
+ENDROOT
+BRANCH   1  12
+ATOM     12  C   UNL     1      10.389   2.577 -10.217  0.00  0.00    +0.000 C 
+BRANCH  12  13
+ATOM     13  C   UNL     1      10.943   2.737 -11.632  0.00  0.00    +0.000 C 
+BRANCH  13  14
+ATOM     14  C   UNL     1      10.631   1.630 -12.555  0.00  0.00    +0.000 C 
+BRANCH  14  15
+ATOM     15  C   UNL     1       9.233   1.782 -13.251  0.00  0.00    +0.000 C 
+BRANCH  15  16
+ATOM     16  C   UNL     1       8.535   0.472 -13.350  0.00  0.00    +0.000 C 
+ATOM     17  O   UNL     1       7.851   0.100 -14.314  0.00  0.00    +0.000 OA
+ATOM     18  O   UNL     1       8.246  -0.061 -12.179  0.00  0.00    +0.000 OA
+ENDBRANCH  15  16
+ENDBRANCH  14  15
+ENDBRANCH  13  14
+ENDBRANCH  12  13
+ENDBRANCH   1  12
+TORSDOF 5
+ENDMDL

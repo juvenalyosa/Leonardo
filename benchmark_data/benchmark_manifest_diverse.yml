@@ -1,0 +1,59 @@
+version: 1
+name: openff_diverse_abfe_panel
+source: openforcefield/protein-ligand-benchmark
+description: Diverse ABFE-lite panel across multiple OpenFF protein targets. Uses
+  larger-ligand-biased and chemically diverse subset selection per target.
+global:
+  cases:
+  - all
+  selection:
+    include_no_exp: true
+    min_heavy_atoms: 24
+    max_heavy_atoms: 80
+    min_mw: 260.0
+    max_mw: 900.0
+    diverse_n: 0
+    diversity_size_weight: 0.35
+    diversity_seed: 20260213
+targets:
+- name: thrombin
+  enabled: true
+  selection:
+    diverse_n: 0
+- name: bace
+  enabled: false
+  selection:
+    min_heavy_atoms: 26
+    diverse_n: 0
+  note: Unavailable in current upstream data/ listing; kept for reference.
+- name: cdk2
+  enabled: true
+  selection:
+    min_heavy_atoms: 24
+    diverse_n: 0
+- name: mcl1
+  enabled: true
+  selection:
+    min_heavy_atoms: 26
+    diverse_n: 0
+- name: pde10
+  enabled: false
+  selection:
+    min_heavy_atoms: 25
+    diverse_n: 0
+  note: Unavailable in current upstream data/ listing; kept for reference.
+- name: ptp1b
+  enabled: true
+  selection:
+    min_heavy_atoms: 24
+    diverse_n: 0
+- name: cdk8
+  enabled: true
+  selection:
+    min_heavy_atoms: 24
+    diverse_n: 0
+- name: pde2
+  enabled: true
+  selection:
+    min_heavy_atoms: 24
+    diverse_n: 0

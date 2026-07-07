@@ -1,0 +1,185 @@
+{
+  "backend_test_report": {
+    "available": true,
+    "report": "draft/results/pytest_validation.xml",
+    "tests": 521,
+    "passed": 521,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "leonardo_suite_interface": {
+    "available": true,
+    "input": "leonardo.png",
+    "figure": "draft/figures/figure_0_leonardo_suite_interface.pdf"
+  },
+  "pipeline_classification": {
+    "pipeline_table": "draft/results/pipeline_classification.csv",
+    "pipeline_inventory_table": "draft/results/pipeline_inventory_summary.csv",
+    "n_modules": 15,
+    "n_external_tools_or_services": 31,
+    "n_modules_with_verification_evidence": 15,
+    "category_counts": {
+      "Inputs and project state": 2,
+      "Sequence/structure preparation": 2,
+      "Protein-ligand modeling": 5,
+      "Simulation and free energy": 3,
+      "Quantum and reaction paths": 2,
+      "Prediction and external compute": 1
+    },
+    "module_evidence_matrix": "draft/figures/figure_3_module_evidence_matrix.pdf"
+  },
+  "structure_interaction_case": {
+    "input_pdb": "3PTB.pdb",
+    "protein_atom_count": 1629,
+    "protein_residue_count": 223,
+    "ligand": "BEN (benzamidine)",
+    "ligand_atom_count": 9,
+    "contact_count_residue_level": 14,
+    "interaction_type_counts": {
+      "Hydrophobic contact": 1,
+      "Polar contact": 2,
+      "Salt bridge candidate": 1,
+      "vdW contact": 10
+    },
+    "nearest_contact_A": 2.815,
+    "median_contact_A": 3.657,
+    "contact_table": "draft/results/interaction_contacts_3ptb_ben.csv",
+    "pymol_panel": "draft/figures/figure_4_3ptb_ben_pymol_binding_site.png",
+    "pymol_script": "draft/results/figure_4_3ptb_ben_pymol_binding_site.pml",
+    "pymol_interaction_scene": "draft/figures/figure_4b_3ptb_ben_interaction_scene.pdf",
+    "pymol_interaction_scene_render": "draft/figures/figure_4b_3ptb_ben_interaction_scene_render.png",
+    "pymol_interaction_scene_script": "draft/results/figure_4b_3ptb_ben_interaction_scene.pml"
+  },
+  "pocket_docking_case": {
+    "available": true,
+    "n_pockets": 10,
+    "best_pocket_id": 4,
+    "best_rank_score": 51.909,
+    "n_smina_modes": 3,
+    "pocket_table": "draft/results/pocket_docking_fpocket_summary.csv",
+    "pose_table": "draft/results/pocket_docking_smina_modes.csv",
+    "grid": {
+      "ok": true,
+      "center": [
+        8.939444444444446,
+        6.515611111111113,
+        8.495111111111111
+      ],
+      "size": [
+        11.434000000000001,
+        16.36,
+        11.56
+      ],
+      "padding": 2.0,
+      "min_edge": 8.0
+    }
+  },
+  "redocking_case": {
+    "system": "1STP/biotin",
+    "ligand": "BTN",
+    "input_summary": "redocking_real_1stp/redocking_summary.tsv",
+    "n_pose_rows": 225,
+    "n_seed_runs": 15,
+    "group_stats": {
+      "run_15": {
+        "n_seeds": 15,
+        "top_mode_rmsd_median_A": 0.363,
+        "best_rmsd_median_A": 0.358,
+        "best_rmsd_min_A": 0.331,
+        "successful_seed_fraction_best_rmsd_lt_2A": 1.0
+      }
+    },
+    "seed_summary_table": "draft/results/redocking_seed_summary_1stp_btn.csv"
+  },
+  "ligand_library_case": {
+    "rdkit_available": true,
+    "n_targets": 15,
+    "n_ligands": 369,
+    "descriptor_table": "draft/results/ligand_library_qc_descriptors.csv",
+    "mol_wt_median": 388.475,
+    "logp_median": 3.3908000000000023
+  },
+  "openmm_cv_fes_case": {
+    "available": true,
+    "fes_grid_rows": 2304,
+    "plotting_stability_passed": true,
+    "fes_steps": 43000,
+    "fes_blocks": 43,
+    "fes_rmsd_threshold_kj_mol": 0.5,
+    "fes_stable_blocks": 5,
+    "cv_presets": 8,
+    "cv_samples": 41,
+    "steps": 1000,
+    "summary_table": "draft/results/openmm_cv_fes_summary.csv",
+    "fes_csv": "test_outputs/alanine_fes_converged/alanine_phi_psi_fes.csv",
+    "fes_summary_json": "test_outputs/alanine_fes_converged/alanine_fes_summary.json",
+    "cv_timeseries_csv": "test_outputs/alanine_cv_suite_final/alanine_cv_timeseries.csv"
+  },
+  "abfe_lite_case": {
+    "available": true,
+    "diagnostic_only": true,
+    "run_dir": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702",
+    "raw_summary_json_local_source": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/metal_biology_summary.json",
+    "diagnostic_source_json": "draft/results/abfe_lite_guided_exit_diagnostic_source.json",
+    "diagnostic_report": "draft/results/abfe_lite_guided_exit_diagnostic_report.md",
+    "windows": 12,
+    "samples": 2500,
+    "sim_ns": 5.0,
+    "bound_samples": 400,
+    "unbound_samples": 755,
+    "estimator_bound_samples": 340,
+    "estimator_unbound_samples": 69,
+    "affinity_like_fields_suppressed": true,
+    "suppressed_field_reason": "Short guided-exit diagnostic only; not production ABFE or a binding-affinity estimate.",
+    "diagnostic_scope": "guided_exit_state_gating_only",
+    "binding_affinity_confidence": "not_applicable",
+    "diagnostic_note": "Guided-exit hold windows are reported as trajectory diagnostics, not production ABFE or binding affinity.",
+    "selected_state_gate_classifier": "bias_reweighted_hold_windows",
+    "state_gate_status": "hold_windows_populated",
+    "binding_estimate_allowed": false,
+    "max_exit_coordinate_a": 37.84397121929467,
+    "min_dist_at_max_exit_a": 29.004610084269622,
+    "contact_count_at_max_exit_4a": 0.0,
+    "far_hold_frames": 128,
+    "platform": "CPU",
+    "total_energy_mean_kj_mol": -725.0329054461357,
+    "windows_table": "draft/results/abfe_lite_diagnostic_windows.csv",
+    "occupancy_profile_table": "draft/results/abfe_lite_diagnostic_occupancy_profile.csv",
+    "overlap_table": "draft/results/abfe_lite_diagnostic_overlap.csv",
+    "summary_table": "draft/results/abfe_lite_diagnostic_summary.csv"
+  },
+  "qst_irc_case": {
+    "summary_table": "draft/results/qst_irc_workflow_summary.csv",
+    "psi4_case": {
+      "case": "Psi4 H + H2",
+      "engine": "Psi4 UHF/STO-3G",
+      "atoms": 3,
+      "qst2_qst3_ts_delta_kcal_mol": 0.000212,
+      "imaginary_mode_count": 1,
+      "primary_imag_cm1": 2982.405,
+      "irc_points": 25,
+      "irc_energy_span_kcal_mol": 23.166
+    },
+    "mopac_case": {
+      "case": "MOPAC SN2 capped cluster",
+      "engine": "MOPAC PM7",
+      "atoms": 21,
+      "qst2_qst3_ts_delta_kcal_mol": "",
+      "imaginary_mode_count": 1,
+      "primary_imag_cm1": 562.97,
+      "irc_points": 25,
+      "irc_energy_span_kcal_mol": 35.313
+    },
+    "mopac_publication_metrics": "draft/results/mopac_capped_cluster_workflow_metrics.csv",
+    "mopac_publication_figure": "draft/figures/figure_8_mopac_capped_cluster_reaction.pdf"
+  },
+  "traceability": {
+    "traceability_csv": "draft/results/reproducibility_traceability.csv",
+    "workflow_reproduction_commands": "draft/results/workflow_reproduction_commands.csv"
+  },
+  "artifact_manifest": {
+    "path": "draft/results/artifact_manifest.csv",
+    "n_files": 86
+  }
+}

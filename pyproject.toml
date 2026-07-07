@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leonardo-pymol-suite"
+version = "0.2.0a1"
+description = "PyMOL-based structural bioinformatics workflow suite for molecular modeling, docking, simulation, and quantum workflow orchestration."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+  {name = "Juvenal Yosa"}
+]
+keywords = ["pymol", "structural-bioinformatics", "docking", "openmm", "psi4", "mopac"]
+
+[project.scripts]
+leonardo-readiness = "report_scientific_readiness:main"
+
+[tool.setuptools]
+packages = []
+py-modules = [
+  "ProtLigInteract",
+  "abfe_runtime",
+  "alphafold_runtime",
+  "background_tasks",
+  "bioseq_runtime",
+  "calibrate_abfe_group_compact",
+  "code_v2",
+  "compare_abfe_vs_docking",
+  "dock_runtime",
+  "genmodels",
+  "interaction_runtime",
+  "interaction_typing_runtime",
+  "leadopt_runtime",
+  "ligand_canvas_runtime",
+  "ligand_vib_refine_runtime",
+  "md_prepare_and_run_3ptb",
+  "md_prepare_and_run_3ptb_bound",
+  "modeler_runtime",
+  "mutator",
+  "openmm_dynamics_runtime",
+  "openmm_qmmm_runtime",
+  "psi4_cluster_runtime",
+  "psi4_runtime",
+  "qmmm_mopac_runtime",
+  "redock_runtime",
+  "report_scientific_readiness",
+  "run_abfe_benchmark_probe_check",
+  "run_ligand_vib_refine",
+  "scientific_readiness_runtime",
+  "small_molecule_runtime",
+  "smina_runtime",
+  "structure_fetch_runtime",
+  "task_monitor_runtime",
+  "train_abfe_steering_policy",
+  "trajectory_interaction_runtime",
+  "validate_3ptb_ben_parameterization",
+  "vs_runtime",
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+include = '\\.(py)$'
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+select = [
+  "E",  # pycodestyle errors
+  "F",  # Pyflakes
+  "I",  # isort
+]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "lf"

@@ -1,0 +1,140 @@
+{
+  "pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/3PTB.pdb",
+  "ligand": {
+    "chain": "A",
+    "resi": "1",
+    "resn": "BEN",
+    "crystal_atoms": 9
+  },
+  "platform": "CPU",
+  "restraints": {
+    "protein_backbone": 893,
+    "protein_sidechain": 736,
+    "ligand_heavy": 9
+  },
+  "energies_kj_mol": {
+    "initial": -7594.439660728189,
+    "final": -15520.893237339938,
+    "delta": -7926.45357661175
+  },
+  "ring_before": {
+    "bond_lengths_ang": {
+      "C1-C2": 1.3694816537653967,
+      "C2-C3": 1.4008957848462522,
+      "C3-C4": 1.403983974267515,
+      "C4-C5": 1.3968571866873176,
+      "C5-C6": 1.3928025703594908,
+      "C6-C1": 1.3842127726617721
+    },
+    "min_ang": 1.3694816537653967,
+    "max_ang": 1.403983974267515,
+    "spread_ang": 0.03450232050211843,
+    "mean_ang": 1.3913723237646243
+  },
+  "ring_after": {
+    "bond_lengths_ang": {
+      "C1-C2": 1.4158941714060564,
+      "C2-C3": 1.4032591219228752,
+      "C3-C4": 1.402690286682084,
+      "C4-C5": 1.400221173384749,
+      "C5-C6": 1.4057335392277768,
+      "C6-C1": 1.4175043159369867
+    },
+    "min_ang": 1.400221173384749,
+    "max_ang": 1.4175043159369867,
+    "spread_ang": 0.01728314255223773,
+    "mean_ang": 1.407550434760088
+  },
+  "mol2_charge_sum_e": 0.999,
+  "ffxml_audit": {
+    "counts": {
+      "atoms": 18,
+      "residue_bonds": 18,
+      "bond_terms": 18,
+      "angle_terms": 27,
+      "torsion_terms": 45,
+      "torsion_rows_merged": 45,
+      "proper_torsion_terms": 36,
+      "improper_torsion_terms": 9
+    },
+    "charge": {
+      "sum_e": 0.9989999999999997,
+      "min_e": -0.46909999999999996,
+      "max_e": 0.5224,
+      "abs_sum_e": 4.2753999999999985
+    },
+    "lj": {
+      "sigma_min_nm": 0.1106496207546381,
+      "sigma_max_nm": 0.33152123100281,
+      "epsilon_min_kj_mol": 0.0418400000713784,
+      "epsilon_max_kj_mol": 0.7112799996555186,
+      "zero_epsilon_atoms": 0
+    },
+    "flags": {
+      "has_bonded_terms": true,
+      "has_lj_terms": true,
+      "has_nonzero_charge": true
+    },
+    "source_prmtop": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.prmtop",
+    "residue_name": "BEN",
+    "source_system": {
+      "particles": 18,
+      "force_counts": {
+        "HarmonicBondForce": 1,
+        "HarmonicAngleForce": 1,
+        "PeriodicTorsionForce": 1,
+        "NonbondedForce": 1
+      },
+      "nonbonded_exceptions": 78
+    },
+    "roundtrip": {
+      "ok": true,
+      "tolerance": 1e-08,
+      "counts": {
+        "particles_source": 18,
+        "particles_target": 18,
+        "nonbonded_particles_source": 18,
+        "nonbonded_particles_target": 18,
+        "nonbonded_exceptions_source": 78,
+        "nonbonded_exceptions_target": 78,
+        "bonds_source": 18,
+        "bonds_target": 18,
+        "angles_source": 27,
+        "angles_target": 27,
+        "torsions_source": 45,
+        "torsions_target": 45
+      },
+      "force_counts_source": {
+        "HarmonicBondForce": 1,
+        "HarmonicAngleForce": 1,
+        "PeriodicTorsionForce": 1,
+        "NonbondedForce": 1
+      },
+      "force_counts_target": {
+        "HarmonicBondForce": 1,
+        "PeriodicTorsionForce": 1,
+        "NonbondedForce": 1,
+        "HarmonicAngleForce": 1
+      },
+      "force_counts_match": true,
+      "max_abs_diff": {
+        "particle_mass_da": 0.0,
+        "nonbonded_particles": 4.813927034774679e-13,
+        "nonbonded_exceptions": 3.7576138034456363e-10,
+        "bonds": 5.820766091346741e-11,
+        "angles": 5.684341886080802e-14,
+        "torsions": 0.0
+      },
+      "issues": []
+    }
+  },
+  "files": {
+    "prepared_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/3PTB_BEN_prepared.pdb",
+    "final_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/3PTB_BEN_minimized.pdb",
+    "mol2": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_gaff2.mol2",
+    "frcmod": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_gaff2.frcmod",
+    "prmtop": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.prmtop",
+    "inpcrd": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.inpcrd",
+    "ffxml": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_openmm_ff.xml"
+  }
+}

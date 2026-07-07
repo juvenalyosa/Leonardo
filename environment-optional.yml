@@ -1,0 +1,23 @@
+name: protliginteract-optional
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip
+
+  # Optional ML / AF2 stack (kept separate to avoid breaking core env).
+  - pip:
+      - colabfold
+      - alphafold-colabfold
+      - jax
+      - jaxlib
+      - deepchem
+      - catboost
+      - xgboost
+
+# Notes:
+# - Legacy AutoDockTools scripts (prepare_receptor4.py / prepare_ligand4.py /
+#   prepare_flexreceptor4.py) are not included here because packages are often
+#   unavailable on osx-arm64. The plugin works without them using obabel/smina.

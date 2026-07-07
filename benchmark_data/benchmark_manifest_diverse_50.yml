@@ -1,0 +1,77 @@
+version: 1
+name: openff_diverse_abfe_panel_50
+source: openforcefield/protein-ligand-benchmark
+description: Reduced diverse panel capped to 50 ligand cases across 15 targets.
+global:
+  cases:
+    - all
+  selection:
+    include_no_exp: true
+    min_heavy_atoms: 24
+    max_heavy_atoms: 90
+    min_mw: 240.0
+    max_mw: 1000.0
+    diverse_n: 0
+    diversity_size_weight: 0.25
+    diversity_seed: 20260213
+targets:
+  - name: thrombin
+    enabled: true
+    selection:
+      diverse_n: 4
+  - name: cdk2
+    enabled: true
+    selection:
+      diverse_n: 2
+  - name: cdk8
+    enabled: true
+    selection:
+      diverse_n: 5
+  - name: cmet
+    enabled: true
+    selection:
+      diverse_n: 1
+  - name: eg5
+    enabled: true
+    selection:
+      diverse_n: 3
+  - name: hif2a
+    enabled: true
+    selection:
+      diverse_n: 6
+  - name: mcl1
+    enabled: true
+    selection:
+      diverse_n: 3
+  - name: p38
+    enabled: true
+    selection:
+      diverse_n: 4
+  - name: pde2
+    enabled: true
+    selection:
+      diverse_n: 3
+  - name: pfkfb3
+    enabled: true
+    selection:
+      diverse_n: 5
+  - name: ptp1b
+    enabled: true
+    selection:
+      diverse_n: 3
+  - name: shp2
+    enabled: true
+    selection:
+      diverse_n: 2
+  - name: syk
+    enabled: true
+    selection:
+      diverse_n: 7
+  - name: tnks2
+    enabled: true
+    selection:
+      diverse_n: 1
+  - name: tyk2
+    enabled: true
+    selection:
+      diverse_n: 1

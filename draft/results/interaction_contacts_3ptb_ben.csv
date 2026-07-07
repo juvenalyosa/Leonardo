@@ -1,0 +1,15 @@
+interaction_type,protein_chain,protein_resi,protein_resn,protein_atom,ligand_resn,ligand_atom,distance_A
+Hydrophobic contact,A,213,VAL,CG1,BEN,C5,3.696
+Polar contact,A,219,GLY,O,BEN,N1,2.815
+Polar contact,A,190,SER,OG,BEN,N2,3.042
+Salt bridge candidate,A,189,ASP,OD2,BEN,N2,2.872
+vdW contact,A,190,SER,O,BEN,C,3.141
+vdW contact,A,226,GLY,CA,BEN,N2,3.372
+vdW contact,A,189,ASP,CG,BEN,N2,3.44
+vdW contact,A,195,SER,OG,BEN,C5,3.647
+vdW contact,A,219,GLY,O,BEN,C2,3.667
+vdW contact,A,192,GLN,OE1,BEN,C3,3.668
+vdW contact,A,216,GLY,N,BEN,C2,3.691
+vdW contact,A,220,CYS,CA,BEN,N1,3.709
+vdW contact,A,191,CYS,O,BEN,C5,3.772
+vdW contact,A,215,TRP,O,BEN,N2,3.843

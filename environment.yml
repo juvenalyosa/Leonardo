@@ -1,0 +1,85 @@
+name: protliginteract-full
+channels:
+  - conda-forge
+  - bioconda
+  - salilab
+
+dependencies:
+  # Core interpreter and package managers
+  - python=3.11
+  - pip
+
+  # Core plugin/runtime scientific stack
+  - numpy>=1.26,<2
+  - scipy
+  - pandas
+  - pyyaml
+  - biopython
+  - matplotlib
+  - scikit-learn
+  - rdkit>=2023.09
+
+  # MD / ABFE / force-field workflows
+  - openmm>=8.2
+  - openmmforcefields
+  - openff-toolkit
+  - openff-forcefields
+  - openff-amber-ff-ports
+  - pdbfixer
+  - pymbar
+  - ambertools
+  - mdtraj
+  - cvxpy
+  - ecos
+
+  # Docking / structure prep / pocket tools
+  - openbabel
+  - smina
+  - fpocket
+  - meeko
+
+  # QM and visualization stack
+  - psi4=1.9.*
+  - mopac
+  - libint=2.9.*
+  - pcmsolver=1.2.3
+  - qcelemental>=0.28,<1.0
+  - qcengine>=0.30,<1.0
+  - pymol-open-source
+  - pyqtwebengine
+
+  # Homology modeling
+  - modeller
+
+  # Bioinformatics sequence analysis (local CLI support for sequence workflows)
+  - blast
+  - hmmer
+  - clustalo
+  - mafft
+
+  # Build/runtime helpers used by scripts
+  - cmake
+  - ninja
+  - pkg-config
+  - tqdm
+  - pytest
+  - black
+  - ruff
+  - pre-commit
+
+  # Python extras used directly by the plugin/workflows
+  - pip:
+      - dimorphite-dl
+      - "opencv-python==4.13.0.92"       # matches the recorded protliginteract-full lockfile/test environment
+      - "opencv-contrib-python==4.11.0.86"
+      - "mediapipe>=0.10.0,<0.10.10"    # 0.10.10+ forces numpy>=2 which breaks pandas/prody
+
+# Notes:
+# - MODELLER requires a valid license key in your environment.
+# - GPU workflows require system CUDA/NVIDIA drivers (e.g., nvidia-smi), which are OS-level installs.
+# - For reproducible solves on new machines, use strict channel priority:
+#   conda config --set channel_priority strict
+# - Optional extras (install after env creation if needed):
+#   pip install colabfold alphafold-colabfold catboost xgboost deepchem
+# - Legacy AutoDockTools helpers (prepare_receptor4.py / prepare_ligand4.py):
+#   install `mgltools` and/or `autodock-vina` from bioconda in a separate step if required.

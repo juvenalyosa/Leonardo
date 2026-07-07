@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use Leonardo, please cite the archived release and associated manuscript."
+title: "Leonardo: a PyMOL-based structural bioinformatics workflow suite"
+version: "0.2.0a1"
+date-released: "2026-07-07"
+type: software
+license: MIT
+authors:
+  - family-names: Yosa
+    given-names: Juvenal
+  - family-names: Groves
+    given-names: Matthew R.
+  - family-names: van der Wekken
+    given-names: Anthonie J.
+abstract: "Leonardo is a PyMOL-based workflow layer for structural bioinformatics, molecular modeling setup, interaction analysis, docking/redocking, simulation diagnostics and quantum reaction-path orchestration."

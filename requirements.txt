@@ -1,0 +1,4 @@
+numpy<2
+biopython
+opencv-python>=4.8.0,<4.11.0
+mediapipe>=0.10.0,<0.10.10
