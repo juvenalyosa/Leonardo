@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use Leonardo, please cite the archived release and associated manuscript."
 title: "Leonardo: a PyMOL-based structural bioinformatics workflow suite"
-version: "0.2.0a3"
+version: "0.2.0a4"
 date-released: "2026-07-07"
 type: software
 license: MIT

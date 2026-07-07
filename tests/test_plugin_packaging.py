@@ -49,6 +49,19 @@ def _dist_zip_path() -> Path:
     return zip_path
 
 
+def _required_release_files() -> set[str]:
+    return {
+        "README.md",
+        "LICENSE",
+        "THIRD_PARTY_LICENSES.md",
+        "CITATION.cff",
+        "environment.yml",
+        "environment-protliginteract-full.lock.yml",
+        "build_leonardo_zip.sh",
+        "install_leonardo.sh",
+    }
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -60,6 +73,12 @@ def _sha256(path: Path) -> str:
 def test_build_script_packages_code_v2_local_module_imports():
     """Every local module imported by code_v2 must be copied into the PyMOL ZIP."""
     missing = sorted(_code_v2_local_module_files() - _build_script_copied_paths())
+    assert missing == []
+
+
+def test_build_script_packages_required_release_files():
+    """Keep license, citation and reviewer install metadata in the release ZIP."""
+    missing = sorted(_required_release_files() - _build_script_copied_paths())
     assert missing == []
 
 
@@ -80,6 +99,16 @@ def test_dist_zip_contains_packaged_code_v2_local_module_imports_when_present():
     with zipfile.ZipFile(zip_path) as zf:
         names = set(zf.namelist())
     missing = sorted(f"Leonardo/{module_file}" for module_file in _code_v2_local_module_files() if f"Leonardo/{module_file}" not in names)
+    assert missing == []
+
+
+def test_dist_zip_contains_required_release_files():
+    """Catch release ZIPs that omit compliance or reproduction files."""
+    zip_path = _dist_zip_path()
+
+    with zipfile.ZipFile(zip_path) as zf:
+        names = set(zf.namelist())
+    missing = sorted(f"Leonardo/{path}" for path in _required_release_files() if f"Leonardo/{path}" not in names)
     assert missing == []
 
 

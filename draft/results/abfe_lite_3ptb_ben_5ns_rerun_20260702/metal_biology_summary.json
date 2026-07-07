@@ -204,12 +204,12 @@
     "pull_k_max_kj_nm2": 8884.480762476896
   },
   "free_energy_proxy": {
-    "reweight_ess_unbound": 25.127099256402886,
-    "reweight_ess_bound": 161.16997173544476,
-    "n_bound_hold": 340,
-    "reweight_ess_total": 185.5142784821658,
-    "n_unbound_hold": 69,
     "selected_estimator": "bias_reweighted_hold_windows",
+    "n_bound_hold": 340,
+    "reweight_ess_unbound": 25.127099256402886,
+    "n_unbound_hold": 69,
+    "reweight_ess_bound": 161.16997173544476,
+    "reweight_ess_total": 185.5142784821658,
     "diagnostic_only": true,
     "binding_estimate_allowed": false,
     "binding_estimate_status": "diagnostic_only",

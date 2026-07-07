@@ -12,7 +12,7 @@ Technical support and bug reports: thinkai.col@gmail.com
 
 ## Pre-release and Manuscript Verification Status
 
-This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a3`, build `2026-07-07-r3`), not a final stable production release.
+This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a4`, build `2026-07-07-r4`), not a final stable production release.
 
 It is being shared so users can:
 
@@ -46,10 +46,24 @@ Current manuscript demonstrations include:
 
 - 3PTB/benzamidine interaction analysis and single-target template redocking
 - ligand-library quality control, not virtual-screening enrichment
-- short ACE-ALA-NME OpenMM/CV plotting diagnostics, not converged free energies
-- ABFE-lite setup/restraint diagnostics, not quantitative absolute binding free energies
-- Psi4/MOPAC QST-like TS/IRC workflow examples, not general transition-state accuracy
+- short ACE-ALA-NME OpenMM/CV diagnostic-grid plotting, not converged thermodynamic free energies
+- guided-exit binding diagnostics from the historical ABFE-lite module, not quantitative absolute binding free energies
+- Psi4/MOPAC mapped synchronous-transit guess and TS/IRC workflow examples, not general transition-state accuracy
 - a synthetic MOPAC capped-cluster reaction path, not full protein-derived QM/MM validation
+
+## Validation Status by Module
+
+| Module | Current status | Manuscript evidence |
+| --- | --- | --- |
+| Interaction analysis | Workflow checked on compact crystal examples; not a curated all-class atom-pair benchmark | 3PTB/BEN contact report plus broad ProLIF count comparison |
+| Pocket docking | Workflow checked for fpocket-to-smina handoff and reporting | fpocket pocket parsing, grid generation and smina output parsing |
+| Redocking | Workflow checked for one template-redocking target | 1STP/biotin, 15 seeds, 225 pose rows |
+| Ligand source and parametrization | QC and handoff checks; chemical correctness still depends on input protonation/tautomer state and external tools | 369 local SDF records parsed and summarized |
+| Virtual screening and lead optimization | Available workflow modules; enrichment or prospective hit validation not claimed | Library QC only in manuscript |
+| OpenMM dynamics | Setup, CV presets and diagnostic plotting checked; production convergence not claimed | ACE-ALA-NME CV traces and diagnostic-grid stability |
+| Guided-exit binding diagnostic | Resource-bounded trajectory/state-gating diagnostic; not production ABFE, Kd, Ki or IC50 | 3PTB/BEN 5 ns guided-exit diagnostic with populated state gates |
+| Psi4 and MOPAC reaction paths | Mapped synchronous-transit guess construction, engine handoff, frequency/IRC parsing and plotting checked | compact Psi4 and synthetic MOPAC reaction-path cases |
+| Protein modeling, AlphaFold, sequence bioinformatics and task monitor | Adapter/workflow modules around external tools and services | parser, payload and UI/backend tests; not algorithm benchmarks |
 
 ## What Leonardo Is
 
@@ -61,7 +75,7 @@ Leonardo is not just an interaction viewer. It is a modular scientific workbench
 - crystal-ligand redocking and WT vs mutant comparison
 - virtual screening and hit-to-lead optimization
 - trajectory analysis and local free-energy diagnostics
-- OpenMM dynamics, sampling, and ABFE-lite workflows
+- OpenMM dynamics, sampling, and guided-exit diagnostic workflows
 - MOPAC active-site-cluster/reaction workflows and optional OpenMM/MOPAC QM/MM helpers
 - Psi4-based quantum chemistry workflows
 - AlphaFold/ColabFold result generation and inspection
@@ -72,16 +86,16 @@ The architecture is intentionally split between a PyMOL/Qt UI layer and runtime 
 
 ## Main Capabilities
 
-- Detect and visualize hydrogen bonds, halogen bonds, cation-pi, pi-pi, metal coordination, hydrophobic contacts, and van der Waals contact clusters.
+- Report candidate hydrogen bonds, halogen bonds, cation-pi, pi-pi, metal coordination, hydrophobic contacts, and van der Waals contact clusters using conservative rule-based typing. The manuscript demonstrates a subset of observed contact classes and does not claim a complete curated benchmark for every class.
 - Search PubChem, upload ligands, edit ligands in 2D, rebuild them in 3D, derive charges, and export docking/OpenMM-ready files.
 - Run `fpocket` for pocket discovery and `smina` for docking, including flexible sidechain docking and repeated docking for confidence estimates.
 - Perform true redocking against a crystal ligand, calculate ligand RMSD to the reference pose, and compare WT vs mutant systems or MODELLER ensembles.
 - Screen SDF libraries with RDKit/Meeko/smina and promote hits into lead optimization.
 - Generate analogs from virtual-screening hits, filter them by medicinal chemistry rules, rank them by MPO, and optionally refine top compounds with OpenMM + PyMBAR.
 - Run MD preparation and production workflows in OpenMM in gas phase, implicit solvent, or explicit solvent.
-- Launch advanced OpenMM workflows such as umbrella sampling, metadynamics, ABFE-lite, and an OpenMM-ML wrapper path.
-- Run MOPAC active-site-cluster reaction workflows and optional OpenMM/MOPAC QM/MM helper routines for probe, electrostatic, reaction-scan, and pose-rescoring experiments.
-- Run Psi4 geometry optimization, frequencies, thermochemistry, TS search, IRC, QST-like reaction paths, electrostatic mapping, orbital visualization, and ESP-fit charge derivation.
+- Prepare and launch OpenMM workflows such as umbrella-style setup, metadynamics-style diagnostics, guided-exit binding diagnostics, and an OpenMM-ML wrapper path. Production convergence and free-energy uncertainty remain user responsibilities.
+- Run MOPAC semiempirical capped-cluster reaction workflows and optional OpenMM/MOPAC QM/MM helper routines for probe, electrostatic, reaction-scan, and pose-rescoring experiments. The manuscript demonstrates a synthetic capped-cluster case, not a protein-derived enzymatic validation.
+- Run Psi4 geometry optimization, frequencies, thermochemistry, TS search, IRC, mapped synchronous-transit guess reaction paths, electrostatic mapping, orbital visualization, and ESP-fit charge derivation.
 - Import sequences from structures or RCSB, analyze motifs/disorder/TM/signal heuristics, compute local MSA conservation, and launch external sequence-analysis web tools.
 - Build repaired or mutated proteins with MODELLER from observed chains or full sequences.
 
@@ -412,7 +426,7 @@ The main runtime dependencies by workflow are:
 | Redocking | `smina`, `obabel` | none strictly required | `rdkit`, optional flexible-receptor scripts |
 | Virtual screening | `smina`, `obabel` | none strictly required | `rdkit`, `meeko` |
 | Lead optimization | `smina`, `obabel` | none strictly required | `rdkit`, `openmm`, `pymbar`, AmberTools |
-| ABFE-lite | `antechamber`, `parmchk2`, `tleap` | `openmm`, `pymbar` | `rdkit`, `fpocket`, `matplotlib`, `scikit-learn` |
+| Guided-exit binding diagnostic (historical ABFE-lite) | `antechamber`, `parmchk2`, `tleap` | `openmm`, `pymbar` | `rdkit`, `fpocket`, `matplotlib`, `scikit-learn` |
 | OpenMM/MOPAC QM-MM helpers | `mopac` | `openmm` | none |
 | Psi4 QM | `psi4` | `psi4`, `qcelemental` | `rdkit`, `matplotlib`, AmberTools |
 
@@ -688,7 +702,7 @@ Main stages:
 5. define or edit the docking grid
 6. run `smina`
 7. inspect ranked poses
-8. load a pose into PyMOL and optionally run interaction analysis or ABFE-lite
+8. load a pose into PyMOL and optionally run interaction analysis or the guided-exit diagnostic
 
 Main features:
 
@@ -699,7 +713,7 @@ Main features:
 - repeated docking runs with confidence statistics
 - direct pose loading into the scene
 - immediate follow-up interaction analysis on a selected pose
-- ABFE-lite launch from the selected docking pose
+- guided-exit diagnostic launch from the selected docking pose
 
 Use it when:
 
@@ -802,7 +816,7 @@ Capabilities include:
 - occupancy and distance distribution for a selected interaction
 - distribution analysis across all interactions
 - trajectory energy discrimination
-- trajectory-based ABFE-lite diagnostic summaries
+- trajectory-based guided-exit diagnostic summaries
 - interaction persistence and post-processing
 
 Use it when:
@@ -832,13 +846,13 @@ Analysis shortcuts from this panel:
 - open Trajectory Tools
 - compute interactions
 - run energy discrimination
-- run ABFE-lite on the resulting trajectory
+- run the guided-exit binding diagnostic on the resulting trajectory
 
 Advanced workflows launched from this panel:
 
 - umbrella sampling
 - metadynamics
-- ABFE-lite
+- guided-exit binding diagnostic
 - OpenMM-ML wrapper
 
 Use it when:
@@ -846,11 +860,11 @@ Use it when:
 - you want to go from a prepared receptor-ligand system to MD without leaving the suite
 - you want OpenMM setup connected directly to the ligand force-field and PyMOL scene
 
-### ABFE-lite
+### Guided-Exit Binding Diagnostic
 
-ABFE-lite is Leonardo's local guided-exit diagnostic workflow for receptor-ligand systems. It is not a replacement for rigorous large-scale free-energy pipelines, and the current manuscript evidence should be read as setup, restraint, reporting, and resource-guardrail verification rather than a quantitative binding-affinity benchmark.
+The guided-exit binding diagnostic is the workflow historically named ABFE-lite in the user interface and codebase. It is Leonardo's local guided-exit diagnostic workflow for receptor-ligand systems. It is not a replacement for rigorous large-scale free-energy pipelines, and the current manuscript evidence should be read as setup, restraint, reporting, state-gating and resource-guardrail verification rather than a quantitative binding-affinity benchmark.
 
-ABFE-lite includes:
+The guided-exit diagnostic includes:
 
 - ligand XML use from Ligand Source & Prep
 - pocket descriptor support
@@ -907,8 +921,8 @@ Supported operations:
 - frequencies and thermochemistry
 - combined stationary-point workflow
 - transition-state search
-- QST2-like TS workflow from reactant + product
-- QST3-like TS workflow from reactant + product + TS guess
+- mapped synchronous-transit TS guess workflow from reactant + product
+- mapped synchronous-transit TS guess workflow from reactant + product + TS guess
 - IRC from the TS
 - ESP-fit charges to MOL2
 
@@ -1005,7 +1019,7 @@ Use it when:
 3. Use `Pocket Discovery & Docking` to run `fpocket` and `smina`.
 4. Load the best pose into PyMOL.
 5. Compute interactions.
-6. Optionally launch `ABFE-lite` or `OpenMM Dynamics`.
+6. Optionally launch the guided-exit diagnostic or `OpenMM Dynamics`.
 
 ### Pattern 3: Crystal validation and mutant comparison
 
@@ -1062,7 +1076,7 @@ PYTHONPATH=. pytest -q tests/test_bioseq_runtime.py tests/test_runtime_modules.p
 - `redock_runtime.py` - redocking runtime and RMSD helpers
 - `vs_runtime.py` - virtual-screening runtime
 - `leadopt_runtime.py` - lead-optimization ranking and refinement helpers
-- `abfe_runtime.py` - ABFE-lite runtime helpers
+- `abfe_runtime.py` - guided-exit diagnostic runtime helpers for the historical ABFE-lite module
 - `alphafold_runtime.py` - AlphaFold result discovery and parsing
 - `openmm_qmmm_runtime.py` - OpenMM-side QM/MM helpers
 - `qmmm_mopac_runtime.py` - MOPAC QM/MM helpers
@@ -1149,7 +1163,7 @@ Check that the MODELLER license is configured. Leonardo can import the package o
 
 ## Advanced Benchmarking
 
-The repository also contains ABFE-lite benchmarking and tuning scripts, including:
+The repository also contains historical ABFE-lite benchmarking and tuning scripts, including:
 
 - `benchmark_abfe_lite_thrombin.py`
 - `tune_abfe_lite_manifest.py`

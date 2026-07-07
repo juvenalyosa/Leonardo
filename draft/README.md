@@ -10,6 +10,7 @@ This directory contains the current publication draft and reproducible assets.
 - `scripts/generate_bmc_validation_assets.py`: reproducible workflow-check figure/table generator.
 - `results/workflow_verification_summary.json`: numerical summary used in the manuscript.
 - `results/artifact_manifest.csv`: file-level byte counts and SHA-256 checksums for manuscript assets.
+- `results/release_manifest.csv`: short reviewer-release manifest covering ZIP, PDF, licenses, environment files and required fixtures.
 - `results/pytest_validation.xml`: repository test report used by the manuscript.
 - `figures/figure_*.pdf` and `figures/figure_*.png`: manuscript figures.
 - `templates/springer-nature-latex-template.zip`: official Springer Nature LaTeX package downloaded for this draft.
@@ -25,8 +26,8 @@ This directory contains the current publication draft and reproducible assets.
 - Figure 7: 3PTB/benzamidine interaction-contact analysis.
 - Figure 8: single-target 1STP/biotin redocking workflow check.
 - Figure 9: local ligand-library QC descriptor analysis.
-- Figure 10: OpenMM alanine-dipeptide CV/FES backend and plotting check.
-- Figure 11: guided-exit binding diagnostic using the historical ABFE-lite module.
+- Figure 10: OpenMM alanine-dipeptide CV diagnostic-grid backend and plotting check.
+- Figure 11: guided-exit state-gating diagnostic using the historical ABFE-lite module.
 - Figure 12: MOPAC PM7 synthetic capped-cluster QST2/QST3/TS/IRC example.
 - Figure 13: Psi4/MOPAC QST2/QST3/IRC reaction-path workflow check.
 

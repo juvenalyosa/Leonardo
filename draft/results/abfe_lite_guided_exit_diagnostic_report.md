@@ -1,4 +1,4 @@
-# ABFE-lite Guided-Exit Diagnostic Report
+# Guided-Exit State-Gating Diagnostic Report
 
 This reviewer-facing report describes trajectory and state-gating diagnostics only.
 Affinity-like estimator fields present in older raw run reports are intentionally excluded because this short guided-exit run is not a production absolute binding free-energy calculation.
@@ -9,7 +9,7 @@ Affinity-like estimator fields present in older raw run reports are intentionall
 - Simulation length: `5.0` ns
 - Samples used for diagnostics: `2500`
 - Sequential analysis segments: `12`
-- Bound/unbound hold-window counts: `340` / `69`
+- Accepted bound/unbound hold-window counts: `340` / `69`
 - Total/unbound effective sample diagnostic: `185.514` / `25.127`
 
 ## Exit-State Diagnostics

@@ -174,6 +174,29 @@ def save_image_figure(image_path: Path, stem: str, *, width_in: float = 7.2, bor
     save_figure(fig, stem)
 
 
+def project_version() -> str:
+    """Read the package version used to label reviewer artifacts."""
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
+    if not match:
+        raise RuntimeError("Could not read project version from pyproject.toml")
+    return str(match.group(1))
+
+
+def plugin_build_label() -> str:
+    """Read the UI build string so manuscript screenshots do not go stale."""
+    text = (ROOT / "code_v2.py").read_text(encoding="utf-8")
+    match = re.search(r'^PLUGIN_BUILD\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
+    if not match:
+        return "build unknown"
+    return str(match.group(1))
+
+
+def reviewer_tag() -> str:
+    """Return the release tag expected for the current reviewer snapshot."""
+    return f"v{project_version()}-reviewer"
+
+
 def make_dict_writer(handle, fieldnames: list[str]) -> csv.DictWriter:
     """Write CSVs with stable LF line endings for cleaner git diffs."""
     return csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
@@ -383,11 +406,73 @@ def build_leonardo_suite_interface_figure() -> dict:
     screenshot = ROOT / "leonardo.png"
     if not screenshot.exists():
         return {"available": False, "reason": "leonardo.png not found"}
-    save_image_figure(screenshot, "figure_0_leonardo_suite_interface", width_in=7.2, border=True)
+    img = plt.imread(str(screenshot))
+    height_px, width_px = img.shape[:2]
+    aspect = float(width_px) / max(1.0, float(height_px))
+    fig_height = max(3.2, min(6.2, 7.2 / max(0.2, aspect)))
+    fig, ax = plt.subplots(figsize=(7.2, fig_height))
+    ax.imshow(img)
+    ax.set_axis_off()
+    ax.set_xlim(-0.5, width_px - 0.5)
+    ax.set_ylim(height_px - 0.5, -0.5)
+    # The source screenshot is intentionally kept as captured, but the build
+    # badge is overlaid at figure-generation time so reviewer PDFs always match
+    # the release metadata without requiring a new GUI capture for every tag.
+    badge_x = width_px * 0.785
+    badge_y = height_px * 0.035
+    badge_w = width_px * 0.195
+    badge_h = height_px * 0.105
+    ax.add_patch(
+        mpl.patches.FancyBboxPatch(
+            (badge_x, badge_y),
+            badge_w,
+            badge_h,
+            boxstyle="round,pad=0.015,rounding_size=8",
+            facecolor="#2F343B",
+            edgecolor="#2F343B",
+            linewidth=0.0,
+            zorder=5,
+        )
+    )
+    ax.text(
+        badge_x + badge_w * 0.08,
+        badge_y + badge_h * 0.36,
+        f"Build {plugin_build_label()}",
+        ha="left",
+        va="center",
+        color="white",
+        fontsize=7.8,
+        fontweight="bold",
+        zorder=6,
+    )
+    ax.text(
+        badge_x + badge_w * 0.08,
+        badge_y + badge_h * 0.70,
+        reviewer_tag(),
+        ha="left",
+        va="center",
+        color="#DDE3EA",
+        fontsize=7.2,
+        fontweight="bold",
+        zorder=6,
+    )
+    ax.add_patch(
+        mpl.patches.Rectangle(
+            (-0.5, -0.5),
+            width_px,
+            height_px,
+            fill=False,
+            edgecolor="#B8C0C8",
+            linewidth=1.0,
+        )
+    )
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    save_figure(fig, "figure_0_leonardo_suite_interface")
     return {
         "available": True,
         "input": str(screenshot.relative_to(ROOT)),
         "figure": "draft/figures/figure_0_leonardo_suite_interface.pdf",
+        "snapshot_tag": reviewer_tag(),
     }
 
 
@@ -607,6 +692,38 @@ def write_artifact_manifest(paths: list[Path]) -> dict:
     return {"path": str(out_csv.relative_to(ROOT)), "n_files": len(rows), "scope": "all draft/results and draft/figures files plus release-critical source artifacts"}
 
 
+def write_release_manifest(entries: list[tuple[str, Path]]) -> dict:
+    """Write a compact manifest for assets reviewers should receive.
+
+    Unlike the full artifact manifest, this file is intentionally short and
+    release-oriented.  It records whether each expected reviewer asset exists,
+    plus checksums for files present in the source tree at generation time.
+    """
+    rows = []
+    for role, path in entries:
+        present = bool(path.exists() and path.is_file())
+        row = {
+            "release_tag": reviewer_tag(),
+            "role": role,
+            "path": str(path.relative_to(ROOT)) if path.is_absolute() and path.exists() else str(path),
+            "present": str(present).lower(),
+            "bytes": path.stat().st_size if present else "",
+            "sha256": sha256_file(path) if present else "",
+        }
+        rows.append(row)
+    out_csv = RESULTS_DIR / "release_manifest.csv"
+    with out_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, ["release_tag", "role", "path", "present", "bytes", "sha256"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return {
+        "path": str(out_csv.relative_to(ROOT)),
+        "release_tag": reviewer_tag(),
+        "n_rows": len(rows),
+        "missing": [row["path"] for row in rows if row["present"] != "true"],
+    }
+
+
 def write_workflow_traceability_tables(summary: dict) -> dict:
     """Write reviewer-facing traceability tables from the current run summary.
 
@@ -642,7 +759,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "source_artifacts": "draft/results/ligand_library_qc_descriptors.csv; draft/results/ligand_library_qc_summary.csv; draft/results/source_snapshots/openmm_alanine/*",
             "rebuilt_output": "draft/figures/figure_6_ligand_library_qc.pdf; draft/figures/figure_7_openmm_cv_fes_workflow_check.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
-            "scope_of_claim": "Ligand QC and compact OpenMM plotting checks; not enrichment or thermodynamic free-energy benchmarking.",
+            "scope_of_claim": "Ligand QC and compact OpenMM diagnostic-grid plotting checks; not enrichment, converged FES or thermodynamic free-energy benchmarking.",
         },
         {
             "manuscript_item": "Guided-exit binding diagnostic",
@@ -741,7 +858,7 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "release identity should match reviewer snapshot",
             "status": "closed_by_version_alignment",
-            "current_evidence": "Package metadata, CITATION.cff and README report Leonardo 0.2.0a3, matching the reviewer snapshot tag v0.2.0a3-reviewer.",
+            "current_evidence": f"Package metadata, CITATION.cff and README report Leonardo {project_version()}, matching the reviewer snapshot tag {reviewer_tag()}.",
             "remaining_action": "Mint a permanent public archive DOI for the exact submission release.",
         },
         {
@@ -786,15 +903,15 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
             "remaining_action": "Add multi-target redocking only if broader docking claims are desired.",
         },
         {
-            "concern": "ABFE-lite should not report BFE/Kd/IC50 without production ABFE corrections",
+            "concern": "guided-exit diagnostic should not report BFE/Kd/IC50 without production ABFE corrections",
             "status": "closed_by_scope_control",
             "current_evidence": "Reviewer-facing guided-exit diagnostic assets suppress affinity-like fields and report state gating only.",
             "remaining_action": "Implement standard-state/restraint corrections, uncertainty and replicated sampling before reporting binding affinity.",
         },
         {
-            "concern": "OpenMM alanine FES should not be presented as a biological benchmark",
+            "concern": "OpenMM alanine diagnostic grid should not be presented as a biological benchmark",
             "status": "closed_by_scope_control",
-            "current_evidence": "Text, figure captions and JSON metadata describe the alanine example as backend/plotting-stability diagnostics, not physical free-energy convergence.",
+            "current_evidence": "Text, figure captions and JSON metadata describe the alanine example as backend/plotting-stability diagnostics, not physical free-energy convergence or an uncertainty-calibrated FES.",
             "remaining_action": "Add replicated reference comparisons before claiming force-field or enhanced-sampling accuracy.",
         },
         {
@@ -2425,7 +2542,7 @@ def analyze_openmm_cv_fes() -> dict:
     cbar.set_label("Shifted diagnostic grid (kJ/mol; clipped)")
     ax1.set_xlabel("Phi (degrees)")
     ax1.set_ylabel("Psi (degrees)")
-    ax1.set_title("Metadynamics diagnostic grid")
+    ax1.set_title("Diagnostic phi/psi grid")
     ax1.set_xlim(-180.0, 180.0)
     ax1.set_ylim(-180.0, 180.0)
     ax1.set_xticks([-180, -120, -60, 0, 60, 120, 180])
@@ -2713,7 +2830,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
     diagnostic_report.write_text(
         "\n".join(
             [
-                "# ABFE-lite Guided-Exit Diagnostic Report",
+                "# Guided-Exit State-Gating Diagnostic Report",
                 "",
                 "This reviewer-facing report describes trajectory and state-gating diagnostics only.",
                 "Affinity-like estimator fields present in older raw run reports are intentionally excluded because this short guided-exit run is not a production absolute binding free-energy calculation.",
@@ -2724,7 +2841,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
                 f"- Simulation length: `{finite_metric(inputs.get('sim_ns', np.nan), digits=3)}` ns",
                 f"- Samples used for diagnostics: `{n_samples}`",
                 f"- Sequential analysis segments: `{len(window_rows)}`",
-                f"- Bound/unbound hold-window counts: `{estimator_bound_n}` / `{estimator_unbound_n}`",
+                f"- Accepted bound/unbound hold-window counts: `{estimator_bound_n}` / `{estimator_unbound_n}`",
                 f"- Total/unbound effective sample diagnostic: `{finite_metric(reweight_ess_total)}` / `{finite_metric(reweight_ess_unbound)}`",
                 "",
                 "## Exit-State Diagnostics",
@@ -2820,11 +2937,12 @@ def build_abfe_lite_diagnostic_example() -> dict:
             label="accepted unbound",
             zorder=5,
         )
-    ax1.axhline(10.0, color="#555B63", linestyle="--", linewidth=0.95, alpha=0.75)
+    state_gate_threshold_a = finite_or_none(state_diag.get("unbound_site_com_threshold_a", 10.0)) or 10.0
+    ax1.axhline(state_gate_threshold_a, color="#555B63", linestyle="--", linewidth=0.95, alpha=0.75)
     ax1.text(
         0.985,
-        10.45,
-        "unbound distance threshold",
+        state_gate_threshold_a + 0.45,
+        f"unbound gate: z >= {state_gate_threshold_a:.1f} Å",
         transform=ax1.get_yaxis_transform(),
         ha="right",
         va="bottom",
@@ -2946,7 +3064,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
     )
     ax3.set_xlabel("Exit coordinate (Å)")
     ax3.set_ylabel(r"Relative $-\ln$ occupancy")
-    ax3.set_title("Occupancy diagnostic and state gates")
+    ax3.set_title("State-gating occupancy diagnostic")
     ess = finite_or_none(free_energy.get("reweight_ess_total", np.nan))
     selected_estimator = str(free_energy.get("selected_estimator", "") or "")
     _ = selected_estimator
@@ -2956,8 +3074,9 @@ def build_abfe_lite_diagnostic_example() -> dict:
     max_exit_text = finite_metric(state_diag.get("max_exit_coordinate_a", np.nan), digits=1)
     min_dist_text = finite_metric(state_diag.get("min_dist_at_max_exit_a", np.nan), digits=1)
     status_text = (
-        f"Hold windows: {estimator_bound_n}/{estimator_unbound_n}\n"
-        f"ESS total/unbound: {ess_text}/{unbound_ess_text}\n"
+        f"Accepted gates: {estimator_bound_n}/{estimator_unbound_n}\n"
+        f"Diagnostic ESS: {ess_text}/{unbound_ess_text}\n"
+        f"Unbound gate: z >= {state_gate_threshold_a:.1f} Å\n"
         f"Max exit: {max_exit_text} Å\n"
         f"Min protein distance: {min_dist_text} Å\n"
         "Diagnostic only"
@@ -3001,7 +3120,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
     panel_label(ax2, "B")
     panel_label(ax3, "C")
     panel_label(ax4, "D")
-    fig.suptitle("Guided-exit binding diagnostic: 3PTB/benzamidine", fontsize=12.5, fontweight="bold", y=0.985)
+    fig.suptitle("Guided-exit state-gating diagnostic: 3PTB/benzamidine", fontsize=12.5, fontweight="bold", y=0.985)
     save_figure(fig, "figure_10_abfe_lite_diagnostics")
 
     return {
@@ -3876,6 +3995,20 @@ def main() -> None:
     }
     summary["traceability"] = write_workflow_traceability_tables(summary)
     summary["reviewer_concern_matrix"] = write_reviewer_concern_matrix(summary)
+    summary["release_manifest"] = write_release_manifest(
+        [
+            ("installable_pymol_plugin_zip", ROOT / "dist" / "Leonardo.zip"),
+            ("plugin_zip_sha256_sidecar", ROOT / "dist" / "Leonardo.zip.sha256"),
+            ("compiled_manuscript_pdf", DRAFT / "manuscript" / "main.pdf"),
+            ("source_license", ROOT / "LICENSE"),
+            ("third_party_license_summary", ROOT / "THIRD_PARTY_LICENSES.md"),
+            ("citation_metadata", ROOT / "CITATION.cff"),
+            ("conda_environment", ROOT / "environment.yml"),
+            ("macos_lock_environment", ROOT / "environment-protliginteract-full.lock.yml"),
+            ("abfe_fixture_prmtop", ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"),
+            ("abfe_fixture_mol2", ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2"),
+        ]
+    )
     manifest_paths = [
         *(FIG_DIR / f"{stem}.{ext}" for stem in CURRENT_FIGURE_STEMS for ext in ("pdf", "png")),
         FIG_DIR / "figure_4_3ptb_ben_pymol_binding_site.png",
@@ -3919,12 +4052,14 @@ def main() -> None:
         RESULTS_DIR / "pytest_validation.xml",
         RESULTS_DIR / "validation_summary.json",
         RESULTS_DIR / "workflow_verification_summary.json",
+        RESULTS_DIR / "release_manifest.csv",
         RESULTS_DIR / "reproducibility_traceability.csv",
         RESULTS_DIR / "workflow_reproduction_commands.csv",
         RESULTS_DIR / "reviewer_concern_matrix.csv",
         DRAFT / "scripts" / "generate_bmc_validation_assets.py",
         DRAFT / "scripts" / "run_interaction_external_benchmark.py",
         DRAFT / "manuscript" / "main.tex",
+        DRAFT / "manuscript" / "main.pdf",
         ROOT / "redocking_real_1stp" / "redocking_summary.tsv",
         SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_phi_psi_diagnostic_grid.csv",
         SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_plotting_stability.csv",
@@ -3942,6 +4077,8 @@ def main() -> None:
         ROOT / "LICENSE",
         ROOT / "THIRD_PARTY_LICENSES.md",
         ROOT / "CITATION.cff",
+        ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop",
+        ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2",
         ROOT / "pyproject.toml",
         ROOT / "Makefile",
         ROOT / "build_leonardo_zip.sh",
