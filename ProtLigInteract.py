@@ -11,20 +11,22 @@ import sys
 from importlib import import_module
 
 
-__version__ = "2.x"
+__version__ = "0.2.0a2"
+__build__ = "2026-07-07-r2"
 PLUGIN_MENU_NAME = "Leonardo"
 _dialog = None
 _plugin_module = None
 
 
 def _load_plugin_module():
-    global __version__, _plugin_module
+    global __version__, __build__, _plugin_module
     if _plugin_module is None:
         plugin_dir = os.path.dirname(os.path.abspath(__file__))
         if plugin_dir not in sys.path:
             sys.path.insert(0, plugin_dir)
         _plugin_module = import_module("code_v2")
-        __version__ = getattr(_plugin_module, "PLUGIN_BUILD", __version__)
+        __version__ = getattr(_plugin_module, "PLUGIN_VERSION", __version__)
+        __build__ = getattr(_plugin_module, "PLUGIN_BUILD", __build__)
     return _plugin_module
 
 

@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import sys
 import tempfile
 import numpy as np
 
@@ -13949,7 +13950,9 @@ def test_leadopt_runtime_run_accepts_generator_input(tmp_path):
     assert seen == [(0, 2, "Lead 0"), (1, 2, "Lead 1")]
 
 
-def test_package_import_is_lazy_and_does_not_require_pymol():
+def test_package_import_is_lazy_and_does_not_require_pymol(monkeypatch):
+    monkeypatch.syspath_prepend(str(os.path.dirname(os.path.dirname(__file__))))
+    sys.modules.pop("ProtLigInteract", None)
     pkg = importlib.import_module("ProtLigInteract")
-    assert getattr(pkg, "__version__", None) == "2.x"
+    assert getattr(pkg, "__version__", None) == "0.2.0a2"
     assert callable(getattr(pkg, "__init_plugin__", None))

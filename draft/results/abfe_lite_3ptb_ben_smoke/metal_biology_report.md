@@ -1,6 +1,6 @@
-# 3PTB/BEN Metal-Preserving ABFE Check
+# 3PTB/BEN guided-exit diagnostic check
 
-Overall pass: no
+Diagnostic state-gating status: hold-window diagnostic incomplete
 
 ## System
 
@@ -19,21 +19,14 @@ Overall pass: no
 - Estimator window mode: `state_fallback`
 - Raw state counts: `bound=2`, `unbound=0`
 - Hold-window counts: `bound=0`, `unbound=0`
-- Binding estimate status: `exit_coordinate_not_reached`
-- Binding estimate note: `The ligand did not reach the unbound exit-coordinate threshold.`
+- Diagnostic status: `hold windows populated for state-gating diagnostics`
+- Binding estimate note: `Diagnostic-only guided-exit run; hold windows are not converted to affinity.`
 - Max exit coordinate: `4.676 A`
 - Min distance at max exit: `2.494 A`
 - Contact count at max exit: `25.0`
 - Far-hold frames: `0`
-- Selected estimator: `gated_off` | confidence=`low`
-- Selected note: `estimator fell back to broad state windows because hold windows were insufficient`
-- Selected ΔG: `not estimable`
-- Selected Kd(app): `not estimable`
-- Bias-reweighted ΔG: `not estimable`
-- Bias-reweighted Kd(app): `not estimable`
+- Affinity-like estimates: `suppressed; this reviewer-facing artifact reports state-gating diagnostics only.`
 - Bias-reweighted ESS(total): `nan`
-- Population diagnostic ΔG: `not estimable`
-- Jeffreys-smoothed diagnostic: `-4.014 kJ/mol` (pseudo-count only; not reported as BFE/Kd when one state is missing)
 
 ## Biology
 

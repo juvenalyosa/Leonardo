@@ -1,6 +1,6 @@
-# 3PTB/BEN Metal-Preserving ABFE Check
+# 3PTB/BEN guided-exit diagnostic check
 
-Overall pass: yes
+Diagnostic state-gating status: hold-window diagnostic populated
 
 ## System
 
@@ -19,26 +19,14 @@ Overall pass: yes
 - Estimator window mode: `hold_only`
 - Raw state counts: `bound=400`, `unbound=755`
 - Hold-window counts: `bound=340`, `unbound=69`
-- Binding estimate status: `estimable_hold_windows`
-- Binding estimate note: `Bound and unbound hold windows are populated; selected estimator may be used if ESS checks pass.`
+- Diagnostic status: `hold windows populated for state-gating diagnostics`
+- Binding estimate note: `Diagnostic-only guided-exit run; hold windows are not converted to affinity.`
 - Max exit coordinate: `37.844 A`
 - Min distance at max exit: `29.005 A`
 - Contact count at max exit: `0.0`
 - Far-hold frames: `128`
-- Selected estimator: `bias_reweighted_hold_windows` | confidence=`high`
-- Selected note: `stable hold windows are present for both states and reweighting ESS is strong`
-- Estimate kind: `standard_state_apparent` | reliability=`apparent`
-- Reliability note: `Bound/unbound hold windows are populated; report as an apparent short-run estimate, not production ABFE.`
-- State-ratio ΔG: `-5.147 kJ/mol`
-- Standard-state correction: `-3.980 kJ/mol` (Ceff=`2.028e-01 M`)
-- Selected ΔG(app, standard): `-9.127 kJ/mol`
-- Selected Kd(app): `2.576e-02 M`
-- Bias-reweighted ΔG(state): `-5.147 kJ/mol`
-- Bias-reweighted ΔG(standard): `-9.127 kJ/mol`
-- Bias-reweighted Kd(app): `2.576e-02 M`
+- Affinity-like estimates: `suppressed; this reviewer-facing artifact reports state-gating diagnostics only.`
 - Bias-reweighted ESS(total): `185.51`
-- Population diagnostic ΔG: `-3.978 kJ/mol`
-- Jeffreys-smoothed diagnostic: `-3.964 kJ/mol` (pseudo-count only; not reported as BFE/Kd when one state is missing)
 
 ## Biology
 

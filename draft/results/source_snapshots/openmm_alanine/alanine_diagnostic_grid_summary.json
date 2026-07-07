@@ -1,0 +1,304 @@
+{
+  "ok": true,
+  "workflow": "alanine_dipeptide_phi_psi_metadynamics",
+  "converged": false,
+  "plotting_stability_passed": true,
+  "convergence_scope": "block-to-block plotting stability criterion; not physical free-energy convergence",
+  "criterion": {
+    "rmsd_kj_mol": 0.5,
+    "stable_blocks": 5
+  },
+  "blocks_run": 43,
+  "steps_total": 43000,
+  "block_steps": 1000,
+  "platform": "CPU",
+  "forcefield": "openff-2.2.1.offxml",
+  "initial_energy_kj_mol": -72.21836919920575,
+  "final_energy_kj_mol": -50.154947779682736,
+  "torsions": {
+    "phi": [
+      1,
+      3,
+      4,
+      6
+    ],
+    "psi": [
+      3,
+      4,
+      6,
+      8
+    ]
+  },
+  "history": [
+    {
+      "block": 1,
+      "steps_total": 1000,
+      "fes_rmsd_kj_mol": null,
+      "stable_count": 0
+    },
+    {
+      "block": 2,
+      "steps_total": 2000,
+      "fes_rmsd_kj_mol": 1.7251086077632323,
+      "stable_count": 0
+    },
+    {
+      "block": 3,
+      "steps_total": 3000,
+      "fes_rmsd_kj_mol": 3.0979690835224845,
+      "stable_count": 0
+    },
+    {
+      "block": 4,
+      "steps_total": 4000,
+      "fes_rmsd_kj_mol": 0.5661692462727629,
+      "stable_count": 0
+    },
+    {
+      "block": 5,
+      "steps_total": 5000,
+      "fes_rmsd_kj_mol": 3.742130067698593,
+      "stable_count": 0
+    },
+    {
+      "block": 6,
+      "steps_total": 6000,
+      "fes_rmsd_kj_mol": 1.4556631941539477,
+      "stable_count": 0
+    },
+    {
+      "block": 7,
+      "steps_total": 7000,
+      "fes_rmsd_kj_mol": 0.8916237602183806,
+      "stable_count": 0
+    },
+    {
+      "block": 8,
+      "steps_total": 8000,
+      "fes_rmsd_kj_mol": 2.3025583841386057,
+      "stable_count": 0
+    },
+    {
+      "block": 9,
+      "steps_total": 9000,
+      "fes_rmsd_kj_mol": 0.5756859538688149,
+      "stable_count": 0
+    },
+    {
+      "block": 10,
+      "steps_total": 10000,
+      "fes_rmsd_kj_mol": 0.5083815896924355,
+      "stable_count": 0
+    },
+    {
+      "block": 11,
+      "steps_total": 11000,
+      "fes_rmsd_kj_mol": 0.4230668342290795,
+      "stable_count": 1
+    },
+    {
+      "block": 12,
+      "steps_total": 12000,
+      "fes_rmsd_kj_mol": 1.1906980568432652,
+      "stable_count": 0
+    },
+    {
+      "block": 13,
+      "steps_total": 13000,
+      "fes_rmsd_kj_mol": 0.5086093630304171,
+      "stable_count": 0
+    },
+    {
+      "block": 14,
+      "steps_total": 14000,
+      "fes_rmsd_kj_mol": 0.40024893132356526,
+      "stable_count": 1
+    },
+    {
+      "block": 15,
+      "steps_total": 15000,
+      "fes_rmsd_kj_mol": 1.7928775724061166,
+      "stable_count": 0
+    },
+    {
+      "block": 16,
+      "steps_total": 16000,
+      "fes_rmsd_kj_mol": 0.37299659500642296,
+      "stable_count": 1
+    },
+    {
+      "block": 17,
+      "steps_total": 17000,
+      "fes_rmsd_kj_mol": 0.40115941624099527,
+      "stable_count": 2
+    },
+    {
+      "block": 18,
+      "steps_total": 18000,
+      "fes_rmsd_kj_mol": 0.7967045647730862,
+      "stable_count": 0
+    },
+    {
+      "block": 19,
+      "steps_total": 19000,
+      "fes_rmsd_kj_mol": 0.4912096747266186,
+      "stable_count": 1
+    },
+    {
+      "block": 20,
+      "steps_total": 20000,
+      "fes_rmsd_kj_mol": 0.30519338378172356,
+      "stable_count": 2
+    },
+    {
+      "block": 21,
+      "steps_total": 21000,
+      "fes_rmsd_kj_mol": 1.132504088228684,
+      "stable_count": 0
+    },
+    {
+      "block": 22,
+      "steps_total": 22000,
+      "fes_rmsd_kj_mol": 0.34401883677907136,
+      "stable_count": 1
+    },
+    {
+      "block": 23,
+      "steps_total": 23000,
+      "fes_rmsd_kj_mol": 0.5359662300864023,
+      "stable_count": 0
+    },
+    {
+      "block": 24,
+      "steps_total": 24000,
+      "fes_rmsd_kj_mol": 0.6587567547617083,
+      "stable_count": 0
+    },
+    {
+      "block": 25,
+      "steps_total": 25000,
+      "fes_rmsd_kj_mol": 0.6298798765837503,
+      "stable_count": 0
+    },
+    {
+      "block": 26,
+      "steps_total": 26000,
+      "fes_rmsd_kj_mol": 0.44571726851023,
+      "stable_count": 1
+    },
+    {
+      "block": 27,
+      "steps_total": 27000,
+      "fes_rmsd_kj_mol": 0.27338484890896586,
+      "stable_count": 2
+    },
+    {
+      "block": 28,
+      "steps_total": 28000,
+      "fes_rmsd_kj_mol": 0.5334185286741595,
+      "stable_count": 0
+    },
+    {
+      "block": 29,
+      "steps_total": 29000,
+      "fes_rmsd_kj_mol": 0.27029414366498367,
+      "stable_count": 1
+    },
+    {
+      "block": 30,
+      "steps_total": 30000,
+      "fes_rmsd_kj_mol": 0.6741798317945515,
+      "stable_count": 0
+    },
+    {
+      "block": 31,
+      "steps_total": 31000,
+      "fes_rmsd_kj_mol": 0.6571871099884027,
+      "stable_count": 0
+    },
+    {
+      "block": 32,
+      "steps_total": 32000,
+      "fes_rmsd_kj_mol": 0.5148724249782037,
+      "stable_count": 0
+    },
+    {
+      "block": 33,
+      "steps_total": 33000,
+      "fes_rmsd_kj_mol": 0.4911375449732716,
+      "stable_count": 1
+    },
+    {
+      "block": 34,
+      "steps_total": 34000,
+      "fes_rmsd_kj_mol": 0.4020541804797539,
+      "stable_count": 2
+    },
+    {
+      "block": 35,
+      "steps_total": 35000,
+      "fes_rmsd_kj_mol": 0.4519277077351894,
+      "stable_count": 3
+    },
+    {
+      "block": 36,
+      "steps_total": 36000,
+      "fes_rmsd_kj_mol": 0.31485561820819036,
+      "stable_count": 4
+    },
+    {
+      "block": 37,
+      "steps_total": 37000,
+      "fes_rmsd_kj_mol": 1.5137965300515122,
+      "stable_count": 0
+    },
+    {
+      "block": 38,
+      "steps_total": 38000,
+      "fes_rmsd_kj_mol": 0.7968953362444545,
+      "stable_count": 0
+    },
+    {
+      "block": 39,
+      "steps_total": 39000,
+      "fes_rmsd_kj_mol": 0.2681646316006947,
+      "stable_count": 1
+    },
+    {
+      "block": 40,
+      "steps_total": 40000,
+      "fes_rmsd_kj_mol": 0.3256816082690772,
+      "stable_count": 2
+    },
+    {
+      "block": 41,
+      "steps_total": 41000,
+      "fes_rmsd_kj_mol": 0.2997560727087485,
+      "stable_count": 3
+    },
+    {
+      "block": 42,
+      "steps_total": 42000,
+      "fes_rmsd_kj_mol": 0.3062400561679522,
+      "stable_count": 4
+    },
+    {
+      "block": 43,
+      "steps_total": 43000,
+      "fes_rmsd_kj_mol": 0.2721662632994343,
+      "stable_count": 5
+    }
+  ],
+  "fes_csv": "test_outputs/alanine_fes_converged/alanine_phi_psi_fes.csv",
+  "convergence_csv": "test_outputs/alanine_fes_converged/alanine_fes_convergence.csv",
+  "fes_png": "test_outputs/alanine_fes_converged/alanine_phi_psi_fes.png",
+  "bias_dir": "test_outputs/alanine_fes_converged/metadynamics_bias",
+  "bias_files": [
+    "bias_1426864787_1.npy",
+    "bias_822157349_44.npy"
+  ],
+  "notes": [
+    "ACE-ALA-NME built from SMILES and parametrized with OpenFF",
+    "Convergence is block-to-block shifted-FES RMSD; not a publication-grade production run."
+  ]
+}

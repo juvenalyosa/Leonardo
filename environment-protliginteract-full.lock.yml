@@ -444,7 +444,7 @@ dependencies:
       - griffelib==2.0.2
       - httpx-sse==0.4.3
       - jiter==0.15.0
-      - leonardo-pymol-suite==0.2.0a1
+      - leonardo-pymol-suite==0.2.0a2
       - loguru==0.7.3
       - mcp==1.27.2
       - mediapipe==0.10.9
@@ -471,4 +471,3 @@ dependencies:
       - types-requests==2.33.0.20260518
       - uvicorn==0.49.0
       - websockets==16.0
-prefix: /opt/anaconda3/envs/protliginteract-full

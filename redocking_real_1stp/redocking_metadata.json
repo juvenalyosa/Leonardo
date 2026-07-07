@@ -22,6 +22,8 @@
   "receptor_pdbqt": "redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdbqt",
   "ligand_pdbqt": "redocking_real_1stp/btn_input_template.pdbqt",
   "summary_tsv": "redocking_real_1stp/redocking_summary.tsv",
+  "rmsd_method": "no_fit_heavy_atom_rmsd_order_preserving_template_pose_correspondence",
+  "rmsd_scope_note": "Appropriate for this prepared 1STP/biotin template workflow; not symmetry-corrected for arbitrary chemotypes.",
   "n_pose_rows": 225,
   "repeat_rows": [
     {

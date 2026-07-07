@@ -16,8 +16,10 @@ external/
 
 # Build and release artifacts
 build/
-dist/
+dist/*
+!dist/Leonardo.zip
 *.zip
+!dist/Leonardo.zip
 *.egg-info/
 
 # Scientific run outputs

@@ -19,7 +19,7 @@ set_color contact_salt, [0.84, 0.34, 0.00]
 set_color contact_vdw, [0.45, 0.45, 0.45]
 show cartoon, polymer.protein
 color gray85, polymer.protein
-select contact_residues, polymer.protein and chain A and resi 189+190+191+192+195+213+215+216+219+220+226
+select contact_residues, polymer.protein and chain A and resi 189+190+192+195+213+215+216+219+220+226
 show sticks, contact_residues
 set stick_radius, 0.13, contact_residues
 color gray45, contact_residues and elem C
@@ -34,43 +34,46 @@ hide labels, contact_01
 color contact_polar, contact_01
 distance contact_02, (polymer.protein and chain A and resi 189 and resn ASP and name OD2), (resn BEN and resi 1 and name N2)
 hide labels, contact_02
-color contact_salt, contact_02
-distance contact_03, (polymer.protein and chain A and resi 190 and resn SER and name OG), (resn BEN and resi 1 and name N2)
+color contact_polar, contact_02
+distance contact_03, (polymer.protein and chain A and resi 189 and resn ASP and name OD1), (resn BEN and resi 1 and name N1)
 hide labels, contact_03
-color contact_polar, contact_03
-distance contact_04, (polymer.protein and chain A and resi 190 and resn SER and name O), (resn BEN and resi 1 and name C)
+color contact_salt, contact_03
+distance contact_04, (polymer.protein and chain A and resi 190 and resn SER and name OG), (resn BEN and resi 1 and name N2)
 hide labels, contact_04
-color contact_vdw, contact_04
-distance contact_05, (polymer.protein and chain A and resi 226 and resn GLY and name CA), (resn BEN and resi 1 and name N2)
+color contact_polar, contact_04
+distance contact_05, (polymer.protein and chain A and resi 190 and resn SER and name O), (resn BEN and resi 1 and name C)
 hide labels, contact_05
 color contact_vdw, contact_05
-distance contact_06, (polymer.protein and chain A and resi 189 and resn ASP and name CG), (resn BEN and resi 1 and name N2)
+distance contact_06, (polymer.protein and chain A and resi 226 and resn GLY and name CA), (resn BEN and resi 1 and name N2)
 hide labels, contact_06
 color contact_vdw, contact_06
-distance contact_07, (polymer.protein and chain A and resi 195 and resn SER and name OG), (resn BEN and resi 1 and name C5)
+distance contact_07, (polymer.protein and chain A and resi 189 and resn ASP and name CG), (resn BEN and resi 1 and name N2)
 hide labels, contact_07
 color contact_vdw, contact_07
-distance contact_08, (polymer.protein and chain A and resi 219 and resn GLY and name O), (resn BEN and resi 1 and name C2)
+distance contact_08, (polymer.protein and chain A and resi 195 and resn SER and name OG), (resn BEN and resi 1 and name C5)
 hide labels, contact_08
 color contact_vdw, contact_08
-distance contact_09, (polymer.protein and chain A and resi 192 and resn GLN and name OE1), (resn BEN and resi 1 and name C3)
+distance contact_09, (polymer.protein and chain A and resi 219 and resn GLY and name O), (resn BEN and resi 1 and name C2)
 hide labels, contact_09
 color contact_vdw, contact_09
-distance contact_10, (polymer.protein and chain A and resi 216 and resn GLY and name N), (resn BEN and resi 1 and name C2)
+distance contact_10, (polymer.protein and chain A and resi 192 and resn GLN and name OE1), (resn BEN and resi 1 and name C3)
 hide labels, contact_10
 color contact_vdw, contact_10
-distance contact_11, (polymer.protein and chain A and resi 213 and resn VAL and name CG1), (resn BEN and resi 1 and name C5)
+distance contact_11, (polymer.protein and chain A and resi 216 and resn GLY and name N), (resn BEN and resi 1 and name C2)
 hide labels, contact_11
-color contact_hydrophobic, contact_11
-distance contact_12, (polymer.protein and chain A and resi 220 and resn CYS and name CA), (resn BEN and resi 1 and name N1)
+color contact_vdw, contact_11
+distance contact_12, (polymer.protein and chain A and resi 213 and resn VAL and name CG1), (resn BEN and resi 1 and name C5)
 hide labels, contact_12
-color contact_vdw, contact_12
-distance contact_13, (polymer.protein and chain A and resi 191 and resn CYS and name O), (resn BEN and resi 1 and name C5)
+color contact_hydrophobic, contact_12
+distance contact_13, (polymer.protein and chain A and resi 220 and resn CYS and name CA), (resn BEN and resi 1 and name N1)
 hide labels, contact_13
 color contact_vdw, contact_13
 distance contact_14, (polymer.protein and chain A and resi 215 and resn TRP and name O), (resn BEN and resi 1 and name N2)
 hide labels, contact_14
-color contact_vdw, contact_14
+color contact_polar, contact_14
+distance contact_15, (polymer.protein and chain A and resi 215 and resn TRP and name C), (resn BEN and resi 1 and name C1)
+hide labels, contact_15
+color contact_vdw, contact_15
 orient resn BEN or contact_residues
 turn x, 18
 turn y, -22

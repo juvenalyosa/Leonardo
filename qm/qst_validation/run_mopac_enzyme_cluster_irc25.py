@@ -39,12 +39,13 @@ def _sn2_core(f_x, cl_x):
 
 def _fixed_sidechain_mimics():
     """
-    Fixed side-chain mimics for an enzyme active-site cluster.
+    Fixed side-chain mimics for a synthetic capped-cluster reaction test.
 
     The coordinates are simple but chemically interpretable: a neutral imidazole
     donates an H-bond toward the incoming fluoride, and a formamide N-H points
-    toward the leaving chloride side.  Freezing these atoms mimics a constrained
-    protein pocket and avoids low-frequency whole-cluster drift in TS/IRC tests.
+    toward the leaving chloride side.  Freezing these atoms mimics generic
+    environmental constraints and avoids low-frequency whole-cluster drift in
+    TS/IRC tests.  This is not a PDB-derived enzymatic active-site model.
     """
     his = [
         _atom("N", -2.30, 2.60, 0.00, "ND1", "HIS", "57", True),
@@ -116,7 +117,10 @@ def _brief_result(result):
 
 
 def main():
-    out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "test_outputs", "qst_irc_examples", "mopac_enzyme_cluster")
+    # This is a synthetic capped-cluster workflow check, not enzymatic
+    # validation.  Older manuscript drafts wrote the same example under a
+    # "mopac_enzyme_cluster" folder; new runs use a chemically neutral name.
+    out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "test_outputs", "qst_irc_examples", "mopac_capped_cluster")
     os.makedirs(out_dir, exist_ok=True)
     reactant, product, ts_guess = _cluster_endpoints()
     common = {
@@ -171,13 +175,15 @@ def main():
     if not bool((irc.get("irc_profile") or {}).get("ok", False)):
         raise RuntimeError(f"MOPAC IRC profile was not recovered: {irc.get('error', '')} {irc.get('warnings', [])}")
 
-    plot_png = os.path.join(out_dir, "mopac_enzyme_cluster_irc_profile.png")
-    _plot_profile(plot_png, irc.get("irc_profile", {}), "MOPAC PM7 enzyme-cluster IRC")
+    plot_png = os.path.join(out_dir, "mopac_capped_cluster_irc_profile.png")
+    _plot_profile(plot_png, irc.get("irc_profile", {}), "MOPAC PM7 capped-cluster IRC")
 
     frozen_count = sum(1 for atom in reactant if bool(atom.get("frozen", False)))
     summary = {
         "ok": True,
-        "system": "SN2 active-site cluster: F- + CH3Cl with fixed His/formamide mimics",
+        "system": "Synthetic SN2 capped cluster: F- + CH3Cl with fixed His/formamide mimics",
+        "scope_note": "Synthetic capped-cluster workflow check; not a protein-derived enzymatic active-site model.",
+        "previous_artifact_scope": "older local outputs used an enzyme-cluster folder name; the calculation is synthetic",
         "method": "MOPAC PM7",
         "charge": -1,
         "multiplicity": 1,
@@ -191,7 +197,7 @@ def main():
         "irc": _brief_result(irc),
         "irc_plot_png": plot_png,
     }
-    summary_path = os.path.join(out_dir, "mopac_enzyme_cluster_summary.json")
+    summary_path = os.path.join(out_dir, "mopac_capped_cluster_summary.json")
     with open(summary_path, "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
     print(json.dumps(summary, indent=2))

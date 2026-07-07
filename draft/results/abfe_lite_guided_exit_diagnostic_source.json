@@ -71,8 +71,8 @@
   "state_coverage_diagnostic": {
     "ok": true,
     "status": "estimable_hold_windows",
-    "note": "Bound and unbound hold windows are populated; selected estimator may be used if ESS checks pass.",
-    "binding_estimate_allowed": true,
+    "note": "Bound and unbound hold windows are populated for state-gating diagnostics only; this manuscript diagnostic does not report binding affinity.",
+    "binding_estimate_allowed": false,
     "n_samples": 2500,
     "n_bound_raw": 400,
     "n_unbound_raw": 755,
@@ -90,7 +90,8 @@
     "unbound_min_dist_a": 3.5,
     "unbound_max_contact_count_4a": 4,
     "exit_coordinate_reached": true,
-    "contact_clearance_reached": true
+    "contact_clearance_reached": true,
+    "binding_estimate_status": "diagnostic_only"
   },
   "timeseries": [
     {

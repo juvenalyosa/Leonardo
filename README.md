@@ -12,7 +12,7 @@ Technical support and bug reports: thinkai.col@gmail.com
 
 ## Pre-release and Manuscript Verification Status
 
-This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a1`, build `2026-07-07-r1`), not a final stable production release.
+This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a2`, build `2026-07-07-r2`), not a final stable production release.
 
 It is being shared so users can:
 
@@ -46,7 +46,7 @@ Current manuscript demonstrations include:
 - ligand-library quality control, not virtual-screening enrichment
 - short ACE-ALA-NME OpenMM/CV plotting diagnostics, not converged free energies
 - ABFE-lite setup/restraint diagnostics, not quantitative absolute binding free energies
-- Psi4/MOPAC QST2/QST3/TS/IRC workflow examples, not general transition-state accuracy
+- Psi4/MOPAC QST-like TS/IRC workflow examples, not general transition-state accuracy
 - a synthetic MOPAC capped-cluster reaction path, not full protein-derived QM/MM validation
 
 ## What Leonardo Is
@@ -1074,11 +1074,11 @@ PYTHONPATH=. pytest -q tests/test_bioseq_runtime.py tests/test_runtime_modules.p
 
 ## Screenshots
 
-If screenshots are present in `screenshots/`, they render from the packaged plugin as well.
+The current manuscript snapshot includes a real suite-level Leonardo screenshot.
+Additional workflow screenshots can be added under `screenshots/` when captured
+from live interaction or docking sessions.
 
-![Main](screenshots/main.png)
-![Chooser](screenshots/chooser.png)
-![Export](screenshots/export.png)
+![Leonardo suite interface](leonardo.png)
 
 ## Troubleshooting
 

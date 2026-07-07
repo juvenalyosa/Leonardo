@@ -2,8 +2,8 @@
   "backend_test_report": {
     "available": true,
     "report": "draft/results/pytest_validation.xml",
-    "tests": 521,
-    "passed": 521,
+    "tests": 524,
+    "passed": 524,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -36,15 +36,15 @@
     "protein_residue_count": 223,
     "ligand": "BEN (benzamidine)",
     "ligand_atom_count": 9,
-    "contact_count_residue_level": 14,
+    "contact_count_residue_level": 15,
     "interaction_type_counts": {
       "Hydrophobic contact": 1,
-      "Polar contact": 2,
+      "Polar contact": 4,
       "Salt bridge candidate": 1,
-      "vdW contact": 10
+      "vdW contact": 9
     },
     "nearest_contact_A": 2.815,
-    "median_contact_A": 3.657,
+    "median_contact_A": 3.647,
     "contact_table": "draft/results/interaction_contacts_3ptb_ben.csv",
     "pymol_panel": "draft/figures/figure_4_3ptb_ben_pymol_binding_site.png",
     "pymol_script": "draft/results/figure_4_3ptb_ben_pymol_binding_site.pml",
@@ -109,6 +109,12 @@
     "n_targets": 15,
     "n_ligands": 369,
     "descriptor_table": "draft/results/ligand_library_qc_descriptors.csv",
+    "qc_summary_table": "draft/results/ligand_library_qc_summary.csv",
+    "failed_records": 0,
+    "nonzero_formal_charge_records": 124,
+    "multi_fragment_records": 0,
+    "unassigned_stereo_records": 0,
+    "duplicate_canonical_smiles_records": 0,
     "mol_wt_median": 388.475,
     "logp_median": 3.3908000000000023
   },
@@ -124,9 +130,9 @@
     "cv_samples": 41,
     "steps": 1000,
     "summary_table": "draft/results/openmm_cv_fes_summary.csv",
-    "fes_csv": "test_outputs/alanine_fes_converged/alanine_phi_psi_fes.csv",
-    "fes_summary_json": "test_outputs/alanine_fes_converged/alanine_fes_summary.json",
-    "cv_timeseries_csv": "test_outputs/alanine_cv_suite_final/alanine_cv_timeseries.csv"
+    "fes_csv": "draft/results/source_snapshots/openmm_alanine/alanine_phi_psi_diagnostic_grid.csv",
+    "fes_summary_json": "draft/results/source_snapshots/openmm_alanine/alanine_diagnostic_grid_summary.json",
+    "cv_timeseries_csv": "draft/results/source_snapshots/openmm_alanine/alanine_cv_timeseries.csv"
   },
   "abfe_lite_case": {
     "available": true,
@@ -192,10 +198,10 @@
   },
   "reviewer_concern_matrix": {
     "matrix_csv": "draft/results/reviewer_concern_matrix.csv",
-    "n_concerns": 9
+    "n_concerns": 11
   },
   "artifact_manifest": {
     "path": "draft/results/artifact_manifest.csv",
-    "n_files": 98
+    "n_files": 102
   }
 }

@@ -4,7 +4,10 @@
 The script is intentionally small and file-oriented so manuscript validation can
 be reproduced without launching the Leonardo GUI.  It prepares a rigid receptor
 and the crystallographic ligand with Open Babel, runs repeated smina seeds, and
-reports heavy-atom RMSD to the crystal ligand in the original binding site.
+    reports no-fit heavy-atom RMSD to the crystal ligand in the original binding
+    site using the order-preserving atom correspondence from the prepared
+    template/pose pair.  It is not a symmetry-corrected arbitrary-ligand RMSD
+    benchmark.
 """
 
 from __future__ import annotations
@@ -196,7 +199,7 @@ def pdbqt_atom_type(line: str) -> str:
 
 
 def parse_pdbqt_models(path: Path) -> list[list[tuple[float, float, float]]]:
-    """Return heavy-atom coordinates for each MODEL in atom order."""
+    """Return heavy-atom coordinates for each MODEL in preserved PDBQT atom order."""
     models: list[list[tuple[float, float, float]]] = []
     cur: list[tuple[float, float, float]] = []
     saw_model = False
@@ -385,6 +388,8 @@ def run_redocking(args: argparse.Namespace) -> dict:
         "receptor_pdbqt": portable_path(receptor_pdbqt),
         "ligand_pdbqt": portable_path(ligand_pdbqt),
         "summary_tsv": portable_path(summary_tsv),
+        "rmsd_method": "no_fit_heavy_atom_rmsd_order_preserving_template_pose_correspondence",
+        "rmsd_scope_note": "Appropriate for this prepared 1STP/biotin template workflow; not symmetry-corrected for arbitrary chemotypes.",
         "n_pose_rows": len(rows),
         "repeat_rows": repeat_rows,
     }
@@ -401,7 +406,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ligand-resi", required=True, help="Ligand residue number.")
     parser.add_argument("--repeats", type=int, default=15, help="Independent smina seeds.")
     parser.add_argument("--num-modes", type=int, default=15, help="Docked modes per seed.")
-    parser.add_argument("--seed0", type=int, default=3001, help="First random seed.")
+    parser.add_argument("--seed0", type=int, default=4001, help="First random seed.")
     parser.add_argument("--exhaustiveness", type=int, default=16)
     parser.add_argument("--energy-range", type=float, default=6.0)
     parser.add_argument("--min-rmsd-filter", type=float, default=0.5)

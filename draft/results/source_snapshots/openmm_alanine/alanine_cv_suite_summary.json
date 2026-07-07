@@ -1,0 +1,610 @@
+{
+  "ok": true,
+  "workflow": "alanine_dipeptide_cv_suite",
+  "platform": "CPU",
+  "forcefield": "openff-2.2.1.offxml",
+  "steps": 1000,
+  "sample_interval": 25,
+  "samples": 41,
+  "temperature_k": 300.0,
+  "timestep_fs": 1.0,
+  "initial_energy_kj_mol": -72.21836919920575,
+  "minimized_energy_kj_mol": -133.58625817534596,
+  "final_energy_kj_mol": -71.42670721865971,
+  "cv_count": 8,
+  "cvs": [
+    {
+      "name": "protein_ligand_distance",
+      "label": "Protein-ligand distance",
+      "type": "distance",
+      "preset_id": "protein_ligand_distance",
+      "selection_a": "Ala CA",
+      "selection_b": "NME amide N",
+      "selection_c": "",
+      "selection_d": "",
+      "periodic": false,
+      "summary": "Distance between ligand heavy atoms and nearby binding-site atoms.",
+      "range_nm": [
+        0.25,
+        2.0
+      ],
+      "metadynamics": {
+        "min_value": 0.15,
+        "max_value": 2.5,
+        "bias_width": 0.03,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 24,
+        "spring_k_kj_mol_nm2": 1500.0
+      },
+      "expression": "distance(Ala CA,NME amide N)",
+      "force_expression": "distance(Ala CA,NME amide N)",
+      "group_a": "Ala CA",
+      "group_b": "NME amide N",
+      "group_c": "",
+      "group_d": "",
+      "min_value": 0.15,
+      "max_value": 2.5,
+      "bias_width": 0.03,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        4,
+        8
+      ],
+      "atom_labels": [
+        "Ala CA",
+        "NME amide N"
+      ],
+      "value_unit": "nm",
+      "alanine_mapping_note": "CA to NME amide N distance used as a compact binding-distance analog."
+    },
+    {
+      "name": "ligand_unbinding_distance",
+      "label": "Ligand unbinding distance",
+      "type": "distance",
+      "preset_id": "ligand_unbinding_distance",
+      "selection_a": "ACE methyl C",
+      "selection_b": "NME methyl C",
+      "selection_c": "",
+      "selection_d": "",
+      "periodic": false,
+      "summary": "Wider distance CV for ligand exit-path or residence-time exploration.",
+      "range_nm": [
+        0.3,
+        4.0
+      ],
+      "metadynamics": {
+        "min_value": 0.2,
+        "max_value": 4.5,
+        "bias_width": 0.05,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 32,
+        "spring_k_kj_mol_nm2": 1000.0
+      },
+      "expression": "distance(ACE methyl C,NME methyl C)",
+      "force_expression": "distance(ACE methyl C,NME methyl C)",
+      "group_a": "ACE methyl C",
+      "group_b": "NME methyl C",
+      "group_c": "",
+      "group_d": "",
+      "min_value": 0.2,
+      "max_value": 4.5,
+      "bias_width": 0.05,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        0,
+        9
+      ],
+      "atom_labels": [
+        "ACE methyl C",
+        "NME methyl C"
+      ],
+      "value_unit": "nm",
+      "alanine_mapping_note": "Terminal cap distance used as a wider separation-coordinate analog."
+    },
+    {
+      "name": "backbone_rmsd",
+      "label": "Backbone RMSD",
+      "type": "rmsd",
+      "preset_id": "backbone_rmsd",
+      "selection_a": "ACE carbonyl C",
+      "selection_b": "Ala amide N",
+      "selection_c": "Ala CA",
+      "selection_d": "Ala carbonyl C",
+      "periodic": false,
+      "summary": "Global C-alpha RMSD from the prepared starting structure.",
+      "range_nm": [
+        0.0,
+        0.6
+      ],
+      "metadynamics": {
+        "min_value": 0.0,
+        "max_value": 0.8,
+        "bias_width": 0.02,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 18,
+        "spring_k_kj_mol_nm2": 2500.0
+      },
+      "expression": "rmsd(ACE carbonyl C)",
+      "force_expression": "rmsd(ACE carbonyl C)",
+      "group_a": "ACE carbonyl C",
+      "group_b": "Ala amide N",
+      "group_c": "Ala CA",
+      "group_d": "Ala carbonyl C",
+      "min_value": 0.0,
+      "max_value": 0.8,
+      "bias_width": 0.02,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        1,
+        3,
+        4,
+        6,
+        8
+      ],
+      "atom_labels": [
+        "ACE carbonyl C",
+        "Ala amide N",
+        "Ala CA",
+        "Ala carbonyl C",
+        "NME amide N"
+      ],
+      "value_unit": "nm",
+      "alanine_mapping_note": "Backbone-like heavy atoms aligned to the minimized reference."
+    },
+    {
+      "name": "loop_gate_distance",
+      "label": "Loop/gate distance",
+      "type": "distance",
+      "preset_id": "loop_gate_distance",
+      "selection_a": "Ala CB",
+      "selection_b": "NME methyl C",
+      "selection_c": "",
+      "selection_d": "",
+      "periodic": false,
+      "summary": "Distance between two user-selected protein gates or loop anchors.",
+      "range_nm": [
+        0.3,
+        1.8
+      ],
+      "metadynamics": {
+        "min_value": 0.15,
+        "max_value": 2.2,
+        "bias_width": 0.03,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 20,
+        "spring_k_kj_mol_nm2": 1200.0
+      },
+      "expression": "distance(Ala CB,NME methyl C)",
+      "force_expression": "distance(Ala CB,NME methyl C)",
+      "group_a": "Ala CB",
+      "group_b": "NME methyl C",
+      "group_c": "",
+      "group_d": "",
+      "min_value": 0.15,
+      "max_value": 2.2,
+      "bias_width": 0.03,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        5,
+        9
+      ],
+      "atom_labels": [
+        "Ala CB",
+        "NME methyl C"
+      ],
+      "value_unit": "nm",
+      "alanine_mapping_note": "Ala side-chain carbon to NME methyl distance used as a gate-distance analog."
+    },
+    {
+      "name": "reaction_bond_distance",
+      "label": "Reaction bond distance",
+      "type": "distance",
+      "preset_id": "reaction_bond_distance",
+      "selection_a": "ACE carbonyl C",
+      "selection_b": "Ala amide N",
+      "selection_c": "",
+      "selection_d": "",
+      "periodic": false,
+      "summary": "Short atom-pair distance for bond forming/breaking reaction coordinates.",
+      "range_nm": [
+        0.1,
+        0.35
+      ],
+      "metadynamics": {
+        "min_value": 0.08,
+        "max_value": 0.45,
+        "bias_width": 0.005,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 18,
+        "spring_k_kj_mol_nm2": 6000.0
+      },
+      "expression": "distance(ACE carbonyl C,Ala amide N)",
+      "force_expression": "distance(ACE carbonyl C,Ala amide N)",
+      "group_a": "ACE carbonyl C",
+      "group_b": "Ala amide N",
+      "group_c": "",
+      "group_d": "",
+      "min_value": 0.08,
+      "max_value": 0.45,
+      "bias_width": 0.005,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        1,
+        3
+      ],
+      "atom_labels": [
+        "ACE carbonyl C",
+        "Ala amide N"
+      ],
+      "value_unit": "nm",
+      "alanine_mapping_note": "ACE carbonyl C to amide N bond-distance coordinate."
+    },
+    {
+      "name": "reaction_angle",
+      "label": "Reaction angle",
+      "type": "angle",
+      "preset_id": "reaction_angle",
+      "selection_a": "Ala amide N",
+      "selection_b": "Ala CA",
+      "selection_c": "Ala carbonyl C",
+      "selection_d": "",
+      "periodic": false,
+      "summary": "Three-atom angular coordinate for reaction geometry control.",
+      "range_nm": [
+        0.5,
+        2.8
+      ],
+      "metadynamics": {
+        "min_value": 0.0,
+        "max_value": 3.1416,
+        "bias_width": 0.05,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 24,
+        "spring_k_kj_mol_nm2": 800.0
+      },
+      "expression": "angle(Ala amide N,Ala CA,Ala carbonyl C)",
+      "force_expression": "angle(Ala amide N,Ala CA,Ala carbonyl C)",
+      "group_a": "Ala amide N",
+      "group_b": "Ala CA",
+      "group_c": "Ala carbonyl C",
+      "group_d": "",
+      "min_value": 0.0,
+      "max_value": 3.1416,
+      "bias_width": 0.05,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        3,
+        4,
+        6
+      ],
+      "atom_labels": [
+        "Ala amide N",
+        "Ala CA",
+        "Ala carbonyl C"
+      ],
+      "value_unit": "deg",
+      "alanine_mapping_note": "N-CA-C backbone angle coordinate."
+    },
+    {
+      "name": "torsion_dihedral",
+      "label": "Torsion/dihedral",
+      "type": "dihedral",
+      "preset_id": "torsion_dihedral",
+      "selection_a": "ACE carbonyl C",
+      "selection_b": "Ala amide N",
+      "selection_c": "Ala CA",
+      "selection_d": "Ala carbonyl C",
+      "periodic": true,
+      "summary": "Periodic four-atom torsion coordinate.",
+      "range_nm": [
+        -3.1416,
+        3.1416
+      ],
+      "metadynamics": {
+        "min_value": -3.1416,
+        "max_value": 3.1416,
+        "bias_width": 0.08,
+        "periodic": true,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 36,
+        "spring_k_kj_mol_nm2": 300.0
+      },
+      "expression": "dihedral(ACE carbonyl C,Ala amide N,Ala CA,Ala carbonyl C)",
+      "force_expression": "dihedral(ACE carbonyl C,Ala amide N,Ala CA,Ala carbonyl C)",
+      "group_a": "ACE carbonyl C",
+      "group_b": "Ala amide N",
+      "group_c": "Ala CA",
+      "group_d": "Ala carbonyl C",
+      "min_value": -3.1416,
+      "max_value": 3.1416,
+      "bias_width": 0.08,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        1,
+        3,
+        4,
+        6
+      ],
+      "atom_labels": [
+        "ACE carbonyl C",
+        "Ala amide N",
+        "Ala CA",
+        "Ala carbonyl C"
+      ],
+      "value_unit": "deg",
+      "alanine_mapping_note": "Alanine phi torsion: ACE C - N - CA - C."
+    },
+    {
+      "name": "metal_coordination_distance",
+      "label": "Metal coordination distance",
+      "type": "distance",
+      "preset_id": "metal_coordination_distance",
+      "selection_a": "ACE carbonyl O",
+      "selection_b": "NME amide N",
+      "selection_c": "",
+      "selection_d": "",
+      "periodic": false,
+      "summary": "Metal-ligand coordination distance with tight sampling width.",
+      "range_nm": [
+        0.15,
+        0.35
+      ],
+      "metadynamics": {
+        "min_value": 0.1,
+        "max_value": 0.5,
+        "bias_width": 0.005,
+        "periodic": false,
+        "grid_width": null
+      },
+      "umbrella": {
+        "n_windows": 18,
+        "spring_k_kj_mol_nm2": 7000.0
+      },
+      "expression": "distance(ACE carbonyl O,NME amide N)",
+      "force_expression": "distance(ACE carbonyl O,NME amide N)",
+      "group_a": "ACE carbonyl O",
+      "group_b": "NME amide N",
+      "group_c": "",
+      "group_d": "",
+      "min_value": 0.1,
+      "max_value": 0.5,
+      "bias_width": 0.005,
+      "grid_width": null,
+      "valid": true,
+      "warnings": [],
+      "errors": [],
+      "atom_indices": [
+        2,
+        8
+      ],
+      "atom_labels": [
+        "ACE carbonyl O",
+        "NME amide N"
+      ],
+      "value_unit": "nm",
+      "alanine_mapping_note": "Carbonyl O to NME N distance used only to exercise the coordination-distance preset."
+    }
+  ],
+  "stats": [
+    {
+      "preset_id": "protein_ligand_distance",
+      "label": "Protein-ligand distance",
+      "type": "distance",
+      "unit": "nm",
+      "atom_indices": [
+        4,
+        8
+      ],
+      "atom_labels": [
+        "Ala CA",
+        "NME amide N"
+      ],
+      "min": 0.24148169799492744,
+      "max": 0.2674100730572508,
+      "mean": 0.255250701876701,
+      "std": 0.005294061823259431,
+      "mapping_note": "CA to NME amide N distance used as a compact binding-distance analog."
+    },
+    {
+      "preset_id": "ligand_unbinding_distance",
+      "label": "Ligand unbinding distance",
+      "type": "distance",
+      "unit": "nm",
+      "atom_indices": [
+        0,
+        9
+      ],
+      "atom_labels": [
+        "ACE methyl C",
+        "NME methyl C"
+      ],
+      "min": 0.6784023427059188,
+      "max": 0.7659246721289873,
+      "mean": 0.7216905789614739,
+      "std": 0.02446072154150435,
+      "mapping_note": "Terminal cap distance used as a wider separation-coordinate analog."
+    },
+    {
+      "preset_id": "backbone_rmsd",
+      "label": "Backbone RMSD",
+      "type": "rmsd",
+      "unit": "nm",
+      "atom_indices": [
+        1,
+        3,
+        4,
+        6,
+        8
+      ],
+      "atom_labels": [
+        "ACE carbonyl C",
+        "Ala amide N",
+        "Ala CA",
+        "Ala carbonyl C",
+        "NME amide N"
+      ],
+      "min": 4.0497527310531634e-17,
+      "max": 0.20706480663360352,
+      "mean": 0.13975808430614067,
+      "std": 0.0585247188044179,
+      "mapping_note": "Backbone-like heavy atoms aligned to the minimized reference."
+    },
+    {
+      "preset_id": "loop_gate_distance",
+      "label": "Loop/gate distance",
+      "type": "distance",
+      "unit": "nm",
+      "atom_indices": [
+        5,
+        9
+      ],
+      "atom_labels": [
+        "Ala CB",
+        "NME methyl C"
+      ],
+      "min": 0.44161893102989264,
+      "max": 0.4887324959531257,
+      "mean": 0.4619713409498105,
+      "std": 0.012369396277989667,
+      "mapping_note": "Ala side-chain carbon to NME methyl distance used as a gate-distance analog."
+    },
+    {
+      "preset_id": "reaction_bond_distance",
+      "label": "Reaction bond distance",
+      "type": "distance",
+      "unit": "nm",
+      "atom_indices": [
+        1,
+        3
+      ],
+      "atom_labels": [
+        "ACE carbonyl C",
+        "Ala amide N"
+      ],
+      "min": 0.13345503268096764,
+      "max": 0.14297145598769218,
+      "mean": 0.13805432151985156,
+      "std": 0.002239262302064028,
+      "mapping_note": "ACE carbonyl C to amide N bond-distance coordinate."
+    },
+    {
+      "preset_id": "reaction_angle",
+      "label": "Reaction angle",
+      "type": "angle",
+      "unit": "deg",
+      "atom_indices": [
+        3,
+        4,
+        6
+      ],
+      "atom_labels": [
+        "Ala amide N",
+        "Ala CA",
+        "Ala carbonyl C"
+      ],
+      "min": 105.8109589057027,
+      "max": 121.36751812136487,
+      "mean": 111.44382487322443,
+      "std": 3.0225225072359136,
+      "mapping_note": "N-CA-C backbone angle coordinate."
+    },
+    {
+      "preset_id": "torsion_dihedral",
+      "label": "Torsion/dihedral",
+      "type": "dihedral",
+      "unit": "deg",
+      "atom_indices": [
+        1,
+        3,
+        4,
+        6
+      ],
+      "atom_labels": [
+        "ACE carbonyl C",
+        "Ala amide N",
+        "Ala CA",
+        "Ala carbonyl C"
+      ],
+      "min": -166.06763719559032,
+      "max": -96.86880333009937,
+      "mean": -135.92380826056848,
+      "std": 19.127770788130704,
+      "mapping_note": "Alanine phi torsion: ACE C - N - CA - C."
+    },
+    {
+      "preset_id": "metal_coordination_distance",
+      "label": "Metal coordination distance",
+      "type": "distance",
+      "unit": "nm",
+      "atom_indices": [
+        2,
+        8
+      ],
+      "atom_labels": [
+        "ACE carbonyl O",
+        "NME amide N"
+      ],
+      "min": 0.4425534313622885,
+      "max": 0.5364996612413632,
+      "mean": 0.497669608947282,
+      "std": 0.024089574878866805,
+      "mapping_note": "Carbonyl O to NME N distance used only to exercise the coordination-distance preset."
+    }
+  ],
+  "timeseries_csv": "test_outputs/alanine_cv_suite_final/alanine_cv_timeseries.csv",
+  "plot_paths": {
+    "all_timeseries": "test_outputs/alanine_cv_suite_final/alanine_cv_all_presets_timeseries.png",
+    "all_histograms": "test_outputs/alanine_cv_suite_final/alanine_cv_all_presets_histograms.png",
+    "by_type_timeseries": {
+      "angle": "test_outputs/alanine_cv_suite_final/alanine_cv_angle_timeseries.png",
+      "dihedral": "test_outputs/alanine_cv_suite_final/alanine_cv_dihedral_timeseries.png",
+      "distance": "test_outputs/alanine_cv_suite_final/alanine_cv_distance_timeseries.png",
+      "rmsd": "test_outputs/alanine_cv_suite_final/alanine_cv_rmsd_timeseries.png"
+    }
+  },
+  "notes": [
+    "All Leonardo CV presets were evaluated on the same ACE-ALA-NME trajectory.",
+    "Protein/ligand-specific presets are mapped to alanine atom groups for backend validation."
+  ]
+}

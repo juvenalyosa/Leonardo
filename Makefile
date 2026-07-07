@@ -1,7 +1,10 @@
-.PHONY: installer-check manuscript-assets manuscript-tests reviewer-check
+.PHONY: installer-check package manuscript-assets manuscript-tests reviewer-check
 
 installer-check:
 	./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
+
+package:
+	./build_leonardo_zip.sh
 
 manuscript-assets:
 	python draft/scripts/run_interaction_external_benchmark.py
@@ -10,4 +13,4 @@ manuscript-assets:
 manuscript-tests:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q --junitxml=draft/results/pytest_validation.xml
 
-reviewer-check: installer-check manuscript-tests manuscript-assets
+reviewer-check: installer-check package manuscript-tests manuscript-assets

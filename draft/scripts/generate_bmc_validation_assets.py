@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import textwrap
 import xml.etree.ElementTree as ET
@@ -36,8 +37,29 @@ ROOT = Path(__file__).resolve().parents[2]
 DRAFT = ROOT / "draft"
 FIG_DIR = DRAFT / "figures"
 RESULTS_DIR = DRAFT / "results"
+SOURCE_SNAPSHOT_DIR = RESULTS_DIR / "source_snapshots"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+try:
+    from interaction_runtime import (
+        INTERACTION_GEOMETRY_CRITERIA,
+        assign_ligand_ionic_groups_from_topology,
+        build_ligand_charge_groups,
+        build_protein_charge_groups,
+        classify_hbond_geometry,
+        protein_hydrophobic_atom_names,
+        vdw_contact_cutoff,
+    )
+except Exception:  # pragma: no cover - keeps figure generation explicit if runtime import fails.
+    INTERACTION_GEOMETRY_CRITERIA = {}
+    assign_ligand_ionic_groups_from_topology = None
+    build_ligand_charge_groups = None
+    build_protein_charge_groups = None
+    classify_hbond_geometry = None
+    protein_hydrophobic_atom_names = None
+    vdw_contact_cutoff = None
+
 CURRENT_FIGURE_STEMS = [
     "figure_0_leonardo_suite_interface",
     "figure_1_workflow_architecture",
@@ -162,6 +184,23 @@ def make_csv_writer(handle) -> csv.writer:
     return csv.writer(handle, lineterminator="\n")
 
 
+def source_or_snapshot(primary: Path, snapshot_relative: str) -> Path:
+    """Return local source data, copying it into a tracked reviewer snapshot.
+
+    Some expensive workflow examples are produced under ignored run folders
+    such as ``test_outputs``.  The manuscript generator reads those files when
+    they exist locally, but also stores the small CSV/JSON/XYZ inputs needed to
+    rebuild figures under ``draft/results/source_snapshots`` for reviewer clones.
+    Heavy raw trajectories are intentionally excluded from this snapshot layer.
+    """
+    snapshot = SOURCE_SNAPSHOT_DIR / snapshot_relative
+    if primary.exists():
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(primary, snapshot)
+        return primary
+    return snapshot
+
+
 def normalize_text_artifact(path: Path) -> None:
     """Normalize generated text artifacts without changing parsed coordinates."""
     if not path.exists() or path.is_dir():
@@ -226,6 +265,117 @@ def sanitize_publication_artifact(path: Path) -> None:
     text = re.sub(r"MacBook-Pro-[A-Za-z0-9_.-]+\.local", "local-validation-host", text)
     text = re.sub(r'hostname="[^"]+"', 'hostname="local-validation-host"', text)
     path.write_text(text, encoding="utf-8")
+
+
+def sanitize_abfe_free_energy_proxy(payload: dict) -> dict:
+    """Keep only state-gating diagnostics from historical ABFE-lite summaries."""
+    raw = dict(payload or {})
+    state = dict(raw.get("state_coverage_diagnostic", {}) or {})
+    state["binding_estimate_allowed"] = False
+    state["binding_estimate_status"] = "diagnostic_only"
+    state["note"] = (
+        "Bound and unbound hold windows are populated for state-gating diagnostics only; "
+        "this manuscript diagnostic does not report binding affinity."
+    )
+    keep_keys = {
+        "selected_estimator",
+        "reweight_ess_total",
+        "reweight_ess_bound",
+        "reweight_ess_unbound",
+        "bound_count",
+        "unbound_count",
+        "n_bound_hold",
+        "n_unbound_hold",
+    }
+    clean = {key: raw[key] for key in keep_keys if key in raw}
+    clean.update(
+        {
+            "diagnostic_only": True,
+            "binding_estimate_allowed": False,
+            "binding_estimate_status": "diagnostic_only",
+            "binding_estimate_note": "No binding affinity, Kd, Ki or IC50 is reported for this guided-exit diagnostic.",
+            "state_coverage_diagnostic": state,
+        }
+    )
+    return clean
+
+
+def sanitize_abfe_raw_summary(path: Path) -> None:
+    """Rewrite old ABFE-lite result JSONs so reviewer-facing copies are diagnostic-only."""
+    if not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    proxy = data.get("free_energy_proxy")
+    if isinstance(proxy, dict):
+        data["free_energy_proxy"] = sanitize_abfe_free_energy_proxy(proxy)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def sanitize_abfe_raw_report(path: Path) -> None:
+    """Remove affinity-like scalar estimates from historical ABFE-lite markdown reports."""
+    if not path.is_file():
+        return
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    filtered: list[str] = []
+    inserted_scope = False
+    affinity_markers = (
+        "Binding estimate status",
+        "Selected ΔG",
+        "Selected Kd",
+        "Selected estimator",
+        "Selected note",
+        "State-ratio ΔG",
+        "Bias-reweighted ΔG",
+        "Bias-reweighted Kd",
+        "Population diagnostic ΔG",
+        "Jeffreys-smoothed diagnostic",
+        "Estimate kind",
+        "Reliability note",
+        "Standard-state correction",
+    )
+    for line in lines:
+        if line.startswith("#") and "ABFE Check" in line:
+            filtered.append("# 3PTB/BEN guided-exit diagnostic check")
+            continue
+        if line.startswith("Overall pass:"):
+            status = "hold-window diagnostic populated" if line.lower().endswith("yes") else "hold-window diagnostic incomplete"
+            filtered.append(f"Diagnostic state-gating status: {status}")
+            continue
+        if line.startswith("- Affinity-like estimates:"):
+            if not inserted_scope:
+                filtered.append(
+                    "- Affinity-like estimates: `suppressed; this reviewer-facing artifact reports state-gating diagnostics only.`"
+                )
+                inserted_scope = True
+            continue
+        if line.startswith("- Binding estimate note:"):
+            filtered.append(
+                "- Binding estimate note: `Diagnostic-only guided-exit run; hold windows are not converted to affinity.`"
+            )
+            continue
+        if line.startswith("- Binding estimate status:"):
+            filtered.append("- Diagnostic status: `hold windows populated for state-gating diagnostics`")
+            continue
+        if any(marker in line for marker in affinity_markers):
+            if not inserted_scope:
+                filtered.append(
+                    "- Affinity-like estimates: `suppressed; this reviewer-facing artifact reports state-gating diagnostics only.`"
+                )
+                inserted_scope = True
+            continue
+        filtered.append(line)
+    path.write_text("\n".join(filtered).rstrip() + "\n", encoding="utf-8")
+
+
+def sanitize_all_abfe_reviewer_artifacts() -> None:
+    """Apply diagnostic-only scope control to historical ABFE-lite artifacts."""
+    for path in sorted(RESULTS_DIR.glob("abfe_lite_3ptb_ben_*/metal_biology_summary.json")):
+        sanitize_abfe_raw_summary(path)
+    for path in sorted(RESULTS_DIR.glob("abfe_lite_3ptb_ben_*/metal_biology_report.md")):
+        sanitize_abfe_raw_report(path)
 
 
 def build_leonardo_suite_interface_figure() -> dict:
@@ -364,7 +514,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
     """
     trace_rows = [
         {
-            "manuscript_item": "Architecture, interface, module inventory and evidence matrix",
+            "manuscript_item": "Architecture, interface, module inventory and workflow-feature matrix",
             "source_artifacts": "draft/results/pipeline_classification.csv; draft/results/pipeline_inventory_summary.csv",
             "rebuilt_output": "draft/figures/figure_0_leonardo_suite_interface.pdf; draft/figures/figure_1_workflow_architecture.pdf; draft/figures/figure_2_pipeline_inventory.pdf; draft/figures/figure_3_module_evidence_matrix.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
@@ -386,7 +536,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
         },
         {
             "manuscript_item": "Ligand library and OpenMM CV diagnostics",
-            "source_artifacts": "draft/results/ligand_library_qc_descriptors.csv; test_outputs/alanine_fes_converged/*; test_outputs/alanine_cv_suite_final/*",
+            "source_artifacts": "draft/results/ligand_library_qc_descriptors.csv; draft/results/ligand_library_qc_summary.csv; draft/results/source_snapshots/openmm_alanine/*",
             "rebuilt_output": "draft/figures/figure_6_ligand_library_qc.pdf; draft/figures/figure_7_openmm_cv_fes_workflow_check.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
             "scope_of_claim": "Ligand QC and compact OpenMM plotting checks; not enrichment or converged free-energy benchmarking.",
@@ -399,8 +549,8 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "scope_of_claim": "Guided-exit state-gating and plotting diagnostic only; no binding affinity, Kd, Ki or IC50 reported.",
         },
         {
-            "manuscript_item": "QST2/QST3/IRC reaction workflows",
-            "source_artifacts": "test_outputs/qst_irc_examples/psi4_h3/*; test_outputs/qst_irc_examples/mopac_enzyme_cluster/*",
+            "manuscript_item": "QST-like/IRC reaction workflows",
+            "source_artifacts": "draft/results/source_snapshots/qst_irc/*",
             "rebuilt_output": "draft/figures/figure_8_mopac_capped_cluster_reaction.pdf; draft/figures/figure_9_qst_irc_reaction_paths.pdf; draft/results/qst_irc_workflow_summary.csv",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
             "scope_of_claim": "Workflow and parser checks on compact/synthetic systems; not general transition-state accuracy.",
@@ -425,8 +575,8 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "command_type": "local_reproduction_entrypoint",
             "inputs": "installed Leonardo environment; repository source tree",
             "command": "make reviewer-check",
-            "outputs": "draft/results/pytest_validation.xml; draft/figures/*.pdf; draft/results/*.csv; draft/results/workflow_verification_summary.json",
-            "scope_note": "Runs installer preflight, backend tests and manuscript asset regeneration inside an already installed environment.",
+            "outputs": "dist/Leonardo.zip; draft/results/pytest_validation.xml; draft/figures/*.pdf; draft/results/*.csv; draft/results/workflow_verification_summary.json",
+            "scope_note": "Runs installer preflight, rebuilds the PyMOL ZIP, backend tests and manuscript asset regeneration inside an already installed environment.",
         },
         {
             "workflow": "all_manuscript_assets",
@@ -448,7 +598,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "workflow": "redocking_1stp_btn",
             "command_type": "external_engine_rerun",
             "inputs": "1STP receptor/biotin template and smina/Open Babel environment",
-            "command": "python draft/scripts/run_publication_redocking_case.py --pdb 1STP.pdb --workdir redocking_real_1stp --ligand-resn BTN --ligand-chain B --ligand-resi 1 --repeats 15 --num-modes 15 --seed0 3001",
+            "command": "python draft/scripts/run_publication_redocking_case.py --pdb 1STP.pdb --workdir redocking_real_1stp --ligand-resn BTN --ligand-chain A --ligand-resi 300 --repeats 15 --num-modes 15 --seed0 4001",
             "outputs": "redocking_real_1stp/redocking_summary.tsv",
             "scope_note": "Reruns the 15-seed redocking case when smina and Open Babel are available.",
         },
@@ -486,6 +636,18 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
     tests = summary.get("backend_test_report", {})
     rows = [
         {
+            "concern": "release identity should match reviewer snapshot",
+            "status": "closed_by_version_alignment",
+            "current_evidence": "Package metadata, CITATION.cff and README report Leonardo 0.2.0a2, matching the reviewer snapshot tag v0.2.0a2-reviewer.",
+            "remaining_action": "Mint a permanent public archive DOI for the exact submission release.",
+        },
+        {
+            "concern": "packaged ZIP should match reviewed source tree",
+            "status": "closed_by_packaging_workflow",
+            "current_evidence": "make reviewer-check runs build_leonardo_zip.sh before manuscript asset generation, and the ZIP checksum is recorded in artifact_manifest.csv.",
+            "remaining_action": "Rebuild dist/Leonardo.zip after any release-facing source or installer change.",
+        },
+        {
             "concern": "source availability and archival DOI",
             "status": "repository_available_archive_pending",
             "current_evidence": "The private reviewer repository https://github.com/juvenalyosa/Leonardo contains the source package and manuscript assets.",
@@ -493,14 +655,14 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         },
         {
             "concern": "real Leonardo UI evidence",
-            "status": "partially_closed",
-            "current_evidence": "A real Leonardo suite screenshot is included as leonardo.png and Figure 0.",
-            "remaining_action": "Add real screenshots for interaction/docking object selection and one result/report popup.",
+            "status": "closed_current_scope",
+            "current_evidence": "A real Leonardo suite screenshot is included as leonardo.png and Figure 0; PyMOL-rendered interaction scenes are regenerated from contact tables.",
+            "remaining_action": "Add optional supplementary screenshots for interaction/docking object selection when live GUI captures are available.",
         },
         {
             "concern": "interaction-analysis benchmark against an external profiler",
-            "status": "pending_optional_dependency",
-            "current_evidence": "3PTB/BEN contact parsing, charge guardrails and PyMOL interaction scene are included.",
+            "status": "deferred_by_claim_scope",
+            "current_evidence": "3PTB/BEN contact parsing uses Leonardo runtime criteria for charge groups, polar fallback checks, hydrophobic contacts and vdW cutoffs; PyMOL interaction scenes are included.",
             "remaining_action": "Install PLIP or ProLIF and add a multi-complex agreement table covering halogen, pi, cation-pi and metal cases.",
         },
         {
@@ -529,7 +691,7 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "OpenMM alanine FES should not be presented as a biological benchmark",
             "status": "closed_by_scope_control",
-            "current_evidence": "Text and figure captions describe the alanine example as backend/plotting/convergence diagnostics.",
+            "current_evidence": "Text, figure captions and JSON metadata describe the alanine example as backend/plotting-stability diagnostics, not physical free-energy convergence.",
             "remaining_action": "Add replicated reference comparisons before claiming force-field or enhanced-sampling accuracy.",
         },
         {
@@ -541,7 +703,7 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "installation should be easy and testable",
             "status": "partially_closed",
-            "current_evidence": "Installers include check-only preflight; CI validates shell syntax and installer inputs; backend tests report "
+            "current_evidence": "Installers include check-only preflight; CI validates shell syntax and installer inputs; a Linux conda reviewer-environment job now runs on push/PR; backend tests report "
             f"{tests.get('passed', 0)}/{tests.get('tests', 0)} passing.",
             "remaining_action": "Run the installer on clean Linux/macOS/Windows hosts and attach logs.",
         },
@@ -1172,23 +1334,93 @@ def euclidean(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.linalg.norm(np.asarray(a, dtype=float) - np.asarray(b, dtype=float)))
 
 
+def _runtime_hbond_ok(atom_a: dict, atom_b: dict) -> bool:
+    """Use Leonardo's central H-bond fallback rules when explicit H atoms are absent."""
+    if classify_hbond_geometry is None:
+        return False
+    for donor, acceptor in ((atom_a, atom_b), (atom_b, atom_a)):
+        try:
+            payload = classify_hbond_geometry(donor, acceptor, criteria=INTERACTION_GEOMETRY_CRITERIA)
+        except Exception:
+            payload = {"ok": False}
+        if bool(payload.get("ok", False)):
+            return True
+    return False
+
+
 def classify_pair(protein_atom: dict, ligand_atom: dict, distance: float) -> str | None:
-    """Assign conservative contact labels for the 3PTB benzamidine example."""
+    """Assign conservative contact labels using Leonardo runtime criteria.
+
+    The manuscript example is intentionally single-system, but its contact
+    labels should still follow the same centralized thresholds as the GUI/runtime
+    module.  Salt bridges are handled separately from charge-group centers.
+    """
     pres = protein_atom["resn"]
     patom = protein_atom["name"]
     lelem = ligand_atom["element"]
     pelem = protein_atom["element"]
-    lname = ligand_atom["name"]
 
-    if (pres, patom) in PROTEIN_ACIDIC_ATOMS and lname in {"N1", "N2"} and distance <= 5.5:
-        return "Salt bridge candidate"
-    if pelem in PROTEIN_POLAR_ELEMENTS and lelem in LIGAND_POLAR_ELEMENTS and distance <= 3.5:
+    if pelem in PROTEIN_POLAR_ELEMENTS and lelem in LIGAND_POLAR_ELEMENTS and _runtime_hbond_ok(protein_atom, ligand_atom):
         return "Polar contact"
-    if pres in HYDROPHOBIC_RESIDUES and patom not in BACKBONE_ATOMS and pelem == "C" and lelem == "C" and distance <= 4.0:
+    if callable(protein_hydrophobic_atom_names):
+        hydrophobic_atoms = set(protein_hydrophobic_atom_names(pres))
+    else:
+        hydrophobic_atoms = set()
+    if (
+        patom in hydrophobic_atoms
+        and patom not in BACKBONE_ATOMS
+        and pelem == "C"
+        and lelem == "C"
+        and distance <= float(INTERACTION_GEOMETRY_CRITERIA.get("hydrophobic_dist", 4.0))
+    ):
         return "Hydrophobic contact"
-    if distance <= 4.0:
+    if callable(vdw_contact_cutoff):
+        cutoff = vdw_contact_cutoff(
+            protein_atom,
+            ligand_atom,
+            padding=float(INTERACTION_GEOMETRY_CRITERIA.get("vdw_padding", 0.5)),
+            max_cutoff=float(INTERACTION_GEOMETRY_CRITERIA.get("vdw_max_dist", 4.5)),
+        )
+    else:
+        cutoff = 4.0
+    if distance <= cutoff:
         return "vdW contact"
     return None
+
+
+def build_runtime_salt_bridge_contacts(protein: list[dict], ligand: list[dict]) -> list[dict]:
+    """Return charge-center salt-bridge candidates from Leonardo runtime rules."""
+    if not callable(assign_ligand_ionic_groups_from_topology) or not callable(build_ligand_charge_groups):
+        return []
+    if not callable(build_protein_charge_groups):
+        return []
+
+    typed_ligand = assign_ligand_ionic_groups_from_topology([dict(atom) for atom in ligand])
+    protein_groups = build_protein_charge_groups(protein)
+    ligand_groups = build_ligand_charge_groups(typed_ligand)
+    out = []
+    cutoff = float(INTERACTION_GEOMETRY_CRITERIA.get("salt_bridge_dist", 5.5))
+    for pg in protein_groups.get("negative", []):
+        for lg in ligand_groups:
+            if int(lg.get("charge_sign", 0) or 0) <= 0:
+                continue
+            d = euclidean(pg.get("center"), lg.get("center"))
+            if not np.isfinite(d) or d > cutoff:
+                continue
+            ligand_atom = dict((lg.get("atoms") or [{}])[0] or {})
+            out.append(
+                {
+                    "interaction_type": "Salt bridge candidate",
+                    "protein_chain": pg.get("chain", ""),
+                    "protein_resi": pg.get("resi", ""),
+                    "protein_resn": pg.get("resn", ""),
+                    "protein_atom": pg.get("representative_atom", ""),
+                    "ligand_resn": ligand_atom.get("resn", "BEN"),
+                    "ligand_atom": lg.get("representative_atom", ligand_atom.get("name", "")),
+                    "distance_A": round(float(d), 3),
+                }
+            )
+    return out
 
 
 def pymol_selection_for_contact(row: dict, protein: bool) -> str:
@@ -1431,13 +1663,40 @@ def render_pymol_interaction_scene(contacts: list[dict]) -> tuple[Path, Path]:
     return out_png, pml_path
 
 
+def write_pending_interaction_external_status(contacts: list[dict]) -> None:
+    """Keep the optional PLIP/ProLIF status artifact aligned with current contacts."""
+    status_csv = RESULTS_DIR / "interaction_external_benchmark_status.csv"
+    preserve_external_run = False
+    if status_csv.exists():
+        with status_csv.open("r", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                if row.get("status") not in {"", "pending_dependency"}:
+                    preserve_external_run = True
+                    break
+    if preserve_external_run:
+        return
+    row = {
+        "system": "3PTB.pdb",
+        "external_profiler": "PLIP/ProLIF",
+        "status": "pending_dependency",
+        "interaction_class": "all",
+        "leonardo_count": len(contacts),
+        "external_count": "",
+        "note": "Install PLIP or ProLIF before reporting external agreement; this manuscript does not claim external-profiler agreement.",
+    }
+    with status_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, list(row.keys()))
+        writer.writeheader()
+        writer.writerow(row)
+
+
 def analyze_3ptb_contacts() -> dict:
     atoms = parse_pdb_atoms(ROOT / "3PTB.pdb")
     protein = [a for a in atoms if a["record"] == "ATOM"]
     ligand = [a for a in atoms if a["record"] == "HETATM" and a["resn"] == "BEN"]
     residues = {(a["chain"], a["resi"], a["resn"]) for a in protein}
 
-    raw_contacts: list[dict] = []
+    raw_contacts: list[dict] = build_runtime_salt_bridge_contacts(protein, ligand)
     for pa in protein:
         for la in ligand:
             dist = euclidean(pa["coord"], la["coord"])
@@ -1476,6 +1735,7 @@ def analyze_3ptb_contacts() -> dict:
         writer = make_dict_writer(handle, list(contacts[0].keys()) if contacts else [])
         writer.writeheader()
         writer.writerows(contacts)
+    write_pending_interaction_external_status(contacts)
 
     counts = Counter(row["interaction_type"] for row in contacts)
     distances = [float(row["distance_A"]) for row in contacts]
@@ -1670,7 +1930,7 @@ def analyze_redocking() -> dict:
     ax1.axvline(2.0, color="#404040", linestyle="--", linewidth=1.0)
     ax1.set_xlabel("Crystal heavy-atom RMSD (Å)")
     ax1.set_ylabel("smina affinity (kcal/mol)")
-    ax1.set_title("Pose quality versus score")
+    ax1.set_title("Template RMSD versus score")
     ax1.legend(frameon=False, loc="best")
 
     x = np.arange(len(groups))
@@ -1789,16 +2049,47 @@ def analyze_ligand_libraries() -> dict:
         }
 
     rows: list[dict] = []
+    qc_by_target: dict[str, dict] = {}
     for sdf_path in sorted((ROOT / "benchmark_data").glob("*/ligands.sdf")):
         target = sdf_path.parent.name
         supplier = Chem.SDMolSupplier(str(sdf_path), removeHs=False)
+        qc_by_target[target] = {
+            "target": target,
+            "input_records": len(supplier),
+            "parsed_records": 0,
+            "failed_records": 0,
+            "nonzero_formal_charge_records": 0,
+            "multi_fragment_records": 0,
+            "unassigned_stereo_records": 0,
+            "duplicate_canonical_smiles_records": 0,
+        }
+        canonical_smiles_seen: dict[str, int] = defaultdict(int)
         for idx, mol in enumerate(supplier, start=1):
             if mol is None:
+                qc_by_target[target]["failed_records"] += 1
                 continue
+            qc_by_target[target]["parsed_records"] += 1
+            formal_charge = int(sum(atom.GetFormalCharge() for atom in mol.GetAtoms()))
+            fragment_count = int(len(Chem.GetMolFrags(mol, asMols=False, sanitizeFrags=False)))
+            unassigned_stereo = int(
+                sum(1 for _atom_idx, label in Chem.FindMolChiralCenters(mol, includeUnassigned=True) if label == "?")
+            )
+            canonical_smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
+            canonical_smiles_seen[canonical_smiles] += 1
+            if formal_charge != 0:
+                qc_by_target[target]["nonzero_formal_charge_records"] += 1
+            if fragment_count > 1:
+                qc_by_target[target]["multi_fragment_records"] += 1
+            if unassigned_stereo > 0:
+                qc_by_target[target]["unassigned_stereo_records"] += 1
             rows.append(
                 {
                     "target": target,
                     "ligand_index": idx,
+                    "canonical_smiles": canonical_smiles,
+                    "formal_charge": formal_charge,
+                    "fragment_count": fragment_count,
+                    "unassigned_stereo_centers": unassigned_stereo,
                     "mol_wt": float(Descriptors.MolWt(mol)),
                     "logp": float(Descriptors.MolLogP(mol)),
                     "tpsa": float(Descriptors.TPSA(mol)),
@@ -1807,12 +2098,22 @@ def analyze_ligand_libraries() -> dict:
                     "rotatable_bonds": int(Descriptors.NumRotatableBonds(mol)),
                 }
             )
+        qc_by_target[target]["duplicate_canonical_smiles_records"] = int(
+            sum(count - 1 for count in canonical_smiles_seen.values() if count > 1)
+        )
 
     out_csv = RESULTS_DIR / "ligand_library_qc_descriptors.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
         writer = make_dict_writer(handle, list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+    qc_csv = RESULTS_DIR / "ligand_library_qc_summary.csv"
+    qc_rows = [qc_by_target[target] for target in sorted(qc_by_target)]
+    with qc_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = make_dict_writer(handle, list(qc_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(qc_rows)
 
     targets = sorted({r["target"] for r in rows})
     counts = [sum(1 for r in rows if r["target"] == target) for target in targets]
@@ -1829,7 +2130,7 @@ def analyze_ligand_libraries() -> dict:
     sorted_values = [count for _, count in sorted_counts]
     ax1.barh(sorted_targets, sorted_values, color="#0072B2", edgecolor="#303030", linewidth=0.45)
     ax1.set_xlabel("Ligands per local SDF")
-    ax1.set_title("Local screening-library coverage")
+    ax1.set_title("Local SDF ligand counts")
     ax1.set_xlim(0, max(sorted_values) + 5)
 
     scatter = ax2.scatter(mw, logp, c=[OKABE_ITO[1]] * len(rows), s=25, alpha=0.68, edgecolor="white", linewidth=0.25)
@@ -1850,6 +2151,12 @@ def analyze_ligand_libraries() -> dict:
         "n_targets": len(targets),
         "n_ligands": len(rows),
         "descriptor_table": str(out_csv.relative_to(ROOT)),
+        "qc_summary_table": str(qc_csv.relative_to(ROOT)),
+        "failed_records": int(sum(row["failed_records"] for row in qc_rows)),
+        "nonzero_formal_charge_records": int(sum(row["nonzero_formal_charge_records"] for row in qc_rows)),
+        "multi_fragment_records": int(sum(row["multi_fragment_records"] for row in qc_rows)),
+        "unassigned_stereo_records": int(sum(row["unassigned_stereo_records"] for row in qc_rows)),
+        "duplicate_canonical_smiles_records": int(sum(row["duplicate_canonical_smiles_records"] for row in qc_rows)),
         "mol_wt_median": float(np.median(mw)),
         "logp_median": float(np.median(logp)),
     }
@@ -1860,15 +2167,31 @@ def analyze_openmm_cv_fes() -> dict:
 
     The OpenMM module exposes protein-oriented CV presets.  For manuscript
     workflow checking we use ACE-ALA-NME as a compact backend exercise: every preset
-    is mapped onto stable atom groups, and the FES panel verifies that the
-    analysis/plotting path can render a two-dimensional free-energy surface.
+    is mapped onto stable atom groups, and the metadynamics diagnostic-grid
+    panel verifies that the analysis/plotting path can render a two-dimensional
+    biased-sampling surface without claiming physical convergence.
     """
     fes_root = ROOT / "test_outputs" / "alanine_fes_converged"
-    fes_csv = fes_root / "alanine_phi_psi_fes.csv"
-    conv_csv = fes_root / "alanine_fes_convergence.csv"
-    fes_json = fes_root / "alanine_fes_summary.json"
-    cv_csv = ROOT / "test_outputs" / "alanine_cv_suite_final" / "alanine_cv_timeseries.csv"
-    cv_json = ROOT / "test_outputs" / "alanine_cv_suite_final" / "alanine_cv_suite_summary.json"
+    fes_csv = source_or_snapshot(
+        fes_root / "alanine_phi_psi_fes.csv",
+        "openmm_alanine/alanine_phi_psi_diagnostic_grid.csv",
+    )
+    conv_csv = source_or_snapshot(
+        fes_root / "alanine_fes_convergence.csv",
+        "openmm_alanine/alanine_plotting_stability.csv",
+    )
+    fes_json = source_or_snapshot(
+        fes_root / "alanine_fes_summary.json",
+        "openmm_alanine/alanine_diagnostic_grid_summary.json",
+    )
+    cv_csv = source_or_snapshot(
+        ROOT / "test_outputs" / "alanine_cv_suite_final" / "alanine_cv_timeseries.csv",
+        "openmm_alanine/alanine_cv_timeseries.csv",
+    )
+    cv_json = source_or_snapshot(
+        ROOT / "test_outputs" / "alanine_cv_suite_final" / "alanine_cv_suite_summary.json",
+        "openmm_alanine/alanine_cv_suite_summary.json",
+    )
 
     missing = [p for p in (fes_csv, conv_csv, fes_json, cv_csv, cv_json) if not p.exists()]
     if missing:
@@ -1977,7 +2300,7 @@ def analyze_openmm_cv_fes() -> dict:
     cbar.set_label("Shifted diagnostic grid (kJ/mol; clipped)")
     ax1.set_xlabel("Phi (degrees)")
     ax1.set_ylabel("Psi (degrees)")
-    ax1.set_title("Diagnostic phi/psi grid")
+    ax1.set_title("Metadynamics diagnostic grid")
     ax1.set_xlim(-180.0, 180.0)
     ax1.set_ylim(-180.0, 180.0)
     ax1.set_xticks([-180, -120, -60, 0, 60, 120, 180])
@@ -1995,7 +2318,7 @@ def analyze_openmm_cv_fes() -> dict:
         ax2.axvspan(conv_x[-stable_needed], conv_x[-1], color="#DCEEF8", alpha=0.72, label=f"{stable_needed} stable blocks")
     ax2.scatter([conv_x[-1]], [conv_y[-1]], s=58, color=OKABE_ITO[2], edgecolor="white", linewidth=0.6, zorder=4)
     ax2.set_xlabel("Metadynamics steps")
-    ax2.set_ylabel("Block-to-block FES RMSD (kJ/mol)")
+    ax2.set_ylabel("Block-to-block grid RMSD (kJ/mol)")
     ax2.set_title("Plotting-stability criterion")
     ax2.legend(frameon=False, loc="upper right", handlelength=1.4)
 
@@ -2036,7 +2359,9 @@ def analyze_openmm_cv_fes() -> dict:
     return {
         "available": True,
         "fes_grid_rows": len(fes_rows),
-        "plotting_stability_passed": bool(fes_summary.get("converged", False)),
+        "plotting_stability_passed": bool(
+            fes_summary.get("plotting_stability_passed", fes_summary.get("converged", False))
+        ),
         "fes_steps": int(fes_summary.get("steps_total", 0) or 0),
         "fes_blocks": int(fes_summary.get("blocks_run", 0) or 0),
         "fes_rmsd_threshold_kj_mol": float((fes_summary.get("criterion", {}) or {}).get("rmsd_kj_mol", np.nan)),
@@ -2045,9 +2370,9 @@ def analyze_openmm_cv_fes() -> dict:
         "cv_samples": int(cv_summary.get("samples", len({row["sample"] for row in cv_rows}))),
         "steps": int(cv_summary.get("steps", 0)),
         "summary_table": str(out_csv.relative_to(ROOT)),
-        "fes_csv": str(fes_csv.relative_to(ROOT)),
-        "fes_summary_json": str(fes_json.relative_to(ROOT)),
-        "cv_timeseries_csv": str(cv_csv.relative_to(ROOT)),
+        "fes_csv": str((SOURCE_SNAPSHOT_DIR / "openmm_alanine/alanine_phi_psi_diagnostic_grid.csv").relative_to(ROOT)),
+        "fes_summary_json": str((SOURCE_SNAPSHOT_DIR / "openmm_alanine/alanine_diagnostic_grid_summary.json").relative_to(ROOT)),
+        "cv_timeseries_csv": str((SOURCE_SNAPSHOT_DIR / "openmm_alanine/alanine_cv_timeseries.csv").relative_to(ROOT)),
     }
 
 
@@ -2083,7 +2408,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
     inputs = dict(summary.get("inputs", {}) or {})
     system = dict(summary.get("system", {}) or {})
     energetics = dict(summary.get("energetics", {}) or {})
-    free_energy = dict(summary.get("free_energy_proxy", {}) or {})
+    free_energy = sanitize_abfe_free_energy_proxy(dict(summary.get("free_energy_proxy", {}) or {}))
     state_diag = dict(free_energy.get("state_coverage_diagnostic", {}) or {})
 
     def finite_metric(value, digits: int = 3, missing: str = "not_estimated"):
@@ -2847,10 +3172,10 @@ def build_pipeline_classification() -> dict:
         {
             "module": "OpenMM dynamics",
             "category": "Simulation and free energy",
-            "leonardo_contribution": "Protocol builder, CV presets, umbrella/metadynamics setup and FES plotting",
-            "native_pipeline_features": "protocol_wizard;cv_presets;sampling_reports;fes_plotting",
+            "leonardo_contribution": "Protocol builder, CV presets, umbrella/metadynamics setup and diagnostic-grid plotting",
+            "native_pipeline_features": "protocol_wizard;cv_presets;sampling_reports;diagnostic_grid_plotting",
             "external_engines": "OpenMM, OpenFF, AmberTools, PyMBAR, MDTraj",
-            "pipeline_outputs": "trajectories; CV traces; FES maps; convergence diagnostics",
+            "pipeline_outputs": "trajectories; CV traces; diagnostic grids; plotting-stability diagnostics",
             "verification_evidence": "unit_tests;alanine_cv_case;figure",
         },
         {
@@ -2874,8 +3199,8 @@ def build_pipeline_classification() -> dict:
         {
             "module": "MOPAC capped-cluster reaction",
             "category": "Quantum and reaction paths",
-            "leonardo_contribution": "QM cluster selection, caps, Python QST2/QST3/IRC driver and PM7 reaction plots",
-            "native_pipeline_features": "cluster_builder;cap_builder;qst2_qst3_driver;irc_plotting",
+            "leonardo_contribution": "QM cluster selection, caps, QST-like workflow labels mapped to MOPAC SADDLE/TS/IRC and PM7 reaction plots",
+            "native_pipeline_features": "cluster_builder;cap_builder;qst_like_driver;irc_plotting",
             "external_engines": "MOPAC, NumPy, Matplotlib",
             "pipeline_outputs": "QM clusters; TS candidates; frequency checks; IRC profiles",
             "verification_evidence": "capped_cluster_case;figure",
@@ -2883,8 +3208,8 @@ def build_pipeline_classification() -> dict:
         {
             "module": "Psi4 quantum",
             "category": "Quantum and reaction paths",
-            "leonardo_contribution": "Python QST2/QST3 guess generation, TS/frequency/IRC orchestration and plots",
-            "native_pipeline_features": "qst_guessing;ts_check;irc_path_builder;reaction_plots",
+            "leonardo_contribution": "Python QST-like guess generation, TS/frequency/IRC orchestration and plots",
+            "native_pipeline_features": "qst_like_guessing;ts_check;irc_path_builder;reaction_plots",
             "external_engines": "Psi4, NumPy, Matplotlib",
             "pipeline_outputs": "TS structures; frequency summaries; IRC XYZ/CSV; PES plots",
             "verification_evidence": "h3_reaction_case;figure",
@@ -2972,7 +3297,7 @@ def build_pipeline_classification() -> dict:
         (
             0.375,
             "Leonardo workflow layer",
-            ["Object registry and task monitor", "Readiness and motif summaries", "Interaction typing and 2D/3D linking", "Docking/redocking/VS orchestration", "OpenMM CVs and guided-exit diagnostics", "Python QST2/QST3/IRC reaction paths"],
+            ["Object registry and task monitor", "Readiness and motif summaries", "Interaction typing and 2D/3D linking", "Docking/redocking/VS orchestration", "OpenMM CVs and guided-exit diagnostics", "QST-like TS/IRC reaction paths"],
         ),
         (
             0.625,
@@ -2982,7 +3307,7 @@ def build_pipeline_classification() -> dict:
         (
             0.875,
             "Reproducible outputs",
-            ["PyMOL scenes and selections", "Prepared structures and parameters", "Pose/RMSD/ranking tables", "Trajectories, CV traces and FES maps", "TS/frequency/IRC reports", "Verification figures"],
+            ["PyMOL scenes and selections", "Prepared structures and parameters", "Pose/RMSD/ranking tables", "Trajectories, CV traces and diagnostic grids", "TS/frequency/IRC reports", "Workflow figures"],
         ),
     ]
     lane_width = 0.215
@@ -3100,8 +3425,8 @@ def build_pipeline_classification() -> dict:
         "alanine_cv_case": "Case studies",
         "diagnostic_case": "Case studies",
         "pocket_case": "Case studies",
-        "figure": "Manuscript figures",
-        "descriptor_panel": "Manuscript figures",
+        "figure": "Rendered outputs",
+        "descriptor_panel": "Rendered outputs",
         "smoke_test": "Workflow checks",
         "fetch_smoke": "Workflow checks",
         "workflow_smoke": "Workflow checks",
@@ -3121,8 +3446,8 @@ def build_pipeline_classification() -> dict:
         edgecolor="#303030",
         linewidth=0.45,
     )
-    ax3.set_xlabel("Modules or assets")
-    ax3.set_title("Verification evidence types")
+    ax3.set_xlabel("Modules or outputs")
+    ax3.set_title("Workflow-support categories")
     finish_axis(ax3)
     panel_label(ax3, "C", y=1.08)
     save_figure(fig, "figure_2_pipeline_inventory")
@@ -3146,14 +3471,14 @@ def build_pipeline_classification() -> dict:
         (
             "Sampling /\nbatch logic",
             lambda features, evidence: bool(
-                {"batch_jobs", "repeat_statistics", "sampling_reports", "cv_presets", "qst2_qst3_driver", "irc_path_builder"}
+                {"batch_jobs", "repeat_statistics", "sampling_reports", "cv_presets", "qst_like_driver", "irc_path_builder"}
                 & features
             ),
         ),
         (
             "Reports and\nplots",
             lambda features, evidence: bool(
-                {"plotting", "fes_plotting", "reporting", "popup_reports", "pose_reporting", "analysis_plots", "reaction_plots", "irc_plotting"}
+                {"plotting", "diagnostic_grid_plotting", "reporting", "popup_reports", "pose_reporting", "analysis_plots", "reaction_plots", "irc_plotting"}
                 & features
             )
             or bool({"figure", "descriptor_panel"} & evidence),
@@ -3167,7 +3492,7 @@ def build_pipeline_classification() -> dict:
             lambda features, evidence: any(item.endswith("_case") or item.endswith("_smoke") or item == "smoke_test" for item in evidence),
         ),
         (
-            "Manuscript\nasset",
+            "Rendered\noutputs",
             lambda features, evidence: bool({"figure", "descriptor_panel", "pytest_xml"} & evidence),
         ),
     ]
@@ -3204,7 +3529,7 @@ def build_pipeline_classification() -> dict:
                     linewidth=0.5,
                     zorder=3,
                 )
-    ax.set_title("Module-level workflow features and verification evidence", pad=18)
+    ax.set_title("Module-level workflow features and support artifacts", pad=18)
     ax.text(
         0.99,
         1.015,
@@ -3216,7 +3541,7 @@ def build_pipeline_classification() -> dict:
         fontweight="bold",
         color="#303030",
     )
-    ax.set_xlabel("Feature or evidence category")
+    ax.set_xlabel("Feature or support category")
     ax.set_ylabel("Leonardo module")
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(False)
@@ -3234,16 +3559,69 @@ def build_pipeline_classification() -> dict:
 
 
 def analyze_qst_irc_examples() -> dict:
-    """Build QST2/QST3/IRC workflow-check summaries and reaction-path figures."""
+    """Build QST-like/IRC workflow-check summaries and reaction-path figures."""
     psi_dir = ROOT / "test_outputs" / "qst_irc_examples" / "psi4_h3"
-    mopac_dir = ROOT / "test_outputs" / "qst_irc_examples" / "mopac_enzyme_cluster"
-    psi_summary = json.loads((psi_dir / "psi4_h3_summary.json").read_text(encoding="utf-8"))
-    mopac_summary = json.loads((mopac_dir / "mopac_enzyme_cluster_summary.json").read_text(encoding="utf-8"))
+    mopac_primary_dir = ROOT / "test_outputs" / "qst_irc_examples" / "mopac_capped_cluster"
+    mopac_legacy_dir = ROOT / "test_outputs" / "qst_irc_examples" / "mopac_enzyme_cluster"
+    mopac_dir = mopac_primary_dir if (mopac_primary_dir / "mopac_capped_cluster_summary.json").exists() else mopac_legacy_dir
+    psi_summary_path = source_or_snapshot(
+        psi_dir / "psi4_h3_summary.json",
+        "qst_irc/psi4_h3_summary.json",
+    )
+    mopac_summary_path = source_or_snapshot(
+        (mopac_dir / "mopac_capped_cluster_summary.json")
+        if (mopac_dir / "mopac_capped_cluster_summary.json").exists()
+        else (mopac_dir / "mopac_enzyme_cluster_summary.json"),
+        "qst_irc/mopac_capped_cluster_summary.json",
+    )
+    psi_profile_path = source_or_snapshot(
+        psi_dir / "psi4_h3_irc_profile.csv",
+        "qst_irc/psi4_h3_irc_profile.csv",
+    )
+    mopac_profile_path = source_or_snapshot(
+        mopac_dir / "03_irc" / "mopac_irc_profile.csv",
+        "qst_irc/mopac_capped_cluster_irc_profile.csv",
+    )
+    psi_frames_path = source_or_snapshot(
+        psi_dir / "psi4_h3_irc_path_25.xyz",
+        "qst_irc/psi4_h3_irc_path_25.xyz",
+    )
+    mopac_frames_path = source_or_snapshot(
+        mopac_dir / "03_irc" / "mopac_irc_path.xyz",
+        "qst_irc/mopac_capped_cluster_irc_path.xyz",
+    )
+    missing = [
+        path
+        for path in (
+            psi_summary_path,
+            mopac_summary_path,
+            psi_profile_path,
+            mopac_profile_path,
+            psi_frames_path,
+            mopac_frames_path,
+        )
+        if not path.exists()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            "Missing QST/IRC source snapshots: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        )
 
-    psi_profile = read_csv_rows(psi_dir / "psi4_h3_irc_profile.csv")
-    mopac_profile = read_csv_rows(mopac_dir / "03_irc" / "mopac_irc_profile.csv")
-    psi_frames = read_xyz_frames(psi_dir / "psi4_h3_irc_path_25.xyz")
-    mopac_frames = read_xyz_frames(mopac_dir / "03_irc" / "mopac_irc_path.xyz")
+    psi_summary = json.loads(psi_summary_path.read_text(encoding="utf-8"))
+    mopac_summary = json.loads(mopac_summary_path.read_text(encoding="utf-8"))
+    mopac_summary.pop("legacy_artifact_name", None)
+    mopac_summary["scope_note"] = "Synthetic capped-cluster workflow check; not a protein-derived enzymatic active-site model."
+    mopac_summary["irc_plot_png"] = "regenerated by draft/scripts/generate_bmc_validation_assets.py"
+    (SOURCE_SNAPSHOT_DIR / "qst_irc" / "mopac_capped_cluster_summary.json").write_text(
+        json.dumps(mopac_summary, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    psi_profile = read_csv_rows(psi_profile_path)
+    mopac_profile = read_csv_rows(mopac_profile_path)
+    psi_frames = read_xyz_frames(psi_frames_path)
+    mopac_frames = read_xyz_frames(mopac_frames_path)
 
     psi_rel = np.array([float(row["relative_energy_kcal_mol"]) for row in psi_profile], dtype=float)
     mopac_rel = np.array([float(row["relative_energy_kcal_mol"]) for row in mopac_profile], dtype=float)
@@ -3326,6 +3704,7 @@ def main() -> None:
     apply_style()
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    sanitize_all_abfe_reviewer_artifacts()
 
     summary = {
         "backend_test_report": summarize_pytest_report(),
@@ -3369,6 +3748,7 @@ def main() -> None:
             / "pockets"
         ).glob("pocket*_vert.pqr"),
         RESULTS_DIR / "ligand_library_qc_descriptors.csv",
+        RESULTS_DIR / "ligand_library_qc_summary.csv",
         RESULTS_DIR / "openmm_cv_fes_summary.csv",
         RESULTS_DIR / "abfe_lite_diagnostic_windows.csv",
         RESULTS_DIR / "abfe_lite_diagnostic_occupancy_profile.csv",
@@ -3376,7 +3756,6 @@ def main() -> None:
         RESULTS_DIR / "abfe_lite_diagnostic_summary.csv",
         RESULTS_DIR / "abfe_lite_guided_exit_diagnostic_source.json",
         RESULTS_DIR / "abfe_lite_guided_exit_diagnostic_report.md",
-        Path(summary["abfe_lite_case"]["run_dir"]) / "abfe_metal_3ptb.dcd",
         Path(summary["abfe_lite_case"]["run_dir"]) / "abfe_metal_3ptb_final.pdb",
         RESULTS_DIR / "qst_irc_workflow_summary.csv",
         RESULTS_DIR / "mopac_capped_cluster_workflow_metrics.csv",
@@ -3390,13 +3769,17 @@ def main() -> None:
         DRAFT / "scripts" / "run_interaction_external_benchmark.py",
         DRAFT / "manuscript" / "main.tex",
         ROOT / "redocking_real_1stp" / "redocking_summary.tsv",
-        ROOT / "test_outputs" / "alanine_fes_converged" / "alanine_phi_psi_fes.csv",
-        ROOT / "test_outputs" / "alanine_fes_converged" / "alanine_fes_convergence.csv",
-        ROOT / "test_outputs" / "alanine_fes_converged" / "alanine_fes_summary.json",
-        ROOT / "test_outputs" / "alanine_fes_converged" / "alanine_phi_psi_fes.png",
-        ROOT / "test_outputs" / "alanine_cv_suite_final" / "alanine_cv_timeseries.csv",
-        ROOT / "test_outputs" / "qst_irc_examples" / "psi4_h3" / "psi4_h3_irc_profile.csv",
-        ROOT / "test_outputs" / "qst_irc_examples" / "mopac_enzyme_cluster" / "03_irc" / "mopac_irc_profile.csv",
+        SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_phi_psi_diagnostic_grid.csv",
+        SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_plotting_stability.csv",
+        SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_diagnostic_grid_summary.json",
+        SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_cv_timeseries.csv",
+        SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_cv_suite_summary.json",
+        SOURCE_SNAPSHOT_DIR / "qst_irc" / "psi4_h3_summary.json",
+        SOURCE_SNAPSHOT_DIR / "qst_irc" / "psi4_h3_irc_profile.csv",
+        SOURCE_SNAPSHOT_DIR / "qst_irc" / "psi4_h3_irc_path_25.xyz",
+        SOURCE_SNAPSHOT_DIR / "qst_irc" / "mopac_capped_cluster_summary.json",
+        SOURCE_SNAPSHOT_DIR / "qst_irc" / "mopac_capped_cluster_irc_profile.csv",
+        SOURCE_SNAPSHOT_DIR / "qst_irc" / "mopac_capped_cluster_irc_path.xyz",
         ROOT / "dist" / "Leonardo.zip",
         ROOT / "LICENSE",
         ROOT / "CITATION.cff",

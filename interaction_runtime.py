@@ -894,7 +894,21 @@ def assign_ligand_ionic_groups_from_topology(ligand_atoms, neighbor_getter=None)
             continue
 
         if elem == "C" and not hetero_oxo and len(nit) == 2:
-            if any(_has_bound_hydrogen(n_atom, atoms, neighbor_getter=neighbor_getter) for n_atom in nit):
+            terminal_nitrogens = all(
+                not _heavy_neighbors_excluding(
+                    n_atom,
+                    atoms,
+                    excluded_atom=atom,
+                    neighbor_getter=neighbor_getter,
+                )
+                for n_atom in nit
+            )
+            # Many PDB ligands omit hydrogens and formal charges.  A carbon
+            # bonded to two terminal nitrogens with no oxo heteroatoms is a
+            # high-confidence amidinium center, unlike an arbitrary tertiary
+            # amine nitrogen.  This recovers benzamidine-like salt bridges
+            # without treating every ligand nitrogen as cationic.
+            if terminal_nitrogens or any(_has_bound_hydrogen(n_atom, atoms, neighbor_getter=neighbor_getter) for n_atom in nit):
                 _mark_ligand_ionic_group(
                     [atom] + list(nit),
                     nit,

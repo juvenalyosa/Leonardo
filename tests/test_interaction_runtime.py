@@ -215,6 +215,24 @@ def test_topology_ionic_assignment_recovers_explicit_ammonium_without_formal_cha
     assert groups[0]["representative_atom"] == "N1"
 
 
+def test_topology_ionic_assignment_recovers_terminal_amidinium_without_hydrogens():
+    atoms = [
+        _atom("C1", "C", [0.0, 0.0, 0.0], charge_formal=0),
+        _atom("N1", "N", [1.30, 0.0, 0.0], charge_formal=0),
+        _atom("N2", "N", [-1.30, 0.0, 0.0], charge_formal=0),
+        _atom("C2", "C", [0.0, 1.45, 0.0], charge_formal=0),
+    ]
+
+    typed = assign_ligand_ionic_groups_from_topology(atoms)
+    groups = build_ligand_charge_groups(typed)
+
+    assert len(groups) == 1
+    assert groups[0]["charge_sign"] == +1
+    assert groups[0]["group_type"] == "Amidinium"
+    assert groups[0]["representative_atom"] == "N1"
+    assert np.allclose(groups[0]["center"], np.array([0.0, 0.0, 0.0]))
+
+
 def test_reduce_hydrophobic_pairs_applies_two_stage_closest_filter():
     prot_a = {"chain": "A", "resi": 10, "name": "CG", "coord": np.array([0.0, 0.0, 0.0]), "pymol_index": 10}
     prot_b = {"chain": "A", "resi": 10, "name": "CD1", "coord": np.array([0.5, 0.0, 0.0]), "pymol_index": 11}

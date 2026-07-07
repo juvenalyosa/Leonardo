@@ -798,8 +798,8 @@ except Exception:
 # VERSION TAG
 # Keep version identifiers stable across the Python package, PyMOL plugin and
 # manuscript artifacts so reviewers can identify the exact pre-release build.
-PLUGIN_VERSION = "0.2.0a1"
-PLUGIN_BUILD = "2026-07-07-r1"
+PLUGIN_VERSION = "0.2.0a2"
+PLUGIN_BUILD = "2026-07-07-r2"
 SUITE_NAME = "Leonardo"
 PROJECT_MASTER_FILE_NAME = f"{SUITE_NAME}.project.json"
 PROJECT_STATE_FILE_NAME = "project_state.json"
