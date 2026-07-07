@@ -23,7 +23,8 @@
       "Inputs and project state": 2,
       "Sequence/structure preparation": 2,
       "Protein-ligand modeling": 5,
-      "Simulation and free energy": 3,
+      "Simulation and free energy": 2,
+      "Simulation diagnostics": 1,
       "Quantum and reaction paths": 2,
       "Prediction and external compute": 1
     },
@@ -195,6 +196,6 @@
   },
   "artifact_manifest": {
     "path": "draft/results/artifact_manifest.csv",
-    "n_files": 97
+    "n_files": 98
   }
 }

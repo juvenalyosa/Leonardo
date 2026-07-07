@@ -1,4 +1,4 @@
-load /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/3PTB.pdb, complex
+load 3PTB.pdb, complex
 remove solvent
 remove not (polymer.protein or resn BEN)
 hide everything
@@ -73,4 +73,4 @@ turn y, -28
 turn z, -5
 zoom ligand or contact_residues, 3.5
 clip slab, 24
-png /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/figures/figure_4b_3ptb_ben_interaction_scene_render.png, width=1800, height=1270, dpi=300, ray=1
+png draft/figures/figure_4b_3ptb_ben_interaction_scene_render.png, width=1800, height=1270, dpi=300, ray=1

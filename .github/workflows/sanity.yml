@@ -3,10 +3,12 @@ name: Sanity
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  sanity:
+  quick-sanity:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,16 +16,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: Install minimal deps
+      - name: Install source package metadata
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e . --no-deps --no-build-isolation
 
       - name: Verify Python files compile
         run: |
-          python -m py_compile __init__.py code_v2.py small_molecule_runtime.py
+          python -m compileall -q -x '(^|/)(\.git|draft/figures|draft/results|test_outputs|redocking_real_1stp|dist)(/|$)' .
 
       - name: Verify Qt UI file parses
         run: |
@@ -44,8 +46,42 @@ jobs:
           bash -n installers/macos/install_leonardo_macos.sh
           ./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
 
-      - name: Basic repo checks
+      - name: Verify manuscript scripts compile
         run: |
-          test -f README.md
-          test -f requirements.txt
-          echo 'Repo contains expected files.'
+          python -m py_compile draft/scripts/generate_bmc_validation_assets.py
+          python -m py_compile draft/scripts/run_interaction_external_benchmark.py
+          python -m py_compile draft/scripts/run_publication_redocking_case.py
+
+  reviewer-environment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Miniforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          activate-environment: protliginteract-full
+          environment-file: environment.yml
+          auto-activate-base: false
+
+      - name: Install Leonardo in reviewer environment
+        run: |
+          python -m pip install -e . --no-build-isolation
+
+      - name: Run focused backend checks
+        run: |
+          leonardo-readiness --strict
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_plugin_packaging.py \
+            tests/test_runtime_modules.py \
+            tests/test_interaction_runtime.py \
+            tests/test_redock_runtime_samples.py \
+            tests/test_openmm_dynamics_runtime.py

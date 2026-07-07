@@ -9,7 +9,7 @@ Redocking,Protein-ligand modeling,3,4,3
 Virtual screening,Protein-ligand modeling,3,4,2
 OpenMM dynamics,Simulation and free energy,5,4,3
 Trajectory and interaction analysis,Simulation and free energy,3,4,1
-ABFE-lite,Simulation and free energy,3,4,3
+Guided-exit diagnostic,Simulation diagnostics,3,4,3
 MOPAC capped-cluster reaction,Quantum and reaction paths,3,4,2
 Psi4 quantum,Quantum and reaction paths,3,4,2
 AlphaFold workflows,Prediction and external compute,3,4,1

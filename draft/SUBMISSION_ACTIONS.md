@@ -7,12 +7,13 @@ before journal submission.
 
 ## Public release metadata
 
-- Status: pending external credentials.
-- Create the private/public repository or anonymous reviewer repository.
+- Status: repository created; permanent archive pending.
+- Reviewer repository: `https://github.com/juvenalyosa/Leonardo` (currently
+  private).
+- Grant reviewer/editor access while private, or make the repository public for
+  submission.
 - Archive the exact submission release in Zenodo or an equivalent permanent
-  software archive.
-- Replace the pending availability lines in `draft/manuscript/main.tex` with the
-  public URL, archive DOI and peer-review access location.
+  software archive and replace the placeholder archive line with the DOI.
 
 ## UI evidence
 
@@ -54,8 +55,9 @@ before journal submission.
 
 - Status: manuscript scope is controlled; production benchmarks remain future
   work.
-- Keep ABFE-lite as a guided-exit diagnostic workflow unless a real minimal ABFE
-  calculation with standard-state/restraint corrections and uncertainty is added.
+- Keep the historical ABFE-lite module framed as a guided-exit diagnostic
+  workflow unless a real minimal ABFE calculation with standard-state/restraint
+  corrections and uncertainty is added.
 - Keep the current MOPAC result described as a synthetic capped-cluster
   reaction.  A protein-derived enzymatic example requires a real PDB-derived
   microcluster with residue provenance, caps and endpoint-connectivity checks.

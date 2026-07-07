@@ -1,7 +1,7 @@
 MODEL 1
 REMARK minimizedAffinity -7.43748093
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -46,7 +46,7 @@ ENDMDL
 MODEL 2
 REMARK minimizedAffinity -7.39204311
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -91,7 +91,7 @@ ENDMDL
 MODEL 3
 REMARK minimizedAffinity -6.31565142
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -136,7 +136,7 @@ ENDMDL
 MODEL 4
 REMARK minimizedAffinity -6.13954163
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -181,7 +181,7 @@ ENDMDL
 MODEL 5
 REMARK minimizedAffinity -6.02875996
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -226,7 +226,7 @@ ENDMDL
 MODEL 6
 REMARK minimizedAffinity -5.87031412
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -271,7 +271,7 @@ ENDMDL
 MODEL 7
 REMARK minimizedAffinity -5.85559464
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -316,7 +316,7 @@ ENDMDL
 MODEL 8
 REMARK minimizedAffinity -5.73855925
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -361,7 +361,7 @@ ENDMDL
 MODEL 9
 REMARK minimizedAffinity -5.67171526
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -406,7 +406,7 @@ ENDMDL
 MODEL 10
 REMARK minimizedAffinity -5.57561779
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -451,7 +451,7 @@ ENDMDL
 MODEL 11
 REMARK minimizedAffinity -5.52113152
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -496,7 +496,7 @@ ENDMDL
 MODEL 12
 REMARK minimizedAffinity -5.4893918
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -541,7 +541,7 @@ ENDMDL
 MODEL 13
 REMARK minimizedAffinity -5.40611219
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -586,7 +586,7 @@ ENDMDL
 MODEL 14
 REMARK minimizedAffinity -5.35758543
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4
@@ -631,7 +631,7 @@ ENDMDL
 MODEL 15
 REMARK minimizedAffinity -5.3461566
 REMARK minimizedRMSD -1
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4

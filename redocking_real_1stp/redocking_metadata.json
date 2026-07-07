@@ -1,5 +1,5 @@
 {
-  "pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/1STP.pdb",
+  "pdb": "redocking_real_1stp/1STP.pdb",
   "ligand": {
     "resn": "BTN",
     "chain": "A",
@@ -19,9 +19,9 @@
     14.004,
     15.519
   ],
-  "receptor_pdbqt": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdbqt",
-  "ligand_pdbqt": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_input_template.pdbqt",
-  "summary_tsv": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/redocking_summary.tsv",
+  "receptor_pdbqt": "redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdbqt",
+  "ligand_pdbqt": "redocking_real_1stp/btn_input_template.pdbqt",
+  "summary_tsv": "redocking_real_1stp/redocking_summary.tsv",
   "n_pose_rows": 225,
   "repeat_rows": [
     {

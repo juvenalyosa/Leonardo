@@ -4,8 +4,8 @@ Overall pass: no
 
 ## System
 
-- Raw PDB: `/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/3PTB.pdb`
-- Complex PDB used for ABFE: `/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_smoke/3PTB_BEN_CA_complex.pdb`
+- Raw PDB: `3PTB.pdb`
+- Complex PDB used for ABFE: `draft/results/abfe_lite_3ptb_ben_smoke/3PTB_BEN_CA_complex.pdb`
 - Metal ions retained: `[{'resn': 'CA', 'chain': 'A', 'resi': '480', 'atoms': 1}]`
 - Min metal-ligand distance: `22.945 A`
 

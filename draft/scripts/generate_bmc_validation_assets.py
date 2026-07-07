@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import textwrap
 import xml.etree.ElementTree as ET
@@ -172,6 +173,61 @@ def normalize_text_artifact(path: Path) -> None:
     path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
+def sanitize_publication_artifact(path: Path) -> None:
+    """Remove machine-local paths from text artifacts before checksumming.
+
+    Raw engine outputs can legitimately record the workstation path used during
+    a run.  Manuscript-facing JSON, CSV, XML, Markdown and PyMOL scripts should
+    instead be portable, so this sanitizer rewrites repository-root paths to
+    relative paths while leaving numeric scientific data untouched.
+    """
+    if not path.exists() or path.is_dir():
+        return
+    text_suffixes = {
+        ".csv",
+        ".json",
+        ".jsonl",
+        ".log",
+        ".md",
+        ".pdb",
+        ".pdbqt",
+        ".pml",
+        ".py",
+        ".sdf",
+        ".mol2",
+        ".sh",
+        ".bat",
+        ".cff",
+        ".ps1",
+        ".tex",
+        ".txt",
+        ".tsv",
+        ".xml",
+        ".yml",
+        ".yaml",
+    }
+    if path.suffix.lower() not in text_suffixes:
+        if path.name not in {"Makefile"}:
+            return
+    source_like_suffixes = {".py", ".sh", ".bat", ".cff", ".ps1", ".tex", ".yml", ".yaml"}
+    if path.suffix.lower() in source_like_suffixes or path.name == "Makefile":
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    root_posix = ROOT.as_posix()
+    root_native = str(ROOT)
+    replacements = [
+        (root_posix + "/", ""),
+        (root_native + os.sep, ""),
+        (root_posix, "."),
+        (root_native, "."),
+    ]
+    for old, new in replacements:
+        text = text.replace(old, new)
+    text = re.sub(r"MacBook-Pro-[A-Za-z0-9_.-]+\.local", "local-validation-host", text)
+    text = re.sub(r'hostname="[^"]+"', 'hostname="local-validation-host"', text)
+    path.write_text(text, encoding="utf-8")
+
+
 def build_leonardo_suite_interface_figure() -> dict:
     """Include the real Leonardo screenshot as a framed manuscript figure."""
     screenshot = ROOT / "leonardo.png"
@@ -308,11 +364,11 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
     """
     trace_rows = [
         {
-            "manuscript_item": "Figure 1 workflow architecture and Figure 2 module inventory",
+            "manuscript_item": "Architecture, interface, module inventory and evidence matrix",
             "source_artifacts": "draft/results/pipeline_classification.csv; draft/results/pipeline_inventory_summary.csv",
-            "rebuilt_output": "draft/figures/figure_1_workflow_architecture.pdf; draft/figures/figure_2_pipeline_inventory.pdf; draft/figures/figure_3_module_evidence_matrix.pdf",
+            "rebuilt_output": "draft/figures/figure_0_leonardo_suite_interface.pdf; draft/figures/figure_1_workflow_architecture.pdf; draft/figures/figure_2_pipeline_inventory.pdf; draft/figures/figure_3_module_evidence_matrix.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
-            "scope_of_claim": "Manual workflow inventory and traceability summary; not scientific performance statistics.",
+            "scope_of_claim": "Software architecture, interface evidence, manual workflow inventory and traceability summary; not scientific performance statistics.",
         },
         {
             "manuscript_item": "Interaction analysis",
@@ -336,7 +392,7 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "scope_of_claim": "Ligand QC and compact OpenMM plotting checks; not enrichment or converged free-energy benchmarking.",
         },
         {
-            "manuscript_item": "ABFE-lite guided-exit diagnostic",
+            "manuscript_item": "Guided-exit binding diagnostic",
             "source_artifacts": "draft/results/abfe_lite_guided_exit_diagnostic_source.json; draft/results/abfe_lite_diagnostic_*.csv; draft/results/abfe_lite_guided_exit_diagnostic_report.md",
             "rebuilt_output": "draft/figures/figure_10_abfe_lite_diagnostics.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
@@ -365,6 +421,14 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
 
     command_rows = [
         {
+            "workflow": "reviewer_check",
+            "command_type": "local_reproduction_entrypoint",
+            "inputs": "installed Leonardo environment; repository source tree",
+            "command": "make reviewer-check",
+            "outputs": "draft/results/pytest_validation.xml; draft/figures/*.pdf; draft/results/*.csv; draft/results/workflow_verification_summary.json",
+            "scope_note": "Runs installer preflight, backend tests and manuscript asset regeneration inside an already installed environment.",
+        },
+        {
             "workflow": "all_manuscript_assets",
             "command_type": "figure_and_table_rebuild",
             "inputs": "repository-local source artifacts listed in reproducibility_traceability.csv",
@@ -382,11 +446,11 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
         },
         {
             "workflow": "redocking_1stp_btn",
-            "command_type": "external_engine_rerun_template",
+            "command_type": "external_engine_rerun",
             "inputs": "1STP receptor/biotin template and smina/Open Babel environment",
-            "command": "python draft/scripts/run_publication_redocking_case.py --help",
+            "command": "python draft/scripts/run_publication_redocking_case.py --pdb 1STP.pdb --workdir redocking_real_1stp --ligand-resn BTN --ligand-chain B --ligand-resi 1 --repeats 15 --num-modes 15 --seed0 3001",
             "outputs": "redocking_real_1stp/redocking_summary.tsv",
-            "scope_note": "Template command documents the rerunnable redocking script; actual rerun requires local docking binaries.",
+            "scope_note": "Reruns the 15-seed redocking case when smina and Open Babel are available.",
         },
         {
             "workflow": "abfe_lite_guided_exit",
@@ -423,9 +487,9 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
     rows = [
         {
             "concern": "source availability and archival DOI",
-            "status": "pending_external_credentials",
-            "current_evidence": "The local git repository contains the source package and manuscript assets.",
-            "remaining_action": "Create the private/reviewer GitHub repository, push the commit and archive the exact release in Zenodo.",
+            "status": "repository_available_archive_pending",
+            "current_evidence": "The private reviewer repository https://github.com/juvenalyosa/Leonardo contains the source package and manuscript assets.",
+            "remaining_action": "Grant reviewer access or make the repository public, then archive the exact submission release in Zenodo.",
         },
         {
             "concern": "real Leonardo UI evidence",
@@ -459,7 +523,7 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "ABFE-lite should not report BFE/Kd/IC50 without production ABFE corrections",
             "status": "closed_by_scope_control",
-            "current_evidence": "Reviewer-facing ABFE-lite assets suppress affinity-like fields and report guided-exit state gating only.",
+            "current_evidence": "Reviewer-facing guided-exit diagnostic assets suppress affinity-like fields and report state gating only.",
             "remaining_action": "Implement standard-state/restraint corrections, uncertainty and replicated sampling before reporting binding affinity.",
         },
         {
@@ -1143,8 +1207,10 @@ def write_pymol_binding_site_script(contacts: list[dict], out_png: Path) -> Path
     residue_ids = sorted({str(row["protein_resi"]) for row in contacts}, key=lambda value: int(value))
     contact_residue_sel = "polymer.protein and chain A and resi " + "+".join(residue_ids)
     pml_path = RESULTS_DIR / "figure_4_3ptb_ben_pymol_binding_site.pml"
+    pdb_rel = (ROOT / "3PTB.pdb").relative_to(ROOT).as_posix()
+    out_rel = out_png.relative_to(ROOT).as_posix()
     lines = [
-        f"load {ROOT / '3PTB.pdb'}, complex",
+        f"load {pdb_rel}, complex",
         "remove solvent",
         "remove not (polymer.protein or resn BEN)",
         "hide everything",
@@ -1198,7 +1264,7 @@ def write_pymol_binding_site_script(contacts: list[dict], out_png: Path) -> Path
             "turn y, -22",
             "turn z, -8",
             "zoom resn BEN or contact_residues, 2.8",
-            f"png {out_png}, width=1500, height=1150, dpi=300, ray=1",
+            f"png {out_rel}, width=1500, height=1150, dpi=300, ray=1",
         ]
     )
     pml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1217,6 +1283,7 @@ def render_pymol_binding_site_panel(contacts: list[dict]) -> tuple[Path, Path]:
 
     pymol.finish_launching(["pymol", "-cq"])
     cmd.reinitialize()
+    cmd.cd(str(ROOT))
     cmd.do(pml_path.read_text(encoding="utf-8"))
     cmd.quit()
     if not out_png.exists() or out_png.stat().st_size == 0:
@@ -1241,8 +1308,10 @@ def write_pymol_interaction_scene_script(contacts: list[dict], out_png: Path) ->
     contact_residue_sel = "polymer.protein and chain A and resi " + "+".join(residue_ids)
     showcase_contacts = select_showcase_contacts(contacts)
     pml_path = RESULTS_DIR / "figure_4b_3ptb_ben_interaction_scene.pml"
+    pdb_rel = (ROOT / "3PTB.pdb").relative_to(ROOT).as_posix()
+    out_rel = out_png.relative_to(ROOT).as_posix()
     lines = [
-        f"load {ROOT / '3PTB.pdb'}, complex",
+        f"load {pdb_rel}, complex",
         "remove solvent",
         "remove not (polymer.protein or resn BEN)",
         "hide everything",
@@ -1308,7 +1377,7 @@ def write_pymol_interaction_scene_script(contacts: list[dict], out_png: Path) ->
             "turn z, -5",
             "zoom ligand or contact_residues, 3.5",
             "clip slab, 24",
-            f"png {out_png}, width=1800, height=1270, dpi=300, ray=1",
+            f"png {out_rel}, width=1800, height=1270, dpi=300, ray=1",
         ]
     )
     pml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1331,6 +1400,7 @@ def render_pymol_contact_figures(contacts: list[dict]) -> tuple[Path, Path, Path
     try:
         for script_path, expected_png in ((panel_script, panel_png), (scene_script, scene_png)):
             cmd.reinitialize()
+            cmd.cd(str(ROOT))
             cmd.do(script_path.read_text(encoding="utf-8"))
             if not expected_png.exists() or expected_png.stat().st_size == 0:
                 raise RuntimeError(f"PyMOL did not produce the expected figure: {expected_png}")
@@ -1352,6 +1422,7 @@ def render_pymol_interaction_scene(contacts: list[dict]) -> tuple[Path, Path]:
 
     pymol.finish_launching(["pymol", "-cq"])
     cmd.reinitialize()
+    cmd.cd(str(ROOT))
     cmd.do(pml_path.read_text(encoding="utf-8"))
     cmd.quit()
     if not out_png.exists() or out_png.stat().st_size == 0:
@@ -2480,7 +2551,7 @@ def build_abfe_lite_diagnostic_example() -> dict:
     panel_label(ax2, "B")
     panel_label(ax3, "C")
     panel_label(ax4, "D")
-    fig.suptitle("ABFE-lite guided-exit workflow diagnostics: 3PTB/benzamidine", fontsize=12.5, fontweight="bold", y=0.985)
+    fig.suptitle("Guided-exit binding diagnostic: 3PTB/benzamidine", fontsize=12.5, fontweight="bold", y=0.985)
     save_figure(fig, "figure_10_abfe_lite_diagnostics")
 
     return {
@@ -2792,8 +2863,8 @@ def build_pipeline_classification() -> dict:
             "verification_evidence": "unit_tests",
         },
         {
-            "module": "ABFE-lite",
-            "category": "Simulation and free energy",
+            "module": "Guided-exit diagnostic",
+            "category": "Simulation diagnostics",
             "leonardo_contribution": "Resource-constrained restraint design, guided exit path and state-gating diagnostics",
             "native_pipeline_features": "restraint_design;exit_guidance;resource_limits;analysis_plots",
             "external_engines": "OpenMM, PyMBAR, OpenFF",
@@ -2901,7 +2972,7 @@ def build_pipeline_classification() -> dict:
         (
             0.375,
             "Leonardo workflow layer",
-            ["Object registry and task monitor", "Readiness and motif summaries", "Interaction typing and 2D/3D linking", "Docking/redocking/VS orchestration", "OpenMM CV and ABFE-lite workflows", "Python QST2/QST3/IRC reaction paths"],
+            ["Object registry and task monitor", "Readiness and motif summaries", "Interaction typing and 2D/3D linking", "Docking/redocking/VS orchestration", "OpenMM CVs and guided-exit diagnostics", "Python QST2/QST3/IRC reaction paths"],
         ),
         (
             0.625,
@@ -3330,6 +3401,7 @@ def main() -> None:
         ROOT / "LICENSE",
         ROOT / "CITATION.cff",
         ROOT / "pyproject.toml",
+        ROOT / "Makefile",
         ROOT / "build_leonardo_zip.sh",
         ROOT / "install_leonardo.sh",
         ROOT / "install_envs.sh",
@@ -3363,6 +3435,8 @@ def main() -> None:
         json.dump(summary, handle, indent=2)
     with (RESULTS_DIR / "workflow_verification_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
+    for artifact in manifest_paths:
+        sanitize_publication_artifact(artifact)
     write_artifact_manifest(manifest_paths)
     print(json.dumps(summary, indent=2))
 

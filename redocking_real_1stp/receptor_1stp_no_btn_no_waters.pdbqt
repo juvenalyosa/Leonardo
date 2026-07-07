@@ -1,4 +1,4 @@
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdb
+REMARK  Name = redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdb
 REMARK                            x       y       z     vdW  Elec       q    Type
 REMARK                         _______ _______ _______ _____ _____    ______ ____
 ATOM      1  N   ALA A   1      22.637   5.768  11.762  0.00  0.00    +0.000 N 

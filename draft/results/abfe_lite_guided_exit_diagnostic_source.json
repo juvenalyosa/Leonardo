@@ -5,7 +5,7 @@
   "binding_estimate_allowed": false,
   "note": "This reviewer-facing source preserves trajectory/state diagnostics needed to regenerate the figure and omits affinity-like estimator fields from the raw ABFE-lite estimator output.",
   "inputs": {
-    "raw_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/3PTB.pdb",
+    "raw_pdb": "3PTB.pdb",
     "sim_ns": 5.0,
     "sample_every_ps": 2.0,
     "temperature_k": 300.0,

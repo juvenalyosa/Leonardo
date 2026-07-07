@@ -1,4 +1,4 @@
-REMARK  Name = /Users/juvenalyosa/ProtLigInteract/Leonardo_clean/redocking_real_1stp/btn_crystal_template.pdb
+REMARK  Name = redocking_real_1stp/btn_crystal_template.pdb
 REMARK  5 active torsions:
 REMARK  status: ('A' for Active; 'I' for Inactive)
 REMARK    1  A    between atoms: C_1  and  C_4

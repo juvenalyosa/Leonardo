@@ -1,6 +1,6 @@
 {
   "inputs": {
-    "raw_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/3PTB.pdb",
+    "raw_pdb": "3PTB.pdb",
     "sim_ns": 5.0,
     "sample_every_ps": 2.0,
     "temperature_k": 300.0,
@@ -45,7 +45,7 @@
     "policy_applied_actions": 0
   },
   "parameterization": {
-    "pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/3PTB.pdb",
+    "pdb": "3PTB.pdb",
     "ligand": {
       "chain": "A",
       "resi": "1",
@@ -121,7 +121,7 @@
         "has_lj_terms": true,
         "has_nonzero_charge": true
       },
-      "source_prmtop": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.prmtop",
+      "source_prmtop": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.prmtop",
       "residue_name": "BEN",
       "source_system": {
         "particles": 18,
@@ -175,13 +175,13 @@
       }
     },
     "files": {
-      "prepared_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/3PTB_BEN_prepared.pdb",
-      "final_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/3PTB_BEN_minimized.pdb",
-      "mol2": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_gaff2.mol2",
-      "frcmod": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_gaff2.frcmod",
-      "prmtop": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.prmtop",
-      "inpcrd": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.inpcrd",
-      "ffxml": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_openmm_ff.xml"
+      "prepared_pdb": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/3PTB_BEN_prepared.pdb",
+      "final_pdb": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/3PTB_BEN_minimized.pdb",
+      "mol2": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_gaff2.mol2",
+      "frcmod": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_gaff2.frcmod",
+      "prmtop": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.prmtop",
+      "inpcrd": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand.inpcrd",
+      "ffxml": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/parameterization/ligand_openmm_ff.xml"
     }
   },
   "energetics": {
@@ -417,10 +417,10 @@
     "overall_pass": true
   },
   "files": {
-    "complex_with_ions_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/3PTB_BEN_CA_complex.pdb",
-    "dcd": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/abfe_metal_3ptb.dcd",
-    "final_pdb": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/abfe_metal_3ptb_final.pdb",
-    "policy_trace": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/policy_trace.jsonl"
+    "complex_with_ions_pdb": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/3PTB_BEN_CA_complex.pdb",
+    "dcd": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/abfe_metal_3ptb.dcd",
+    "final_pdb": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/abfe_metal_3ptb_final.pdb",
+    "policy_trace": "draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702/policy_trace.jsonl"
   },
   "timeseries": [
     {

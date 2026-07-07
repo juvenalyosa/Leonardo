@@ -23,6 +23,20 @@ from pathlib import Path
 WATER_RESN = {"HOH", "WAT", "DOD", "H2O"}
 
 
+def portable_path(path: Path, *, base: Path | None = None) -> str:
+    """Return a repository/workdir-relative path for reviewer-facing metadata."""
+    resolved = Path(path)
+    bases = [base, Path.cwd()]
+    for candidate in bases:
+        if candidate is None:
+            continue
+        try:
+            return str(resolved.relative_to(Path(candidate).resolve()))
+        except Exception:
+            pass
+    return str(resolved)
+
+
 def run_command(cmd: list[str], *, cwd: Path | None = None, timeout: int = 7200) -> tuple[str, str]:
     proc = subprocess.run(
         [str(x) for x in cmd],
@@ -333,7 +347,7 @@ def run_redocking(args: argparse.Namespace) -> dict:
                     "mode": mode,
                     "affinity_kcal_mol": float(score["affinity_kcal_mol"]),
                     "crystal_heavy_rmsd_A": float(rmsd),
-                    "pose_file": str(pose_file.relative_to(Path.cwd())) if pose_file.is_relative_to(Path.cwd()) else str(pose_file),
+                    "pose_file": portable_path(pose_file),
                 }
             )
         if rows:
@@ -360,7 +374,7 @@ def run_redocking(args: argparse.Namespace) -> dict:
         writer.writerows(rows)
 
     meta = {
-        "pdb": str(pdb_path),
+        "pdb": portable_path(pdb_path),
         "ligand": {"resn": ligand_key[0], "chain": ligand_key[1], "resi": ligand_key[2]},
         "repeats": int(args.repeats),
         "num_modes": int(args.num_modes),
@@ -368,9 +382,9 @@ def run_redocking(args: argparse.Namespace) -> dict:
         "seed0": int(args.seed0),
         "grid_center": [round(float(v), 4) for v in center],
         "grid_size": [round(float(v), 4) for v in size],
-        "receptor_pdbqt": str(receptor_pdbqt),
-        "ligand_pdbqt": str(ligand_pdbqt),
-        "summary_tsv": str(summary_tsv),
+        "receptor_pdbqt": portable_path(receptor_pdbqt),
+        "ligand_pdbqt": portable_path(ligand_pdbqt),
+        "summary_tsv": portable_path(summary_tsv),
         "n_pose_rows": len(rows),
         "repeat_rows": repeat_rows,
     }

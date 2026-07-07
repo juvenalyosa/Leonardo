@@ -1,5 +1,5 @@
 {
-  "source_prmtop": "/Users/juvenalyosa/ProtLigInteract/Leonardo_clean/draft/results/abfe_lite_3ptb_ben_smoke/parameterization/ligand.prmtop",
+  "source_prmtop": "draft/results/abfe_lite_3ptb_ben_smoke/parameterization/ligand.prmtop",
   "residue_name": "BEN",
   "atoms": [
     {
