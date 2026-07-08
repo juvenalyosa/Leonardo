@@ -42,6 +42,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 try:
+    from write_release_manifest import write_release_manifest_file
+except Exception:  # pragma: no cover - script can still fail clearly later.
+    write_release_manifest_file = None
+
+try:
     from interaction_runtime import (
         INTERACTION_GEOMETRY_CRITERIA,
         assign_ligand_ionic_groups_from_topology,
@@ -699,29 +704,10 @@ def write_release_manifest(entries: list[tuple[str, Path]]) -> dict:
     release-oriented.  It records whether each expected reviewer asset exists,
     plus checksums for files present in the source tree at generation time.
     """
-    rows = []
-    for role, path in entries:
-        present = bool(path.exists() and path.is_file())
-        row = {
-            "release_tag": reviewer_tag(),
-            "role": role,
-            "path": str(path.relative_to(ROOT)) if path.is_absolute() and path.exists() else str(path),
-            "present": str(present).lower(),
-            "bytes": path.stat().st_size if present else "",
-            "sha256": sha256_file(path) if present else "",
-        }
-        rows.append(row)
     out_csv = RESULTS_DIR / "release_manifest.csv"
-    with out_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = make_dict_writer(handle, ["release_tag", "role", "path", "present", "bytes", "sha256"])
-        writer.writeheader()
-        writer.writerows(rows)
-    return {
-        "path": str(out_csv.relative_to(ROOT)),
-        "release_tag": reviewer_tag(),
-        "n_rows": len(rows),
-        "missing": [row["path"] for row in rows if row["present"] != "true"],
-    }
+    if write_release_manifest_file is None:
+        raise RuntimeError("Could not import draft/scripts/write_release_manifest.py")
+    return write_release_manifest_file(out_csv, root=ROOT, entries=entries, tag=reviewer_tag())
 
 
 def write_workflow_traceability_tables(summary: dict) -> dict:
@@ -4005,6 +3991,9 @@ def main() -> None:
             ("citation_metadata", ROOT / "CITATION.cff"),
             ("conda_environment", ROOT / "environment.yml"),
             ("macos_lock_environment", ROOT / "environment-protliginteract-full.lock.yml"),
+            ("local_jsme_entrypoint", ROOT / "JSME_minimal.html"),
+            ("local_jsme_runtime", ROOT / "jsme" / "jsme.nocache.js"),
+            ("local_jsme_license", ROOT / "jsme" / "license.txt"),
             ("abfe_fixture_prmtop", ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"),
             ("abfe_fixture_mol2", ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2"),
         ]
@@ -4077,6 +4066,9 @@ def main() -> None:
         ROOT / "LICENSE",
         ROOT / "THIRD_PARTY_LICENSES.md",
         ROOT / "CITATION.cff",
+        ROOT / "JSME_minimal.html",
+        ROOT / "jsme" / "jsme.nocache.js",
+        ROOT / "jsme" / "license.txt",
         ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop",
         ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2",
         ROOT / "pyproject.toml",

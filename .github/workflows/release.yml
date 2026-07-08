@@ -20,12 +20,22 @@ jobs:
           chmod +x ./build_leonardo_zip.sh
           ./build_leonardo_zip.sh Leonardo.zip
 
+      - name: Write release manifest
+        run: |
+          set -e
+          python draft/scripts/write_release_manifest.py \
+            --output dist/release_manifest.csv \
+            --source-commit "$GITHUB_SHA"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v1
         with:
             files: |
               dist/Leonardo.zip
               dist/Leonardo.zip.sha256
+              dist/release_manifest.csv
+              draft/manuscript/main.pdf
+              draft/results/artifact_manifest.csv
             generate_release_notes: true
             prerelease: true
         env:

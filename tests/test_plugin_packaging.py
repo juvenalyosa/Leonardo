@@ -1,4 +1,5 @@
 import ast
+import csv
 import hashlib
 import re
 import subprocess
@@ -62,6 +63,21 @@ def _required_release_files() -> set[str]:
     }
 
 
+def _required_local_jsme_assets() -> set[str]:
+    return {
+        "JSME_minimal.html",
+        "jsme",
+    }
+
+
+def _required_local_jsme_zip_entries() -> set[str]:
+    return {
+        "Leonardo/JSME_minimal.html",
+        "Leonardo/jsme/jsme.nocache.js",
+        "Leonardo/jsme/license.txt",
+    }
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -79,6 +95,12 @@ def test_build_script_packages_code_v2_local_module_imports():
 def test_build_script_packages_required_release_files():
     """Keep license, citation and reviewer install metadata in the release ZIP."""
     missing = sorted(_required_release_files() - _build_script_copied_paths())
+    assert missing == []
+
+
+def test_build_script_packages_local_jsme_bundle():
+    """The offline JSME drawer must ship with its payload and license notice."""
+    missing = sorted(_required_local_jsme_assets() - _build_script_copied_paths())
     assert missing == []
 
 
@@ -112,6 +134,16 @@ def test_dist_zip_contains_required_release_files():
     assert missing == []
 
 
+def test_dist_zip_contains_local_jsme_bundle():
+    """Catch release ZIPs where the local JSME option silently falls back to web."""
+    zip_path = _dist_zip_path()
+
+    with zipfile.ZipFile(zip_path) as zf:
+        names = set(zf.namelist())
+    missing = sorted(_required_local_jsme_zip_entries() - names)
+    assert missing == []
+
+
 def test_dist_zip_contains_current_release_identity():
     """Ensure the installable ZIP was rebuilt after release metadata changes."""
     zip_path = _dist_zip_path()
@@ -130,6 +162,34 @@ def test_dist_zip_checksum_matches_recorded_sha256_file():
     assert checksum_path.is_file(), "dist/Leonardo.zip.sha256 is missing"
     recorded = checksum_path.read_text(encoding="utf-8").split()[0]
     assert recorded == _sha256(zip_path)
+
+
+def test_release_manifest_writer_records_commit_and_local_jsme_assets(tmp_path):
+    """The release manifest used by CI must identify commit and bundled JSME."""
+    out_csv = tmp_path / "release_manifest.csv"
+    expected_commit = "0123456789abcdef0123456789abcdef01234567"
+    subprocess.run(
+        [
+            "python",
+            "draft/scripts/write_release_manifest.py",
+            "--output",
+            str(out_csv),
+            "--source-commit",
+            expected_commit,
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+    rows = list(csv.DictReader(out_csv.open(encoding="utf-8")))
+    assert rows
+    assert {row["source_commit"] for row in rows} == {expected_commit}
+    roles = {row["role"] for row in rows}
+    assert {"local_jsme_entrypoint", "local_jsme_runtime", "local_jsme_license"} <= roles
+    for row in rows:
+        if row["role"].startswith("local_jsme_"):
+            assert row["present"] == "true"
+            assert row["sha256"]
 
 
 def test_build_script_reproduces_tracked_zip_byte_for_byte():

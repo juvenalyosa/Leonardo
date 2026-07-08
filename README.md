@@ -12,7 +12,7 @@ Technical support and bug reports: thinkai.col@gmail.com
 
 ## Pre-release and Manuscript Verification Status
 
-This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a4`, build `2026-07-07-r4`), not a final stable production release.
+This source tree is a manuscript-verification pre-release of Leonardo (`0.2.0a5`, build `2026-07-08-r5`), not a final stable production release.
 
 It is being shared so users can:
 
@@ -669,7 +669,8 @@ Capabilities include:
 - PubChem search from within Leonardo
 - ligand upload from MOL2, SDF, or PDBQT
 - built-in 2D mouse editing for atom, bond, fragment, and layout changes
-- optional JSME/Ketcher web-drawer fallback
+- bundled local JSME 2D drawer with license notice in `jsme/license.txt`
+- optional JSME/Ketcher web-drawer fallback when an embedded browser is available
 - 3D rebuild with hydrogens
 - protonation-aware preparation
 - charge derivation using:

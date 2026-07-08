@@ -149,7 +149,7 @@ PYTHONPATH=. pytest -q
 ```
 
 Expected:
-- full suite passes in the current repo state (`528 passed` at the time this guide was updated)
+- full suite passes in the current repo state (`531 passed` at the time this guide was updated)
 
 ## 5) Install Optional Extras (separate env, recommended)
 

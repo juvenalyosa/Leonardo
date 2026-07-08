@@ -7,7 +7,7 @@ DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/leonardo_pkg.XXXXXX")"
 PKG_DIR="$STAGE_DIR/Leonardo"
 TMP_ZIP="$STAGE_DIR/$OUT_NAME"
-SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1783382400}"  # 2026-07-07T00:00:00Z
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1783468800}"  # 2026-07-08T00:00:00Z
 
 cleanup() {
   rm -rf "$STAGE_DIR"
@@ -56,6 +56,8 @@ copy_if_exists "mutator.py"
 copy_if_exists "genmodels.py"
 copy_if_exists "protliginteract.ui"
 copy_if_exists "logo.png"
+copy_if_exists "JSME_minimal.html"
+copy_if_exists "jsme"
 copy_if_exists "README.md"
 copy_if_exists "LICENSE"
 copy_if_exists "THIRD_PARTY_LICENSES.md"

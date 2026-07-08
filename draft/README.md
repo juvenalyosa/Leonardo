@@ -10,7 +10,7 @@ This directory contains the current publication draft and reproducible assets.
 - `scripts/generate_bmc_validation_assets.py`: reproducible workflow-check figure/table generator.
 - `results/workflow_verification_summary.json`: numerical summary used in the manuscript.
 - `results/artifact_manifest.csv`: file-level byte counts and SHA-256 checksums for manuscript assets.
-- `results/release_manifest.csv`: short reviewer-release manifest covering ZIP, PDF, licenses, environment files and required fixtures.
+- `results/release_manifest.csv`: short reviewer-release manifest covering ZIP, PDF, licenses, local JSME assets, environment files and required fixtures. The GitHub release workflow writes the published manifest after tag checkout so the release asset can include the exact source commit.
 - `results/pytest_validation.xml`: repository test report used by the manuscript.
 - `figures/figure_*.pdf` and `figures/figure_*.png`: manuscript figures.
 - `templates/springer-nature-latex-template.zip`: official Springer Nature LaTeX package downloaded for this draft.

@@ -2,8 +2,8 @@
   "backend_test_report": {
     "available": true,
     "report": "draft/results/pytest_validation.xml",
-    "tests": 528,
-    "passed": 528,
+    "tests": 531,
+    "passed": 531,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -12,7 +12,7 @@
     "available": true,
     "input": "leonardo.png",
     "figure": "draft/figures/figure_0_leonardo_suite_interface.pdf",
-    "snapshot_tag": "v0.2.0a4-reviewer"
+    "snapshot_tag": "v0.2.0a5-reviewer"
   },
   "pipeline_classification": {
     "pipeline_table": "draft/results/pipeline_classification.csv",
@@ -252,13 +252,14 @@
   },
   "release_manifest": {
     "path": "draft/results/release_manifest.csv",
-    "release_tag": "v0.2.0a4-reviewer",
-    "n_rows": 10,
+    "release_tag": "v0.2.0a5-reviewer",
+    "source_commit": "pending-final-release-commit",
+    "n_rows": 13,
     "missing": []
   },
   "artifact_manifest": {
     "path": "draft/results/artifact_manifest.csv",
-    "n_files": 257,
+    "n_files": 260,
     "scope": "all draft/results and draft/figures files plus release-critical source artifacts"
   }
 }

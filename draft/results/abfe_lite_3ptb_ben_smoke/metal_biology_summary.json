@@ -204,11 +204,11 @@
     "pull_k_max_kj_nm2": 1890.4715993738255
   },
   "free_energy_proxy": {
-    "selected_estimator": "gated_off",
-    "n_bound_hold": 0,
     "reweight_ess_unbound": NaN,
     "n_unbound_hold": 0,
+    "n_bound_hold": 0,
     "reweight_ess_bound": NaN,
+    "selected_estimator": "gated_off",
     "reweight_ess_total": NaN,
     "diagnostic_only": true,
     "binding_estimate_allowed": false,
