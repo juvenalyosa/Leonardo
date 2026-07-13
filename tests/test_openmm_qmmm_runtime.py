@@ -364,7 +364,7 @@ def test_plan_openmm_staged_minimization_handles_small_iteration_counts():
 
 def test_export_forcefield_xml_from_amber_prmtop_smoke(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    prmtop = root / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"
+    prmtop = root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop"
     assert prmtop.is_file()
     out_xml = tmp_path / "BEN_from_complex_ff.xml"
     res = export_forcefield_xml_from_amber_prmtop(
@@ -409,8 +409,8 @@ def test_abfe_bonded_ff_transfer_accepts_heavy_only_shuffled_pose(tmp_path):
     dlg = DummyDialog()
 
     root = Path(__file__).resolve().parents[1]
-    prmtop = root / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"
-    pdb = root / "test_abfe_3ptb_ben" / "BEN_from_complex.pdb"
+    prmtop = root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop"
+    pdb = root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.pdb"
     assert prmtop.is_file()
     assert pdb.is_file()
 
@@ -503,8 +503,8 @@ def test_abfe_docking_pose_metadata_restore_recovers_validated_xml_mapping(tmp_p
     dlg = DummyDialog()
 
     root = Path(__file__).resolve().parents[1]
-    prmtop = root / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"
-    pdb = root / "test_abfe_3ptb_ben" / "BEN_from_complex.pdb"
+    prmtop = root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop"
+    pdb = root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.pdb"
     assert prmtop.is_file()
     assert pdb.is_file()
 

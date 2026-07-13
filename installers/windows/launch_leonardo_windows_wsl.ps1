@@ -31,6 +31,6 @@ Write-Host "On Windows 10, an external X server is required."
 Write-Host ""
 
 $quotedRepo = $wslRepo.Replace("'", "'\''")
-$cmd = "cd '$quotedRepo' && ./launch_leonardo.sh"
+$cmd = "cd '$quotedRepo' && ./scripts/launch_leonardo.sh"
 & wsl.exe -e bash -lc $cmd
 exit $LASTEXITCODE

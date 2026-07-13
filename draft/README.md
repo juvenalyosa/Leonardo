@@ -37,7 +37,7 @@ This directory contains the current publication draft and reproducible assets.
 - Reviewer repository URL: `https://github.com/juvenalyosa/Leonardo` (currently private; grant reviewer access or make public at submission).
 - Archived DOI, ideally Zenodo, for the exact final submission release.
 - Confirmed license and non-academic restrictions.
-- Additional real workflow screenshots for supplementary material, especially object-selection and result/report pop-up windows.
+- Additional real workflow docs/screenshots for supplementary material, especially object-selection and result/report pop-up windows.
 - Broader external-user testing or benchmark expansion if we want stronger claims than "software platform/workflow verification."
 
 ## Reproduction
@@ -45,13 +45,13 @@ This directory contains the current publication draft and reproducible assets.
 From the repository root, the preferred reviewer command is:
 
 ```bash
-./install_leonardo.sh --paper-assets
+./scripts/install_leonardo.sh --paper-assets
 ```
 
 A non-mutating installer preflight is also available:
 
 ```bash
-./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
+./scripts/install_leonardo.sh --check-only --skip-zip --no-pymol-loader
 ```
 
 Inside an already installed Leonardo environment, the compact reviewer workflow is:

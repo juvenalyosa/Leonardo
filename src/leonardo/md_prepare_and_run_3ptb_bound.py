@@ -17,6 +17,8 @@ from openmmforcefields.generators import SystemGenerator
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+from .config import resource_path
+
 PROTEIN_RESN = {
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
     "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
@@ -155,8 +157,8 @@ def add_positional_restraints(system, topology, positions, lig_chain, lig_resi, 
 
 
 def main():
-    workdir = Path(__file__).resolve().parent
-    pdb_path = workdir / "3PTB.pdb"
+    workdir = Path.cwd()
+    pdb_path = resource_path("examples/3ptb_ben/3PTB.pdb")
 
     if not pdb_path.exists():
         raise FileNotFoundError(f"Missing input PDB: {pdb_path}")

@@ -20,7 +20,7 @@ echo
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "ERROR: this double-click installer is for macOS."
-  echo "Use ./install_leonardo.sh on Linux or another Unix shell."
+  echo "Use ./scripts/install_leonardo.sh on Linux or another Unix shell."
   exit 1
 fi
 
@@ -124,17 +124,17 @@ echo "Installing Leonardo with locked versions first."
 echo "If the locked environment is not compatible with this Mac, the installer will offer a flexible solve."
 echo
 
-if "$ROOT_DIR/install_leonardo.sh" --locked; then
+if "$ROOT_DIR/scripts/install_leonardo.sh" --locked; then
   echo
   echo "Leonardo locked installation completed."
 else
   echo
   echo "The locked installation failed on this host."
-  read -r -p "Try the flexible environment.yml installation instead? [Y/n] " answer
+  read -r -p "Try the flexible environments/environment.yml installation instead? [Y/n] " answer
   answer="${answer:-Y}"
   case "$answer" in
     Y|y|YES|Yes|yes)
-      "$ROOT_DIR/install_leonardo.sh" --flexible
+      "$ROOT_DIR/scripts/install_leonardo.sh" --flexible
       ;;
     *)
       echo "Install stopped after locked-environment failure."
@@ -148,7 +148,7 @@ cat <<EOF
 Leonardo is installed.
 
 Double click this file to launch:
-  $ROOT_DIR/Launch Leonardo.command
+  $ROOT_DIR/installers/shortcuts/Launch Leonardo.command
 
 Inside PyMOL open:
   Plugins > Leonardo

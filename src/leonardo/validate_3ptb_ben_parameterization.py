@@ -19,6 +19,7 @@ from openmm.app import Modeller, PDBFile, Simulation
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+from .config import resource_path
 from .openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
 
 PROTEIN_RESN = {
@@ -261,7 +262,7 @@ def ring_bond_metrics(topology, positions, lig_chain, lig_resi, lig_resn):
 
 def main():
     ap = argparse.ArgumentParser(description="Validate Leonardo BEN parameterization on 3PTB.")
-    ap.add_argument("--pdb", default="3PTB.pdb")
+    ap.add_argument("--pdb", default=str(resource_path("examples/3ptb_ben/3PTB.pdb")))
     ap.add_argument("--workdir", default="validation_3ptb_ben")
     ap.add_argument("--antechamber", default=os.environ.get("ANTECHAMBER_BIN", "antechamber"))
     ap.add_argument("--parmchk2", default=os.environ.get("PARMCHK2_BIN", "parmchk2"))

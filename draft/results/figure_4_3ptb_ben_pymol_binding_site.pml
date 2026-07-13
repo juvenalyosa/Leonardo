@@ -1,4 +1,4 @@
-load 3PTB.pdb, complex
+load examples/3ptb_ben/3PTB.pdb, complex
 remove solvent
 remove not (polymer.protein or resn BEN)
 hide everything

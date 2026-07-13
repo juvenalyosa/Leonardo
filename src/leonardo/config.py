@@ -26,7 +26,9 @@ def resource_path(name: str) -> Path:
     candidates = (
         package_dir / resource_name,
         package_dir.parent / resource_name,
+        package_dir.parent / "assets" / resource_name,
         package_dir.parent.parent / resource_name,
+        package_dir.parent.parent / "assets" / resource_name,
         package_dir.parent / "share" / "leonardo" / resource_name,
         Path(sys.prefix) / "share" / "leonardo" / resource_name,
     )

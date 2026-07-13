@@ -35,14 +35,14 @@ if str(SCRIPT_DIR) not in sys.path:
 SYSTEMS = [
     {
         "system": "3PTB/BEN",
-        "protein_pdb": "redocking_real_3ptb_ben/receptor_3ptb_no_ben_no_waters.pdb",
-        "ligand_sdf": "redocking_real_3ptb_ben/ben_crystal_template.sdf",
+        "protein_pdb": "benchmarks/redocking/3ptb_ben/receptor_3ptb_no_ben_no_waters.pdb",
+        "ligand_sdf": "benchmarks/redocking/3ptb_ben/ben_crystal_template.sdf",
         "ligand_resn": "BEN",
     },
     {
         "system": "1STP/BTN",
-        "protein_pdb": "redocking_real_1stp/receptor_1stp_no_btn_no_waters.pdb",
-        "ligand_sdf": "redocking_real_1stp/btn_crystal_template.sdf",
+        "protein_pdb": "benchmarks/redocking/1stp/receptor_1stp_no_btn_no_waters.pdb",
+        "ligand_sdf": "benchmarks/redocking/1stp/btn_crystal_template.sdf",
         "ligand_resn": "BTN",
     },
     {
