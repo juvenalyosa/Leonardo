@@ -6,13 +6,14 @@ channels:
 dependencies:
   - python=3.10
   - pip
+  - llvm-openmp  # supplies libomp.dylib required by the macOS XGBoost wheel
 
   # Optional ML / AF2 stack (kept separate to avoid breaking core env).
   - pip:
       - colabfold
       - alphafold-colabfold
-      - jax
-      - jaxlib
+      - jax==0.4.23      # dm-haiku 0.0.10 used by ColabFold 1.5.5 needs jax.linear_util
+      - jaxlib==0.4.23
       - deepchem
       - catboost
       - xgboost

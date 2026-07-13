@@ -795,19 +795,21 @@ except Exception:
     except Exception:
         QTWEBENGINE_WIDGETS = None
         HAS_QT_WEBENGINE = False
-# VERSION TAG
-# Keep version identifiers stable across the Python package, PyMOL plugin and
-# manuscript artifacts so reviewers can identify the exact pre-release build.
+# Shared package configuration. Keep this import compatible with both the
+# installed package and the legacy root-level PyMOL loader.
+try:
+    from .config import (
+        PLUGIN_VERSION, PLUGIN_BUILD, SUITE_NAME, PROJECT_MASTER_FILE_NAME,
+        PROJECT_STATE_FILE_NAME, SUITE_TAGLINE, SUITE_AUTHOR_LINE, resource_string,
+    )
+except ImportError:
+    from config import (
+        PLUGIN_VERSION, PLUGIN_BUILD, SUITE_NAME, PROJECT_MASTER_FILE_NAME,
+        PROJECT_STATE_FILE_NAME, SUITE_TAGLINE, SUITE_AUTHOR_LINE, resource_string,
+    )
+# Literal aliases are retained for legacy packaging/version inspections.
 PLUGIN_VERSION = "0.2.0a5"
 PLUGIN_BUILD = "2026-07-08-r5"
-SUITE_NAME = "Leonardo"
-PROJECT_MASTER_FILE_NAME = f"{SUITE_NAME}.project.json"
-PROJECT_STATE_FILE_NAME = "project_state.json"
-SUITE_TAGLINE = (
-    "Leonardo is an open-source initiative dedicated to empowering education "
-    "and accelerating research."
-)
-SUITE_AUTHOR_LINE = "Writen by Juvenal Yosa PhD. juvenal.yosa@gmail.com"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
@@ -1112,7 +1114,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     """Main dialog for the Protein-Ligand Interaction Visualizer plugin."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        uifile = os.path.join(os.path.dirname(__file__), "protliginteract.ui")
+        uifile = resource_string("protliginteract.ui")
         loadUi(uifile, self)
         self._apply_leonardo_branding()
         self.pdb_path = None
@@ -4456,7 +4458,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self.setStyleSheet(qss)
 
     def _apply_leonardo_branding(self):
-        logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+        logo_path = resource_string("logo.png")
         self.setWindowTitle(f"{SUITE_NAME} [{PLUGIN_BUILD}]")
         if os.path.isfile(logo_path):
             try:

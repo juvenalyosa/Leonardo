@@ -1,5 +1,11 @@
 # Contributing to ProtLigInteract
 
+Before adding a file, check [`docs/REPOSITORY_LAYOUT.md`](docs/REPOSITORY_LAYOUT.md).
+Keep generated validation output in `draft/`, release archives in `dist/`, and
+reusable logic in runtime modules with tests.
+
+Before opening a pull request, run `make lint` and the relevant pytest suite.
+
 Thanks for considering a contribution! This project is a PyMOL plugin focused on clear visuals, robust detection, and good UX. Small PRs are welcome.
 
 ## Dev setup
@@ -37,4 +43,3 @@ Please include:
 - Expected vs actual behavior and any errors
 
 Thanks! Contributions help make the plugin better for everyone.
-

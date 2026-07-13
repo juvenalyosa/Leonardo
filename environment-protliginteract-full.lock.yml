@@ -377,7 +377,7 @@ dependencies:
   - scipy=1.17.1
   - scs=3.2.11
   - send2trash=2.1.0
-  - setuptools=82.0.0
+  - setuptools=81.0.0
   - sip=6.15.0
   - six=1.17.0
   - sleef=3.9.0
@@ -458,7 +458,7 @@ dependencies:
       - openai==2.41.0
       - openai-agents==0.17.4
       - opencv-contrib-python==4.11.0.86
-      - opencv-python==4.13.0.92
+      - opencv-python==4.11.0.86
       - packmol-memgen==2024.2.9
       - pdb4amber==22.0
       - prolif==2.2.0

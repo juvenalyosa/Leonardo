@@ -1,12 +1,13 @@
 import ast
 import csv
 import hashlib
+import importlib.util
 import re
 import subprocess
+import sys
 import tomllib
 import zipfile
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,6 +154,48 @@ def test_dist_zip_contains_current_release_identity():
         init_text = zf.read("Leonardo/__init__.py").decode("utf-8")
     assert f'PLUGIN_VERSION = "{version}"' in code_text
     assert f'__version__ = "{version}"' in init_text
+
+
+def test_dist_zip_package_resolves_root_resources(tmp_path):
+    with zipfile.ZipFile(_dist_zip_path()) as zf:
+        zf.extractall(tmp_path)
+    config_path = tmp_path / "Leonardo" / "leonardo" / "config.py"
+    spec = importlib.util.spec_from_file_location("leonardo_zip_config", config_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    assert module.resource_path("logo.png") == tmp_path / "Leonardo" / "logo.png"
+
+
+def test_wheel_contains_ui_resources(tmp_path):
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            ".",
+            "--no-deps",
+            "--no-build-isolation",
+            "--wheel-dir",
+            str(tmp_path),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wheels = list(tmp_path.glob("*.whl"))
+    assert len(wheels) == 1
+    with zipfile.ZipFile(wheels[0]) as zf:
+        names = set(zf.namelist())
+    for suffix in (
+        "/data/share/leonardo/logo.png",
+        "/data/share/leonardo/protliginteract.ui",
+        "/data/share/leonardo/JSME_minimal.html",
+        "/data/share/leonardo/jsme/license.txt",
+    ):
+        assert any(name.endswith(suffix) for name in names), suffix
 
 
 def test_dist_zip_checksum_matches_recorded_sha256_file():
