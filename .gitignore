@@ -35,19 +35,19 @@ your_outdir/
 comp_refine_*/
 redocking/out*/
 vs_test/
-test_abfe_3ptb_ben/*.dcd
-test_abfe_3ptb_ben/*_final.pdb
-test_abfe_3ptb_ben/*.prmtop
-!test_abfe_3ptb_ben/BEN_from_complex.prmtop
-test_abfe_3ptb_ben/*.inpcrd
-test_abfe_3ptb_ben/*.frcmod
-test_abfe_3ptb_ben/*.mol2
-!test_abfe_3ptb_ben/BEN_from_complex_gaff2.mol2
-test_abfe_3ptb_ben/*.xml
-test_abfe_3ptb_ben/*.json
-test_abfe_3ptb_ben/*.log
-test_abfe_3ptb_ben/*.in
-test_abfe_3ptb_ben/parameterization/
+benchmarks/abfe/ptb3_ben/*.dcd
+benchmarks/abfe/ptb3_ben/*_final.pdb
+benchmarks/abfe/ptb3_ben/*.prmtop
+!benchmarks/abfe/ptb3_ben/BEN_from_complex.prmtop
+benchmarks/abfe/ptb3_ben/*.inpcrd
+benchmarks/abfe/ptb3_ben/*.frcmod
+benchmarks/abfe/ptb3_ben/*.mol2
+!benchmarks/abfe/ptb3_ben/BEN_from_complex_gaff2.mol2
+benchmarks/abfe/ptb3_ben/*.xml
+benchmarks/abfe/ptb3_ben/*.json
+benchmarks/abfe/ptb3_ben/*.log
+benchmarks/abfe/ptb3_ben/*.in
+benchmarks/abfe/ptb3_ben/parameterization/
 pymbar_test/*.json
 
 # Trajectories and heavy generated structure outputs

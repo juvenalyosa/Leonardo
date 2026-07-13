@@ -9,6 +9,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_repository_root_contains_no_scattered_runtime_or_asset_files():
+    forbidden_patterns = ("*.py", "*.png", "*.ui", "*.pdb", "*.sdf", "*.command", "*.bat")
+    scattered = sorted(
+        path.name
+        for pattern in forbidden_patterns
+        for path in ROOT.glob(pattern)
+        if path.is_file()
+    )
+    assert scattered == []
+
+
 def test_canonical_runtime_namespace_imports():
     modules = [
         "smina_runtime",
@@ -50,7 +61,7 @@ def test_package_internal_imports_are_relative():
 
 def test_legacy_readiness_script_still_executes():
     result = subprocess.run(
-        [sys.executable, str(ROOT / "report_scientific_readiness.py"), "--list"],
+        [sys.executable, str(ROOT / "legacy" / "report_scientific_readiness.py"), "--list"],
         cwd=ROOT,
         check=True,
         capture_output=True,

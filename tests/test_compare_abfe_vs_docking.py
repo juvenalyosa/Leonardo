@@ -136,7 +136,7 @@ def test_run_merges_raw_abfe_cv_predictions_and_docking():
 def test_run_fills_exp_from_yml_and_builds_stack():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        data_root = root / "benchmark_data"
+        data_root = root / "benchmarks/data"
         abfe_csv = root / "abfe.csv"
         pred_csv = root / "pred.csv"
         dock_csv = root / "dock.csv"

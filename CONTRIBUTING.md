@@ -18,7 +18,7 @@ pip install -r requirements.txt
 ```
 
 - Load the plugin in PyMOL via `Plugin > Plugin Manager > Install from local file` pointing to this repo folder or a zip archive.
-- Modify `code_v2.py` or `protliginteract.ui` and reopen the dialog to see changes.
+- Modify `legacy/code_v2.py` or `assets/protliginteract.ui` and reopen the dialog to see changes.
 
 ## Coding guidelines
 

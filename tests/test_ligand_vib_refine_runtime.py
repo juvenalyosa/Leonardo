@@ -109,7 +109,7 @@ def test_compute_mode_fit_metrics_penalizes_geometry_drift_even_with_matching_mo
 
 
 def test_write_mol2_with_coords_updates_positions(tmp_path):
-    src = "test_abfe_3ptb_ben/BEN_from_complex_gaff2.mol2"
+    src = "benchmarks/abfe/ptb3_ben/BEN_from_complex_gaff2.mol2"
     payload = load_mol2_full_records(src)
     coords = np.asarray([[float(a["x"]), float(a["y"]), float(a["z"])] for a in payload["atoms"]], dtype=float)
     shifted = np.array(coords, copy=True)

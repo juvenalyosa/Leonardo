@@ -77,13 +77,13 @@ def default_release_entries(root: Path = ROOT) -> list[tuple[str, Path]]:
         ("source_license", root / "LICENSE"),
         ("third_party_license_summary", root / "THIRD_PARTY_LICENSES.md"),
         ("citation_metadata", root / "CITATION.cff"),
-        ("conda_environment", root / "environment.yml"),
-        ("macos_lock_environment", root / "environment-protliginteract-full.lock.yml"),
-        ("local_jsme_entrypoint", root / "JSME_minimal.html"),
-        ("local_jsme_runtime", root / "jsme" / "jsme.nocache.js"),
-        ("local_jsme_license", root / "jsme" / "license.txt"),
-        ("abfe_fixture_prmtop", root / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"),
-        ("abfe_fixture_mol2", root / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2"),
+        ("conda_environment", root / "environments/environment.yml"),
+        ("macos_lock_environment", root / "environments/environment-protliginteract-full.lock.yml"),
+        ("local_jsme_entrypoint", root / "assets" / "JSME_minimal.html"),
+        ("local_jsme_runtime", root / "assets" / "jsme" / "jsme.nocache.js"),
+        ("local_jsme_license", root / "assets" / "jsme" / "license.txt"),
+        ("abfe_fixture_prmtop", root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop"),
+        ("abfe_fixture_mol2", root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex_gaff2.mol2"),
     ]
 
 

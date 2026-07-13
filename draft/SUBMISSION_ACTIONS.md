@@ -17,14 +17,14 @@ before journal submission.
 
 ## UI evidence
 
-- Status: partially closed.  `leonardo.png` is included as the suite-level UI
+- Status: partially closed.  `assets/leonardo.png` is included as the suite-level UI
   figure.
-- Capture real Leonardo screenshots, not mockups:
+- Capture real Leonardo docs/screenshots, not mockups:
   - interaction-analysis or docking workflow window with object choices visible,
   - one result window or report popup showing parsed outputs.
-- Place PNG screenshots in `screenshots/`.
+- Place PNG docs/screenshots in `docs/screenshots/`.
 - Add one manuscript figure or supplementary figure only after the real
-  screenshots are available.
+  docs/screenshots are available.
 
 ## Interaction-analysis benchmark
 

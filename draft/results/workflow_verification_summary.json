@@ -91,7 +91,7 @@
   "redocking_case": {
     "system": "1STP/biotin",
     "ligand": "BTN",
-    "input_summary": "redocking_real_1stp/redocking_summary.tsv",
+    "input_summary": "benchmarks/redocking/1stp/redocking_summary.tsv",
     "n_pose_rows": 225,
     "n_seed_runs": 15,
     "group_stats": {

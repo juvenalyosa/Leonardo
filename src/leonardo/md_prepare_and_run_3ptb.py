@@ -17,6 +17,8 @@ from openmmforcefields.generators import SystemGenerator
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+from .config import resource_path
+
 PROTEIN_RESN = {
     "ALA",
     "ARG",
@@ -140,8 +142,8 @@ def rebuild_ben_with_hydrogens(lig_pdb_block: str, lig_chain: str, lig_resi: str
 
 
 def main():
-    workdir = Path(__file__).resolve().parent
-    pdb_path = workdir / "3PTB.pdb"
+    workdir = Path.cwd()
+    pdb_path = resource_path("examples/3ptb_ben/3PTB.pdb")
 
     if not pdb_path.exists():
         raise FileNotFoundError(f"Missing input PDB: {pdb_path}")

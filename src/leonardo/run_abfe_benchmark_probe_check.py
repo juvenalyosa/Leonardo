@@ -31,13 +31,13 @@ try:
 except Exception:
     RDMS = None
 
-from test_abfe_3ptb_ben.run_abfe_3ptb_metal_biology_check import (
+from leonardo_benchmarks.abfe.ptb3_ben.run_abfe_3ptb_metal_biology_check import (
     build_context_cpu_only,
     contact_occupancies,
     population_free_energy_metrics,
     rank_pull_directions,
 )
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import (
+from leonardo_benchmarks.abfe.ptb3_ben.run_abfe_fullff_3ptb import (
     estimate_protein_charge,
     infer_element,
     inject_ligand_terms_from_prmtop,
@@ -1127,7 +1127,7 @@ def main():
     ap = argparse.ArgumentParser(description="Run the modern probe/reweighted ABFE-lite path on a benchmark target ligand.")
     ap.add_argument("--target", required=True)
     ap.add_argument("--ligand", required=True)
-    ap.add_argument("--data-root", default="benchmark_data")
+    ap.add_argument("--data-root", default="benchmarks/data")
     ap.add_argument("--workdir", default="benchmark_results/benchmark_probe_case")
     ap.add_argument("--ligand-sdf", default="")
     ap.add_argument("--state-label", default="")

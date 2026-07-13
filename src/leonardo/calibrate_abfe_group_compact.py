@@ -2,7 +2,7 @@
 """Compact descriptor calibration for ABFE-lite with stronger data handling.
 
 Improvements implemented:
-1) Experimental-label recovery from benchmark_data/<target>/ligands.yml
+1) Experimental-label recovery from benchmarks/data/<target>/ligands.yml
    (Ki/Kd/IC50/pIC50/pKi/pKd and direct dG entries)
 2) Quality-weighted fitting (uncertainty/state-balance/frame-aware weights)
 3) Relative-per-target hybrid model (DeltaDeltaG-style centered model + absolute anchor)
@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--data-root",
-        default="benchmark_data",
+        default="benchmarks/data",
         help="Root with <target>/ligands.yml used for experimental recovery",
     )
     p.add_argument(

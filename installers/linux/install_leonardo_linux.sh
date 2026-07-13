@@ -124,17 +124,17 @@ echo "Installing Leonardo with locked versions first."
 echo "If the locked environment is not compatible with this Linux host, the installer will offer a flexible solve."
 echo
 
-if "$ROOT_DIR/install_leonardo.sh" --locked; then
+if "$ROOT_DIR/scripts/install_leonardo.sh" --locked; then
   echo
   echo "Leonardo locked installation completed."
 else
   echo
   echo "The locked installation failed on this host."
-  read -r -p "Try the flexible environment.yml installation instead? [Y/n] " answer
+  read -r -p "Try the flexible environments/environment.yml installation instead? [Y/n] " answer
   answer="${answer:-Y}"
   case "$answer" in
     Y|y|YES|Yes|yes)
-      "$ROOT_DIR/install_leonardo.sh" --flexible
+      "$ROOT_DIR/scripts/install_leonardo.sh" --flexible
       ;;
     *)
       echo "Install stopped after locked-environment failure."
@@ -148,7 +148,7 @@ cat <<EOF
 Leonardo is installed.
 
 Launch with:
-  $ROOT_DIR/launch_leonardo.sh
+  $ROOT_DIR/scripts/launch_leonardo.sh
 
 Inside PyMOL open:
   Plugins > Leonardo

@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--data-root",
-        default="benchmark_data",
+        default="benchmarks/data",
         help="Benchmark data root used to recover missing experimental DeltaG values from ligands.yml.",
     )
     p.add_argument(
@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
         "--fill-exp-from-yml",
         action="store_true",
         default=True,
-        help="Recover missing experimental DeltaG values from benchmark_data/<target>/ligands.yml.",
+        help="Recover missing experimental DeltaG values from benchmarks/data/<target>/ligands.yml.",
     )
     p.add_argument(
         "--no-fill-exp-from-yml",
@@ -674,7 +674,7 @@ def run(args: argparse.Namespace) -> dict:
         raise FileNotFoundError(f"Predictions CSV not found: {predictions_csv}")
     if docking_csv is not None and (not docking_csv.exists()):
         raise FileNotFoundError(f"Docking CSV not found: {docking_csv}")
-    data_root_raw = str(getattr(args, "data_root", "benchmark_data") or "").strip()
+    data_root_raw = str(getattr(args, "data_root", "benchmarks/data") or "").strip()
     data_root = Path(data_root_raw).resolve() if data_root_raw else None
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)

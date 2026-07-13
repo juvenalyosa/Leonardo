@@ -17,8 +17,8 @@ jobs:
       - name: Create plugin zip
         run: |
           set -e
-          chmod +x ./build_leonardo_zip.sh
-          ./build_leonardo_zip.sh Leonardo.zip
+          chmod +x ./scripts/build_leonardo_zip.sh
+          ./scripts/build_leonardo_zip.sh Leonardo.zip
 
       - name: Write release manifest
         run: |

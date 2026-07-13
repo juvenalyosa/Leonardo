@@ -1,253 +1,159 @@
 # Leonardo
 
 <p align="center">
-  <img src="logo.png" alt="Leonardo logo" width="220">
+  <img src="assets/logo.png" alt="Leonardo logo" width="220">
 </p>
 
-Leonardo is a PyMOL-based workbench for structural bioinformatics, molecular
-modeling, docking, molecular dynamics, quantum chemistry, and reproducible
-protein–ligand workflows.
+Leonardo is a PyMOL workbench for structural bioinformatics, docking,
+molecular dynamics, quantum chemistry, and reproducible protein–ligand
+workflows.
 
 Current version: **0.2.0a5** (`2026-07-08-r5`)<br>
 Status: **pre-release for testing and manuscript verification**
 
-Author: Juvenal Yosa, PhD<br>
-Support and bug reports: `thinkai.col@gmail.com`
+## What you need
 
-## Main capabilities
-
-- Protein–ligand and protein–nucleic-acid interaction analysis
-- Pocket detection, docking, redocking, and virtual screening
-- Ligand sourcing, editing, protonation, charge assignment, and preparation
-- Hit-to-lead ranking and optional OpenMM refinement
-- OpenMM molecular dynamics and guided-exit diagnostic workflows
-- Psi4 and MOPAC quantum-chemistry workflows
-- Optional OpenMM/MOPAC QM/MM helper workflows
-- AlphaFold/ColabFold result generation and inspection
-- MODELLER-based protein repair and mutation modeling
-- Sequence analysis for simulation planning
-- Project saving, task monitoring, plotting, and report generation
-
-Leonardo orchestrates established scientific engines; it does not replace
-method-specific validation. Production free-energy calculations, docking
-benchmarks, QM accuracy, protonation choices, and simulation convergence remain
-the user's responsibility.
-
-## Requirements
-
-### Supported systems
-
-- macOS
-- Linux
-- Windows 11 through WSL2/WSLg (experimental)
-
-### Required host software
-
-- Conda, Miniforge, or Mambaforge
+- macOS or Linux; Windows 11 is supported through WSL2/WSLg
 - Git
-- A Qt-enabled PyMOL installation (provided by the main Conda environment)
-- Enough disk space for Conda environments and scientific output files
+- Conda, Miniforge, Mambaforge, or Miniconda
+- Enough disk space for the scientific Conda environments
 
-CPU execution is supported. An NVIDIA GPU is optional and mainly useful for
-local ColabFold or accelerated OpenMM workloads.
+An NVIDIA GPU is optional. CPU execution is supported.
 
-## Environments
+Leonardo uses two environments:
 
-Leonardo deliberately uses two Conda environments:
+- `protliginteract-full`: required PyMOL and scientific runtime
+- `protliginteract-optional`: optional ColabFold and machine-learning tools
 
-- `protliginteract-full`: required environment for PyMOL and the main scientific stack
-- `protliginteract-optional`: optional environment for ColabFold/JAX, DeepChem, CatBoost, and XGBoost
+Always launch Leonardo from `protliginteract-full`.
 
-Always launch Leonardo/PyMOL from `protliginteract-full`.
+## Install
 
-## Recommended installation
-
-Clone the repository and enter it:
+Authenticate with GitHub first because this repository is private, then clone
+and enter the repository:
 
 ```bash
 git clone https://github.com/juvenalyosa/Leonardo.git
 cd Leonardo
 ```
 
-The repository is private, so GitHub authentication must already be configured.
-
-Run the main installer:
+Run the installer:
 
 ```bash
-./install_leonardo.sh
+./scripts/install_leonardo.sh
 ```
 
-The installer:
+The installer creates or updates the main Conda environment, installs Leonardo
+in editable mode, registers its PyMOL startup loader, runs smoke checks, and
+builds `dist/Leonardo.zip`.
 
-1. creates or updates `protliginteract-full`;
-2. installs Leonardo in editable mode;
-3. validates core dependencies;
-4. installs the PyMOL startup loader;
-5. builds `dist/Leonardo.zip`.
-
-Launch Leonardo:
+Install the optional environment when local ColabFold or ML tools are needed:
 
 ```bash
-./launch_leonardo.sh
+./scripts/install_leonardo.sh --with-optional
 ```
 
-Then open `Plugins > Leonardo` in PyMOL.
-
-### Install optional ML/ColabFold tools
+Recreate both environments from scratch:
 
 ```bash
-./install_leonardo.sh --with-optional
+./scripts/install_leonardo.sh --recreate --with-optional
 ```
 
-To recreate both environments from scratch:
+## Launch
 
 ```bash
-./install_leonardo.sh --recreate --with-optional
+./scripts/launch_leonardo.sh
 ```
+
+In PyMOL, open `Plugins > Leonardo`.
 
 ## Platform shortcuts
 
-### macOS
+- macOS: double-click `installers/shortcuts/Install Leonardo.command`, then
+  `installers/shortcuts/Launch Leonardo.command`.
+- Linux: run `installers/shortcuts/Install Leonardo Linux.sh`, then
+  `installers/shortcuts/Launch Leonardo Linux.sh`.
+- Windows 11: install WSL2 Ubuntu with `wsl --install -d Ubuntu`, then use the
+  two `.bat` files in `installers/shortcuts/`.
 
-Double-click:
-
-1. `Install Leonardo.command`
-2. `Launch Leonardo.command`
-
-### Linux
-
-```bash
-./installers/linux/install_leonardo_linux.sh
-./launch_leonardo.sh
-```
-
-### Windows through WSL2
-
-Install WSL2 Ubuntu first:
-
-```powershell
-wsl --install -d Ubuntu
-```
-
-Then use:
-
-1. `Install Leonardo Windows.bat`
-2. `Launch Leonardo Windows.bat`
-
-Windows 11 uses WSLg for the PyMOL interface. Windows 10 requires an external
-X server.
+Windows 10 needs an external X server because it does not include WSLg.
 
 ## Manual installation
 
-Create the main environment:
-
 ```bash
-conda env create -f environment.yml
+conda env create -f environments/environment.yml
 conda activate protliginteract-full
 python -m pip install -e . --no-build-isolation
-./install_pymol_loader.sh
-./build_leonardo_zip.sh
+./scripts/install_pymol_loader.sh
+./scripts/build_leonardo_zip.sh
 ```
 
-Create the optional environment only when needed:
+To create the optional environment:
 
 ```bash
-conda env create -f environment-optional.yml
+conda env create -f environments/environment-optional.yml
 ```
 
-Update existing environments:
+The macOS lockfile at
+`environments/environment-protliginteract-full.lock.yml` provides stricter
+version pinning. Other platforms should normally use
+`environments/environment.yml`.
 
-```bash
-conda env update -n protliginteract-full -f environment.yml --prune
-conda env update -n protliginteract-optional -f environment-optional.yml --prune
-```
+## Validate
 
-The macOS lockfile `environment-protliginteract-full.lock.yml` provides a more
-strictly pinned installation. On other platforms, use `environment.yml`.
-
-## ColabFold wrapper
-
-PyMOL stays in the main environment while ColabFold runs in the optional one.
-Create a wrapper if local ColabFold is required:
-
-```bash
-mkdir -p "$HOME/.local/bin"
-cat > "$HOME/.local/bin/colabfold_batch_pli" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-exec conda run -n protliginteract-optional --no-capture-output colabfold_batch "$@"
-EOF
-chmod +x "$HOME/.local/bin/colabfold_batch_pli"
-```
-
-Add `~/.local/bin` to `PATH` and select `colabfold_batch_pli` in Leonardo's
-AlphaFold settings.
-
-## Validate the installation
-
-Activate the main environment:
+Activate the main environment and run:
 
 ```bash
 conda activate protliginteract-full
-```
-
-Run the readiness report:
-
-```bash
 leonardo-readiness --strict
-```
-
-Run lint and tests:
-
-```bash
 make lint
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
 ```
 
-Validate without modifying environments or PyMOL startup files:
+Check installer inputs without changing environments or user files:
 
 ```bash
-./install_leonardo.sh --check-only --skip-zip --no-pymol-loader
+./scripts/install_leonardo.sh --check-only --skip-zip --no-pymol-loader
 ```
 
-## Install through PyMOL's Plugin Manager
+## Install with PyMOL Plugin Manager
 
-The startup loader is recommended. Alternatively:
+The startup loader is recommended. To install a standalone plugin ZIP instead:
 
-1. Build the plugin archive:
+```bash
+./scripts/build_leonardo_zip.sh
+```
 
-   ```bash
-   ./build_leonardo_zip.sh
-   ```
+Then open PyMOL from `protliginteract-full`, select
+`Plugin > Plugin Manager > Install New Plugin`, and choose
+`dist/Leonardo.zip`.
 
-2. Launch PyMOL from `protliginteract-full`.
-3. Open `Plugin > Plugin Manager > Install New Plugin`.
-4. Select `dist/Leonardo.zip`.
-
-## Repository structure
+## Repository layout
 
 ```text
 Leonardo/
-├── src/leonardo/       Canonical Python runtime package
-├── tests/              Unit, integration, and packaging tests
-├── installers/         Platform-specific installers
-├── benchmark_data/     Small reproducible scientific fixtures
-├── qm/                 Quantum-workflow examples and validation
-├── docs/               Maintainer documentation
-├── draft/              Manuscript and validation artifacts
-├── dist/               Generated PyMOL release archive
-├── code_v2.py          PyMOL/Qt controller and UI orchestration
-└── *_runtime.py        Legacy compatibility import aliases
+├── src/leonardo/        Canonical runtime package
+├── legacy/              PyMOL UI and historical import compatibility
+├── packaging/pymol/     PyMOL plugin entry point
+├── assets/              UI, images, and bundled JSME files
+├── tests/               Automated test suite
+├── benchmarks/          Scientific fixtures and validation workflows
+├── examples/            Small input files and runnable examples
+├── environments/        Conda specifications and lockfile
+├── scripts/             Build, install, launch, and maintenance commands
+├── installers/          Platform-specific installers and shortcuts
+├── docs/                Architecture and maintainer documentation
+├── draft/               Manuscript and generated validation artifacts
+└── dist/                Reproducible PyMOL release archive
 ```
 
-New runtime implementation belongs under `src/leonardo/`. Root-level runtime
-modules are compatibility aliases for existing PyMOL installations and external
-scripts. See [docs/REPOSITORY_LAYOUT.md](docs/REPOSITORY_LAYOUT.md) and
-[ARCHITECTURE.md](ARCHITECTURE.md).
+New runtime implementation belongs in `src/leonardo/`. The files in `legacy/`
+preserve existing PyMOL and external-script imports while the UI is migrated
+into smaller modules. See
+[Repository layout](docs/REPOSITORY_LAYOUT.md) and
+[Architecture](docs/ARCHITECTURE.md).
 
 ## Development
-
-Use the main environment:
 
 ```bash
 conda activate protliginteract-full
@@ -262,63 +168,17 @@ Before publishing a release:
 make reviewer-check
 ```
 
-Runtime modules should not import Qt or PyMOL. UI-specific work remains in
-`code_v2.py` until it is migrated into smaller UI modules.
-
-## Common problems
-
-### Psi4 fails with `libint` or `pcmsolver` errors
-
-Reinstall the tested stack:
-
-```bash
-conda activate protliginteract-full
-conda install -y -c conda-forge "psi4=1.9.*" "libint=2.9.*" "pcmsolver=1.2.3"
-```
-
-### RDKit, pandas, SciPy, or NumPy ABI errors
-
-Keep NumPy below version 2 and reinstall through Conda:
-
-```bash
-conda install -y -c conda-forge "numpy=1.26.4" "pandas<3" scipy "rdkit>=2023.09"
-```
-
-### AmberTools executables are missing
-
-```bash
-conda install -y -c conda-forge ambertools
-which antechamber parmchk2 tleap reduce
-```
-
-### PyMOL opens without the Leonardo menu
-
-```bash
-conda activate protliginteract-full
-./install_pymol_loader.sh
-./launch_leonardo.sh
-```
-
-### OpenMM is unstable on macOS
-
-Force the CPU platform:
-
-```bash
-export PROTLIGINTERACT_OPENMM_PLATFORM=CPU
-./launch_leonardo.sh
-```
-
 ## Scientific and licensing notes
 
-Leonardo is an orchestration and visualization layer. Its outputs depend on the
-selected inputs, protonation states, force fields, sampling, engine versions,
-and convergence criteria.
+Leonardo orchestrates established scientific engines; it does not replace
+method-specific validation. Results depend on inputs, protonation states,
+force fields, sampling, engine versions, and convergence criteria.
 
 Third-party engines may have separate licenses or usage restrictions. See
-[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+[Third-party licenses](THIRD_PARTY_LICENSES.md).
 
-## Citation and license
+Citation metadata is provided in [CITATION.cff](CITATION.cff). Leonardo source
+code is distributed under the [MIT License](LICENSE).
 
-Citation metadata is provided in [CITATION.cff](CITATION.cff).
-
-Leonardo source code is distributed under the [MIT License](LICENSE).
+Author: Juvenal Yosa, PhD<br>
+Support and bug reports: `thinkai.col@gmail.com`

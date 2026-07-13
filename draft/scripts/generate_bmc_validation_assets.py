@@ -189,8 +189,8 @@ def project_version() -> str:
 
 
 def plugin_build_label() -> str:
-    """Read the UI build string so manuscript screenshots do not go stale."""
-    text = (ROOT / "code_v2.py").read_text(encoding="utf-8")
+    """Read the UI build string so manuscript docs/screenshots do not go stale."""
+    text = (ROOT / "legacy" / "code_v2.py").read_text(encoding="utf-8")
     match = re.search(r'^PLUGIN_BUILD\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
     if not match:
         return "build unknown"
@@ -408,9 +408,9 @@ def sanitize_all_abfe_reviewer_artifacts() -> None:
 
 def build_leonardo_suite_interface_figure() -> dict:
     """Include the real Leonardo screenshot as a framed manuscript figure."""
-    screenshot = ROOT / "leonardo.png"
+    screenshot = ROOT / "assets" / "leonardo.png"
     if not screenshot.exists():
-        return {"available": False, "reason": "leonardo.png not found"}
+        return {"available": False, "reason": "assets/leonardo.png not found"}
     img = plt.imread(str(screenshot))
     height_px, width_px = img.shape[:2]
     aspect = float(width_px) / max(1.0, float(height_px))
@@ -728,14 +728,14 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
         },
         {
             "manuscript_item": "Interaction analysis",
-            "source_artifacts": "3PTB.pdb; draft/results/interaction_contacts_3ptb_ben.csv; draft/results/interaction_external_benchmark_status.csv; draft/results/interaction_external_benchmark_contacts.csv",
+            "source_artifacts": "examples/3ptb_ben/3PTB.pdb; draft/results/interaction_contacts_3ptb_ben.csv; draft/results/interaction_external_benchmark_status.csv; draft/results/interaction_external_benchmark_contacts.csv",
             "rebuilt_output": "draft/figures/figure_4_3ptb_ben_interactions.pdf; draft/figures/figure_4b_3ptb_ben_interaction_scene.pdf",
             "rebuild_command": "python draft/scripts/run_interaction_external_benchmark.py --strict; python draft/scripts/generate_bmc_validation_assets.py",
             "scope_of_claim": "Contact-report workflow demonstration plus broad-class ProLIF count comparison on three local crystal complexes; not a curated interaction benchmark.",
         },
         {
             "manuscript_item": "Pocket docking and redocking",
-            "source_artifacts": "draft/results/pocket_docking_*.csv; redocking_real_1stp/redocking_summary.tsv",
+            "source_artifacts": "draft/results/pocket_docking_*.csv; benchmarks/redocking/1stp/redocking_summary.tsv",
             "rebuilt_output": "draft/figures/figure_11_pocket_docking_workflow_check.pdf; draft/figures/figure_5_redocking_1stp_btn.pdf",
             "rebuild_command": "python draft/scripts/generate_bmc_validation_assets.py",
             "scope_of_claim": "Object handoff, parser and single-target RMSD-reporting checks; not multi-target docking accuracy.",
@@ -804,8 +804,8 @@ def write_workflow_traceability_tables(summary: dict) -> dict:
             "workflow": "redocking_1stp_btn",
             "command_type": "external_engine_rerun",
             "inputs": "1STP receptor/biotin template and smina/Open Babel environment",
-            "command": "python draft/scripts/run_publication_redocking_case.py --pdb 1STP.pdb --workdir redocking_real_1stp --ligand-resn BTN --ligand-chain A --ligand-resi 300 --repeats 15 --num-modes 15 --seed0 4001",
-            "outputs": "redocking_real_1stp/redocking_summary.tsv",
+            "command": "python draft/scripts/run_publication_redocking_case.py --pdb 1STP.pdb --workdir benchmarks/redocking/1stp --ligand-resn BTN --ligand-chain A --ligand-resi 300 --repeats 15 --num-modes 15 --seed0 4001",
+            "outputs": "benchmarks/redocking/1stp/redocking_summary.tsv",
             "scope_note": "Reruns the 15-seed redocking case when smina and Open Babel are available.",
         },
         {
@@ -850,7 +850,7 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "packaged ZIP should match reviewed source tree",
             "status": "closed_by_packaging_workflow",
-            "current_evidence": "make reviewer-check runs build_leonardo_zip.sh before manuscript asset generation, and the ZIP checksum is recorded in artifact_manifest.csv.",
+            "current_evidence": "make reviewer-check runs scripts/build_leonardo_zip.sh before manuscript asset generation, and the ZIP checksum is recorded in artifact_manifest.csv.",
             "remaining_action": "Rebuild dist/Leonardo.zip after any release-facing source or installer change.",
         },
         {
@@ -862,8 +862,8 @@ def write_reviewer_concern_matrix(summary: dict) -> dict:
         {
             "concern": "real Leonardo UI evidence",
             "status": "closed_current_scope",
-            "current_evidence": "A real Leonardo suite screenshot is included as leonardo.png and Figure 0; PyMOL-rendered interaction scenes are regenerated from contact tables.",
-            "remaining_action": "Add optional supplementary screenshots for interaction/docking object selection when live GUI captures are available.",
+            "current_evidence": "A real Leonardo suite screenshot is included as assets/leonardo.png and Figure 0; PyMOL-rendered interaction scenes are regenerated from contact tables.",
+            "remaining_action": "Add optional supplementary docs/screenshots for interaction/docking object selection when live GUI captures are available.",
         },
         {
             "concern": "interaction-analysis benchmark against an external profiler",
@@ -1645,7 +1645,7 @@ def write_pymol_binding_site_script(contacts: list[dict], out_png: Path) -> Path
     residue_ids = sorted({str(row["protein_resi"]) for row in contacts}, key=lambda value: int(value))
     contact_residue_sel = "polymer.protein and chain A and resi " + "+".join(residue_ids)
     pml_path = RESULTS_DIR / "figure_4_3ptb_ben_pymol_binding_site.pml"
-    pdb_rel = (ROOT / "3PTB.pdb").relative_to(ROOT).as_posix()
+    pdb_rel = (ROOT / "examples" / "3ptb_ben" / "3PTB.pdb").relative_to(ROOT).as_posix()
     out_rel = out_png.relative_to(ROOT).as_posix()
     lines = [
         f"load {pdb_rel}, complex",
@@ -1746,7 +1746,7 @@ def write_pymol_interaction_scene_script(contacts: list[dict], out_png: Path) ->
     contact_residue_sel = "polymer.protein and chain A and resi " + "+".join(residue_ids)
     showcase_contacts = select_showcase_contacts(contacts)
     pml_path = RESULTS_DIR / "figure_4b_3ptb_ben_interaction_scene.pml"
-    pdb_rel = (ROOT / "3PTB.pdb").relative_to(ROOT).as_posix()
+    pdb_rel = (ROOT / "examples" / "3ptb_ben" / "3PTB.pdb").relative_to(ROOT).as_posix()
     out_rel = out_png.relative_to(ROOT).as_posix()
     lines = [
         f"load {pdb_rel}, complex",
@@ -1897,7 +1897,7 @@ def write_pending_interaction_external_status(contacts: list[dict]) -> None:
 
 
 def analyze_3ptb_contacts() -> dict:
-    atoms = parse_pdb_atoms(ROOT / "3PTB.pdb")
+    atoms = parse_pdb_atoms(ROOT / "examples" / "3ptb_ben" / "3PTB.pdb")
     protein = [a for a in atoms if a["record"] == "ATOM"]
     ligand = [a for a in atoms if a["record"] == "HETATM" and a["resn"] == "BEN"]
     residues = {(a["chain"], a["resi"], a["resn"]) for a in protein}
@@ -1946,7 +1946,7 @@ def analyze_3ptb_contacts() -> dict:
     counts = Counter(row["interaction_type"] for row in contacts)
     distances = [float(row["distance_A"]) for row in contacts]
     summary = {
-        "input_pdb": "3PTB.pdb",
+        "input_pdb": "examples/3ptb_ben/3PTB.pdb",
         "protein_atom_count": len(protein),
         "protein_residue_count": len(residues),
         "ligand": "BEN (benzamidine)",
@@ -2061,7 +2061,7 @@ def analyze_3ptb_contacts() -> dict:
 
 
 def analyze_redocking() -> dict:
-    tsv_path = ROOT / "redocking_real_1stp" / "redocking_summary.tsv"
+    tsv_path = ROOT / "benchmarks/redocking/1stp" / "redocking_summary.tsv"
     rows: list[dict] = []
     with tsv_path.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
@@ -2256,7 +2256,7 @@ def analyze_ligand_libraries() -> dict:
 
     rows: list[dict] = []
     qc_by_target: dict[str, dict] = {}
-    for sdf_path in sorted((ROOT / "benchmark_data").glob("*/ligands.sdf")):
+    for sdf_path in sorted((ROOT / "benchmarks/data").glob("*/ligands.sdf")):
         target = sdf_path.parent.name
         supplier = Chem.SDMolSupplier(str(sdf_path), removeHs=False)
         qc_by_target[target] = {
@@ -2622,8 +2622,8 @@ def build_abfe_lite_diagnostic_example() -> dict:
         raise FileNotFoundError(
             "ABFE-lite 5 ns summary is missing. Run "
             "`env PYTHONPATH=. conda run -n protliginteract-full python "
-            "test_abfe_3ptb_ben/run_abfe_3ptb_metal_biology_check.py "
-            "--pdb 3PTB.pdb --workdir draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702 "
+            "benchmarks/abfe/ptb3_ben/run_abfe_3ptb_metal_biology_check.py "
+            "--pdb examples/3ptb_ben/3PTB.pdb --workdir draft/results/abfe_lite_3ptb_ben_5ns_rerun_20260702 "
             "--sim-ns 5.0 --sample-every-ps 2.0 --eq-ps 10.0 "
             "--minimize-iters 600 --param-min-iters 300 --random-seed 20260705`"
         )
@@ -3149,6 +3149,25 @@ def build_pocket_docking_workflow_figure() -> dict:
     pocket_root = ROOT / "test_outputs" / "pocket_docking_smoke"
     summary_path = pocket_root / "summary.json"
     info_path = pocket_root / "receptor_out" / "receptor_info.txt"
+    required_inputs = (
+        summary_path,
+        info_path,
+        pocket_root / "receptor.pdb",
+    )
+    missing_inputs = [path for path in required_inputs if not path.is_file()]
+    if missing_inputs:
+        existing_summary_path = RESULTS_DIR / "validation_summary.json"
+        existing = {}
+        if existing_summary_path.is_file():
+            existing = json.loads(existing_summary_path.read_text(encoding="utf-8")).get(
+                "pocket_docking_case", {}
+            )
+        return {
+            **existing,
+            "regenerated": False,
+            "source_inputs_available": False,
+            "missing_inputs": [str(path.relative_to(ROOT)) for path in missing_inputs],
+        }
     summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
     pockets = parse_fpocket_info(info_path)
     best_id = int(summary.get("best_pocket_id", pockets[0]["pocket_id"] if pockets else 0))
@@ -3308,6 +3327,8 @@ def build_pocket_docking_workflow_figure() -> dict:
 
     return {
         "available": bool(summary.get("ok", False)),
+        "regenerated": True,
+        "source_inputs_available": True,
         "n_pockets": int(summary.get("n_pockets", len(pockets))),
         "best_pocket_id": int(best_id),
         "best_rank_score": float(summary.get("best_rank_score", np.nan)),
@@ -3989,13 +4010,13 @@ def main() -> None:
             ("source_license", ROOT / "LICENSE"),
             ("third_party_license_summary", ROOT / "THIRD_PARTY_LICENSES.md"),
             ("citation_metadata", ROOT / "CITATION.cff"),
-            ("conda_environment", ROOT / "environment.yml"),
-            ("macos_lock_environment", ROOT / "environment-protliginteract-full.lock.yml"),
-            ("local_jsme_entrypoint", ROOT / "JSME_minimal.html"),
-            ("local_jsme_runtime", ROOT / "jsme" / "jsme.nocache.js"),
-            ("local_jsme_license", ROOT / "jsme" / "license.txt"),
-            ("abfe_fixture_prmtop", ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop"),
-            ("abfe_fixture_mol2", ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2"),
+            ("conda_environment", ROOT / "environments/environment.yml"),
+            ("macos_lock_environment", ROOT / "environments/environment-protliginteract-full.lock.yml"),
+            ("local_jsme_entrypoint", ROOT / "assets" / "JSME_minimal.html"),
+            ("local_jsme_runtime", ROOT / "assets" / "jsme" / "jsme.nocache.js"),
+            ("local_jsme_license", ROOT / "assets" / "jsme" / "license.txt"),
+            ("abfe_fixture_prmtop", ROOT / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop"),
+            ("abfe_fixture_mol2", ROOT / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex_gaff2.mol2"),
         ]
     )
     manifest_paths = [
@@ -4004,7 +4025,7 @@ def main() -> None:
         FIG_DIR / "figure_4b_3ptb_ben_interaction_scene_render.png",
         RESULTS_DIR / "figure_4_3ptb_ben_pymol_binding_site.pml",
         RESULTS_DIR / "figure_4b_3ptb_ben_interaction_scene.pml",
-        ROOT / "leonardo.png",
+        ROOT / "assets" / "leonardo.png",
         RESULTS_DIR / "pipeline_classification.csv",
         RESULTS_DIR / "pipeline_inventory_summary.csv",
         RESULTS_DIR / "interaction_contacts_3ptb_ben.csv",
@@ -4049,7 +4070,7 @@ def main() -> None:
         DRAFT / "scripts" / "run_interaction_external_benchmark.py",
         DRAFT / "manuscript" / "main.tex",
         DRAFT / "manuscript" / "main.pdf",
-        ROOT / "redocking_real_1stp" / "redocking_summary.tsv",
+        ROOT / "benchmarks/redocking/1stp" / "redocking_summary.tsv",
         SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_phi_psi_diagnostic_grid.csv",
         SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_plotting_stability.csv",
         SOURCE_SNAPSHOT_DIR / "openmm_alanine" / "alanine_diagnostic_grid_summary.json",
@@ -4066,31 +4087,31 @@ def main() -> None:
         ROOT / "LICENSE",
         ROOT / "THIRD_PARTY_LICENSES.md",
         ROOT / "CITATION.cff",
-        ROOT / "JSME_minimal.html",
-        ROOT / "jsme" / "jsme.nocache.js",
-        ROOT / "jsme" / "license.txt",
-        ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex.prmtop",
-        ROOT / "test_abfe_3ptb_ben" / "BEN_from_complex_gaff2.mol2",
+        ROOT / "assets" / "JSME_minimal.html",
+        ROOT / "assets" / "jsme" / "jsme.nocache.js",
+        ROOT / "assets" / "jsme" / "license.txt",
+        ROOT / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop",
+        ROOT / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex_gaff2.mol2",
         ROOT / "pyproject.toml",
         ROOT / "Makefile",
-        ROOT / "build_leonardo_zip.sh",
-        ROOT / "install_leonardo.sh",
-        ROOT / "install_envs.sh",
-        ROOT / "install_pymol_loader.sh",
-        ROOT / "launch_leonardo.sh",
-        ROOT / "Install Leonardo.command",
-        ROOT / "Launch Leonardo.command",
-        ROOT / "Install Leonardo Linux.sh",
-        ROOT / "Launch Leonardo Linux.sh",
-        ROOT / "Install Leonardo Windows.bat",
-        ROOT / "Launch Leonardo Windows.bat",
+        ROOT / "scripts/build_leonardo_zip.sh",
+        ROOT / "scripts/install_leonardo.sh",
+        ROOT / "scripts/install_envs.sh",
+        ROOT / "scripts/install_pymol_loader.sh",
+        ROOT / "scripts/launch_leonardo.sh",
+        ROOT / "installers" / "shortcuts" / "Install Leonardo.command",
+        ROOT / "installers" / "shortcuts" / "Launch Leonardo.command",
+        ROOT / "installers" / "shortcuts" / "Install Leonardo Linux.sh",
+        ROOT / "installers" / "shortcuts" / "Launch Leonardo Linux.sh",
+        ROOT / "installers" / "shortcuts" / "Install Leonardo Windows.bat",
+        ROOT / "installers" / "shortcuts" / "Launch Leonardo Windows.bat",
         ROOT / "installers" / "macos" / "install_leonardo_macos.sh",
         ROOT / "installers" / "linux" / "install_leonardo_linux.sh",
         ROOT / "installers" / "windows" / "install_leonardo_windows_wsl.ps1",
         ROOT / "installers" / "windows" / "launch_leonardo_windows_wsl.ps1",
-        ROOT / "environment.yml",
-        ROOT / "environment-protliginteract-full.lock.yml",
-        ROOT / "environment-optional.yml",
+        ROOT / "environments/environment.yml",
+        ROOT / "environments/environment-protliginteract-full.lock.yml",
+        ROOT / "environments/environment-optional.yml",
     ]
     manifest_paths.extend(path for path in RESULTS_DIR.rglob("*") if path.is_file())
     manifest_paths.extend(path for path in FIG_DIR.rglob("*") if path.is_file())

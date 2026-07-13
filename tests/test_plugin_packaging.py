@@ -2,7 +2,6 @@ import ast
 import csv
 import hashlib
 import importlib.util
-import re
 import subprocess
 import sys
 import tomllib
@@ -10,22 +9,20 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def _build_script_copied_paths():
-    text = (ROOT / "build_leonardo_zip.sh").read_text(encoding="utf-8")
-    return set(re.findall(r'copy_if_exists\s+"([^"]+)"', text))
+LEGACY = ROOT / "legacy"
+PYMOL_ENTRY = ROOT / "packaging" / "pymol" / "__init__.py"
+BUILD_SCRIPT = ROOT / "scripts" / "build_leonardo_zip.sh"
 
 
 def _code_v2_local_module_files():
-    tree = ast.parse((ROOT / "code_v2.py").read_text(encoding="utf-8"))
+    tree = ast.parse((LEGACY / "code_v2.py").read_text(encoding="utf-8"))
     files = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom) or node.level != 1 or not node.module:
             continue
         top_module = str(node.module).split(".", 1)[0]
         candidate = f"{top_module}.py"
-        if (ROOT / candidate).is_file():
+        if (LEGACY / candidate).is_file():
             files.add(candidate)
     return files
 
@@ -45,9 +42,14 @@ def _project_version() -> str:
         return tomllib.load(handle)["project"]["version"]
 
 
+def _configured_legacy_modules() -> set[str]:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        return set(tomllib.load(handle)["tool"]["setuptools"]["py-modules"])
+
+
 def _dist_zip_path() -> Path:
     zip_path = ROOT / "dist" / "Leonardo.zip"
-    assert zip_path.is_file(), "dist/Leonardo.zip is missing; run ./build_leonardo_zip.sh before release"
+    assert zip_path.is_file(), "dist/Leonardo.zip is missing; run ./scripts/build_leonardo_zip.sh before release"
     return zip_path
 
 
@@ -57,25 +59,25 @@ def _required_release_files() -> set[str]:
         "LICENSE",
         "THIRD_PARTY_LICENSES.md",
         "CITATION.cff",
-        "environment.yml",
-        "environment-protliginteract-full.lock.yml",
-        "build_leonardo_zip.sh",
-        "install_leonardo.sh",
+        "environments/environment.yml",
+        "environments/environment-protliginteract-full.lock.yml",
+        "scripts/build_leonardo_zip.sh",
+        "scripts/install_leonardo.sh",
     }
 
 
 def _required_local_jsme_assets() -> set[str]:
     return {
-        "JSME_minimal.html",
-        "jsme",
+        "assets/JSME_minimal.html",
+        "assets/jsme",
     }
 
 
 def _required_local_jsme_zip_entries() -> set[str]:
     return {
-        "Leonardo/JSME_minimal.html",
-        "Leonardo/jsme/jsme.nocache.js",
-        "Leonardo/jsme/license.txt",
+        "Leonardo/assets/JSME_minimal.html",
+        "Leonardo/assets/jsme/jsme.nocache.js",
+        "Leonardo/assets/jsme/license.txt",
     }
 
 
@@ -88,31 +90,50 @@ def _sha256(path: Path) -> str:
 
 
 def test_build_script_packages_code_v2_local_module_imports():
-    """Every local module imported by code_v2 must be copied into the PyMOL ZIP."""
-    missing = sorted(_code_v2_local_module_files() - _build_script_copied_paths())
-    assert missing == []
+    """The ZIP builder includes every historical module through legacy/."""
+    text = BUILD_SCRIPT.read_text(encoding="utf-8")
+    assert 'find "$ROOT_DIR/legacy"' in text
+    assert all((LEGACY / module_file).is_file() for module_file in _code_v2_local_module_files())
+
+
+def test_all_legacy_modules_are_declared_for_installation():
+    actual = {path.stem for path in LEGACY.glob("*.py") if path.name != "__init__.py"}
+    assert _configured_legacy_modules() == actual
+
+
+def test_benchmark_helpers_are_packaged_outside_the_runtime_namespace():
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        packages = set(tomllib.load(handle)["tool"]["setuptools"]["packages"])
+    assert {
+        "leonardo_benchmarks",
+        "leonardo_benchmarks.abfe",
+        "leonardo_benchmarks.abfe.ptb3_ben",
+    } <= packages
 
 
 def test_build_script_packages_required_release_files():
-    """Keep license, citation and reviewer install metadata in the release ZIP."""
-    missing = sorted(_required_release_files() - _build_script_copied_paths())
-    assert missing == []
+    """Keep compliance and installation sections in the release ZIP."""
+    text = BUILD_SCRIPT.read_text(encoding="utf-8")
+    for section in ("environments", "scripts", "installers", "docs"):
+        assert f'copy_if_exists "{section}"' in text
+    for path in ("README.md", "LICENSE", "THIRD_PARTY_LICENSES.md", "CITATION.cff"):
+        assert f'copy_if_exists "{path}"' in text
 
 
 def test_build_script_packages_local_jsme_bundle():
     """The offline JSME drawer must ship with its payload and license notice."""
-    missing = sorted(_required_local_jsme_assets() - _build_script_copied_paths())
-    assert missing == []
+    assert all((ROOT / path).exists() for path in _required_local_jsme_assets())
+    assert 'cp -R "$ROOT_DIR/assets" "$PKG_DIR/assets"' in BUILD_SCRIPT.read_text(encoding="utf-8")
 
 
 def test_runtime_version_identity_matches_project_metadata():
     """Keep release identity coherent across source-tree and PyMOL entrypoints."""
     version = _project_version()
-    assert _constant_from_python_file(ROOT / "code_v2.py", "PLUGIN_VERSION") == version
-    assert _constant_from_python_file(ROOT / "__init__.py", "__version__") == version
-    assert _constant_from_python_file(ROOT / "ProtLigInteract.py", "__version__") == version
-    assert _constant_from_python_file(ROOT / "__init__.py", "__build__") == _constant_from_python_file(ROOT / "code_v2.py", "PLUGIN_BUILD")
-    assert _constant_from_python_file(ROOT / "ProtLigInteract.py", "__build__") == _constant_from_python_file(ROOT / "code_v2.py", "PLUGIN_BUILD")
+    assert _constant_from_python_file(LEGACY / "code_v2.py", "PLUGIN_VERSION") == version
+    assert _constant_from_python_file(PYMOL_ENTRY, "__version__") == version
+    assert _constant_from_python_file(LEGACY / "ProtLigInteract.py", "__version__") == version
+    assert _constant_from_python_file(PYMOL_ENTRY, "__build__") == _constant_from_python_file(LEGACY / "code_v2.py", "PLUGIN_BUILD")
+    assert _constant_from_python_file(LEGACY / "ProtLigInteract.py", "__build__") == _constant_from_python_file(LEGACY / "code_v2.py", "PLUGIN_BUILD")
 
 
 def test_dist_zip_contains_packaged_code_v2_local_module_imports_when_present():
@@ -156,6 +177,13 @@ def test_dist_zip_contains_current_release_identity():
     assert f'__version__ = "{version}"' in init_text
 
 
+def test_dist_zip_contains_installable_benchmark_helpers():
+    with zipfile.ZipFile(_dist_zip_path()) as zf:
+        names = set(zf.namelist())
+    assert "Leonardo/leonardo_benchmarks/__init__.py" in names
+    assert "Leonardo/leonardo_benchmarks/abfe/ptb3_ben/run_abfe_fullff_3ptb.py" in names
+
+
 def test_dist_zip_package_resolves_root_resources(tmp_path):
     with zipfile.ZipFile(_dist_zip_path()) as zf:
         zf.extractall(tmp_path)
@@ -164,7 +192,7 @@ def test_dist_zip_package_resolves_root_resources(tmp_path):
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
-    assert module.resource_path("logo.png") == tmp_path / "Leonardo" / "logo.png"
+    assert module.resource_path("logo.png") == tmp_path / "Leonardo" / "assets" / "logo.png"
 
 
 def test_wheel_contains_ui_resources(tmp_path):
@@ -243,7 +271,7 @@ def test_build_script_reproduces_tracked_zip_byte_for_byte():
     for path in (rebuilt_zip, rebuilt_sha):
         if path.exists():
             path.unlink()
-    subprocess.run(["bash", "build_leonardo_zip.sh", rebuilt_name], cwd=ROOT, check=True)
+    subprocess.run(["bash", "scripts/build_leonardo_zip.sh", rebuilt_name], cwd=ROOT, check=True)
     try:
         assert _sha256(rebuilt_zip) == _sha256(_dist_zip_path())
     finally:

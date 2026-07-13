@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--out-dir",
-        default="test_abfe_3ptb_ben/policy_model_training",
+        default="benchmarks/abfe/ptb3_ben/policy_model_training",
         help="Output directory for model JSON and reports.",
     )
     p.add_argument(
@@ -108,7 +108,7 @@ def resolve_trace_paths(explicit_paths: Sequence[str], glob_patterns: Sequence[s
     candidates = list(explicit_paths or [])
     patterns = list(glob_patterns or [])
     if (not candidates) and (not patterns):
-        patterns = ["test_abfe_3ptb_ben/**/policy_trace.jsonl"]
+        patterns = ["benchmarks/abfe/ptb3_ben/**/policy_trace.jsonl"]
 
     for item in candidates:
         path = Path(str(item)).expanduser().resolve()

@@ -64,7 +64,7 @@ try {
     Write-Host ""
 
     $quotedRepo = $wslRepo.Replace("'", "'\''")
-    $cmd = "cd '$quotedRepo' && chmod +x install_leonardo.sh install_envs.sh install_pymol_loader.sh launch_leonardo.sh installers/linux/install_leonardo_linux.sh && ./installers/linux/install_leonardo_linux.sh"
+    $cmd = "cd '$quotedRepo' && chmod +x scripts/install_leonardo.sh scripts/install_envs.sh scripts/install_pymol_loader.sh scripts/launch_leonardo.sh installers/linux/install_leonardo_linux.sh && ./installers/linux/install_leonardo_linux.sh"
     & wsl.exe -e bash -lc $cmd
     if ($LASTEXITCODE -ne 0) {
         throw "WSL Leonardo installation failed with exit code $LASTEXITCODE"
@@ -73,7 +73,7 @@ try {
     Write-Host ""
     Write-Host "Leonardo is installed in WSL."
     Write-Host "Launch from Windows by double clicking:"
-    Write-Host "  $(Join-Path $RepoRoot 'Launch Leonardo Windows.bat')"
+    Write-Host "  $(Join-Path $RepoRoot 'installers\shortcuts\Launch Leonardo Windows.bat')"
     Write-Host ""
     Write-Host "Inside PyMOL open:"
     Write-Host "  Plugins > Leonardo"
