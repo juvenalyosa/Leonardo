@@ -8,6 +8,7 @@ dependencies:
   # Core interpreter and package managers
   - python=3.11
   - pip
+  - setuptools<82  # ProDy 2.4 still imports pkg_resources, removed in setuptools 82
 
   # Core plugin/runtime scientific stack
   - numpy>=1.26,<2
@@ -72,7 +73,7 @@ dependencies:
   - pip:
       - dimorphite-dl
       - "prolif==2.2.0"                 # external protein-ligand interaction profiler used by reviewer benchmark
-      - "opencv-python==4.13.0.92"       # matches the recorded protliginteract-full lockfile/test environment
+      - "opencv-python==4.11.0.86"       # 4.13 requires NumPy 2 on Python 3.11 and breaks the RDKit ABI
       - "opencv-contrib-python==4.11.0.86"
       - "mediapipe>=0.10.0,<0.10.10"    # 0.10.10+ forces numpy>=2 which breaks pandas/prody
 

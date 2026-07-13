@@ -18,7 +18,8 @@ keywords = ["pymol", "structural-bioinformatics", "docking", "openmm", "psi4", "
 leonardo-readiness = "report_scientific_readiness:main"
 
 [tool.setuptools]
-packages = []
+package-dir = {"leonardo" = "src/leonardo"}
+packages = ["leonardo"]
 py-modules = [
   "ProtLigInteract",
   "abfe_runtime",

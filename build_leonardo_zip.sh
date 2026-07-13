@@ -16,6 +16,13 @@ trap cleanup EXIT
 
 mkdir -p "$PKG_DIR"
 
+# Canonical package namespace. Root-level modules remain compatibility shims
+# during the staged migration, so the package must be bundled as well.
+if [ -d "$ROOT_DIR/src/leonardo" ]; then
+  mkdir -p "$PKG_DIR/leonardo"
+  cp -R "$ROOT_DIR/src/leonardo/"* "$PKG_DIR/leonardo/"
+fi
+
 copy_if_exists() {
   local src="$1"
   if [ -e "$ROOT_DIR/$src" ]; then
@@ -24,6 +31,7 @@ copy_if_exists() {
 }
 
 copy_if_exists "__init__.py"
+copy_if_exists "config.py"
 copy_if_exists "code_v2.py"
 copy_if_exists "background_tasks.py"
 copy_if_exists "bioseq_runtime.py"

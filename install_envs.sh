@@ -202,9 +202,16 @@ enforce_psi4_stack() {
 enforce_rdkit_numpy_compat() {
   local env_name="$1"
   echo "[INFO] Enforcing RDKit/NumPy ABI compatibility in $env_name"
-  conda install -n "$env_name" -y -c conda-forge \
-    "numpy>=1.26,<2" \
-    "rdkit>=2023.09"
+  # Pip packages can overwrite Conda-managed NumPy files while leaving Conda's
+  # package metadata unchanged. Remove those files through pip first, then
+  # force exact Conda builds back into place so a mixed NumPy 1.x/2.x tree
+  # cannot survive an earlier incompatible pip resolution.
+  conda run -n "$env_name" python -m pip uninstall -y numpy pandas >/dev/null 2>&1 || true
+  conda install -n "$env_name" -y -c conda-forge --force-reinstall \
+    "numpy=1.26.4" \
+    "scipy" \
+    "rdkit>=2023.09" \
+    "pandas<3"
 }
 
 validate_main_env() {

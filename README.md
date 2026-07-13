@@ -123,6 +123,10 @@ The architecture is intentionally split between a PyMOL/Qt UI layer and runtime 
 
 ## Installation Overview
 
+For the repository map and maintainability rules, see
+[`docs/REPOSITORY_LAYOUT.md`](docs/REPOSITORY_LAYOUT.md). Root-level runtime
+modules are intentional during the compatibility-preserving package migration.
+
 Leonardo is easiest to install with the bundled conda environments. The recommended setup uses:
 
 - `protliginteract-full`: required main environment that runs PyMOL and the core scientific stack
