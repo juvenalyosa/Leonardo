@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 _RESIDUE_ALIASES = {
     "HSD": "HID",
     "HSE": "HIE",

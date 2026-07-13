@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 AF_ENGINE_COLABFOLD = "colabfold_af2"
 AF_ENGINE_AF3_LOCAL = "alphafold3_local"
 AF_ENGINE_AF3_SERVER = "alphafold3_server"

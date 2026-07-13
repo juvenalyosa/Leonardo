@@ -15,7 +15,7 @@ authors = [
 keywords = ["pymol", "structural-bioinformatics", "docking", "openmm", "psi4", "mopac"]
 
 [project.scripts]
-leonardo-readiness = "report_scientific_readiness:main"
+leonardo-readiness = "leonardo.report_scientific_readiness:main"
 
 [tool.setuptools]
 package-dir = {"leonardo" = "src/leonardo"}
@@ -60,6 +60,13 @@ py-modules = [
   "vs_runtime",
 ]
 
+[tool.setuptools.data-files]
+"share/leonardo" = ["logo.png", "protliginteract.ui", "JSME_minimal.html"]
+"share/leonardo/jsme" = ["jsme/*.js", "jsme/*.png", "jsme/*.css", "jsme/*.txt", "jsme/*.gif"]
+"share/leonardo/jsme/gwt/chrome" = ["jsme/gwt/chrome/*.css"]
+"share/leonardo/jsme/deferredjs/0ADE505A5718D4BE2E0EE1B7C54CC163" = ["jsme/deferredjs/0ADE505A5718D4BE2E0EE1B7C54CC163/*.js"]
+"share/leonardo/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19" = ["jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19/*.js"]
+
 [tool.black]
 line-length = 120
 target-version = ["py311"]
@@ -68,12 +75,17 @@ include = '\\.(py)$'
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+
+[tool.ruff.lint]
 select = [
   "E",  # pycodestyle errors
   "F",  # Pyflakes
   "I",  # isort
 ]
-ignore = []
+ignore = [
+  "E501",  # long scientific labels/tables are kept readable as single lines
+  "E731",  # callback lambdas are part of existing injected-runtime APIs
+]
 
 [tool.ruff.format]
 quote-style = "preserve"

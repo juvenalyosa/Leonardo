@@ -585,10 +585,7 @@ def _run_modeler_sequence_aligner(seq_a, seq_b, aligner_fn=None):
         try:
             from .mutator import needleman_wunsch_affine as fn
         except Exception:
-            try:
-                from mutator import needleman_wunsch_affine as fn
-            except Exception:
-                fn = None
+            fn = None
     left = str(seq_a or "").strip().upper()
     right = str(seq_b or "").strip().upper()
     if not callable(fn):

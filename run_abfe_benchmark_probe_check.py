@@ -2,3 +2,5 @@
 import sys
 from leonardo import run_abfe_benchmark_probe_check as _impl
 sys.modules[__name__] = _impl
+if __name__ == "__main__":
+    raise SystemExit(_impl.main())

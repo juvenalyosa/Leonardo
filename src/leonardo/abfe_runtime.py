@@ -8091,7 +8091,6 @@ def build_abfe_free_energy_numeric_payload(
             state_weights = np.asarray(hist_weights, dtype=float)
         bound_rescore_mask = np.logical_and(np.asarray(bound_arr, dtype=bool), np.isfinite(rescored_arr))
         unbound_rescore_mask = np.logical_and(np.asarray(unbound_arr, dtype=bool), np.isfinite(rescored_arr))
-        rescored_strain_arr = np.asarray([], dtype=float)
         strain_penalty_arr = np.asarray([], dtype=float)
         if ligand_internal_ok:
             ligand_internal_finite = np.asarray(np.isfinite(ligand_internal_arr), dtype=bool)

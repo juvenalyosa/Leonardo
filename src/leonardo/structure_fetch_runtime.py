@@ -13,7 +13,6 @@ import re
 import urllib.parse
 import urllib.request
 
-
 STRUCTURE_FETCH_SOURCES = {
     "rcsb": {
         "label": "RCSB PDB",

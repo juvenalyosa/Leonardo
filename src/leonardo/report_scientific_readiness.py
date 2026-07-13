@@ -2,9 +2,11 @@ import argparse
 import json
 import sys
 
-from scientific_readiness_runtime import build_suite_readiness_report
-from scientific_readiness_runtime import format_suite_readiness_lines
-from scientific_readiness_runtime import list_scientific_workflow_ids
+from .scientific_readiness_runtime import (
+    build_suite_readiness_report,
+    format_suite_readiness_lines,
+    list_scientific_workflow_ids,
+)
 
 
 def build_arg_parser():

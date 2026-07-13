@@ -1,8 +1,7 @@
 import copy
 import importlib.util
 
-from dock_runtime import resolve_tool_path
-
+from .dock_runtime import resolve_tool_path
 
 SCIENTIFIC_SKILLS_REPO_ROOT = "https://github.com/K-Dense-AI/claude-scientific-skills/tree/main/scientific-skills"
 

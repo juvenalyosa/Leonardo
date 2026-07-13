@@ -11,7 +11,6 @@ import math
 
 import numpy as np
 
-
 CLUSTER_INTERACTION_TYPES = ("Hydrophobic", "Van der Waals")
 RING_INTERACTION_TYPES = ("Pi-Pi Stacking", "T-Shaped Pi-Pi", "Cation-Pi", "Anion-Pi")
 

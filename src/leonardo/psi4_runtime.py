@@ -1,9 +1,9 @@
 import collections
 import glob
-import numpy as np
 import os
 import re
 
+import numpy as np
 
 _PSI4_PCM_SOLVENT_SPECS = (
     ("Water", ("H2O",)),

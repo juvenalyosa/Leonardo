@@ -1,8 +1,7 @@
 """Canonical Leonardo package namespace.
 
-The current PyMOL loader still imports legacy root-level modules. During the
-migration those modules remain the implementation source while this namespace
-provides a stable import path for new code.
+Runtime implementations live here. Root-level modules are compatibility
+aliases for the existing PyMOL loader and third-party scripts.
 """
 
 __version__ = "0.2.0a5"

@@ -1745,7 +1745,6 @@ def main() -> None:
         endpoint_min_rows=int(args.endpoint_min_rows),
     )
     docking_col = str(info.get("docking_col", "") or "")
-    stack_model_name = ""
     if (not bool(args.no_docking_stack)) and docking_col and (docking_col in df.columns):
         pred_df = pred_df.merge(
             df.loc[:, ["target", "ligand", docking_col]].drop_duplicates(subset=["target", "ligand"]),
@@ -1758,8 +1757,6 @@ def main() -> None:
             feature_cols=["cal_combo_ep", "cal_expavg", docking_col],
             predictor_name="stack_cal_combo_ep_cal_expavg_dock_loto",
         )
-        if "stack_cal_combo_ep_cal_expavg_dock_loto" in pred_df.columns:
-            stack_model_name = "stack_cal_combo_ep_cal_expavg_dock_loto"
     if fold_df.empty:
         raise RuntimeError("No folds evaluated")
     summary_df = summarize(fold_df)

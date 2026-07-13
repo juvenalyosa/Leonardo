@@ -1,23 +1,27 @@
 import json
 import os
 import re
-from collections import OrderedDict
 import xml.etree.ElementTree as ET
+from collections import OrderedDict
 
 import numpy as np
 
 try:
-    from .qmmm_mopac_runtime import assemble_force_correction
-    from .qmmm_mopac_runtime import qmmm_assess_interface
-    from .qmmm_mopac_runtime import qmmm_mopac_keywords_for_operation
-    from .qmmm_mopac_runtime import qmmm_recommend_region
-    from .qmmm_mopac_runtime import qmmm_step_file_based
+    from .qmmm_mopac_runtime import (
+        assemble_force_correction,
+        qmmm_assess_interface,
+        qmmm_mopac_keywords_for_operation,
+        qmmm_recommend_region,
+        qmmm_step_file_based,
+    )
 except Exception:
-    from qmmm_mopac_runtime import assemble_force_correction
-    from qmmm_mopac_runtime import qmmm_assess_interface
-    from qmmm_mopac_runtime import qmmm_mopac_keywords_for_operation
-    from qmmm_mopac_runtime import qmmm_recommend_region
-    from qmmm_mopac_runtime import qmmm_step_file_based
+    from .qmmm_mopac_runtime import (
+        assemble_force_correction,
+        qmmm_assess_interface,
+        qmmm_mopac_keywords_for_operation,
+        qmmm_recommend_region,
+        qmmm_step_file_based,
+    )
 
 
 _AA3 = {

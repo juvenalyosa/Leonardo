@@ -15,7 +15,7 @@ import numpy as np
 try:
     from .interaction_typing_runtime import normalize_interaction_residue_name
 except Exception:
-    from interaction_typing_runtime import normalize_interaction_residue_name
+    from .interaction_typing_runtime import normalize_interaction_residue_name
 
 
 # Aligned to PLIP-style defaults and literature-derived rule sets.  Distances

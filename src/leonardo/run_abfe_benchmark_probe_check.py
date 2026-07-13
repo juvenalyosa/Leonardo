@@ -19,35 +19,42 @@ from openmm import (
     LangevinMiddleIntegrator,
     LocalEnergyMinimizer,
     System,
+    app,
 )
-from openmm import app
 from openmm import unit as u
 from openmm.app import DCDReporter, Modeller, PDBFile
 from rdkit import Chem
 from rdkit.Chem import AllChem, Lipinski, rdMolDescriptors
+
 try:
     from rdkit.Chem.MolStandardize import rdMolStandardize as RDMS
 except Exception:
     RDMS = None
 
-from abfe_runtime import build_abfe_adaptive_steering_state_payload
-from abfe_runtime import build_abfe_adaptive_steering_update_decision
-from abfe_runtime import build_abfe_free_energy_numeric_payload
-from abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload
-from abfe_runtime import build_abfe_steering_lambda_schedule
-from abfe_runtime import build_abfe_surface_detach_direction_payload
-from abfe_runtime import compute_runtime_pocket_descriptors
-from test_abfe_3ptb_ben.run_abfe_3ptb_metal_biology_check import build_context_cpu_only
-from test_abfe_3ptb_ben.run_abfe_3ptb_metal_biology_check import contact_occupancies
-from test_abfe_3ptb_ben.run_abfe_3ptb_metal_biology_check import population_free_energy_metrics
-from test_abfe_3ptb_ben.run_abfe_3ptb_metal_biology_check import rank_pull_directions
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import estimate_protein_charge
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import infer_element
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import inject_ligand_terms_from_prmtop
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import load_mol2_charges
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import mass_for_element
-from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import nb_params
+from test_abfe_3ptb_ben.run_abfe_3ptb_metal_biology_check import (
+    build_context_cpu_only,
+    contact_occupancies,
+    population_free_energy_metrics,
+    rank_pull_directions,
+)
+from test_abfe_3ptb_ben.run_abfe_fullff_3ptb import (
+    estimate_protein_charge,
+    infer_element,
+    inject_ligand_terms_from_prmtop,
+    load_mol2_charges,
+    mass_for_element,
+    nb_params,
+)
 
+from .abfe_runtime import (
+    build_abfe_adaptive_steering_state_payload,
+    build_abfe_adaptive_steering_update_decision,
+    build_abfe_free_energy_numeric_payload,
+    build_abfe_gbsa_mmgbsa_rescore_payload,
+    build_abfe_steering_lambda_schedule,
+    build_abfe_surface_detach_direction_payload,
+    compute_runtime_pocket_descriptors,
+)
 
 R_KJ_MOL_K = 0.008314462618
 KCAL_PER_KJ = 1.0 / 4.184
@@ -107,9 +114,9 @@ def format_energy(value_kj, unit="kcal", digits=3):
             vv = float(value_kj)
         except Exception:
             vv = np.nan
-        return f"{float(vv):.{digits_i}f} kJ/mol" if np.isfinite(vv) else f"nan kJ/mol"
+        return f"{float(vv):.{digits_i}f} kJ/mol" if np.isfinite(vv) else "nan kJ/mol"
     kcal = kj_to_kcal(value_kj)
-    return f"{float(kcal):.{digits_i}f} kcal/mol" if np.isfinite(kcal) else f"nan kcal/mol"
+    return f"{float(kcal):.{digits_i}f} kcal/mol" if np.isfinite(kcal) else "nan kcal/mol"
 
 
 def _ordered_unique_str(values):
@@ -1067,7 +1074,7 @@ def write_markdown_report(out_path: Path, summary: dict, energy_unit="kcal") -> 
         "",
         "## Parameterization",
         "",
-        f"- Charge method: `AM1-BCC (antechamber)`",
+        "- Charge method: `AM1-BCC (antechamber)`",
         f"- Formal charge: `{int(summary['ligand']['formal_charge'])}`",
         f"- Partial charge sum: `{float(summary['ligand']['partial_charge_sum']):.3f}`",
         f"- Heavy atoms: `{int(summary['ligand']['heavy_atoms'])}` | MW: `{float(summary['ligand']['mw']):.2f}`",

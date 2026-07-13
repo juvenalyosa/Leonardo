@@ -2,8 +2,14 @@ name: Sanity
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: sanity-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quick-sanity:
@@ -21,8 +27,12 @@ jobs:
       - name: Install source package metadata
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pytest
+          python -m pip install pytest ruff
           python -m pip install -e . --no-deps --no-build-isolation
+
+      - name: Verify canonical package lint
+        run: |
+          ruff check src/leonardo tests/test_canonical_namespace.py tests/test_plugin_packaging.py
 
       - name: Verify Python files compile
         run: |

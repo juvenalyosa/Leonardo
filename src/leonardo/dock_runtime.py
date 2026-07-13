@@ -4,7 +4,6 @@ import re
 import shutil
 import subprocess
 import sys
-from collections import OrderedDict
 
 
 def _runtime_float(value, default=None):

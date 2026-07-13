@@ -1,3 +1,6 @@
 """Legacy import shim for :mod:`leonardo.calibrate_abfe_group_compact`."""
+import sys
 from leonardo import calibrate_abfe_group_compact as _impl
-globals().update({k: v for k, v in vars(_impl).items() if not k.startswith("__")})
+sys.modules[__name__] = _impl
+if __name__ == "__main__":
+    raise SystemExit(_impl.main())

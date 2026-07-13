@@ -9,37 +9,38 @@ from pathlib import Path
 
 import numpy as np
 
-from ligand_vib_refine_runtime import DEFAULT_PSO_BOUNDS
-from ligand_vib_refine_runtime import DEFAULT_SCALE_VECTOR
-from ligand_vib_refine_runtime import _deserialize_scaled_system
-from ligand_vib_refine_runtime import build_scale_search_config
-from ligand_vib_refine_runtime import build_qm_optimization_stages
-from ligand_vib_refine_runtime import build_ligand_system_payload
-from ligand_vib_refine_runtime import build_mode_comparison_rows
-from ligand_vib_refine_runtime import evaluate_scale_vector
-from ligand_vib_refine_runtime import export_refined_forcefield_xml
-from ligand_vib_refine_runtime import load_mol2_full_records
-from ligand_vib_refine_runtime import make_summary_payload
-from ligand_vib_refine_runtime import make_summary_plots
-from ligand_vib_refine_runtime import load_first_sdf_record_atoms
-from ligand_vib_refine_runtime import qm_result_matches_stage
-from ligand_vib_refine_runtime import regenerate_refined_amber_files
-from ligand_vib_refine_runtime import run_bounded_pso
-from ligand_vib_refine_runtime import run_mopac_stationary_from_mol2
-from ligand_vib_refine_runtime import run_mopac_stationary_from_sdf
-from ligand_vib_refine_runtime import run_mopac_stationary_from_xyz
-from ligand_vib_refine_runtime import run_psi4_frequency_from_xyz
-from ligand_vib_refine_runtime import run_psi4_stationary_from_mol2
-from ligand_vib_refine_runtime import run_psi4_stationary_from_sdf
-from ligand_vib_refine_runtime import run_psi4_stationary_from_xyz
-from ligand_vib_refine_runtime import validate_qm_start_sdf_matches_template_mol2
-from ligand_vib_refine_runtime import write_json
-from ligand_vib_refine_runtime import write_markdown_report
-from ligand_vib_refine_runtime import write_mode_comparison_csv
-from ligand_vib_refine_runtime import write_mol2_with_coords
-from ligand_vib_refine_runtime import write_refined_frcmod
-from psi4_runtime import psi4_load_vib_data
-from psi4_runtime import psi4_guess_multiplicity_from_atoms
+from .ligand_vib_refine_runtime import (
+    DEFAULT_PSO_BOUNDS,  # noqa: F401 - compatibility re-export
+    DEFAULT_SCALE_VECTOR,  # noqa: F401 - compatibility re-export
+    _deserialize_scaled_system,
+    build_ligand_system_payload,
+    build_mode_comparison_rows,
+    build_qm_optimization_stages,
+    build_scale_search_config,
+    evaluate_scale_vector,
+    export_refined_forcefield_xml,
+    load_first_sdf_record_atoms,
+    load_mol2_full_records,
+    make_summary_payload,
+    make_summary_plots,
+    qm_result_matches_stage,
+    regenerate_refined_amber_files,
+    run_bounded_pso,
+    run_mopac_stationary_from_mol2,
+    run_mopac_stationary_from_sdf,
+    run_mopac_stationary_from_xyz,  # noqa: F401 - compatibility re-export
+    run_psi4_frequency_from_xyz,
+    run_psi4_stationary_from_mol2,
+    run_psi4_stationary_from_sdf,
+    run_psi4_stationary_from_xyz,
+    validate_qm_start_sdf_matches_template_mol2,
+    write_json,
+    write_markdown_report,
+    write_mode_comparison_csv,
+    write_mol2_with_coords,
+    write_refined_frcmod,
+)
+from .psi4_runtime import psi4_guess_multiplicity_from_atoms, psi4_load_vib_data
 
 
 def _run_checked(cmd, cwd):
@@ -578,7 +579,7 @@ def main():
             lines = [
                 "# Ligand QM Optimization",
                 "",
-                f"- Stage: `optimize_only`",
+                "- Stage: `optimize_only`",
                 f"- Method: `{str(qm_result.get('method', args.method) or args.method)}`",
                 f"- Basis: `{str(qm_result.get('basis', qm_basis_label) or qm_basis_label)}`",
                 f"- Optimized XYZ: `{summary['optimized_xyz']}`",

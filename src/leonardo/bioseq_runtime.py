@@ -6,7 +6,6 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
-
 AA_STANDARD_TEXT = "ACDEFGHIKLMNPQRSTVWY"
 AA_STANDARD = set(AA_STANDARD_TEXT)
 # IUPAC protein sequence inputs often contain ambiguous residues (B/Z/J/X) and

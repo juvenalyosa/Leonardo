@@ -3,8 +3,7 @@ import datetime
 import inspect
 import os
 import re
-from math import ceil
-from math import isfinite
+from math import ceil, isfinite
 
 
 def _safe_float(value, default=float("nan")):

@@ -6,7 +6,6 @@ Validate the Leonardo AmberTools -> ffxml ligand parameterization path on 3PTB/B
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import math
 import os
@@ -15,14 +14,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from openmm import CustomExternalForce, LangevinMiddleIntegrator, Platform, unit
-from openmm import app
+from openmm import CustomExternalForce, LangevinMiddleIntegrator, Platform, app, unit
 from openmm.app import Modeller, PDBFile, Simulation
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
-
+from .openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
 
 PROTEIN_RESN = {
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",

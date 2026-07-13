@@ -8,13 +8,14 @@ import traceback
 
 import numpy as np
 
-from psi4_runtime import psi4_collect_ligand_charges_from_file
-from psi4_runtime import psi4_collect_atoms_from_xyz
-from psi4_runtime import psi4_element_token
-from psi4_runtime import psi4_guess_multiplicity_from_atoms
-from psi4_runtime import psi4_load_vib_data
-from psi4_runtime import psi4_prepare_ir_spectrum
-
+from .psi4_runtime import (
+    psi4_collect_atoms_from_xyz,
+    psi4_collect_ligand_charges_from_file,
+    psi4_element_token,
+    psi4_guess_multiplicity_from_atoms,
+    psi4_load_vib_data,  # noqa: F401 - compatibility re-export
+    psi4_prepare_ir_spectrum,  # noqa: F401 - compatibility re-export
+)
 
 AVOGADRO = 6.02214076e23
 LIGHT_CM_S = 2.99792458e10
@@ -1199,7 +1200,7 @@ def run_psi4_frequency_from_xyz(
         psi4.set_memory(f"{int(max(1, memory_gb))} GB")
         psi4.set_num_threads(int(max(1, threads)))
         psi4.core.set_output_file("psi4_run.out", False)
-        mol = psi4.geometry(molecule_block)
+        psi4.geometry(molecule_block)
         psi4.set_options(
             {
                 "basis": str(basis),
@@ -1303,8 +1304,7 @@ def run_psi4_stationary_from_xyz(
 
 def _load_openmm():
     import openmm as omm
-    from openmm import app
-    from openmm import unit
+    from openmm import app, unit
 
     return omm, app, unit
 
@@ -2079,7 +2079,7 @@ def build_ligand_system_payload(prmtop_file, inpcrd_file, mol2_file):
 
 
 def regenerate_refined_amber_files(mol2_file, frcmod_file, out_dir, tleap_bin="tleap"):
-    from psi4_runtime import psi4_prepare_tleap_ligand_build
+    from .psi4_runtime import psi4_prepare_tleap_ligand_build
 
     payload = psi4_prepare_tleap_ligand_build(
         mol2_file=mol2_file,
@@ -2346,7 +2346,7 @@ def write_json(path, payload):
 
 def export_refined_forcefield_xml(prmtop_file, out_xml):
     try:
-        from openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
+        from .openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
     except Exception as exc:
         return {"ok": False, "error": f"xml_export_import_failed: {exc}"}
     return export_forcefield_xml_from_amber_prmtop(prmtop_file=prmtop_file, out_xml=out_xml, residue_name_hint="LIG")

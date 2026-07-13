@@ -1,7 +1,7 @@
-import os
-import datetime
 import collections
 import csv
+import datetime
+import os
 
 import numpy as np
 

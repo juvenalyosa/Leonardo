@@ -1,6 +1,6 @@
 import traceback
-from pymol.Qt import QtCore
 
+from pymol.Qt import QtCore
 
 _Signal = getattr(QtCore, "Signal", None) or getattr(QtCore, "pyqtSignal")
 _Slot = getattr(QtCore, "Slot", None) or getattr(QtCore, "pyqtSlot")

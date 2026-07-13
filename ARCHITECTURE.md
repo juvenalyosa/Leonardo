@@ -2,6 +2,10 @@
 
 Leonardo is the user-facing suite name. Legacy internal module/file names may still reference `ProtLigInteract` for compatibility with the existing PyMOL plugin packaging.
 
+Runtime implementations are canonical under `src/leonardo/`. Root-level
+modules with matching names are import aliases kept for legacy PyMOL packages
+and external scripts.
+
 This plugin is transitioning from a monolithic UI/controller file to a layered structure:
 
 - `code_v2.py`

@@ -1,14 +1,14 @@
 # Repository layout
 
-Leonardo is currently in a compatibility-first transition. The PyMOL plugin
-still loads Python modules from the repository root, so runtime modules remain
-there until the package migration is complete.
+Leonardo uses a canonical `src/leonardo/` package. The PyMOL plugin and older
+third-party scripts can still import root-level compatibility aliases.
 
 ## Top-level areas
 
 | Area | Contents | Policy |
 | --- | --- | --- |
-| `*.py` (root) | PyMOL entry points and runtime modules | Production code; keep UI in `code_v2.py` and `ProtLigInteract.py` compatibility glue thin |
+| `src/leonardo/` | Runtime implementations and package configuration | Canonical production package; internal imports must be relative |
+| `*.py` (root) | PyMOL entry points, CLI launchers, and compatibility aliases | Compatibility only; reusable implementation belongs under `src/leonardo/` |
 | `tests/` | Unit, integration, and packaging tests | Every runtime change should add or update a test |
 | `qm/`, `test_abfe_3ptb_ben/`, `redocking_real_*`, `benchmark_data/` | Small scientific fixtures and reproducible examples | Inputs and metadata only; generated outputs go under `draft/` or a user-selected output directory |
 | `installers/` | Platform-specific installers | Thin wrappers around the root installer |
@@ -26,17 +26,7 @@ there until the package migration is complete.
 
 ## Migration plan
 
-The migration has started with `src/leonardo/` and canonical namespace entry
-points for `smina_runtime`, `vs_runtime`, `leadopt_runtime`,
-`interaction_typing_runtime`, `alphafold_runtime`, `psi4_runtime`,
-`abfe_runtime`, `redock_runtime`, `openmm_dynamics_runtime`,
-`openmm_qmmm_runtime`, `modeler_runtime`, and `bioseq_runtime`.
-The same namespace also covers structure fetching, small molecules, ligand
-editing/refinement, interaction and trajectory analysis, task monitoring,
-docking orchestration, mutation, QM/MM, and scientific-readiness helpers.
-Root-level modules remain compatibility implementations for now. Each
-subsequent runtime module will move only after its import and packaging tests
-pass.
-
-Command-line entry points are also available under `leonardo.*`; root scripts
-remain stable launch targets for existing installers.
+Runtime implementations have moved to `src/leonardo/`. Root-level aliases must
+remain temporarily because existing PyMOL ZIPs, external scripts, and tests use
+the historical import paths. Command-line entry points are available under
+`leonardo.*`, while root scripts remain stable launch targets.

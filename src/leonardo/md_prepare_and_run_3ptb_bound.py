@@ -10,14 +10,12 @@ import io
 import sys
 from pathlib import Path
 
-from openmm import CustomExternalForce, LangevinMiddleIntegrator, Platform, unit
-from openmm import app
-from openmm.app import CheckpointReporter, DCDReporter, Modeller, PDBFile, Simulation, StateDataReporter
 from openff.toolkit.topology import Molecule
+from openmm import CustomExternalForce, LangevinMiddleIntegrator, Platform, app, unit
+from openmm.app import CheckpointReporter, DCDReporter, Modeller, PDBFile, Simulation, StateDataReporter
 from openmmforcefields.generators import SystemGenerator
 from rdkit import Chem
 from rdkit.Chem import AllChem
-
 
 PROTEIN_RESN = {
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
