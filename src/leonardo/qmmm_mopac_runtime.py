@@ -2226,7 +2226,7 @@ def qmmm_step_file_based(
         out_txt = ""
         try:
             with open(os.path.join(run_dir, "step.out"), "r", encoding="utf-8", errors="ignore") as fh:
-                out_txt = " ".join(l.strip() for l in fh if "ERROR" in l.upper() or "corrupt" in l)[:400]
+                out_txt = " ".join(line.strip() for line in fh if "ERROR" in line.upper() or "corrupt" in line)[:400]
         except OSError:
             pass
         raise RuntimeError("MOPAC run finished but no .aux file was produced." + (f" MOPAC: {out_txt}" if out_txt else ""))
