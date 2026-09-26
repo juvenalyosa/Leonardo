@@ -1,5 +1,6 @@
 """QM/MM reaction paths driven from Python with the real MOPAC binary (skipped when MOPAC is not installed):
 relaxed distance scan inside a fixed MM environment, dimer transition-state search and frequency validation."""
+import importlib.util
 import shutil
 
 import numpy as np
@@ -25,7 +26,8 @@ _PROPANOL_SIG = np.array([0.34, 0.25, 0.25, 0.25, 0.34, 0.25, 0.25, 0.34, 0.25, 
 _PROPANOL_EPS = np.array([0.46, 0.066, 0.066, 0.066, 0.46, 0.066, 0.066, 0.46, 0.066, 0.066, 0.71, 0.0, 0.636, 0.0, 0.0])
 
 MOPAC = shutil.which("mopac") or shutil.which("MOPAC")
-needs_mopac = pytest.mark.skipif(MOPAC is None, reason="MOPAC is not installed")
+HAS_ASE = importlib.util.find_spec("ase") is not None
+needs_mopac = pytest.mark.skipif(MOPAC is None or not HAS_ASE, reason="MOPAC and ASE are required")
 
 # HCN -> HNC isomerization: H starts bridging above the C-N bond; one inert far-away MM site
 _HCN_XYZ = np.array([[0.0, 0.0, 0.0], [1.18, 0.0, 0.0], [0.55, 1.05, 0.0], [30.0, 0.0, 0.0]])
