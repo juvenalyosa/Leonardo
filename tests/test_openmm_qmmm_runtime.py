@@ -741,8 +741,8 @@ def test_build_mopac_keywords_switches_stale_default_to_selected_operation():
 def test_run_openmm_qmmm_single_point_probe_smoke(tmp_path):
     xyz_full = np.array(
         [
-            [0.0, 0.0, 0.0],  # protein
-            [1.0, 0.0, 0.0],  # protein
+            [-4.0, 0.0, 0.0],  # protein (not bonded to the ligand: no link atom)
+            [-2.5, 0.0, 0.0],  # protein
             [2.0, 0.0, 0.0],  # ligand
             [3.0, 0.0, 0.0],  # ligand
         ],

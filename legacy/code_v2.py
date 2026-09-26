@@ -10529,6 +10529,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "sum_force_norm": float(norm_sum),
             "max_force_norm": float(np.max(np.linalg.norm(arr[idxs, :], axis=1))) if idxs else 0.0,
         }
+    def _openmm_extract_nonbonded_lj(self, system, n_atoms):
+        """Per-atom Lennard-Jones sigma (nm) and epsilon (kJ/mol) from the NonbondedForce, or (None, None)."""
+        n = int(max(0, int(n_atoms)))
+        if system is None or n <= 0:
+            return None, None
+        nb = None
+        try:
+            for i in range(int(system.getNumForces())):
+                if str(system.getForce(i).__class__.__name__) == "NonbondedForce":
+                    nb = system.getForce(i)
+                    break
+        except Exception:
+            nb = None
+        if nb is None or int(nb.getNumParticles()) < n:
+            return None, None
+        sig = np.zeros((n,), dtype=float)
+        eps = np.zeros((n,), dtype=float)
+        for i in range(n):
+            try:
+                _q, s_i, e_i = nb.getParticleParameters(i)
+                sig[i] = float(s_i.value_in_unit(OMM_UNIT.nanometer))
+                eps[i] = float(e_i.value_in_unit(OMM_UNIT.kilojoule_per_mole))
+            except Exception:
+                return None, None
+        return sig, eps
     def _openmm_extract_nonbonded_charges_e(self, system, n_atoms):
         n = int(max(0, int(n_atoms)))
         charges = np.zeros((n,), dtype=float)
@@ -10779,6 +10804,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         }
         if callable(cfg.get("runner", None)):
             run_kwargs["runner"] = cfg.get("runner")
+        # Exact covalent QM/MM boundaries (hydrogen link atoms) and QM–MM Lennard-Jones parameters.
+        try:
+            run_kwargs["bond_pairs"] = [(int(b.atom1.index), int(b.atom2.index)) for b in topology.bonds()]
+        except Exception:
+            run_kwargs["bond_pairs"] = None
+        lj_sig, lj_eps = self._openmm_extract_nonbonded_lj(system, n_atoms=n_atoms)
+        if lj_sig is not None:
+            run_kwargs["lj_sigma_nm"] = lj_sig
+            run_kwargs["lj_epsilon_kj"] = lj_eps
         op = str(cfg.get("operation", "probe") or "probe").strip().lower()
         if op == "reaction_scan":
             d_a = dict(cfg.get("scan_atom_a", {}) or {})
@@ -10799,6 +10833,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 config=dict(cfg),
                 workdir=str(workdir),
                 runner=cfg.get("runner", None) if callable(cfg.get("runner", None)) else None,
+                bond_pairs=run_kwargs.get("bond_pairs"),
+                lj_sigma_nm=run_kwargs.get("lj_sigma_nm"),
+                lj_epsilon_kj=run_kwargs.get("lj_epsilon_kj"),
             )
             best = dict(scan_out.get("best_point", {}) or {})
             one = dict(best.get("result", {}) or {})
@@ -11309,6 +11346,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 frozen_probe = dict(data.get("qmmm_probe", {}) or {})
                 frozen_probe["qm_indices"] = list(qmmm_coupling_plan.get("qm_indices", []) or [])
                 frozen_probe["mm_indices"] = list(qmmm_coupling_plan.get("mm_indices", []) or [])
+                frozen_probe["include_lj"] = False      # OpenMM keeps QM–MM Lennard-Jones in coupled MD
                 data["qmmm_probe"] = frozen_probe
                 qmmm_probe_cfg = dict(frozen_probe)
                 out["qmmm_system_preparation"] = dict(prep_qmmm)
