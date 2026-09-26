@@ -10822,8 +10822,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if ia < 0 or ib < 0:
                 return {"ok": False, "error": "Could not map reaction-scan atom selection to prepared topology."}
             if bool(cfg.get("scan_relaxed", True)):
-                # Relaxed scan: the whole QM region is re-optimized at every distance, with the embedding recomputed
-                # at each step (the rigid scan below only moves one atom and ignores relaxation).
+                # Relaxed scan: the whole QM region is re-optimized at every point, with the embedding recomputed at
+                # each step (the rigid scan below only moves one atom and ignores relaxation).  With a third atom
+                # (scan_atom_c) the transfer coordinate xi = d(A-B) - d(B-C) is scanned instead of d(A-B), and an
+                # interior maximum is refined automatically to the transition state.
+                d_c = dict(cfg.get("scan_atom_c", {}) or {})
+                ic = self._qmmm_find_topology_atom_index(atom_rows, d_c) if d_c else -1
                 return mod.run_openmm_qmmm_relaxed_scan(
                     xyz_full_ang=run_kwargs["xyz_full_ang"],
                     atomic_numbers_full=run_kwargs["atomic_numbers_full"],
@@ -10838,6 +10842,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     bond_pairs=run_kwargs.get("bond_pairs"),
                     lj_sigma_nm=run_kwargs.get("lj_sigma_nm"),
                     lj_epsilon_kj=run_kwargs.get("lj_epsilon_kj"),
+                    transfer_atom=(int(ic) if ic >= 0 else None),
                 )
             scan_out = mod.run_openmm_qmmm_distance_scan_probe(
                 xyz_full_ang=run_kwargs["xyz_full_ang"],

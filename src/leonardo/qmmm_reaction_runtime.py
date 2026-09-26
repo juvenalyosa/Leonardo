@@ -67,8 +67,9 @@ class EmbeddedQMMMModel:
         return xyz
 
     def evaluate(self, qm_xyz, restraint=None, tag="calc"):
-        """Energy (kJ/mol) and forces on the QM atoms (kJ/mol/nm).  ``restraint`` = (i, j, d0_ang, k_kj_mol_ang2)
-        with global atom indices; its energy is added to the total and also reported separately."""
+        """Energy (kJ/mol) and forces on the QM atoms (kJ/mol/nm).  ``restraint`` (global atom indices) is either
+        ``(i, j, d0_ang, k)`` on the distance d(i, j) or ``(a, b, c, xi0_ang, k)`` on the transfer coordinate
+        xi = d(a, b) − d(b, c); k in kJ/mol/Å².  Its energy is added to the total and also reported separately."""
         self.n_calls += 1
         xyz = self.full_coordinates(qm_xyz)
         r = qmmm_step_file_based(
@@ -81,15 +82,24 @@ class EmbeddedQMMMModel:
         e = float(r["energy_qmmm_total_kj_mol"])
         e_restr = 0.0
         if restraint is not None:
-            i, j, d0, k = restraint
-            a, b = self.qm.index(int(i)), self.qm.index(int(j))
-            v = xyz[int(j)] - xyz[int(i)]
-            d = float(np.linalg.norm(v))
-            e_restr = 0.5 * float(k) * (d - float(d0)) ** 2
-            dE_dd = float(k) * (d - float(d0))                   # kJ/mol/Angstrom
-            unit = v / max(d, 1.0e-12)
-            f[a] += dE_dd * unit * 10.0                          # force = -dE/dx, converted to kJ/mol/nm
-            f[b] -= dE_dd * unit * 10.0
+            if len(restraint) == 4:                              # (i, j, d0, k): distance d(i, j)
+                i, j, d0, k = restraint
+                terms_q = [(int(i), int(j), +1.0)]
+            else:                                                # (a, b, c, xi0, k): xi = d(a, b) - d(b, c)
+                a_, b_, c_, d0, k = restraint
+                terms_q = [(int(a_), int(b_), +1.0), (int(b_), int(c_), -1.0)]
+            value = 0.0
+            grads = []
+            for i, j, sign in terms_q:
+                v = xyz[j] - xyz[i]
+                d = float(np.linalg.norm(v))
+                value += sign * d
+                grads.append((i, j, sign * v / max(d, 1.0e-12)))
+            e_restr = 0.5 * float(k) * (value - float(d0)) ** 2
+            dE_dq = float(k) * (value - float(d0))                # kJ/mol/Angstrom
+            for i, j, unit in grads:                              # d(d_ij)/dx_j = unit, d/dx_i = -unit
+                f[self.qm.index(i)] += dE_dq * unit * 10.0        # force = -dE/dx, converted to kJ/mol/nm
+                f[self.qm.index(j)] -= dE_dq * unit * 10.0
         if self.fixed:
             f[self.fixed] = 0.0
         return e + e_restr, f, {"energy_kj_mol": e, "restraint_kj_mol": e_restr, "raw": r}
@@ -162,28 +172,86 @@ class EmbeddedQMMMModel:
                 "barrier_estimate_kj_mol": float(e[k_max] - e[0]), "n_energy_evaluations": int(self.n_calls),
                 "interior_maximum": bool(0 < k_max < len(rows) - 1)}
 
-    def refine_ts_dimer(self, qm_xyz_guess, mode_guess=None, fmax_kj_mol_ang=2.0, steps=300, seed=0):
+    def relaxed_transfer_scan(self, atom_a, atom_b, atom_c, xi_values_ang, k_kj_mol_ang2=5000.0,
+                              fmax_kj_mol_ang=2.0, steps=300, qm_xyz_start=None):
+        """Relaxed scan of the transfer coordinate xi = d(a, b) − d(b, c): group/atom ``b`` moves from ``a`` to ``c``
+        (negative xi: b bonded to a; positive: bonded to c).  Unlike a single-distance scan, both the breaking and
+        the forming bond are driven together, which avoids the sudden jumps (false maxima) that a one-distance scan
+        shows for transfer reactions (proton, phosphoryl, hydride…)."""
+        for atom in (atom_a, atom_b, atom_c):
+            if int(atom) not in self.qm:
+                raise ValueError("The three transfer atoms must be in the QM region.")
+        xyz = np.asarray(self.xyz_ref[self.qm] if qm_xyz_start is None else qm_xyz_start, dtype=float).copy()
+        rows = []
+        for n, xi0 in enumerate(list(xi_values_ang)):
+            res = self.optimize(xyz, restraint=(int(atom_a), int(atom_b), int(atom_c), float(xi0), float(k_kj_mol_ang2)),
+                                fmax_kj_mol_ang=fmax_kj_mol_ang, steps=steps, tag=f"scan/point_{n:03d}")
+            xyz = res["qm_xyz"]
+            full = self.full_coordinates(xyz)
+            d_ab = float(np.linalg.norm(full[int(atom_b)] - full[int(atom_a)]))
+            d_bc = float(np.linalg.norm(full[int(atom_c)] - full[int(atom_b)]))
+            rows.append({"point": n + 1, "target_xi_ang": float(xi0), "xi_ang": d_ab - d_bc, "d_ab_ang": d_ab,
+                         "d_bc_ang": d_bc, "energy_kj_mol": float(res["energy_kj_mol"]),
+                         "restraint_kj_mol": float(res["restraint_kj_mol"]), "converged": bool(res["converged"]),
+                         "steps": int(res["steps"]), "qm_xyz": xyz.copy()})
+        e = np.array([r["energy_kj_mol"] for r in rows])
+        for r in rows:
+            r["energy_rel_kj_mol"] = float(r["energy_kj_mol"] - e[0])
+        k_max = int(np.argmax(e))
+        return {"ok": True, "rows": rows, "highest_point": dict(rows[k_max]), "lowest_point": dict(rows[int(np.argmin(e))]),
+                "barrier_estimate_kj_mol": float(e[k_max] - e[0]), "n_energy_evaluations": int(self.n_calls),
+                "interior_maximum": bool(0 < k_max < len(rows) - 1)}
+
+    def refine_ts_dimer(self, qm_xyz_guess, mode_guess=None, fmax_kj_mol_ang=2.0, steps=300, seed=0,
+                        max_rotations=8, max_positive_curvature_steps=25, max_energy_rise_kj_mol=105.0):
         """Converge a first-order saddle point with the dimer method (ASE ``MinModeTranslate``).
-        ``mode_guess`` (n_qm × 3) is the expected reaction direction, e.g. the scanned bond."""
+
+        ``mode_guess`` (n_qm × 3) is the expected reaction direction.  The best guess is the tangent of a path
+        around its highest point (:func:`path_tangent_mode`, e.g. from a relaxed scan); a single bond direction is a
+        weak guess.  Safeguards: while the dimer has not found a negative curvature it climbs uphill by design, so
+        the search stops (``converged=False`` with ``stopped_reason``) if the curvature stays positive for
+        ``max_positive_curvature_steps`` steps or the energy rises more than ``max_energy_rise_kj_mol`` above the
+        starting point, instead of returning a meaningless geometry.
+        """
         from ase.mep import DimerControl, MinModeAtoms, MinModeTranslate
 
         atoms = self.ase_atoms(qm_xyz_guess, tag="ts/calc")
         mask = [k not in self.fixed for k in range(len(self.qm))]
         control = DimerControl(initial_eigenmode_method="displacement",
                                displacement_method="vector", logfile=os.path.join(self.workdir, "dimer.log"),
-                               mask=mask, dimer_separation=0.01, max_num_rot=3, maximum_translation=0.1,
+                               mask=mask, dimer_separation=0.01, max_num_rot=int(max_rotations), maximum_translation=0.1,
                                trial_trans_step=0.01)
         d_atoms = MinModeAtoms(atoms, control)
-        vec = (np.asarray(mode_guess, dtype=float).reshape((-1, 3)) if mode_guess is not None
+        vec = (np.asarray(mode_guess, dtype=float).reshape((-1, 3)).copy() if mode_guess is not None
                else np.random.default_rng(seed).normal(size=(len(self.qm), 3)))
         vec[self.fixed] = 0.0
         d_atoms.displace(displacement_vector=vec / np.linalg.norm(vec) * 0.01)
         opt = MinModeTranslate(d_atoms, logfile=os.path.join(self.workdir, "dimer_translate.log"))
-        converged = bool(opt.run(fmax=fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=int(steps)))
+        e_start = None
+        positive_run = 0
+        stopped_reason = ""
+        converged = False
+        fmax_ev = fmax_kj_mol_ang / KJ_MOL_PER_EV
+        for converged in opt.irun(fmax=fmax_ev, steps=int(steps)):
+            e_now = float(d_atoms.get_potential_energy()) * KJ_MOL_PER_EV
+            e_start = e_now if e_start is None else e_start
+            curvature = float(d_atoms.get_curvature())
+            positive_run = positive_run + 1 if curvature > 0.0 else 0
+            if converged:
+                break
+            if positive_run >= int(max_positive_curvature_steps):
+                stopped_reason = (f"no negative curvature after {positive_run} steps: the start is not near a saddle "
+                                  "point or the mode guess is poor (use the tangent of a relaxed scan)")
+                break
+            if e_now - e_start > float(max_energy_rise_kj_mol):
+                stopped_reason = f"energy rose {e_now - e_start:.1f} kJ/mol above the start: search abandoned"
+                break
+        converged = bool(converged) and not stopped_reason
         xyz = d_atoms.get_positions().copy()
         e, f, terms = self.evaluate(xyz, tag="ts/final")
         return {"qm_xyz": xyz, "energy_kj_mol": float(terms["energy_kj_mol"]), "converged": converged,
-                "curvature_ev_ang2": float(d_atoms.get_curvature()), "steps": int(opt.get_number_of_steps()),
+                "stopped_reason": stopped_reason, "curvature_ev_ang2": float(d_atoms.get_curvature()),
+                "steps": int(opt.get_number_of_steps()),
                 "max_force_kj_mol_ang": float(np.max(np.linalg.norm(f, axis=1)) / 10.0),
                 "eigenmode": np.asarray(d_atoms.get_eigenmode(), dtype=float)}
 
@@ -206,6 +274,19 @@ class EmbeddedQMMMModel:
                                                                                     threshold_cm=threshold_cm)}
 
 
+def path_tangent_mode(path_qm_xyz, k):
+    """Tangent of a reaction path at frame ``k`` (central difference of neighbouring frames): the direction in
+    which *all* QM atoms move through the barrier region, the best initial mode for the dimer."""
+    frames = [np.asarray(x, dtype=float).reshape((-1, 3)) for x in path_qm_xyz]
+    k = int(k)
+    a, b = frames[max(0, k - 1)], frames[min(len(frames) - 1, k + 1)]
+    t = b - a
+    n = float(np.linalg.norm(t))
+    if n <= 1.0e-12:
+        raise ValueError("Degenerate path tangent: neighbouring frames are identical.")
+    return t / n
+
+
 def bond_direction_mode(model, atom_i, atom_j):
     """Unit displacement guess for the dimer: atoms i and j moving apart along their bond (global indices)."""
     xyz = model.xyz_ref
@@ -217,4 +298,4 @@ def bond_direction_mode(model, atom_i, atom_j):
     return mode
 
 
-__all__ = ["EmbeddedQMMMModel", "bond_direction_mode", "KJ_MOL_PER_EV"]
+__all__ = ["EmbeddedQMMMModel", "bond_direction_mode", "path_tangent_mode", "KJ_MOL_PER_EV"]

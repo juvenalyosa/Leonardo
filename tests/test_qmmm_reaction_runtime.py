@@ -93,3 +93,35 @@ def test_openmm_ts_search_validates_frequencies(tmp_path):
     assert out["ok"] is True and out["operation"] == "transition_state"
     assert out["ts"]["converged"] and out["ts"]["frequency_validation"]["imaginary_mode_count"] == 1
     assert (tmp_path / "ts.xyz").is_file()
+
+
+_HCN_BENT = np.array([[0.0, 0.0, 0.0], [1.16, 0.0, 0.0], [-1.03, 0.30, 0.0], [30.0, 0.0, 0.0]])   # H on C, slightly bent
+
+
+@needs_mopac
+def test_transfer_scan_then_automatic_ts_refinement(tmp_path):
+    """Scan xi = d(C-H) - d(H-N) across HCN -> HNC: smooth profile with an interior maximum; the dimer, started
+    there with the path tangent, converges to the saddle point with one imaginary mode."""
+    rows = [{"index": i, "name": n, "resn": "HCN" if i < 3 else "DUM", "chain": "A", "resi": "1"}
+            for i, n in enumerate(["C", "N", "H", "X"])]
+    cfg = {"qm_indices": [0, 1, 2], "mm_indices": [3], "mopac_executable": MOPAC}
+    out = run_openmm_qmmm_relaxed_scan(_HCN_BENT, _HCN_Z, [0.0] * 4, rows, (0, 2), -1.0, 1.0, n_points=9,
+                                       transfer_atom=1, config=cfg, workdir=str(tmp_path))
+    scan = out["scan"]
+    assert scan["coordinate"] == "transfer_xi" and scan["interior_maximum"]
+    xi = [r["xi_ang"] for r in scan["rows"]]
+    assert xi == sorted(xi)                                                    # the coordinate advances monotonically
+    ts = out["ts"]
+    assert ts["converged"] and ts["stopped_reason"] == ""
+    assert ts["frequency_validation"]["imaginary_mode_count"] == 1 and ts["frequencies_cm1"][0] < -500.0
+    assert ts["barrier_kj_mol"] > 0.0
+
+
+@needs_mopac
+def test_dimer_stops_instead_of_climbing_from_a_minimum(tmp_path):
+    """From a minimum there is no negative curvature: the search must stop with a reason, not wander uphill."""
+    model = EmbeddedQMMMModel(_HCN_XYZ, _HCN_Z, [0, 1, 2], [3], [0.0] * 4, str(tmp_path), mopac_executable=MOPAC)
+    start = np.array([[0.0, 0.0, 0.0], [1.16, 0.0, 0.0], [-1.07, 0.05, 0.0]])          # ~linear HCN (a minimum)
+    ts = model.refine_ts_dimer(start, mode_guess=None, max_positive_curvature_steps=5, steps=100)
+    assert ts["converged"] is False and "no negative curvature" in ts["stopped_reason"]
+    assert ts["steps"] < 20
