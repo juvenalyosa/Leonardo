@@ -23179,8 +23179,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             subtitle.setStyleSheet("color: #4b5563;")
             vbox.addWidget(subtitle)
 
+            class _WrappedWarningLabel(QtWidgets.QLabel):
+                # Qt gives word-wrapped labels less height than heightForWidth() in tight
+                # layouts, clipping the last line; keep the minimum height in sync with the width.
+                def resizeEvent(self, event):
+                    super().resizeEvent(event)
+                    needed = self.heightForWidth(self.width()) if self.text() else 0
+                    if needed > 0 and self.minimumHeight() != needed:
+                        self.setMinimumHeight(needed)
+
             # Shown on every tab when the selected engine needs a GPU this computer lacks.
-            self.lbl_af_gpu_warning = QtWidgets.QLabel("")
+            self.lbl_af_gpu_warning = _WrappedWarningLabel("")
             self.lbl_af_gpu_warning.setWordWrap(True)
             self.lbl_af_gpu_warning.setTextFormat(QtCore.Qt.RichText)
             self.lbl_af_gpu_warning.setStyleSheet(
