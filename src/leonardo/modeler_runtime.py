@@ -8,6 +8,8 @@ from math import isfinite
 
 import numpy as np
 
+from .mutator import MutationError, parse_mutation_label, position_key
+
 
 def _modeler_float_or_nan(value):
     try:
@@ -424,49 +426,74 @@ def _expand_modeler_mutation_position_range(start_pos, end_pos, max_span=512):
     return [int(v) for v in range(int(start_i), int(end_i) + 1)]
 
 
+def _modeler_position_value(key):
+    """``"184"``/``"-3"`` -> int, ``"184A"`` (insertion code) -> str, anything else -> None."""
+    txt = str(key if key is not None else "").strip().upper()
+    if re.fullmatch(r"-?\d+", txt):
+        return int(txt)
+    m = re.fullmatch(r"(-?\d+)([A-Z])", txt)
+    return position_key(m.group(1), m.group(2)) if m else None
+
+
 def extract_modeler_mutation_target_positions(mutation_labels, max_span=512):
+    """Residue positions named by mutation labels, in label order: ints for plain numbers
+    (negative allowed), ``"184A"``-style strings for insertion codes. A range with an
+    insertion code at either end contributes only its end points."""
     out = []
     seen = set()
     for mut in list(mutation_labels or []):
-        txt = str(mut or "").strip().upper()
-        if not txt:
+        try:
+            p = parse_mutation_label(mut)
+        except MutationError:
             continue
-        positions = []
-        sub_match = re.match(r"^([A-Z])(\d+)([A-Z])$", txt)
-        if sub_match:
-            positions = [int(sub_match.group(2))]
+        start = _modeler_position_value(p["start"])
+        end = _modeler_position_value(p["end"])
+        if p["kind"] in ("sub", "stop"):
+            positions = [start]
+        elif p["kind"] == "ins":
+            positions = [start, end]
+        elif isinstance(start, int) and isinstance(end, int):
+            positions = _expand_modeler_mutation_position_range(start, end, max_span=max_span)
         else:
-            delins_match = re.match(r"^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DELINS([A-Z]+)$", txt)
-            if delins_match:
-                start_txt = delins_match.group(2)
-                end_txt = delins_match.group(4) or start_txt
-                positions = _expand_modeler_mutation_position_range(start_txt, end_txt, max_span=max_span)
-            else:
-                del_match = re.match(r"^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DEL$", txt)
-                if del_match:
-                    start_txt = del_match.group(2)
-                    end_txt = del_match.group(4) or start_txt
-                    positions = _expand_modeler_mutation_position_range(start_txt, end_txt, max_span=max_span)
-                else:
-                    ins_match = re.match(r"^([A-Z]?)(\d+)_([A-Z]?)(\d+)INS([A-Z]+)$", txt)
-                    if ins_match:
-                        positions = [int(ins_match.group(2)), int(ins_match.group(4))]
-                    else:
-                        dup_match = re.match(r"^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DUP$", txt)
-                        if dup_match:
-                            start_txt = dup_match.group(2)
-                            end_txt = dup_match.group(4) or start_txt
-                            positions = _expand_modeler_mutation_position_range(start_txt, end_txt, max_span=max_span)
-        for pos_i in list(positions or []):
-            try:
-                pos_int = int(pos_i)
-            except Exception:
+            positions = [start, end]
+        for pos in positions:
+            if pos is None or pos in seen:
                 continue
-            if pos_int in seen:
-                continue
-            seen.add(int(pos_int))
-            out.append(int(pos_int))
+            seen.add(pos)
+            out.append(pos)
     return list(out)
+
+
+def modeler_mutation_target_labels(mutation_labels, residue_labels):
+    """Residue labels of a chain (``["183", "184", "184A", ...]``) touched by the mutations.
+
+    Ranges are resolved on the chain order, so ``183_185del`` includes ``184A``.
+    Labels that do not occur in the chain are skipped.
+    """
+    labels = [str(x).strip().upper() for x in list(residue_labels or [])]
+    index = {}
+    for i, lbl in enumerate(labels):
+        key = _modeler_position_value(lbl)
+        if key is not None:
+            index.setdefault(str(key), i)
+    out = []
+    for mut in list(mutation_labels or []):
+        try:
+            p = parse_mutation_label(mut)
+        except MutationError:
+            continue
+        i0 = index.get(p["start"])
+        i1 = index.get(p["end"])
+        if p["kind"] in ("sub", "stop"):
+            idx = [i0]
+        elif p["kind"] == "ins" or i0 is None or i1 is None or i1 < i0:
+            idx = [i0, i1]
+        else:
+            idx = list(range(i0, i1 + 1))
+        for i in idx:
+            if i is not None and labels[i] not in out:
+                out.append(labels[i])
+    return out
 
 
 def modeler_sequence_window_covers_positions(start_pos, sequence, positions):
@@ -474,14 +501,11 @@ def modeler_sequence_window_covers_positions(start_pos, sequence, positions):
     pos_list = []
     seen = set()
     for pos_i in list(positions or []):
-        try:
-            pos_int = int(pos_i)
-        except Exception:
+        pos = _modeler_position_value(pos_i)
+        if pos is None or pos in seen:
             continue
-        if pos_int in seen:
-            continue
-        seen.add(int(pos_int))
-        pos_list.append(int(pos_int))
+        seen.add(pos)
+        pos_list.append(pos)
     if not pos_list:
         return True
     if not seq:
@@ -491,7 +515,8 @@ def modeler_sequence_window_covers_positions(start_pos, sequence, positions):
     except Exception:
         start_i = 1
     end_i = int(start_i + len(seq) - 1)
-    return all(int(start_i) <= int(pos_i) <= int(end_i) for pos_i in list(pos_list))
+    # an insertion-code position ("184A") only exists in structure numbering
+    return all(isinstance(pos, int) and start_i <= pos <= end_i for pos in pos_list)
 
 
 def resolve_modeler_mutation_input_sequence(
@@ -501,6 +526,7 @@ def resolve_modeler_mutation_input_sequence(
     explicit_start=1,
     mutation_positions=None,
     mode="gap",
+    prepared_labels=None,
 ):
     prepared_seq = str(prepared_sequence or "").strip().upper()
     explicit_seq = str(explicit_sequence or "").strip().upper()
@@ -515,21 +541,24 @@ def resolve_modeler_mutation_input_sequence(
     positions = []
     seen = set()
     for pos_i in list(mutation_positions or []):
-        try:
-            pos_int = int(pos_i)
-        except Exception:
+        pos = _modeler_position_value(pos_i)
+        if pos is None or pos in seen:
             continue
-        if pos_int in seen:
-            continue
-        seen.add(int(pos_int))
-        positions.append(int(pos_int))
-    prepared_fits = bool(
-        modeler_sequence_window_covers_positions(
-            prepared_start_i,
-            prepared_seq,
-            positions,
+        seen.add(pos)
+        positions.append(pos)
+    labels = list(prepared_labels or [])
+    if labels and len(labels) == len(prepared_seq):
+        # structure numbering (gaps, jumps, insertion codes): a position fits when it is labelled
+        numbered = {_modeler_position_value(x) for x in labels if x is not None}
+        prepared_fits = all(p in numbered for p in positions)
+    else:
+        prepared_fits = bool(
+            modeler_sequence_window_covers_positions(
+                prepared_start_i,
+                prepared_seq,
+                positions,
+            )
         )
-    )
     explicit_fits = bool(
         modeler_sequence_window_covers_positions(
             explicit_start_i,
@@ -674,13 +703,10 @@ def map_modeler_highlight_indices_to_positions(
             and cur_mut_idx in target_set
             and 0 <= int(cur_obs_idx) < len(pos_list)
         ):
-            try:
-                pos_i = int(pos_list[int(cur_obs_idx)])
-            except Exception:
-                pos_i = None
+            pos_i = _modeler_position_value(pos_list[int(cur_obs_idx)])
             if pos_i is not None and pos_i not in seen_pos:
-                seen_pos.add(int(pos_i))
-                out.append(int(pos_i))
+                seen_pos.add(pos_i)
+                out.append(pos_i)
         if mut_has:
             idx_mut += 1
         if obs_has:
@@ -866,3 +892,205 @@ def read_hetatm_lines_from_pdb(pdb_path):
     except Exception:
         return []
     return lines
+
+
+# Peptide C(i-1)-N(i) is 1.33 A; anything beyond this is a chain break (missing residues).
+MODELER_PEPTIDE_BOND_MAX_ANG = 2.0
+
+
+def modeler_residue_label(resseq, icode=""):
+    """PDB residue label including the insertion code, e.g. ``184`` or ``184A``."""
+    return f"{int(resseq)}{str(icode or '').strip()}"
+
+
+def modeler_peptide_bonded(prev_c_xyz, next_n_xyz, max_ang=MODELER_PEPTIDE_BOND_MAX_ANG):
+    """True/False when both backbone atoms are known, None otherwise (e.g. CA-only models)."""
+    if prev_c_xyz is None or next_n_xyz is None:
+        return None
+    try:
+        d = float(np.linalg.norm(np.asarray(next_n_xyz, dtype=float) - np.asarray(prev_c_xyz, dtype=float)))
+    except Exception:
+        return None
+    if not isfinite(d):
+        return None
+    return bool(d <= float(max_ang))
+
+
+def build_modeler_chain_entry(chain_key, residues):
+    """
+    Summarize one protein chain for modeling from its observed residues in chain order.
+
+    ``residues``: dicts with ``resseq`` (int), ``icode`` (str), ``resn``, ``aa1`` and
+    ``bonded_to_prev`` (True/False/None). Residues with insertion codes (``184A``) are kept.
+    A numbering jump between peptide-bonded residues (chymotrypsin numbering: 34 -> 37)
+    is not a gap; only real chain breaks count as missing residues. When the bond cannot
+    be checked (``None``) the numbering difference decides, as before.
+    """
+    rows = []
+    seen = set()
+    for rec in list(residues or []):
+        try:
+            resseq = int(rec.get("resseq"))
+        except Exception:
+            continue
+        icode = str(rec.get("icode", "") or "").strip()
+        key = (resseq, icode)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "resseq": resseq,
+            "icode": icode,
+            "resn": str(rec.get("resn", "") or "").strip().upper(),
+            "aa1": str(rec.get("aa1", "X") or "X").strip().upper()[:1] or "X",
+            "bonded_to_prev": rec.get("bonded_to_prev", None),
+        })
+    if not rows:
+        return None
+
+    gaps = []
+    breaks = []
+    jumps = []
+    for prev, cur in zip(rows, rows[1:]):
+        diff = int(cur["resseq"]) - int(prev["resseq"])
+        bonded = cur["bonded_to_prev"]
+        prev_lbl = modeler_residue_label(prev["resseq"], prev["icode"])
+        cur_lbl = modeler_residue_label(cur["resseq"], cur["icode"])
+        if bonded is True:
+            if diff > 1:
+                jumps.append((prev_lbl, cur_lbl))
+            continue
+        if bonded is None and diff <= 1:
+            continue
+        if diff > 1:
+            gaps.append((int(prev["resseq"]) + 1, int(cur["resseq"]) - 1))
+            breaks.append({"after": prev_lbl, "before": cur_lbl, "missing": int(diff - 1)})
+        else:
+            breaks.append({"after": prev_lbl, "before": cur_lbl, "missing": None})
+
+    positions = [int(r["resseq"]) for r in rows]
+    # keyed by residue label so 184 and 184A stay distinct
+    pos_to_resn = {}
+    pos_to_aa1 = {}
+    for r in rows:
+        lbl = modeler_residue_label(r["resseq"], r["icode"])
+        pos_to_resn.setdefault(lbl, r["resn"])
+        pos_to_aa1.setdefault(lbl, r["aa1"])
+    return {
+        "chain": chain_key,
+        "start": int(rows[0]["resseq"]),
+        "end": int(rows[-1]["resseq"]),
+        "positions": positions,
+        "residue_labels": [modeler_residue_label(r["resseq"], r["icode"]) for r in rows],
+        "pos_to_resn": pos_to_resn,
+        "pos_to_aa1": pos_to_aa1,
+        "observed_seq": "".join(r["aa1"] for r in rows),
+        "observed_len": int(len(rows)),
+        "internal_gaps": gaps,
+        "chain_breaks": breaks,
+        "numbering_jumps": jumps,
+        "missing_total": int(sum(b - a + 1 for a, b in gaps)),
+    }
+
+
+def _modeler_label_number(label):
+    """Residue number of a PDB label (``"184A"`` -> 184, ``"-3"`` -> -3), None if not numbered."""
+    m = re.fullmatch(r"(-?\d+)[A-Za-z]?", str(label or "").strip())
+    return int(m.group(1)) if m else None
+
+
+def modeler_gap_fill_sequence(
+    chain_entry, full_sequence, aligner_fn=None, min_identity=0.9, min_coverage=0.9, fill_termini=False
+):
+    """
+    Rebuild the chain between its first and last observed residue, filling missing
+    residues from a full/reference sequence. With ``fill_termini`` the reference
+    residues before the first and after the last observed residue are added too
+    (N/C-terminal extension); they are numbered outward from the observed ends.
+
+    The observed residues are placed on the reference by sequence alignment, not by
+    residue number, so numbering jumps and insertion codes cannot shift residues.
+    Returns the sequence plus one label per residue: the PDB label for observed
+    residues, the interpolated number for filled residues when the numbering of the
+    gap agrees with the number filled, else None.
+    """
+    entry = dict(chain_entry or {})
+    obs = str(entry.get("observed_seq", "") or "").strip().upper()
+    labels = list(entry.get("residue_labels", []) or [])
+    if len(labels) != len(obs):
+        labels = [str(p) for p in list(entry.get("positions", []) or [])]
+    full = re.sub(r"\s+", "", str(full_sequence or "")).upper()
+    out = {"ok": False, "sequence": obs, "residue_labels": list(labels), "filled": 0,
+           "filled_n_term": 0, "filled_c_term": 0,
+           "identity": float("nan"), "coverage": float("nan"), "error": ""}
+    if not obs or not full or len(labels) != len(obs):
+        out["error"] = "Observed chain or reference sequence is empty."
+        return out
+    a_obs, a_full = _run_modeler_sequence_aligner(obs, full, aligner_fn=aligner_fn)
+    if len(a_obs) != len(a_full):
+        out["error"] = "Sequence alignment failed."
+        return out
+
+    cols = []
+    i_obs = 0
+    for c_obs, c_full in zip(a_obs, a_full):
+        o_idx = i_obs if c_obs != "-" else None
+        if c_obs != "-":
+            i_obs += 1
+        cols.append((o_idx, c_obs, c_full))
+    paired = [(o, co, cf) for o, co, cf in cols if o is not None and cf != "-"]
+    coverage = len(paired) / float(len(obs))
+    identity = (sum(1 for _o, co, cf in paired if co == cf) / float(len(paired))) if paired else 0.0
+    out["identity"], out["coverage"] = float(identity), float(coverage)
+    if coverage < float(min_coverage) or identity < float(min_identity):
+        out["error"] = (
+            f"The reference sequence does not match the observed chain (identity {100 * identity:.0f}%, "
+            f"coverage {100 * coverage:.0f}%); check that it is the same protein."
+        )
+        return out
+
+    first = next(k for k, c in enumerate(cols) if c[0] is not None)
+    last = max(k for k, c in enumerate(cols) if c[0] is not None)
+    n_term = c_term = 0
+    if fill_termini:
+        n_term = sum(1 for c in cols[:first] if c[2] != "-")
+        c_term = sum(1 for c in cols[last + 1:] if c[2] != "-")
+        first, last = 0, len(cols) - 1
+    seq_chars = []
+    seq_labels = []
+    for o_idx, c_obs, c_full in cols[first:last + 1]:
+        if o_idx is not None:
+            seq_chars.append(c_obs)
+            seq_labels.append(labels[o_idx])
+        elif c_full != "-":
+            seq_chars.append(c_full)
+            seq_labels.append(None)
+    filled = sum(1 for lbl in seq_labels if lbl is None)
+
+    k = 0
+    while k < len(seq_labels):
+        if seq_labels[k] is not None:
+            k += 1
+            continue
+        run_end = k
+        while run_end < len(seq_labels) and seq_labels[run_end] is None:
+            run_end += 1
+        prev_lbl = str(seq_labels[k - 1]) if k > 0 else ""
+        next_lbl = str(seq_labels[run_end]) if run_end < len(seq_labels) else ""
+        prev_num = _modeler_label_number(prev_lbl)
+        next_num = _modeler_label_number(next_lbl)
+        if not prev_lbl and next_num is not None:          # N-terminal extension
+            for n, j in enumerate(range(run_end - 1, k - 1, -1), start=1):
+                seq_labels[j] = str(next_num - n)
+        elif not next_lbl and prev_num is not None:        # C-terminal extension
+            for n, j in enumerate(range(k, run_end), start=1):
+                seq_labels[j] = str(prev_num + n)
+        elif re.fullmatch(r"-?\d+", prev_lbl) and re.fullmatch(r"-?\d+", next_lbl):
+            if int(next_lbl) - int(prev_lbl) - 1 == run_end - k:
+                for n, j in enumerate(range(k, run_end), start=1):
+                    seq_labels[j] = str(int(prev_lbl) + n)
+        k = run_end
+
+    out.update({"ok": True, "sequence": "".join(seq_chars), "residue_labels": seq_labels, "filled": int(filled),
+                "filled_n_term": int(n_term), "filled_c_term": int(c_term)})
+    return out

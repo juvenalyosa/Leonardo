@@ -8,6 +8,7 @@ import hashlib
 import collections
 import json
 import importlib
+import inspect
 import importlib.util
 import shutil
 import subprocess
@@ -318,6 +319,10 @@ try:
     from .modeler_runtime import should_modeler_autoresolve_mutation_start as modeler_should_autoresolve_mutation_start
     from .modeler_runtime import extract_modeler_mutation_target_positions as modeler_extract_mutation_target_positions
     from .modeler_runtime import resolve_modeler_mutation_input_sequence as modeler_resolve_mutation_input_sequence
+    from .modeler_runtime import build_modeler_chain_entry
+    from .modeler_runtime import modeler_gap_fill_sequence
+    from .modeler_runtime import modeler_mutation_target_labels
+    from .modeler_runtime import modeler_peptide_bonded
     from .modeler_runtime import select_modeler_search_result_variant as modeler_select_search_result_variant
     from .modeler_runtime import resolve_modeler_template_selection as modeler_resolve_template_selection
     from .modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
@@ -692,6 +697,10 @@ except Exception:
     from modeler_runtime import should_modeler_autoresolve_mutation_start as modeler_should_autoresolve_mutation_start
     from modeler_runtime import extract_modeler_mutation_target_positions as modeler_extract_mutation_target_positions
     from modeler_runtime import resolve_modeler_mutation_input_sequence as modeler_resolve_mutation_input_sequence
+    from modeler_runtime import build_modeler_chain_entry
+    from modeler_runtime import modeler_gap_fill_sequence
+    from modeler_runtime import modeler_mutation_target_labels
+    from modeler_runtime import modeler_peptide_bonded
     from modeler_runtime import select_modeler_search_result_variant as modeler_select_search_result_variant
     from modeler_runtime import resolve_modeler_template_selection as modeler_resolve_template_selection
     from modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
@@ -13650,7 +13659,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             seq_box.setSpacing(8)
             self.lbl_modeler_sequence_help = QtWidgets.QLabel(
                 "Provide full/reference sequence and start index (e.g., UniProt starts at 1). "
-                "In gap mode only internal crystal gaps are filled (no N/C terminal extension)."
+                "In gap mode internal crystal gaps are filled; N/C-terminal residues missing from "
+                "the crystal are added only when the option below is checked."
             )
             self.lbl_modeler_sequence_help.setWordWrap(True)
             seq_box.addWidget(self.lbl_modeler_sequence_help)
@@ -13674,6 +13684,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_seq.addWidget(self.btn_modeler_seq_popup)
             row_seq.addStretch(1)
             seq_box.addLayout(row_seq)
+            self.cb_modeler_fill_termini = QtWidgets.QCheckBox(
+                "Gap mode: also build missing N/C-terminal residues from the reference sequence"
+            )
+            self.cb_modeler_fill_termini.setToolTip(
+                "Termini missing from the crystal have no template coordinates; MODELLER builds them "
+                "de novo, so expect low confidence for long disordered tails."
+            )
+            self.cb_modeler_fill_termini.setChecked(False)
+            seq_box.addWidget(self.cb_modeler_fill_termini)
             self.cb_modeler_enable_mutations = QtWidgets.QCheckBox("Enable mutation workflow (optional)")
             self.cb_modeler_enable_mutations.setChecked(False)
             self.cb_modeler_enable_mutations.toggled.connect(self._on_modeler_mutation_toggle)
@@ -13691,8 +13710,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             seq_box.addLayout(row_mut)
             self.lbl_modeler_mut_help = QtWidgets.QLabel(
                 "Mutation is optional and assumes a loaded protein/model object. "
-                "Examples: A755D, A750del, E746_A750del, K745_K746insAA, I740dup. "
-                "For batch mutation modeling, use JSON list-of-lists. Mutation numbering is interpreted exactly "
+                "Examples: A755D, A750del, E746_A750del, K745_K746insAA, I740dup, W24* (stop), "
+                "p.Lys10Gly (three-letter), A-3G (negative number), G184AA (PDB insertion code 184A, gap mode). "
+                "All positions refer to the original sequence. For batch mutation modeling, use JSON list-of-lists. Mutation numbering is interpreted exactly "
                 "against the current sequence/start setting; the workflow will not silently renumber it."
             )
             self.lbl_modeler_mut_help.setWordWrap(True)
@@ -14084,6 +14104,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self.edit_modeler_manual_templates.setText("")
             if hasattr(self, "cb_modeler_enable_mutations"):
                 self.cb_modeler_enable_mutations.setChecked(False)
+            if hasattr(self, "cb_modeler_fill_termini"):
+                self.cb_modeler_fill_termini.setChecked(False)
             if hasattr(self, "cb_modeler_include_nonprotein"):
                 self.cb_modeler_include_nonprotein.setChecked(False)
             if hasattr(self, "_modeler_hetatm_none_radio"):
@@ -14703,35 +14725,33 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             return None
     def _modeler_make_chain_entry(self, chain_key, pos_to_resn):
+        # Numbers only (no insertion codes or backbone): gaps come from the numbering.
         if not pos_to_resn:
             return None
         try:
             positions = sorted(int(p) for p in pos_to_resn.keys())
         except Exception:
             return None
-        if not positions:
-            return None
-        pos_to_aa1 = {p: self._aa3_to_aa1(pos_to_resn[p]) for p in positions}
-        observed_seq = "".join(pos_to_aa1[p] for p in positions)
-        gaps = []
-        prev = positions[0]
-        for cur in positions[1:]:
-            if cur - prev > 1:
-                gaps.append((prev + 1, cur - 1))
-            prev = cur
-        missing_total = sum((b - a + 1) for a, b in gaps)
-        return {
-            "chain": chain_key,
-            "start": int(positions[0]),
-            "end": int(positions[-1]),
-            "positions": positions,
-            "pos_to_resn": {int(k): str(v) for k, v in pos_to_resn.items()},
-            "pos_to_aa1": pos_to_aa1,
-            "observed_seq": observed_seq,
-            "observed_len": int(len(positions)),
-            "internal_gaps": gaps,
-            "missing_total": int(missing_total),
-        }
+        residues = [
+            {"resseq": p, "icode": "", "resn": pos_to_resn[p], "aa1": self._aa3_to_aa1(pos_to_resn[p]),
+             "bonded_to_prev": None}
+            for p in positions
+        ]
+        return build_modeler_chain_entry(chain_key, residues)
+    def _modeler_chain_entry_from_residue_records(self, chain_key, records):
+        # records: (resseq, icode, resn, C xyz or None, N xyz or None) in chain order
+        residues = []
+        prev_c = None
+        for resseq, icode, resn, c_xyz, n_xyz in list(records or []):
+            residues.append({
+                "resseq": int(resseq),
+                "icode": str(icode or "").strip(),
+                "resn": str(resn or "").strip().upper(),
+                "aa1": self._aa3_to_aa1(resn),
+                "bonded_to_prev": modeler_peptide_bonded(prev_c, n_xyz) if residues else None,
+            })
+            prev_c = c_xyz
+        return build_modeler_chain_entry(chain_key, residues)
     def _modeler_extract_chain_data_from_biopython(self, obj_name):
         st = self._modeler_build_structure_from_object(obj_name)
         if st is None:
@@ -14743,7 +14763,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return out
         for chain in model:
             chain_key = self._normalize_chain_id(chain.id)
-            pos_to_resn = {}
+            records = []
             for res in chain.get_residues():
                 try:
                     het = str(res.id[0]).strip()
@@ -14751,12 +14771,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         continue
                     if not is_aa(res, standard=False):
                         continue
-                    pos = int(res.id[1])
-                    if pos not in pos_to_resn:
-                        pos_to_resn[pos] = str(res.get_resname()).strip().upper()
+                    c_xyz = res["C"].coord if "C" in res else None
+                    n_xyz = res["N"].coord if "N" in res else None
+                    records.append((int(res.id[1]), str(res.id[2]), str(res.get_resname()), c_xyz, n_xyz))
                 except Exception:
                     continue
-            info = self._modeler_make_chain_entry(chain_key, pos_to_resn)
+            info = self._modeler_chain_entry_from_residue_records(chain_key, records)
             if info is not None:
                 out[chain_key] = info
         return out
@@ -14794,15 +14814,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     is_protein_like = (resn in AA3_TO_AA1) or (aname == "CA")
                     if not is_protein_like:
                         continue
-                    pos = self._resi_to_int(getattr(at, "resi", ""))
+                    resi_txt = str(getattr(at, "resi", "") or "").strip()
+                    pos = self._resi_to_int(resi_txt)
+                    icode = resi_txt[len(str(pos)):] if resi_txt.startswith(str(pos)) else ""
                     ch = self._normalize_chain_id(getattr(at, "chain", ""))
                 except Exception:
                     continue
                 cmap = by_chain.setdefault(ch, {})
-                if pos not in cmap:
-                    cmap[pos] = resn
+                rec = cmap.setdefault((pos, icode), {"resn": resn, "C": None, "N": None})
+                if aname in ("C", "N"):
+                    rec[aname] = list(getattr(at, "coord", []) or []) or None
             for ch, pmap in by_chain.items():
-                info = self._modeler_make_chain_entry(ch, pmap)
+                records = [(k[0], k[1], v["resn"], v["C"], v["N"]) for k, v in pmap.items()]
+                info = self._modeler_chain_entry_from_residue_records(ch, records)
                 if info is not None:
                     out[ch] = info
             if out:
@@ -15266,7 +15290,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         return [list(toks)]
     def _modeler_parse_substitution_mutation(self, mutation):
         mtxt = str(mutation or "").strip().upper()
-        m = re.match(r"^([A-Z])(\d+)([A-Z])$", mtxt)
+        m = re.match(r"^([A-Z])(-?\d+)([A-Z])$", mtxt)
         if not m:
             return None
         old_aa, pos_txt, new_aa = m.groups()
@@ -15337,9 +15361,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not callable(mut_fn):
             raise RuntimeError("mutator.py does not expose mutate_sequence().")
 
+        mut_kwargs = {}
+        labels = self._modeler_structure_numbering_for(seq, start_i)
+        if labels is not None:
+            try:
+                if "residue_numbers" in inspect.signature(mut_fn).parameters:
+                    mut_kwargs["residue_numbers"] = list(labels)
+            except (TypeError, ValueError):
+                pass
         primary_error = None
         try:
-            mutated = mut_fn(seq, muts, start_pos=int(start_i))
+            mutated = mut_fn(seq, muts, start_pos=int(start_i), **mut_kwargs)
             return {
                 "ok": True,
                 "mutated_sequence": str(mutated),
@@ -15411,10 +15443,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             out["reason"] = "no_mutation_difference"
             return out
         try:
-            explicit_target_positions = list(modeler_extract_mutation_target_positions(muts) or [])
-        except Exception:
-            explicit_target_positions = []
-        try:
             target_indices = list(
                 modeler_build_mutation_highlight_indices(seq_orig, seq_mut) or []
             )
@@ -15433,36 +15461,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         for chain_key, data in list(chain_data.items()):
             info = dict(data or {}) if isinstance(data, dict) else {}
             obs_seq = self._modeler_clean_sequence(str(info.get("observed_seq", "") or ""))
-            obs_positions = [int(x) for x in list(info.get("positions", []) or [])]
-            if (not obs_seq) or (len(obs_positions) != len(obs_seq)):
+            # PDB residue labels keep insertion codes (184 and 184A are different residues)
+            obs_labels = [str(x) for x in list(info.get("residue_labels", []) or [])]
+            if len(obs_labels) != len(obs_seq):
+                obs_labels = [str(x) for x in list(info.get("positions", []) or [])]
+            if (not obs_seq) or (len(obs_labels) != len(obs_seq)):
                 continue
             try:
-                mapped_positions = list(
-                    modeler_map_highlight_indices_to_positions(
-                        target_indices,
-                        seq_mut,
-                        obs_seq,
-                        obs_positions,
+                mapped_positions = [
+                    str(x)
+                    for x in list(
+                        modeler_map_highlight_indices_to_positions(
+                            target_indices,
+                            seq_mut,
+                            obs_seq,
+                            obs_labels,
+                        )
+                        or []
                     )
-                    or []
-                )
+                ]
             except Exception:
                 mapped_positions = []
-            explicit_positions = []
-            if explicit_target_positions:
-                obs_set = set()
-                for pos_i in list(obs_positions or []):
-                    try:
-                        obs_set.add(int(pos_i))
-                    except Exception:
-                        continue
-                for pos_i in list(explicit_target_positions or []):
-                    try:
-                        pos_int = int(pos_i)
-                    except Exception:
-                        continue
-                    if pos_int in obs_set and pos_int not in explicit_positions:
-                        explicit_positions.append(int(pos_int))
+            try:
+                explicit_positions = list(modeler_mutation_target_labels(muts, obs_labels) or [])
+            except Exception:
+                explicit_positions = []
             chosen_positions = list(explicit_positions or mapped_positions or [])
             try:
                 align_pairs, align_score = self._redock_sequence_pairs(seq_mut, obs_seq)
@@ -15502,7 +15525,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not isinstance(best_payload, dict):
             out["reason"] = "no_chain_match"
             return out
-        positions = [int(x) for x in list(best_payload.get("positions", []) or [])]
+        positions = [str(x) for x in list(best_payload.get("positions", []) or [])]
         if not positions:
             out["reason"] = "no_model_positions_mapped"
             out["chain"] = str(best_payload.get("chain", "") or "")
@@ -15513,7 +15536,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             model_sel = ""
         if not model_sel:
             model_sel = f"({obj_name})"
-        pos_expr = "+".join(str(int(p)) for p in list(positions or []))
+        # PyMOL reads "-" in resi as a range; negative residue numbers must be escaped
+        pos_expr = "+".join(str(p).replace("-", "\\-") for p in list(positions or []))
         chain_clause = ""
         chain_key = str(best_payload.get("chain", "") or "")
         if chain_key:
@@ -15571,6 +15595,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         mode = self._modeler_current_mode()
         full_seq = self._modeler_clean_sequence(self.txt_modeler_full_sequence.toPlainText())
         sequence_popup_locked = bool(full_seq) and bool(getattr(self, "_modeler_sequence_prompted", False))
+        self._modeler_base_numbering = {}
         if (mode == "sequence") or sequence_popup_locked:
             if not full_seq:
                 raise RuntimeError("Provide a full sequence for Sequence Build mode.")
@@ -15607,35 +15632,62 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 )
                 return full_seq, seq_start, "", None, notes
             raise RuntimeError("No chain data available. Run sequence/gap analysis first.")
+        chain_start = int(data["start"])
         if not full_seq:
             seq = str(data["observed_seq"])
-            seq_start = int(data["start"])
+            labels = list(data.get("residue_labels", []) or [str(p) for p in data.get("positions", [])])
+            self._modeler_base_numbering = {"sequence": seq, "start": chain_start, "labels": labels}
             notes = "Mode=gap repair. Using observed crystal sequence only."
-            return seq, seq_start, ch, data, notes
-        full_start = int(self.spin_modeler_seq_start.value())
-        full_map = {full_start + i: aa for i, aa in enumerate(full_seq)}
-        chain_start = int(data["start"])
-        chain_end = int(data["end"])
-        pos_to_aa = dict(data.get("pos_to_aa1", {}))
-        seq_chars = []
-        filled = 0
-        unknown = 0
-        for pos in range(chain_start, chain_end + 1):
-            if pos in pos_to_aa:
-                seq_chars.append(pos_to_aa[pos])
-            else:
-                aa = full_map.get(pos, "X")
-                seq_chars.append(aa)
-                if aa == "X":
-                    unknown += 1
-                else:
-                    filled += 1
-        seq = "".join(seq_chars)
-        notes = (
-            f"Mode=gap repair. Using full/reference sequence mapping. Filled internal gaps={filled}; "
-            f"unresolved positions={unknown}."
+            return seq, chain_start, ch, data, notes
+        # Place the observed residues on the reference by alignment, never by residue number:
+        # numbering jumps and insertion codes would otherwise shift or invent residues.
+        fill_termini = bool(
+            getattr(self, "cb_modeler_fill_termini", None) and self.cb_modeler_fill_termini.isChecked()
         )
+        fill = dict(modeler_gap_fill_sequence(data, full_seq, fill_termini=fill_termini) or {})
+        if not bool(fill.get("ok", False)):
+            raise RuntimeError(
+                "Gap repair could not map the full/reference sequence onto the chain: "
+                + str(fill.get("error", "") or "alignment failed")
+            )
+        seq = str(fill.get("sequence", "") or "")
+        fill_labels = list(fill.get("residue_labels", []) or [])
+        if int(fill.get("filled_n_term", 0) or 0) > 0 and fill_labels:
+            try:
+                chain_start = int(str(fill_labels[0]))
+            except (TypeError, ValueError):
+                pass
+        self._modeler_base_numbering = {
+            "sequence": seq,
+            "start": chain_start,
+            "labels": fill_labels,
+        }
+        breaks = list(data.get("chain_breaks", []) or [])
+        notes = (
+            f"Mode=gap repair. Reference aligned to the chain (identity {100.0 * float(fill.get('identity', 0.0)):.0f}%). "
+            f"Filled residues={int(fill.get('filled', 0) or 0)}; chain breaks={len(breaks)}."
+        )
+        if fill_termini:
+            notes += (
+                f" Terminal extension: N-term +{int(fill.get('filled_n_term', 0) or 0)}, "
+                f"C-term +{int(fill.get('filled_c_term', 0) or 0)} residue(s)."
+            )
         return seq, chain_start, ch, data, notes
+    def _modeler_structure_numbering_for(self, sequence, start_pos):
+        # Residue labels of the prepared chain when *sequence* is that chain (X->A fallback allowed).
+        ctx = dict(getattr(self, "_modeler_base_numbering", {}) or {})
+        base = str(ctx.get("sequence", "") or "")
+        labels = list(ctx.get("labels", []) or [])
+        seq = self._modeler_clean_sequence(sequence)
+        try:
+            same_start = int(ctx.get("start")) == int(start_pos)
+        except Exception:
+            same_start = False
+        if (not base) or (not same_start) or len(base) != len(seq) or len(labels) != len(seq):
+            return None
+        if any(a != b and a != "X" for a, b in zip(base, seq)):
+            return None
+        return labels
     def _modeler_read_sequence_input_widgets(self):
         seq = ""
         start_i = 1
@@ -15810,6 +15862,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 explicit_start=explicit_start,
                 mutation_positions=mutation_positions,
                 mode=mode,
+                prepared_labels=self._modeler_structure_numbering_for(prepared_sequence, prepared_start),
             )
             or {}
         )
@@ -16107,7 +16160,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     update_seq_start_widget=True,
                     allow_auto_resolve=allow_auto_resolve,
                 )
-                seq = str(mut_payload.get("mutated_sequence", "") or "")
                 seq_start = int(mut_payload.get("start_pos", seq_start) or seq_start)
                 auto_note = str(mut_payload.get("note", "") or "").strip()
                 self._modeler_store_last_mutation_input_context(
@@ -16116,6 +16168,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     mutations=muts,
                     source=str(base_payload.get("strategy", "") or "template_search"),
                 )
+                seq = str(mut_payload.get("mutated_sequence", "") or "")
                 if auto_note:
                     notes = f"{notes} {auto_note}"
             top_n = int(self.spin_modeler_top_hits.value())

@@ -124,3 +124,155 @@ def test_modeler_stage_local_template_pdbs_fetches_remote_cif_when_legacy_pdb_mi
     assert fake_cmd.saved == [
         (str(tmp_path / "modeling_job" / "9gbe.pdb"), "(_modeler_tpl_9gbe) and polymer", 1)
     ]
+
+
+_RECEPTOR_3PTB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "benchmarks", "redocking", "3ptb_ben", "receptor_3ptb_no_ben_no_waters.pdb")
+
+
+class _Widget:
+    def __init__(self, value=None, data=None):
+        self._value, self._data = value, data
+
+    def toPlainText(self):
+        return self._value
+
+    def value(self):
+        return self._value
+
+    def currentData(self):
+        return self._data
+
+    def setPlainText(self, value):
+        self._value = value
+
+    def setValue(self, value):
+        self._value = value
+
+    def isChecked(self):
+        return bool(self._value)
+
+
+def _build_modeler_numbering_dialog(full_sequence=""):
+    from Bio.PDB import PDBParser
+
+    class DummyDialog:
+        pass
+
+    for name in (
+        "_aa3_to_aa1",
+        "_normalize_chain_id",
+        "_modeler_clean_sequence",
+        "_modeler_make_chain_entry",
+        "_modeler_chain_entry_from_residue_records",
+        "_modeler_extract_chain_data_from_biopython",
+        "_modeler_prepare_base_sequence",
+        "_modeler_structure_numbering_for",
+        "_modeler_apply_mutations_with_start_resolution",
+    ):
+        setattr(DummyDialog, name, getattr(code_v2.ProtLigInteractDialog, name))
+    dlg = DummyDialog()
+    dlg._modeler_build_structure_from_object = lambda _obj: PDBParser(QUIET=True).get_structure("r", _RECEPTOR_3PTB)
+    dlg._modeler_current_mode = lambda: "gap"
+    dlg._modeler_sequence_prompted = False
+    dlg._modeler_chain_data = dlg._modeler_extract_chain_data_from_biopython("receptor")
+    dlg.cmb_modeler_chain = _Widget(data="A")
+    dlg.txt_modeler_full_sequence = _Widget(full_sequence)
+    dlg.spin_modeler_seq_start = _Widget(16)
+    return dlg
+
+
+def test_modeler_chain_analysis_keeps_insertion_codes_and_ignores_numbering_jumps():
+    dlg = _build_modeler_numbering_dialog()
+    data = dlg._modeler_chain_data["A"]
+    # trypsin (chymotrypsinogen numbering): 223 residues, 184A/188A/221A, jumps such as 34 -> 37
+    assert data["observed_len"] == 223
+    assert {"184A", "188A", "221A"} <= set(data["residue_labels"])
+    assert data["internal_gaps"] == [] and data["missing_total"] == 0
+    assert ("34", "37") in data["numbering_jumps"]
+
+
+def test_modeler_gap_mode_uses_structure_numbering_for_mutations():
+    import mutator
+
+    observed = _build_modeler_numbering_dialog()._modeler_chain_data["A"]["observed_seq"]
+    # the widget is auto-filled with the observed chain: no residue may be invented
+    dlg = _build_modeler_numbering_dialog(full_sequence=observed)
+    seq, start, _ch, _data, _notes = dlg._modeler_prepare_base_sequence()
+    assert seq == observed and start == 16
+
+    out = dlg._modeler_apply_mutations_with_start_resolution(
+        seq, ["S195A"], start_pos=start, mutator_mod=mutator, allow_auto_resolve=False)
+    labels = dlg._modeler_chain_data["A"]["residue_labels"]
+    i195 = labels.index("195")
+    assert seq[i195] == "S"                                   # catalytic serine of trypsin
+    assert out["mutated_sequence"] == seq[:i195] + "A" + seq[i195 + 1:]
+
+
+def test_modeler_gap_mode_mutates_insertion_code_residue():
+    import mutator
+
+    dlg = _build_modeler_numbering_dialog()
+    seq, start, _ch, _data, _notes = dlg._modeler_prepare_base_sequence()
+    labels = dlg._modeler_chain_data["A"]["residue_labels"]
+    i184, i184a = labels.index("184"), labels.index("184A")
+    wt = seq[i184a]
+    out = dlg._modeler_apply_mutations_with_start_resolution(
+        seq, [f"{wt}184AW"], start_pos=start, mutator_mod=mutator, allow_auto_resolve=False)
+    assert out["mutated_sequence"] == seq[:i184a] + "W" + seq[i184a + 1:]
+    assert out["mutated_sequence"][i184] == seq[i184]        # residue 184 itself is untouched
+
+
+def test_modeler_gap_mode_optionally_extends_termini():
+    observed = _build_modeler_numbering_dialog()._modeler_chain_data["A"]["observed_seq"]
+    full = "APFDDDDK" + observed + "GSW"          # trypsinogen propeptide + an invented C-terminal tail
+
+    dlg = _build_modeler_numbering_dialog(full_sequence=full)
+    seq, start, _ch, _data, _notes = dlg._modeler_prepare_base_sequence()
+    assert seq == observed and start == 16         # default: internal gaps only
+
+    dlg = _build_modeler_numbering_dialog(full_sequence=full)
+    dlg.cb_modeler_fill_termini = _Widget(True)
+    seq, start, _ch, _data, notes = dlg._modeler_prepare_base_sequence()
+    assert seq == full and start == 8
+    labels = dlg._modeler_base_numbering["labels"]
+    assert labels[:9] == ["8", "9", "10", "11", "12", "13", "14", "15", "16"]
+    assert labels[-4:] == ["245", "246", "247", "248"]
+    assert "N-term +8" in notes and "C-term +3" in notes
+
+
+def test_modeler_highlight_uses_insertion_codes_and_negative_numbers(monkeypatch):
+    class _HighlightCmd:
+        def __init__(self):
+            self.selections = []
+
+        def count_atoms(self, sel):
+            self.selections.append(sel)
+            return 1
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    fake = _HighlightCmd()
+    monkeypatch.setattr(code_v2, "cmd", fake)
+
+    class DummyDialog:
+        pass
+
+    for name in ("_modeler_clean_sequence", "_normalize_chain_id", "_modeler_highlight_mutated_residues"):
+        setattr(DummyDialog, name, getattr(code_v2.ProtLigInteractDialog, name))
+    dlg = DummyDialog()
+    labels = ["-2", "-1", "0", "1", "184", "184A", "185"]
+    dlg._modeler_extract_chain_data = lambda _obj: {
+        "A": {"observed_seq": "ACDEFWH", "residue_labels": labels, "positions": [-2, -1, 0, 1, 184, 184, 185]}
+    }
+    dlg._pymol_model_selection = lambda obj, wrap=True: f"({obj})"
+    dlg._redock_sequence_pairs = lambda a, b: ([], 0)
+
+    out = dlg._modeler_highlight_mutated_residues("model", "ACDEFGH", "ACDEFWH", ["G184AW"], preferred_chain="A")
+    assert out["ok"] and out["positions"] == ["184A"]
+    assert out["selection"].endswith("resi 184A")
+
+    out = dlg._modeler_highlight_mutated_residues("model", "GCDEFWH", "ACDEFWH", ["G-2A"], preferred_chain="A")
+    assert out["ok"] and out["positions"] == ["-2"]
+    assert out["selection"].endswith("resi \\-2")
