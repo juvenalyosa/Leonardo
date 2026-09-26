@@ -330,6 +330,7 @@ try:
     from .dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
     from .dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
     from .dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
+    from .dock_runtime import pdb_atom_element as dock_pdb_atom_element
     from .dock_runtime import smina_supports_native_flexres as dock_smina_supports_native_flexres
     from .leadopt_runtime import pass_filters as leadopt_pass_filters
     from .leadopt_runtime import rank_leadopt_results
@@ -708,6 +709,7 @@ except Exception:
     from dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
     from dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
     from dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
+    from dock_runtime import pdb_atom_element as dock_pdb_atom_element
     from dock_runtime import smina_supports_native_flexres as dock_smina_supports_native_flexres
     from leadopt_runtime import pass_filters as leadopt_pass_filters
     from leadopt_runtime import rank_leadopt_results
@@ -18951,7 +18953,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             pbox.addLayout(row_fp)
             self.tbl_pockets = QtWidgets.QTableWidget(0, 7)
             self.tbl_pockets.setHorizontalHeaderLabels(
-                ["Pocket", "Rank", "Druggability", "Center (A)", "Size (A)", "Atoms", "Surface"]
+                ["Pocket", "fpocket Score", "Druggability", "Center (A)", "Size (A)", "Atoms", "Surface"]
             )
             self.tbl_pockets.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             self.tbl_pockets.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -34599,7 +34601,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     atoms = 0
                 label = f"Pocket {pid}" if pid > 0 else "Pocket"
                 if np.isfinite(rank):
-                    label += f" (rank {rank:.3f})"
+                    label += f" (score {rank:.3f})"
                 if atoms > 0:
                     label += f" | atoms {atoms}"
                 self.cmb_vs_pocket.addItem(label, p)
@@ -37763,8 +37765,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             if src_ref and os.path.isfile(src_ref):
                 exp = dict(self._dock_expected_rotatable_info(src_ref, smiles_hint=smi_hint) or {})
-                exp_rot = int(exp.get("rotb", -1) or -1)
-                exp_aro = int(exp.get("aromatic_bonds", -1) or -1)
+                exp_rot = int(-1 if exp.get("rotb") is None else exp.get("rotb"))
+                exp_aro = int(-1 if exp.get("aromatic_bonds") is None else exp.get("aromatic_bonds"))
         except Exception:
             exp_rot = -1
             exp_aro = -1
@@ -38244,6 +38246,59 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return False
         except Exception:
             return False
+    def _ligand_file_formal_charge(self, path):
+        if not HAS_RDKIT:
+            return None
+        src = str(path or "")
+        ext = os.path.splitext(src)[1].lower()
+        try:
+            if ext == ".sdf":
+                mol = next((m for m in Chem.SDMolSupplier(src, removeHs=False) if m is not None), None)
+            elif ext == ".mol":
+                mol = Chem.MolFromMolFile(src, removeHs=False)
+            elif ext == ".mol2":
+                mol = Chem.MolFromMol2File(src, removeHs=False)
+            elif ext == ".pdb":
+                mol = Chem.MolFromPDBFile(src, removeHs=False)
+            else:
+                mol = None
+        except Exception:
+            mol = None
+        return int(Chem.GetFormalCharge(mol)) if mol is not None else None
+    def _smiles_hint_matches_ligand_file(self, smiles, lig_file):
+        """False when the SMILES has a different heavy-atom composition than the ligand
+        file (the hint then describes another molecule); True if either cannot be read."""
+        if not HAS_RDKIT or not str(smiles or "").strip():
+            return True
+        try:
+            m_smi = Chem.MolFromSmiles(str(smiles).strip())
+        except Exception:
+            m_smi = None
+        src = str(lig_file or "").strip()
+        ext = os.path.splitext(src)[1].lower()
+        m_file = None
+        try:
+            if ext == ".sdf":
+                m_file = next((m for m in Chem.SDMolSupplier(src, removeHs=False, sanitize=False) if m is not None), None)
+            elif ext == ".mol":
+                m_file = Chem.MolFromMolFile(src, removeHs=False, sanitize=False)
+            elif ext == ".mol2":
+                m_file = Chem.MolFromMol2File(src, removeHs=False, sanitize=False)
+            elif ext == ".pdb":
+                m_file = Chem.MolFromPDBFile(src, removeHs=False, sanitize=False)
+        except Exception:
+            m_file = None
+        if m_smi is None or m_file is None:
+            return True
+
+        def _heavy(m):
+            counts = {}
+            for a in m.GetAtoms():
+                if a.GetAtomicNum() > 1:
+                    counts[a.GetSymbol()] = counts.get(a.GetSymbol(), 0) + 1
+            return counts
+
+        return _heavy(m_smi) == _heavy(m_file)
     def _dock_rdkit_load_molecule(self, lig_file, smiles_hint=""):
         """Load ligand as RDKit molecule for topology/torsion QC."""
         if (not HAS_RDKIT) or (not lig_file):
@@ -38253,6 +38308,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return None
         mol = None
         smi = str(smiles_hint or "").strip()
+        if smi and not self._smiles_hint_matches_ligand_file(smi, src):
+            smi = ""
         if smi:
             try:
                 m_smi = Chem.MolFromSmiles(smi)
@@ -38358,11 +38415,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return True, diag
         exp = dict(expected_info or {})
         try:
-            exp_rotb = int(exp.get("rotb", -1) or -1)
+            exp_rotb = int(-1 if exp.get("rotb") is None else exp.get("rotb"))
         except Exception:
             exp_rotb = -1
         try:
-            exp_aro = int(exp.get("aromatic_bonds", -1) or -1)
+            exp_aro = int(-1 if exp.get("aromatic_bonds") is None else exp.get("aromatic_bonds"))
         except Exception:
             exp_aro = -1
         diag["expected_rotb"] = int(exp_rotb)
@@ -38382,15 +38439,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return False, diag
         diag["reason"] = "ok"
         return True, diag
-    def _dock_guess_element_from_atom_name(self, atom_name):
-        raw = re.sub(r"[^A-Za-z]", "", str(atom_name or "").strip())
-        if not raw:
-            return "C"
-        up = raw.upper()
-        for two in ("CL", "BR", "NA", "MG", "ZN", "FE", "MN", "CO", "NI", "CU", "CA"):
-            if up.startswith(two):
-                return two
-        return up[0]
+    def _dock_guess_element_from_atom_name(self, atom_name, resn=""):
+        # PDB alignment rule: " CA " is an alpha carbon, "CA  " a calcium ion (never strip first)
+        return dock_pdb_atom_element(atom_name, resn)
     def _dock_element_to_pdbqt_type(self, elem):
         e = str(elem or "").upper()
         # Conservative AutoDock atom-type fallback map.
@@ -38445,13 +38496,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Na",
             "K",
         }
-    def _dock_normalize_pdbqt_atom_type(self, atom_name, atype):
+    def _dock_normalize_pdbqt_atom_type(self, atom_name, atype, resn=""):
         """
         Normalize raw atom type labels (e.g., Open Babel Ce/Nb/Os variants)
         into a strict AutoDock set accepted by smina.
         """
         t = str(atype or "").strip()
-        elem = self._dock_guess_element_from_atom_name(atom_name)
+        elem = self._dock_guess_element_from_atom_name(atom_name, resn)
+        type_element = {
+            "A": "C", "C": "C", "N": "N", "NA": "N", "O": "O", "OA": "O", "S": "S", "SA": "S",
+            "H": "H", "HD": "H", "P": "P", "F": "F", "Cl": "CL", "Br": "BR", "I": "I",
+            "Mg": "MG", "Mn": "MN", "Zn": "ZN", "Ca": "CA", "Fe": "FE", "Cu": "CU", "Ni": "NI",
+            "Co": "CO", "Na": "NA", "K": "K",
+        }
+        if type_element.get(t) == elem:
+            return t        # already a valid AutoDock type for this element (e.g. obabel output)
         # Carbon-like atom names should never carry metal-type labels like "Ca".
         if elem == "C":
             if t == "A":
@@ -38553,8 +38612,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     line = raw.rstrip("\n")
                     if raw.startswith("ATOM") or raw.startswith("HETATM"):
                         atom_name = line[12:16] if len(line) >= 16 else ""
+                        resn = line[17:20] if len(line) >= 20 else ""
                         old_type = self._dock_pdbqt_type_token(line)
-                        new_type = self._dock_normalize_pdbqt_atom_type(atom_name, old_type)
+                        new_type = self._dock_normalize_pdbqt_atom_type(atom_name, old_type, resn)
                         if new_type != old_type:
                             fixed += 1
                         atype = str(new_type).strip()[:2] if str(new_type).strip() else "C"
@@ -38661,7 +38721,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             chain = (line[21:22] if len(line) >= 22 else "").strip()
             resi = (line[22:27] if len(line) >= 27 else "").strip()
             atype = self._dock_pdbqt_type_token(line)
-            elem = str(self._dock_guess_element_from_atom_name(atom_name) or "").strip().upper()
+            elem = str(self._dock_guess_element_from_atom_name(atom_name, resn) or "").strip().upper()
             if not elem:
                 elem = str(self._infer_element_symbol(atom_name, atype) or "").strip().upper()
             q = _parse_q(line)
@@ -39688,7 +39748,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             aname = str(getattr(a, "name", "") or "").strip()
             sym = str(getattr(a, "symbol", "") or "").strip().upper()
             if not sym:
-                sym = str(self._dock_guess_element_from_atom_name(aname) or "").strip().upper()
+                sym = str(self._dock_guess_element_from_atom_name(aname, resn) or "").strip().upper()
             key = (chain, resi, resn, segi)
             info = grouped.get(key)
             if info is None:
@@ -39989,11 +40049,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 extra.append(rsel)
             if extra:
                 sel = f"({sel}) or ({' or '.join(extra)})"
+            # One conformer per atom: with every altloc exported, reduce/obabel doubled the
+            # side chains (two OG on Ser195) and Meeko refused the file ("Use --wanted_altloc").
+            try:
+                if int(cmd.count_atoms(f"({sel}) and not alt ''")) > 0:
+                    sel = f"({sel}) and alt ''+A"
+            except Exception:
+                pass
             state_idx = int(self._resolve_receptor_export_state(receptor_obj))
             cmd.save(out_pdb, sel, state=state_idx)
             if (state_idx != 1) and ((not os.path.isfile(out_pdb)) or (os.path.getsize(out_pdb) <= 0)):
                 cmd.save(out_pdb, sel, state=1)
-            return os.path.isfile(out_pdb) and os.path.getsize(out_pdb) > 0
+            if not (os.path.isfile(out_pdb) and os.path.getsize(out_pdb) > 0):
+                return False
+            with open(out_pdb, "r", encoding="utf-8", errors="ignore") as fh:
+                lines = fh.readlines()
+            with open(out_pdb, "w", encoding="utf-8") as fh:
+                for line in lines:
+                    if line.startswith(("ATOM", "HETATM", "ANISOU")) and len(line) > 16 and line[16] != " ":
+                        line = line[:16] + " " + line[17:]
+                    fh.write(line)
+            return True
         except Exception:
             return False
     def _collect_ligand_charges_from_file(self, ligand_file):
@@ -40012,7 +40088,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         return 7.4
-    def _prepare_small_molecule_working_mol(self, mol, include_h=True, target_ph=None):
+    def _prepare_small_molecule_working_mol(self, mol, include_h=True, target_ph=None, reprotonate=False):
         use_ph = self._current_small_molecule_target_ph() if target_ph is None else float(target_ph)
         repair_fn = None
         if bool(include_h) and (target_ph is not None):
@@ -40023,6 +40099,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             target_ph=float(use_ph),
             repair_fn=repair_fn,
             select_fragment_fn=self._select_best_ligand_fragment,
+            reprotonate=bool(reprotonate),
         )
     def _sync_small_molecule_formal_charge(self, mol):
         summary = summarize_small_molecule_state(mol)
@@ -40200,7 +40277,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         return False, {"reason": "ok"}
-    def _prepare_ligand_3d_from_source(self, in_file, out_sdf, smiles_hint=None, target_ph=None):
+    def _prepare_ligand_3d_from_source(self, in_file, out_sdf, smiles_hint=None, target_ph=None, reprotonate=False):
         """
         Generate a clean 3D SDF (with hydrogens) from ligand source using RDKit.
         Returns True on success.
@@ -40217,6 +40294,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             ext = os.path.splitext(str(in_file))[1].lower()
             mol = None
+            if smiles_hint and not self._smiles_hint_matches_ligand_file(smiles_hint, in_file):
+                smiles_hint = None      # the hint describes another molecule
             # Prefer rebuilding from SMILES when available to preserve chemically sane bond orders.
             if smiles_hint:
                 try:
@@ -40250,6 +40329,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     mol,
                     include_h=True,
                     target_ph=target_ph,
+                    reprotonate=bool(reprotonate) and target_ph is not None,
                 )
             except Exception:
                 return False
@@ -41939,9 +42019,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 clean_sdf,
                 smiles_hint=smi_hint,
                 target_ph=ph,
+                reprotonate=True,     # the docking pH applies unless input charges are preserved
             ):
+                q_in = self._ligand_file_formal_charge(original_source)
+                q_out = self._ligand_file_formal_charge(clean_sdf)
                 source = clean_sdf
                 notes.append("rdkit_3d_clean")
+                if q_in is not None and q_out is not None and q_in != q_out:
+                    # visible trace: the user's own protonation was replaced at the docking pH
+                    notes.append(f"reprotonated_pH{ph:.2f} (input {q_in:+d} -> {q_out:+d})")
                 ext = os.path.splitext(source)[1].lower()
         elif preserve_charges:
             notes.append("preserve_input_charges")
@@ -41969,6 +42055,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 prepared_qc_mol = _load_qc_mol(prepared_path)
             except Exception:
                 prepared_qc_mol = None
+            if prepared_qc_mol is None and str(source) != str(original_source):
+                # a PDBQT has no formal charges; audit against the cleaned/protonated SDF
+                try:
+                    prepared_qc_mol = _load_qc_mol(source)
+                except Exception:
+                    prepared_qc_mol = None
             try:
                 qc = build_small_molecule_prep_qc(
                     input_mol=input_qc_mol,
@@ -42028,13 +42120,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if not self._dock_pdbqt_syntax_ok(out_pdbqt, min_atoms=3, require_types=True):
                 return False
             tors_ok, tors_diag = self._dock_pdbqt_torsion_qc(out_pdbqt, expected_info=expected)
-            tval = int(tors_diag.get("torsdof", -1) or -1)
+            tval = int(-1 if tors_diag.get("torsdof") is None else tors_diag.get("torsdof"))
             if tval >= 0:
                 notes.append(f"torsdof_{tval}")
             if not tors_ok:
                 try:
-                    exp_rot = int(tors_diag.get("expected_rotb", -1) or -1)
-                    max_alw = int(tors_diag.get("max_allowed", -1) or -1)
+                    exp_rot = int(-1 if tors_diag.get("expected_rotb") is None else tors_diag.get("expected_rotb"))
+                    max_alw = int(-1 if tors_diag.get("max_allowed") is None else tors_diag.get("max_allowed"))
                 except Exception:
                     exp_rot = -1
                     max_alw = -1
@@ -42142,21 +42234,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         val = self._dock_float_or_nan(value)
         return float(val) if np.isfinite(val) else float(default)
     def _pocket_rank_score(self, pocket):
-        best_drug = None
-        best_score = None
+        """(fpocket Score, druggability score). The ranking uses fpocket's own Score: the
+        druggability score is ~0 for small or polar sites (trypsin's S1 pocket: 0.016), so
+        ranking by it put a pocket 12 A away from the benzamidine site first."""
+        score = None
+        drug = None
         for k, v in pocket.items():
             if not isinstance(v, (int, float, np.floating)):
                 continue
             lk = str(k).lower()
             if "druggability" in lk:
-                best_drug = float(v) if best_drug is None else max(float(v), best_drug)
-            if lk in ("score", "pocket_score") or lk.endswith("_score"):
-                best_score = float(v) if best_score is None else max(float(v), best_score)
-        if best_drug is not None:
-            return float(best_drug), float(best_drug)
-        if best_score is not None:
-            return float(best_score), np.nan
-        return -1.0, np.nan
+                drug = float(v) if drug is None else max(float(v), drug)
+            elif lk in ("score", "pocket_score"):
+                score = float(v)
+        return (float(score) if score is not None else -1.0), (float(drug) if drug is not None else np.nan)
     def _pocket_surface_obj_name(self, pid):
         return f"dock_pocket_surface_{int(pid)}"
     def _get_pocket_by_id(self, pid):
@@ -42359,7 +42450,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._pocket_surface_buttons[int(pid)] = btn
             if hasattr(self, "cmb_dock_pocket"):
                 rank_txt = f"{rank:.3f}" if np.isfinite(rank) else "n/a"
-                self.cmb_dock_pocket.addItem(f"Pocket {pid} | rank {rank_txt} | atoms {atoms}", p)
+                self.cmb_dock_pocket.addItem(f"Pocket {pid} | score {rank_txt} | atoms {atoms}", p)
         if hasattr(self, "cmb_dock_pocket"):
             self.cmb_dock_pocket.blockSignals(False)
             if self.cmb_dock_pocket.count() > 0:
@@ -42470,13 +42561,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     pp["rank_score"] = rank_score
                     pp["druggability"] = drug
                     pmap[pid] = pp
+            # fpocket's order: highest Score first; pocket numbers are fpocket's own ranking
             pockets = sorted(
                 list(pmap.values()),
                 key=lambda x: (
-                    self._dock_sort_float(x.get("rank_score", -1.0), default=-1.0),
-                    self._dock_sort_float(x.get("atom_count", 0), default=0.0),
+                    -self._dock_sort_float(x.get("rank_score", -1.0), default=-1.0),
+                    self._dock_sort_float(x.get("id", 0), default=0.0),
                 ),
-                reverse=True,
             )
             return {
                 "ok": True,
@@ -42509,8 +42600,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             best = pockets[0]
             btxt = (
-                f"Most probable pocket: Pocket {int(best.get('id', 1))}, "
-                f"rank={float(best.get('rank_score', np.nan)):.3f}"
+                f"Top-ranked pocket (fpocket score): Pocket {int(best.get('id', 1))}, "
+                f"score={float(best.get('rank_score', np.nan)):.3f}"
             )
             if np.isfinite(float(best.get("druggability", np.nan))):
                 btxt += f", druggability={float(best.get('druggability')):.3f}"
@@ -42935,7 +43026,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             data = resp.read().decode("utf-8", "ignore")
         return json.loads(data)
     def _current_pubchem_smiles_hint(self):
-        """Return selected PubChem SMILES hint (prefer isomeric), if available."""
+        """Return selected PubChem SMILES hint (prefer isomeric), if available.
+
+        Only while the docking ligand is still the file downloaded from PubChem: a hint
+        from an old search used to replace a different uploaded ligand (benzamidine SDF
+        docked as aspirin)."""
+        hint_file = str(getattr(self, "_pubchem_hint_ligand_file", "") or "").strip()
+        current_file = str(getattr(self, "_docking_ligand_file", "") or "").strip()
+        if (not hint_file) or (hint_file != current_file):
+            return ""
         try:
             hits = list(getattr(self, "_pubchem_hits", []) or [])
         except Exception:
@@ -43202,6 +43301,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         )
     def _set_docking_ligand_file(self, path, source_label=""):
         self._docking_ligand_file = str(path)
+        self._pubchem_hint_ligand_file = None      # a PubChem SMILES only describes its own download
         self._parameterized_ligand_mol2 = None
         self._parameterized_ligand_frcmod = None
         self._parameterized_ligand_prmtop = None
@@ -43284,6 +43384,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     # Keep SDF as canonical ligand source to avoid bond-order artifacts on conversion.
                     # MOL2/PDBQT are produced later only for required downstream steps.
                     self._set_docking_ligand_file(final_lig_file, source_label=f"PubChem CID {cid}")
+                    self._pubchem_hint_ligand_file = str(final_lig_file)
                     QtWidgets.QMessageBox.information(
                         self,
                         "PubChem",
@@ -43595,7 +43696,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if n >= 2:
             out["std"] = float(np.std(arr, ddof=1))
             out["sem"] = float(out["std"] / np.sqrt(float(n)))
-            if n >= 3:
+            # n = 2 gives no meaningful interval (t = 12.7); a percentile bootstrap cannot leave
+            # the observed range, so small n uses the Student-t interval.
+            if 3 <= n < 10:
+                t_crit = {2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262}[n - 1]
+                out["ci_low"] = float(out["mean"] - t_crit * out["sem"])
+                out["ci_high"] = float(out["mean"] + t_crit * out["sem"])
+            elif n >= 10:
                 try:
                     nb = int(max(300, min(5000, int(bootstrap_n))))
                 except Exception:
@@ -43610,9 +43717,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if np.isfinite(out["sem"]):
                         out["ci_low"] = float(out["mean"] - 1.96 * out["sem"])
                         out["ci_high"] = float(out["mean"] + 1.96 * out["sem"])
-            elif np.isfinite(out["sem"]):
-                out["ci_low"] = float(out["mean"] - 1.96 * out["sem"])
-                out["ci_high"] = float(out["mean"] + 1.96 * out["sem"])
         if np.isfinite(out["ci_low"]) and np.isfinite(out["ci_high"]):
             out["ci_half"] = float(abs(out["ci_high"] - out["ci_low"]) * 0.5)
         out["confidence"] = self._dock_repeat_confidence_label(out.get("std"), out.get("ci_half"), n)
@@ -44232,6 +44336,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         pocket, pocket_idx = self._get_selected_docking_pocket(None)
         if not isinstance(pocket, dict):
             QtWidgets.QMessageBox.warning(self, "Input", "Run fpocket and choose a pocket first.")
+            return
+        scanned_obj = str(getattr(self, "_fpocket_receptor_object", "") or "").strip()
+        if scanned_obj and scanned_obj != str(receptor_obj):
+            # the receptor can change without the pocket list being cleared (e.g. object deleted)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Input",
+                f"The pockets were detected on '{scanned_obj}', but the receptor is now '{receptor_obj}'.\n"
+                "Run fpocket again on the current receptor before docking.",
+            )
             return
         try:
             pocket_id = int(pocket.get("id", 0))
@@ -51064,7 +51178,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 cands = list(candidates or [])
             except Exception:
                 cands = []
-            if reference_smiles:
+            # The unprotonated input is only a fallback: adding it next to Dimorphite's
+            # answer made the median charge round to it (benzamidine and ethylamine stayed
+            # neutral at pH 7.4).
+            if reference_smiles and not cands:
                 cands.append(str(reference_smiles))
             # preserve order while deduplicating
             uniq = []
@@ -51109,9 +51226,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             charges = sorted(x[1] for x in scored)
             mid = len(charges) // 2
             if len(charges) % 2 == 1:
-                target_q = charges[mid]
+                target_q = float(charges[mid])
             else:
-                target_q = int(round((charges[mid - 1] + charges[mid]) / 2.0))
+                target_q = (charges[mid - 1] + charges[mid]) / 2.0
             # Prefer chemically plausible and non-extreme protonation:
             # 1) minimal unsupported positive nitrogens
             # 2) avoid variants where all nitrogens are protonated
@@ -51133,7 +51250,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             # Newer Dimorphite-DL exposes a top-level protonate_smiles function.
             fn = getattr(dmd, "protonate_smiles", None)
             if callable(fn):
-                out = fn(smiles, ph_min=min_ph, ph_max=max_ph)
+                try:
+                    # Dimorphite-DL 2.x: majority species at the exact pH. With the default
+                    # precision (1 pKa unit) it returns both amine forms for pH 7.15-7.65.
+                    out = fn(smiles, ph_min=float(target_ph), ph_max=float(target_ph), precision=0.1)
+                except TypeError:
+                    out = fn(smiles, ph_min=min_ph, ph_max=max_ph)
                 pick = _pick_reasonable_variant(out, reference_smiles=smiles)
                 if pick:
                     return pick
@@ -51216,26 +51338,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print("Chemistry Repair: Dimorphite-DL not used; skipping generic amine charge inference.")
             # Keep amidinium/guanidinium-like motifs cationic, but assign only one +1
             # per motif to avoid overcharging every nitrogen atom.
-            amidinium = Chem.MolFromSmarts("[NX2,NX3][C](=[NX2,NX3])[NX2,NX3]")
+            # amidine (benzamidine) or guanidine: N-C(=N)-C/N; amidoximes (=N-O) are not basic.
+            # The old pattern needed three N on the carbon, so it only matched guanidines.
+            amidinium = Chem.MolFromSmarts("[NX3;!$(N-C=O)][CX3](=[NX2;!$(N-[OX2])])[#6,#7]")
             if amidinium:
                 for match in rw_mol.GetSubstructMatches(amidinium):
                     n_idxs = [idx for idx in match if rw_mol.GetAtomWithIdx(idx).GetAtomicNum() == 7]
-                    if not n_idxs:
-                        continue
                     # Skip motifs that are already explicitly charged.
                     if any(rw_mol.GetAtomWithIdx(idx).GetFormalCharge() > 0 for idx in n_idxs):
                         continue
-                    # Prefer the terminal amine-like N (more Hs / lower heavy-degree),
-                    # e.g., [NH2+]=C(N)- in benzamidine-style systems.
-                    def _pick_key(idx):
-                        a = rw_mol.GetAtomWithIdx(idx)
-                        heavy_deg = sum(1 for nb in a.GetNeighbors() if nb.GetAtomicNum() > 1)
-                        return (-int(a.GetTotalNumHs()), heavy_deg, idx)
-                    chosen = sorted(n_idxs, key=_pick_key)[0]
-                    a = rw_mol.GetAtomWithIdx(chosen)
+                    # protonate the imine N: -C(=N)- -> -C(=[NH2+])-  (one +1 per motif)
+                    a = rw_mol.GetAtomWithIdx(match[2])
+                    n_h = int(a.GetTotalNumHs())
                     a.SetFormalCharge(1)
-                    if not a.GetNoImplicit():
-                        a.SetNumExplicitHs(max(1, int(a.GetTotalNumHs())))
+                    a.SetNumExplicitHs(n_h + 1)
                     a.SetNoImplicit(True)
         try:
             Chem.SanitizeMol(rw_mol)

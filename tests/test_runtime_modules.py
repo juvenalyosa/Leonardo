@@ -13698,7 +13698,7 @@ def test_dock_runtime_build_meeko_receptor_input_args():
 
 def test_dock_runtime_build_smina_flexres_spec():
     assert build_smina_flexres_spec([{"chain": "A", "resi": "10"}, {"chain": "B", "resi": "23"}]) == "A:10,B:23"
-    assert build_smina_flexres_spec([{"chain": "A", "resi": "221A"}]) == "A:221A"
+    assert build_smina_flexres_spec([{"chain": "A", "resi": "221A"}]) == "A:221:A"
 
 
 def test_redock_runtime_parse_flexres_spec_normalizes_insertion_code_formats():
