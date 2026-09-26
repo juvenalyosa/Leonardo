@@ -1913,6 +1913,118 @@ def resolve_qmmm_regions(atom_rows, n_atoms, config=None):
     return {"qm_indices": list(qm_idx), "mm_indices": list(mm_idx), "info": dict(info)}
 
 
+def prepare_openmm_system_for_qmmm_coupling(system, qm_indices):
+    """
+    Remove the classical description of the QM region from an OpenMM ``System`` before force-coupled QM/MM MD.
+
+    In force-coupled MD the QM atoms receive MOPAC forces (internal QM + electrostatic embedding) and the MM
+    atoms the reaction of the QM charges.  If OpenMM still applies its own bonded terms and Coulomb forces to
+    the QM atoms, those interactions are counted twice.  This function edits ``system`` in place:
+
+    * NonbondedForce: charge 0 on QM atoms (removes classical QM–QM and QM–MM Coulomb, also under PME); QM–QM
+      pairs become exceptions with no Coulomb and no Lennard-Jones (MOPAC describes them); existing QM–MM
+      exceptions (1-4 pairs across the boundary) keep their Lennard-Jones but lose their charge product.
+      QM–MM Lennard-Jones is kept on purpose: it is the steric repulsion MOPAC does not provide.
+    * HarmonicBondForce, HarmonicAngleForce, PeriodicTorsionForce: terms whose atoms are all QM get zero force
+      constant.  Terms that cross the QM/MM boundary are kept and counted (there are no link atoms).
+    * GBSAOBCForce: charge 0 on QM atoms.
+    * Any other force type that touches QM atoms is reported in ``unhandled_forces``.
+
+    Call it after ``createSystem`` and before building the ``Simulation``/``Context``.  Returns a report dict.
+    """
+    qset = sorted({int(i) for i in list(qm_indices or [])})
+    if system is None:
+        raise ValueError("An OpenMM System is required.")
+    n = int(system.getNumParticles())
+    if not qset:
+        raise ValueError("qm_indices cannot be empty.")
+    if qset[0] < 0 or qset[-1] >= n:
+        raise ValueError("qm_indices out of range for this System.")
+    qm = set(qset)
+    report = {
+        "qm_atom_count": len(qset),
+        "qm_charges_zeroed": 0,
+        "qm_total_classical_charge_e": 0.0,
+        "qm_qm_exceptions": 0,
+        "boundary_exceptions_uncharged": 0,
+        "bonded_terms_removed": {},
+        "boundary_bonded_terms_kept": {},
+        "unhandled_forces": [],
+    }
+    for fi in range(int(system.getNumForces())):
+        force = system.getForce(fi)
+        name = str(force.__class__.__name__)
+        if name == "NonbondedForce":
+            for i in qset:
+                q, sig, eps = force.getParticleParameters(i)
+                report["qm_total_classical_charge_e"] += float(_omm_quantity_to_float(q))
+                force.setParticleParameters(i, 0.0, sig, eps)
+                report["qm_charges_zeroed"] += 1
+            existing = {}
+            for k in range(int(force.getNumExceptions())):
+                a, b, qq, sig, eps = force.getExceptionParameters(k)
+                existing[(min(a, b), max(a, b))] = k
+                if (a in qm) != (b in qm):
+                    force.setExceptionParameters(k, a, b, 0.0, sig, eps)
+                    report["boundary_exceptions_uncharged"] += 1
+            for x, i in enumerate(qset):
+                for j in qset[x + 1:]:
+                    key = (i, j)
+                    if key in existing:
+                        force.setExceptionParameters(existing[key], i, j, 0.0, 1.0, 0.0)
+                    else:
+                        force.addException(i, j, 0.0, 1.0, 0.0)
+                    report["qm_qm_exceptions"] += 1
+        elif name in ("HarmonicBondForce", "HarmonicAngleForce", "PeriodicTorsionForce"):
+            removed = kept = 0
+            if name == "HarmonicBondForce":
+                for k in range(int(force.getNumBonds())):
+                    a, b, r0, kb = force.getBondParameters(k)
+                    inside = [a in qm, b in qm]
+                    if all(inside):
+                        force.setBondParameters(k, a, b, r0, 0.0)
+                        removed += 1
+                    elif any(inside):
+                        kept += 1
+            elif name == "HarmonicAngleForce":
+                for k in range(int(force.getNumAngles())):
+                    a, b, c, th0, ka = force.getAngleParameters(k)
+                    inside = [a in qm, b in qm, c in qm]
+                    if all(inside):
+                        force.setAngleParameters(k, a, b, c, th0, 0.0)
+                        removed += 1
+                    elif any(inside):
+                        kept += 1
+            else:
+                for k in range(int(force.getNumTorsions())):
+                    a, b, c, d, per, ph, kt = force.getTorsionParameters(k)
+                    inside = [a in qm, b in qm, c in qm, d in qm]
+                    if all(inside):
+                        force.setTorsionParameters(k, a, b, c, d, per, ph, 0.0)
+                        removed += 1
+                    elif any(inside):
+                        kept += 1
+            report["bonded_terms_removed"][name] = int(removed)
+            report["boundary_bonded_terms_kept"][name] = int(kept)
+        elif name == "GBSAOBCForce":
+            for i in qset:
+                _q, radius, scale = force.getParticleParameters(i)
+                force.setParticleParameters(i, 0.0, radius, scale)
+        elif name in ("CMMotionRemover", "MonteCarloBarostat", "MonteCarloAnisotropicBarostat",
+                      "MonteCarloMembraneBarostat", "CustomExternalForce"):
+            continue
+        else:
+            touches = True
+            try:
+                if hasattr(force, "getNumParticles") and int(force.getNumParticles()) == 0:
+                    touches = False
+            except Exception:
+                pass
+            if touches:
+                report["unhandled_forces"].append(name)
+    return report
+
+
 def run_openmm_qmmm_single_point_probe(
     xyz_full_ang,
     atomic_numbers_full,
@@ -2179,6 +2291,7 @@ __all__ = [
     "assess_ligand_topology_signature_compatibility",
     "build_mopac_keywords_for_operation",
     "resolve_qmmm_regions",
+    "prepare_openmm_system_for_qmmm_coupling",
     "run_openmm_qmmm_single_point_probe",
     "run_openmm_qmmm_distance_scan_probe",
 ]

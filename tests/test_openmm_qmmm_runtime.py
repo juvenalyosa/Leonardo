@@ -863,3 +863,90 @@ def test_run_openmm_qmmm_distance_scan_probe_with_mock_step():
     best = dict(out.get("best_point", {}) or {})
     assert int(best.get("point", 0)) in (3, 2, 4)
     assert abs(float(best.get("distance_ang", 0.0)) - 1.5) <= 0.26
+
+
+# ---------------------------------------------------------------------------
+# Force-coupled QM/MM: the classical description of the QM region must be removed (no double counting)
+# ---------------------------------------------------------------------------
+def _toy_qmmm_system(q_qm=(0.4, -0.4), k_qm_bond=1000.0, k_boundary_bond=1000.0):
+    """4 atoms: QM = {0, 1} bonded; MM = {2, 3} bonded; a bond, an angle and a 1-4 pair cross the boundary."""
+    import pytest
+    mm = pytest.importorskip("openmm")
+    system = mm.System()
+    for _ in range(4):
+        system.addParticle(12.0)
+    bonds = mm.HarmonicBondForce()
+    bonds.addBond(0, 1, 0.15, k_qm_bond)        # QM-QM   -> removed
+    bonds.addBond(1, 2, 0.15, k_boundary_bond)  # QM-MM   -> kept (boundary)
+    bonds.addBond(2, 3, 0.15, 1000.0)           # MM-MM   -> kept
+    system.addForce(bonds)
+    angles = mm.HarmonicAngleForce()
+    angles.addAngle(0, 1, 2, 1.9, 100.0)        # crosses the boundary -> kept
+    system.addForce(angles)
+    nb = mm.NonbondedForce()
+    nb.setNonbondedMethod(mm.NonbondedForce.NoCutoff)
+    for q in (q_qm[0], q_qm[1], 0.5, -0.5):
+        nb.addParticle(q, 0.3, 0.5)
+    nb.addException(0, 1, 0.0, 0.3, 0.0)
+    nb.addException(2, 3, 0.0, 0.3, 0.0)
+    nb.addException(1, 2, 0.0, 0.3, 0.0)
+    nb.addException(0, 2, q_qm[0] * 0.5 / 1.2, 0.3, 0.25)   # 1-4 style pair across the boundary
+    system.addForce(nb)
+    return mm, system
+
+
+_TOY_XYZ = [(0.0, 0.0, 0.0), (0.17, 0.02, 0.0), (0.32, 0.14, 0.03), (0.43, 0.25, 0.07)]   # bonds a bit stretched
+
+
+def _energy_forces(mm, system, xyz=_TOY_XYZ):
+    import openmm.unit as u
+    ctx = mm.Context(system, mm.VerletIntegrator(0.001), mm.Platform.getPlatformByName("Reference"))
+    ctx.setPositions([mm.Vec3(*p) for p in xyz] * u.nanometer)
+    st = ctx.getState(getForces=True, getEnergy=True)
+    return (st.getPotentialEnergy().value_in_unit(u.kilojoule_per_mole),
+            np.asarray(st.getForces(asNumpy=True).value_in_unit(u.kilojoule_per_mole / u.nanometer)))
+
+
+def test_prepare_system_for_qmmm_coupling_removes_classical_qm_terms():
+    from openmm_qmmm_runtime import prepare_openmm_system_for_qmmm_coupling
+
+    mm, system = _toy_qmmm_system()
+    rep = prepare_openmm_system_for_qmmm_coupling(system, [0, 1])
+    assert rep["qm_charges_zeroed"] == 2
+    assert math.isclose(rep["qm_total_classical_charge_e"], 0.0, abs_tol=1e-9)
+    assert rep["qm_qm_exceptions"] == 1
+    assert rep["bonded_terms_removed"] == {"HarmonicBondForce": 1, "HarmonicAngleForce": 0}
+    assert rep["boundary_bonded_terms_kept"] == {"HarmonicBondForce": 1, "HarmonicAngleForce": 1}
+    assert rep["boundary_exceptions_uncharged"] == 2
+    assert rep["unhandled_forces"] == []
+    nb = [system.getForce(i) for i in range(system.getNumForces())
+          if system.getForce(i).__class__.__name__ == "NonbondedForce"][0]
+    for i in (0, 1):
+        q, _sig, eps = nb.getParticleParameters(i)
+        assert q.value_in_unit(q.unit) == 0.0 and eps.value_in_unit(eps.unit) > 0.0   # Coulomb off, LJ kept
+    q2, _sig, _eps = nb.getParticleParameters(2)
+    assert math.isclose(q2.value_in_unit(q2.unit), 0.5)                               # MM charges untouched
+
+
+def test_prepared_system_is_independent_of_classical_qm_parameters():
+    """After preparation nothing classical about the QM region may act (MOPAC provides it): changing the QM
+    charges or the QM-QM bond must leave energy and forces unchanged, while boundary terms must still act."""
+    from openmm_qmmm_runtime import prepare_openmm_system_for_qmmm_coupling
+
+    results = []
+    for kwargs in ({}, {"q_qm": (0.9, -0.2)}, {"k_qm_bond": 7000.0}):
+        mm, system = _toy_qmmm_system(**kwargs)
+        prepare_openmm_system_for_qmmm_coupling(system, [0, 1])
+        results.append(_energy_forces(mm, system))
+    e0, f0 = results[0]
+    for e, f in results[1:]:
+        assert math.isclose(e, e0, rel_tol=1e-10, abs_tol=1e-10)
+        assert np.allclose(f, f0, atol=1e-8)
+    # without preparation the same changes do alter the classical energy (so the test is sensitive)
+    mm, a = _toy_qmmm_system()
+    mm, b = _toy_qmmm_system(q_qm=(0.9, -0.2))
+    assert abs(_energy_forces(mm, a)[0] - _energy_forces(mm, b)[0]) > 1.0
+    # boundary terms are kept: the QM-MM bond stiffness still matters after preparation
+    mm, c = _toy_qmmm_system(k_boundary_bond=7000.0)
+    prepare_openmm_system_for_qmmm_coupling(c, [0, 1])
+    assert abs(_energy_forces(mm, c)[0] - e0) > 1.0

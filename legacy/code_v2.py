@@ -11296,6 +11296,40 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     return out
                 qmmm_correction_force = mk.get("force")
                 qmmm_correction_indices = list(mk.get("indices", []) or [])
+                # The QM atoms are now described by MOPAC: remove their classical bonded/Coulomb terms from the
+                # OpenMM System so they are not counted twice (QM–MM Lennard-Jones is kept).  The region is frozen
+                # for the whole run so the zeroed charges always match the atoms MOPAC treats.
+                try:
+                    prep_qmmm = self._openmm_qmmm_runtime_mod().prepare_openmm_system_for_qmmm_coupling(
+                        system, list(qmmm_coupling_plan.get("qm_indices", []) or [])
+                    )
+                except Exception as e:
+                    out["error"] = f"Could not remove the classical QM-region terms for force-coupled QM/MM: {e}"
+                    return out
+                frozen_probe = dict(data.get("qmmm_probe", {}) or {})
+                frozen_probe["qm_indices"] = list(qmmm_coupling_plan.get("qm_indices", []) or [])
+                frozen_probe["mm_indices"] = list(qmmm_coupling_plan.get("mm_indices", []) or [])
+                data["qmmm_probe"] = frozen_probe
+                qmmm_probe_cfg = dict(frozen_probe)
+                out["qmmm_system_preparation"] = dict(prep_qmmm)
+                out["notes"].append(
+                    "QM region removed from the classical force field"
+                    f" | charges zeroed={int(prep_qmmm.get('qm_charges_zeroed', 0))}"
+                    f" (classical charge {float(prep_qmmm.get('qm_total_classical_charge_e', 0.0)):+.2f} e)"
+                    f" | QM-QM pairs excluded={int(prep_qmmm.get('qm_qm_exceptions', 0))}"
+                    f" | bonded terms removed={sum(dict(prep_qmmm.get('bonded_terms_removed', {}) or {}).values())}"
+                )
+                n_boundary = sum(dict(prep_qmmm.get("boundary_bonded_terms_kept", {}) or {}).values())
+                if n_boundary:
+                    out["notes"].append(
+                        f"QM/MM warning: {n_boundary} bonded terms cross the QM/MM boundary and stay classical "
+                        "(no link atoms); prefer QM regions made of whole residues/ligands."
+                    )
+                if list(prep_qmmm.get("unhandled_forces", []) or []):
+                    out["notes"].append(
+                        "QM/MM warning: forces not adapted for the QM region: "
+                        + ", ".join(sorted(set(prep_qmmm["unhandled_forces"])))
+                    )
                 hint = str(((qmmm_coupling_plan.get("region", {}) or {}).get("info", {}) or {}).get("selection_hint", "") or "").strip()
                 out["notes"].append(
                     "QM/MM force coupling enabled"
