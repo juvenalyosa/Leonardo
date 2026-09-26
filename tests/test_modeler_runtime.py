@@ -454,3 +454,39 @@ def test_mutation_window_uses_structure_labels():
         mutation_positions=[15], mode="gap", prepared_labels=["10", "11", "11A", "12", "15"])
     assert payload["prepared_fits"] is True
     assert payload["used_explicit_sequence"] is False
+
+
+def test_mutation_positions_with_negative_numbers_and_insertion_codes():
+    from modeler_runtime import extract_modeler_mutation_target_positions, modeler_mutation_target_labels
+
+    muts = ["A-3G", "G184AA", "p.Lys10Gly", "W24*", "183_185del"]
+    assert extract_modeler_mutation_target_positions(muts) == [-3, "184A", 10, 24, 183, 184, 185]
+    labels = ["-3", "10", "24", "183", "184", "184A", "185"]
+    assert modeler_mutation_target_labels(["183_185del"], labels) == ["183", "184", "184A", "185"]
+    assert modeler_mutation_target_labels(["G184AA", "A-3G", "X99W"], labels) == ["184A", "-3"]
+    assert modeler_sequence_window_covers_positions(-5, "A" * 10, [-3, 4]) is True
+    assert modeler_sequence_window_covers_positions(180, "A" * 10, ["184A"]) is False
+
+
+def test_mutation_window_accepts_insertion_code_labels():
+    from modeler_runtime import resolve_modeler_mutation_input_sequence
+
+    payload = resolve_modeler_mutation_input_sequence(
+        "ACDEF", 10, explicit_sequence="ACDEFGHIK", explicit_start=10,
+        mutation_positions=["11A", -1], mode="gap", prepared_labels=["-1", "10", "11", "11A", "12"])
+    assert payload["prepared_fits"] is True
+
+
+def test_gap_fill_terminal_extension_is_optional():
+    from modeler_runtime import build_modeler_chain_entry, modeler_gap_fill_sequence
+
+    full = "MKTAYIAKQRQISFVKSHFSRQ"
+    residues = [_res(i, aa) for i, aa in enumerate(full, start=1) if 4 <= i <= 18]
+    residues[0]["bonded_to_prev"] = None
+    e = build_modeler_chain_entry("A", residues)
+    inner = modeler_gap_fill_sequence(e, full)
+    assert inner["sequence"] == full[3:18] and inner["filled_n_term"] == 0
+    ext = modeler_gap_fill_sequence(e, full, fill_termini=True)
+    assert ext["ok"] and ext["sequence"] == full
+    assert ext["filled"] == 7 and ext["filled_n_term"] == 3 and ext["filled_c_term"] == 4
+    assert ext["residue_labels"] == [str(i) for i in range(1, len(full) + 1)]

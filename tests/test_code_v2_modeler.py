@@ -149,6 +149,9 @@ class _Widget:
     def setValue(self, value):
         self._value = value
 
+    def isChecked(self):
+        return bool(self._value)
+
 
 def _build_modeler_numbering_dialog(full_sequence=""):
     from Bio.PDB import PDBParser
@@ -204,3 +207,72 @@ def test_modeler_gap_mode_uses_structure_numbering_for_mutations():
     i195 = labels.index("195")
     assert seq[i195] == "S"                                   # catalytic serine of trypsin
     assert out["mutated_sequence"] == seq[:i195] + "A" + seq[i195 + 1:]
+
+
+def test_modeler_gap_mode_mutates_insertion_code_residue():
+    import mutator
+
+    dlg = _build_modeler_numbering_dialog()
+    seq, start, _ch, _data, _notes = dlg._modeler_prepare_base_sequence()
+    labels = dlg._modeler_chain_data["A"]["residue_labels"]
+    i184, i184a = labels.index("184"), labels.index("184A")
+    wt = seq[i184a]
+    out = dlg._modeler_apply_mutations_with_start_resolution(
+        seq, [f"{wt}184AW"], start_pos=start, mutator_mod=mutator, allow_auto_resolve=False)
+    assert out["mutated_sequence"] == seq[:i184a] + "W" + seq[i184a + 1:]
+    assert out["mutated_sequence"][i184] == seq[i184]        # residue 184 itself is untouched
+
+
+def test_modeler_gap_mode_optionally_extends_termini():
+    observed = _build_modeler_numbering_dialog()._modeler_chain_data["A"]["observed_seq"]
+    full = "APFDDDDK" + observed + "GSW"          # trypsinogen propeptide + an invented C-terminal tail
+
+    dlg = _build_modeler_numbering_dialog(full_sequence=full)
+    seq, start, _ch, _data, _notes = dlg._modeler_prepare_base_sequence()
+    assert seq == observed and start == 16         # default: internal gaps only
+
+    dlg = _build_modeler_numbering_dialog(full_sequence=full)
+    dlg.cb_modeler_fill_termini = _Widget(True)
+    seq, start, _ch, _data, notes = dlg._modeler_prepare_base_sequence()
+    assert seq == full and start == 8
+    labels = dlg._modeler_base_numbering["labels"]
+    assert labels[:9] == ["8", "9", "10", "11", "12", "13", "14", "15", "16"]
+    assert labels[-4:] == ["245", "246", "247", "248"]
+    assert "N-term +8" in notes and "C-term +3" in notes
+
+
+def test_modeler_highlight_uses_insertion_codes_and_negative_numbers(monkeypatch):
+    class _HighlightCmd:
+        def __init__(self):
+            self.selections = []
+
+        def count_atoms(self, sel):
+            self.selections.append(sel)
+            return 1
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    fake = _HighlightCmd()
+    monkeypatch.setattr(code_v2, "cmd", fake)
+
+    class DummyDialog:
+        pass
+
+    for name in ("_modeler_clean_sequence", "_normalize_chain_id", "_modeler_highlight_mutated_residues"):
+        setattr(DummyDialog, name, getattr(code_v2.ProtLigInteractDialog, name))
+    dlg = DummyDialog()
+    labels = ["-2", "-1", "0", "1", "184", "184A", "185"]
+    dlg._modeler_extract_chain_data = lambda _obj: {
+        "A": {"observed_seq": "ACDEFWH", "residue_labels": labels, "positions": [-2, -1, 0, 1, 184, 184, 185]}
+    }
+    dlg._pymol_model_selection = lambda obj, wrap=True: f"({obj})"
+    dlg._redock_sequence_pairs = lambda a, b: ([], 0)
+
+    out = dlg._modeler_highlight_mutated_residues("model", "ACDEFGH", "ACDEFWH", ["G184AW"], preferred_chain="A")
+    assert out["ok"] and out["positions"] == ["184A"]
+    assert out["selection"].endswith("resi 184A")
+
+    out = dlg._modeler_highlight_mutated_residues("model", "GCDEFWH", "ACDEFWH", ["G-2A"], preferred_chain="A")
+    assert out["ok"] and out["positions"] == ["-2"]
+    assert out["selection"].endswith("resi \\-2")

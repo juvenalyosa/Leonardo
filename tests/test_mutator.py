@@ -99,3 +99,51 @@ def test_structure_numbering_with_jumps_and_insertion_codes():
         mutate_sequence("ACDEF", ["C11_E12insG"], residue_numbers=labels)
     with pytest.raises(MutationError, match="outside"):
         mutate_sequence("ACDEF", ["D13G"], residue_numbers=labels)
+
+
+def test_negative_positions():
+    assert mutate_sequence("ACDEF", ["A-3G"], start_pos=-3) == "GCDEF"
+    assert mutate_sequence("ACDEF", ["C-2_E0del"], start_pos=-3) == "AF"
+    assert mutate_sequence("ACDEF", ["-1_0insW"], start_pos=-3) == "ACDWEF"
+
+
+def test_insertion_code_positions():
+    labels = [183, 184, "184A", "184B", 185]
+    assert mutate_sequence("ACDEF", ["D184AW"], residue_numbers=labels) == "ACWEF"
+    assert mutate_sequence("ACDEF", ["C184W"], residue_numbers=labels) == "AWDEF"
+    assert mutate_sequence("ACDEF", ["C184_D184AinsGG"], residue_numbers=labels) == "ACGGDEF"
+    assert mutate_sequence("ACDEF", ["184A_184Bdel"], residue_numbers=labels) == "ACF"
+    assert mutate_sequence("ACDEF", ["183_185del"], residue_numbers=labels) == ""
+    with pytest.raises(MutationError, match="184A"):
+        mutate_sequence("ACDEF", ["D184AW"], start_pos=183)       # no insertion codes in plain numbering
+
+
+def test_numbering_jump_insertion_between_bonded_residues():
+    # 12 -> 15 is a numbering jump, but the residues are neighbours
+    assert mutate_sequence("ACDEF", ["E12_F15insG"], residue_numbers=[10, 11, "11A", 12, 15]) == "ACDEGF"
+
+
+def test_three_letter_labels():
+    seq = "MKTAYIAKQR"
+    assert mutate_sequence(seq, ["p.Lys2Gly"]) == "MGTAYIAKQR"
+    assert mutate_sequence(seq, ["p.(Lys2Gly)"]) == "MGTAYIAKQR"
+    assert mutate_sequence(seq, ["Lys2_Thr3delinsTrpSer"]) == "MWSAYIAKQR"
+    assert mutate_sequence(seq, ["Tyr5dup"]) == "MKTAYYIAKQR"
+    assert mutate_sequence(seq, ["A4_Y5insSER"]) == "MKTASERYIAKQR"     # one-letter S-E-R stays one-letter
+    # an insertion code must not merge with the next three-letter code
+    labels = [183, 184, "184G", "184I", 185]
+    assert mutate_sequence("ACDEF", ["Asp184GLys"], residue_numbers=labels) == "ACKEF"
+    assert mutate_sequence("ACDEF", ["Glu184ILeu"], residue_numbers=labels) == "ACDLF"
+    assert mutate_sequence("ACDEF", ["Asp184G_Glu184IdelinsGlySer"], residue_numbers=labels) == "ACGSF"
+    assert mutate_sequence(seq, ["A4_Y5insDEL"]) == "MKTADELYIAKQR"          # D-E-L, not a deletion
+
+
+def test_nonsense_mutation_truncates():
+    seq = "MKTAYIAKQR"
+    assert mutate_sequence(seq, ["Y5*"]) == "MKTA"
+    assert mutate_sequence(seq, ["p.Tyr5Ter"]) == "MKTA"
+    assert mutate_sequence(seq, ["K2G", "Y5*"]) == "MGTA"
+    with pytest.raises(MutationError, match="after the stop codon"):
+        mutate_sequence(seq, ["Y5*", "K8R"])
+    with pytest.raises(MutationError, match="Y5\\* lies after the stop codon K2\\*"):
+        mutate_sequence(seq, ["Y5*", "K2*"])

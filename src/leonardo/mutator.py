@@ -54,6 +54,70 @@ def _clean_protein_sequence(sequence):
     return seq
 
 
+_THREE_TO_ONE = {
+    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C", "GLN": "Q", "GLU": "E",
+    "GLY": "G", "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F",
+    "PRO": "P", "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V", "SEC": "U",
+    "PYL": "O", "TER": "*",
+}
+
+# Position token: residue number (may be negative) plus an optional PDB insertion code (184A).
+_POS = r"(-?\d+)([A-Z]?)"
+_SNP_RE = re.compile(r"^([A-Z])" + _POS + r"([A-Z*])$")
+_RANGE = r"([A-Z]?)" + _POS + r"(?:_([A-Z]?)" + _POS + r")?"
+_DELINS_RE = re.compile("^" + _RANGE + r"DELINS([A-Z]+)$")
+_DEL_RE = re.compile("^" + _RANGE + r"DEL$")
+_DUP_RE = re.compile("^" + _RANGE + r"DUP$")
+_INS_RE = re.compile(r"^([A-Z]?)" + _POS + r"_([A-Z]?)" + _POS + r"INS([A-Z]+)$")
+
+# Three-letter forms, anchored on whole codes so an insertion code cannot merge with the
+# next residue ("GLY184GLYS" is Gly 184G -> Lys, never Gly 184G -> Ser).
+# Each entry: (regex, groups holding one code, group holding a run of codes or None).
+_AA3 = "(?:" + "|".join(sorted(_THREE_TO_ONE)) + ")"
+_POS3_RANGE = "(" + _AA3 + ")?" + _POS + "(?:_(" + _AA3 + ")?" + _POS + ")?"
+_THREE_LETTER_FORMS = (
+    (re.compile("^(" + _AA3 + ")" + _POS + "(" + _AA3 + ")$"), (1, 4), None),
+    (re.compile("^" + _POS3_RANGE + "DELINS((?:" + _AA3 + ")+)$"), (1, 4), 7),
+    (re.compile("^" + _POS3_RANGE + "(?:DEL|DUP)$"), (1, 4), None),
+    (re.compile("^(" + _AA3 + ")?" + _POS + "_(" + _AA3 + ")?" + _POS + "INS((?:" + _AA3 + ")+)$"), (1, 4), 7),
+)
+
+
+def _three_to_one(txt):
+    for rx, code_groups, run_group in _THREE_LETTER_FORMS:
+        m = rx.match(txt)
+        if not m:
+            continue
+        pieces, last = [], 0
+        for g in sorted(set(code_groups) | ({run_group} if run_group else set())):
+            if m.group(g) is None:
+                continue
+            start, end = m.span(g)
+            codes = re.findall("...", m.group(g))
+            pieces += [txt[last:start], "".join(_THREE_TO_ONE[c] for c in codes)]
+            last = end
+        return "".join(pieces) + txt[last:]
+    return txt
+
+
+def normalize_mutation_label(label):
+    """Canonical one-letter form of a mutation label.
+
+    Upper-cases, drops ``p.`` and HGVS parentheses, and converts three-letter
+    labels (``p.Lys10Gly`` -> ``K10G``, ``Trp24Ter`` -> ``W24*``). Three-letter
+    conversion only applies when the label starts with a three-letter code, so a
+    one-letter insertion such as ``A10_G11insSER`` (S-E-R) is left alone.
+    """
+    txt = re.sub(r"\s+", "", str(label or "")).upper()
+    if txt.startswith("P."):
+        txt = txt[2:]
+    if txt.startswith("(") and txt.endswith(")"):
+        txt = txt[1:-1]
+    if re.match(_AA3 + r"-?\d", txt):
+        txt = _three_to_one(txt)
+    return txt
+
+
 def _iter_mutation_labels(mutations):
     """Return normalized mutation labels from a string or an iterable."""
     if mutations is None:
@@ -64,12 +128,7 @@ def _iter_mutation_labels(mutations):
         raw_items = list(mutations or [])
     labels = []
     for item in raw_items:
-        label = str(item or "").strip()
-        if not label:
-            continue
-        label = re.sub(r"\s+", "", label).upper()
-        if label.startswith("P."):
-            label = label[2:]
+        label = normalize_mutation_label(item)
         if label:
             labels.append(label)
     return labels
@@ -82,22 +141,71 @@ def _coerce_start_pos(start_pos):
         raise MutationError(f"Invalid sequence start position: {start_pos!r}") from exc
 
 
+def position_key(number, icode=""):
+    """Residue position key used for matching: ``"-3"``, ``"184"``, ``"184A"``."""
+    return f"{int(number)}{str(icode or '').strip().upper()}"
+
+
+def _label_to_key(label):
+    txt = str(label).strip().upper() if label is not None else ""
+    m = re.fullmatch(r"(-?\d+)([A-Z]?)", txt)
+    return position_key(m.group(1), m.group(2)) if m else None
+
+
+def parse_mutation_label(mutation):
+    """Parse one mutation label into its parts, without a sequence.
+
+    Returns a dict with ``kind`` (``sub``, ``stop``, ``del``, ``delins``, ``ins``,
+    ``dup``), ``start``/``end`` position keys (``"184A"``, ``"-3"``), the expected
+    residues ``start_aa``/``end_aa`` ('' when omitted) and ``insertion`` (new
+    residues). Raises :class:`MutationError` when the label cannot be parsed.
+    """
+    txt = normalize_mutation_label(mutation)
+    m = _SNP_RE.match(txt)
+    if m:
+        old_aa, num, icode, new_aa = m.groups()
+        key = position_key(num, icode)
+        return {"label": txt, "kind": "stop" if new_aa == "*" else "sub", "start": key, "end": key,
+                "start_aa": old_aa, "end_aa": old_aa, "insertion": "" if new_aa == "*" else new_aa}
+    for kind, rx in (("delins", _DELINS_RE), ("del", _DEL_RE), ("dup", _DUP_RE)):
+        m = rx.match(txt)
+        if m:
+            g = m.groups()
+            start = position_key(g[1], g[2])
+            if g[4] is None:
+                end, end_aa = start, g[0]
+            else:
+                end, end_aa = position_key(g[4], g[5]), g[3]
+            return {"label": txt, "kind": kind, "start": start, "end": end, "start_aa": g[0],
+                    "end_aa": end_aa, "insertion": g[6] if kind == "delins" else ""}
+    m = _INS_RE.match(txt)
+    if m:
+        left_aa, lnum, licode, right_aa, rnum, ricode, insertion = m.groups()
+        return {"label": txt, "kind": "ins", "start": position_key(lnum, licode),
+                "end": position_key(rnum, ricode), "start_aa": left_aa, "end_aa": right_aa,
+                "insertion": insertion}
+    for word, name in (("DELINS", "delins"), ("DEL", "deletion"), ("INS", "insertion"), ("DUP", "duplication")):
+        if word in txt:
+            raise MutationError(f"Could not parse {name} mutation: '{txt}'.")
+    raise MutationError(f"Unsupported mutation format: '{txt}'.")
+
+
 class _ReferenceNumbering:
-    """Map mutation position numbers to indices of the *reference* sequence.
+    """Map mutation positions to indices of the *reference* sequence.
 
     Positions follow HGVS semantics: every mutation in a list refers to the
     original sequence, never to the sequence left behind by an earlier indel.
     ``residue_numbers`` (one label per residue) supports structure numbering
-    with gaps or insertion codes; labels that are not plain integers (``184A``)
-    or that repeat cannot be addressed by a numeric mutation label.
+    with gaps, negative numbers or insertion codes (``184A``); labels that repeat
+    cannot be addressed.
     """
 
     def __init__(self, seq, start_pos=1, residue_numbers=None):
         self.seq = seq
-        self.index = {}
+        self.ambiguous = set()
         if residue_numbers is None:
             start_i = _coerce_start_pos(start_pos)
-            self.index = {start_i + i: i for i in range(len(seq))}
+            self.index = {position_key(start_i + i): i for i in range(len(seq))}
             return
         labels = list(residue_numbers)
         if len(labels) != len(seq):
@@ -106,16 +214,14 @@ class _ReferenceNumbering:
             )
         seen = {}
         for i, label in enumerate(labels):
-            txt = str(label).strip() if label is not None else ""
-            if not re.fullmatch(r"-?\d+", txt):
-                continue
-            seen.setdefault(int(txt), []).append(i)
-        self.index = {pos: idx[0] for pos, idx in seen.items() if len(idx) == 1}
-        self.ambiguous = {pos for pos, idx in seen.items() if len(idx) > 1}
+            key = _label_to_key(label)
+            if key is not None:
+                seen.setdefault(key, []).append(i)
+        self.index = {key: idx[0] for key, idx in seen.items() if len(idx) == 1}
+        self.ambiguous = {key for key, idx in seen.items() if len(idx) > 1}
 
     def at(self, pos, mutation):
-        pos = int(pos)
-        if pos in getattr(self, "ambiguous", ()):
+        if pos in self.ambiguous:
             raise MutationError(f"Mutation {mutation} references position {pos}, which is not unique in the numbering.")
         if pos not in self.index:
             raise MutationError(
@@ -128,20 +234,18 @@ class _ReferenceNumbering:
         expected = str(expected_aa or "").strip().upper()
         if expected and self.seq[idx] != expected:
             raise MutationError(
-                f"Mutation {mutation} mismatch at {label} {int(pos)}: "
+                f"Mutation {mutation} mismatch at {label} {pos}: "
                 f"found '{self.seq[idx]}' but expected '{expected}'."
             )
 
     def span(self, start_pos, start_aa, end_pos, end_aa, mutation):
-        if int(end_pos) < int(start_pos):
-            raise MutationError(f"Mutation {mutation} has an inverted range ({int(start_pos)}>{int(end_pos)}).")
         try:
             i0 = self.at(start_pos, mutation)
             i1 = self.at(end_pos, mutation)
         except MutationError as exc:
             raise MutationError(f"Mutation {mutation} references missing/out-of-bounds position(s): {exc}") from exc
         if i1 < i0:
-            raise MutationError(f"Mutation {mutation} has an inverted range in the sequence numbering.")
+            raise MutationError(f"Mutation {mutation} has an inverted range ({start_pos}>{end_pos}).")
         self.check(i0, start_aa, start_pos, mutation, label="range start")
         self.check(i1, end_aa, end_pos, mutation, label="range end")
         return i0, i1
@@ -150,62 +254,29 @@ class _ReferenceNumbering:
 def _parse_mutation(mutation, numbering):
     """Return ``(i0, i1, replacement)``: replace reference indices ``i0..i1`` (inclusive) by
     ``replacement``. A pure insertion before index ``i`` is ``(i, i - 1, text)``."""
-    snp = re.match(r'^([A-Z])(\d+)([A-Z])$', mutation)
-    if snp:
-        old_aa, pos, new_aa = snp.groups()
-        idx = numbering.at(pos, mutation)
-        numbering.check(idx, old_aa, pos, mutation)
-        return idx, idx, new_aa
-
-    if 'DELINS' in mutation:
-        m = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DELINS([A-Z]+)$', mutation)
-        if not m:
-            raise MutationError(f"Could not parse delins mutation: '{mutation}'.")
-        start_aa, start, end_aa, end, insertion = m.groups()
-        if end is None:
-            end, end_aa = start, start_aa
-        i0, i1 = numbering.span(start, start_aa, end, end_aa, mutation)
-        return i0, i1, insertion
-
-    if 'DEL' in mutation:
-        m = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DEL$', mutation)
-        if not m:
-            raise MutationError(f"Could not parse deletion mutation: '{mutation}'.")
-        start_aa, start, end_aa, end = m.groups()
-        if end is None:
-            end, end_aa = start, start_aa
-        i0, i1 = numbering.span(start, start_aa, end, end_aa, mutation)
-        return i0, i1, ""
-
-    if 'INS' in mutation:
-        m = re.match(r'^([A-Z]?)(\d+)_([A-Z]?)(\d+)INS([A-Z]+)$', mutation)
-        if not m:
-            raise MutationError(f"Could not parse insertion mutation: '{mutation}'.")
-        left_aa, left, right_aa, right, insertion = m.groups()
-        if int(right) != int(left) + 1:
-            raise MutationError(
-                f"Insertion {mutation} must reference adjacent flanking residues "
-                f"({int(left)} and {int(left) + 1})."
-            )
-        i_left = numbering.at(left, mutation)
-        i_right = numbering.at(right, mutation)
+    p = parse_mutation_label(mutation)
+    kind = p["kind"]
+    if kind in ("sub", "stop"):
+        idx = numbering.at(p["start"], mutation)
+        numbering.check(idx, p["start_aa"], p["start"], mutation)
+        if kind == "stop":
+            # nonsense mutation: the protein ends before this residue
+            return idx, len(numbering.seq) - 1, ""
+        return idx, idx, p["insertion"]
+    if kind == "ins":
+        i_left = numbering.at(p["start"], mutation)
+        i_right = numbering.at(p["end"], mutation)
         if i_right != i_left + 1:
-            raise MutationError(f"Insertion {mutation} flanking residues are not adjacent in the sequence.")
-        numbering.check(i_left, left_aa, left, mutation, label="left flank")
-        numbering.check(i_right, right_aa, right, mutation, label="right flank")
-        return i_right, i_left, insertion
-
-    if 'DUP' in mutation:
-        m = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DUP$', mutation)
-        if not m:
-            raise MutationError(f"Could not parse duplication mutation: '{mutation}'.")
-        start_aa, start, end_aa, end = m.groups()
-        if end is None:
-            end, end_aa = start, start_aa
-        i0, i1 = numbering.span(start, start_aa, end, end_aa, mutation)
+            raise MutationError(
+                f"Insertion {mutation} flanking residues {p['start']} and {p['end']} are not adjacent in the sequence."
+            )
+        numbering.check(i_left, p["start_aa"], p["start"], mutation, label="left flank")
+        numbering.check(i_right, p["end_aa"], p["end"], mutation, label="right flank")
+        return i_right, i_left, p["insertion"]
+    i0, i1 = numbering.span(p["start"], p["start_aa"], p["end"], p["end_aa"], mutation)
+    if kind == "dup":
         return i1 + 1, i1, numbering.seq[i0:i1 + 1]
-
-    raise MutationError(f"Unsupported mutation format: '{mutation}'.")
+    return i0, i1, p["insertion"]
 
 
 def _check_no_overlap(edits):
@@ -223,6 +294,11 @@ def _check_no_overlap(edits):
             else:
                 clash = s1 <= e2 and s2 <= e1
             if clash:
+                stops = sorted((s, m) for s, m in ((s1, m1), (s2, m2)) if m.endswith("*"))
+                if stops:
+                    stop = stops[0][1]                  # the earlier stop codon ends the protein
+                    other = m2 if stop == m1 else m1
+                    raise MutationError(f"Mutation {other} lies after the stop codon {stop}; the protein ends there.")
                 raise MutationError(
                     f"Mutations {m1} and {m2} affect overlapping residues; combine them into one delins."
                 )
@@ -272,11 +348,14 @@ def mutate_sequence(sequence, mutations, start_pos=1, residue_numbers=None):
         sequence (str): The original amino acid sequence.
         mutations (list): A list of mutations in a simplified HGVS-like format.
                           Supported formats:
-                          - Substitution: "A123G"
+                          - Substitution: "A123G"; nonsense (stop): "W24*" / "W24Ter"
                           - Deletion: "A10del", "10_12del"
                           - Insertion: "A10_B11insGGG"
                           - Deletion-Insertion: "A10delinsGGG", "10_12delinsGGG"
                           - Duplication: "A10dup", "10_12dup"
+                          Positions may be negative ("A-3G") or carry a PDB insertion
+                          code ("G184AA" = Gly 184A -> Ala; needs ``residue_numbers``).
+                          Three-letter labels are accepted ("p.Lys10Gly", "p.(Trp24Ter)").
         start_pos (int): The number of the first residue (e.g., 1 for 1-based indexing).
         residue_numbers (list, optional): One position label per residue (e.g. PDB numbering
                           with gaps or insertion codes); overrides ``start_pos``.
