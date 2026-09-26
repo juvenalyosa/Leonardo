@@ -522,3 +522,76 @@ def test_qmmm_step_runs_with_real_mopac(tmp_path):
     assert charged["q_qm"][0] < neutral["q_qm"][0] - 0.03
     assert charged["energy_qm_hartree"] < neutral["energy_qm_hartree"]
     assert (charged["heat_of_formation_kcal_mol"] - neutral["heat_of_formation_kcal_mol"]) < -2.0
+
+
+# ---------------------------------------------------------------------------
+# Link atoms + QM–MM Lennard-Jones: analytic forces vs finite differences with the real MOPAC binary
+# ---------------------------------------------------------------------------
+from qmmm_mopac_runtime import qmmm_link_atom_plan, qmmm_redistribute_boundary_charges  # noqa: E402
+
+_PROPANOL_SYM = ["C", "H", "H", "H", "C", "H", "H", "C", "H", "H", "O", "H", "O", "H", "H"]
+_PROPANOL_XYZ = np.array([
+    [-2.52, 0.00, 0.00], [-2.90, 1.02, 0.00], [-2.90, -0.51, 0.88], [-2.90, -0.51, -0.88],   # C1 H3  (MM)
+    [-1.00, 0.00, 0.00], [-0.64, -0.51, 0.89], [-0.64, -0.51, -0.89],                        # C2 H2  (MM, cut)
+    [-0.49, 1.44, 0.00], [-0.86, 1.95, 0.89], [-0.86, 1.95, -0.89],                          # C3 H2  (QM)
+    [0.94, 1.44, 0.00], [1.25, 2.35, 0.00],                                                  # O H    (QM)
+    [1.30, -1.30, 0.20], [1.00, -0.40, 0.40], [2.25, -1.35, 0.30]])                          # water  (MM)
+_PROPANOL_Z = [{"C": 6, "H": 1, "O": 8}[s] for s in _PROPANOL_SYM]
+_PROPANOL_QM = [7, 8, 9, 10, 11]
+_PROPANOL_MM = [0, 1, 2, 3, 4, 5, 6, 12, 13, 14]
+_PROPANOL_BONDS = [(0, 1), (0, 2), (0, 3), (0, 4), (4, 5), (4, 6), (4, 7), (7, 8), (7, 9), (7, 10), (10, 11), (12, 13), (12, 14)]
+_PROPANOL_Q = np.array([-0.18, 0.06, 0.06, 0.06, 0.12, 0.03, 0.03, 0, 0, 0, 0, 0, -0.834, 0.417, 0.417])
+_PROPANOL_SIG = np.array([0.34, 0.25, 0.25, 0.25, 0.34, 0.25, 0.25, 0.34, 0.25, 0.25, 0.307, 0.0, 0.315, 0.0, 0.0])
+_PROPANOL_EPS = np.array([0.46, 0.066, 0.066, 0.066, 0.46, 0.066, 0.066, 0.46, 0.066, 0.066, 0.71, 0.0, 0.636, 0.0, 0.0])
+
+
+def test_link_atom_plan_caps_the_cut_bond_and_moves_the_boundary_charge():
+    plan = qmmm_link_atom_plan(_PROPANOL_XYZ, _PROPANOL_Z, _PROPANOL_QM, _PROPANOL_MM, bond_pairs=_PROPANOL_BONDS)
+    assert [(L["q"], L["m"]) for L in plan["links"]] == [(7, 4)]
+    g = plan["links"][0]["g"]
+    assert math.isclose(g * np.linalg.norm(_PROPANOL_XYZ[4] - _PROPANOL_XYZ[7]), 1.09, rel_tol=1e-9)   # C-H 1.09 A
+    assert plan["charge_redistribution"] == {4: [0, 5, 6]}
+    q = qmmm_redistribute_boundary_charges(_PROPANOL_Q[_PROPANOL_MM], _PROPANOL_MM, plan["charge_redistribution"])
+    assert q[_PROPANOL_MM.index(4)] == 0.0
+    assert math.isclose(q.sum(), _PROPANOL_Q[_PROPANOL_MM].sum(), abs_tol=1e-12)      # total charge conserved
+    assert (7, 4) in plan["lj_excluded_pairs"] and (10, 12) not in plan["lj_excluded_pairs"]
+
+
+def test_link_atom_and_lj_forces_match_finite_differences_with_real_mopac(tmp_path):
+    import shutil
+    import pytest
+    exe = shutil.which("mopac") or shutil.which("MOPAC")
+    if not exe:
+        pytest.skip("MOPAC is not installed")
+    plan = qmmm_link_atom_plan(_PROPANOL_XYZ, _PROPANOL_Z, _PROPANOL_QM, _PROPANOL_MM, bond_pairs=_PROPANOL_BONDS)
+
+    def run(x, tag):
+        return qmmm_step_file_based(
+            x, _PROPANOL_Z, _PROPANOL_QM, _PROPANOL_MM, _PROPANOL_Q[_PROPANOL_MM], mopac_executable=exe,
+            mopac_keywords="PM7 1SCF GRAD AUX QMMM PRECISE", workdir=str(tmp_path / tag), link_plan=plan,
+            lj_sigma_nm=_PROPANOL_SIG, lj_epsilon_kj=_PROPANOL_EPS, include_lj=True, timeout_s=60)
+
+    ref = run(_PROPANOL_XYZ, "ref")
+    assert ref["link_atoms"]["n_link"] == 1 and ref["energy_lj_kj_mol"] != 0.0
+    qp = {g: k for k, g in enumerate(_PROPANOL_QM)}
+    mp = {g: k for k, g in enumerate(_PROPANOL_MM)}
+    force = np.zeros_like(_PROPANOL_XYZ)
+    for g, k in qp.items():
+        force[g] = (ref["forces_qm_internal_kj_mol_nm"][k] + ref["forces_qmmm_elec_qm_kj_mol_nm"][k]
+                    + ref["forces_lj_qm_kj_mol_nm"][k])
+    for g, k in mp.items():
+        force[g] = (ref["forces_qmmm_elec_mm_kj_mol_nm"][k] + ref["forces_link_mm_kj_mol_nm"][k]
+                    + ref["forces_lj_mm_kj_mol_nm"][k])
+    h = 0.002   # Angstrom
+    analytic, numeric = [], []
+    for atom in (7, 10, 4, 12):          # QM anchor, QM oxygen, MM boundary carbon, water oxygen
+        for c in range(3):
+            xp, xm = _PROPANOL_XYZ.copy(), _PROPANOL_XYZ.copy()
+            xp[atom, c] += h
+            xm[atom, c] -= h
+            ep = run(xp, "p")["energy_qmmm_total_kj_mol"]
+            em = run(xm, "m")["energy_qmmm_total_kj_mol"]
+            numeric.append(-(ep - em) / (2 * h / 10.0))
+            analytic.append(force[atom, c])
+    analytic, numeric = np.asarray(analytic), np.asarray(numeric)
+    assert np.linalg.norm(analytic - numeric) / np.linalg.norm(numeric) < 0.01      # measured: 0.09 %

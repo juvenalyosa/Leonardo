@@ -2034,10 +2034,18 @@ def run_openmm_qmmm_single_point_probe(
     workdir="",
     runner=None,
     qmmm_step_fn=None,
+    bond_pairs=None,
+    lj_sigma_nm=None,
+    lj_epsilon_kj=None,
 ):
     """
     Run a single QM/MM evaluation via MOPAC and return correction force diagnostics.
     This function is backend-only and can be called by OpenMM workers.
+
+    ``bond_pairs`` (topology bonds) makes covalent QM/MM boundaries exact for the hydrogen link atoms.
+    ``lj_sigma_nm``/``lj_epsilon_kj`` (all atoms, from the OpenMM NonbondedForce) enable the QM–MM Lennard-Jones
+    term; config ``include_lj`` (default: on when parameters are given) must be False in force-coupled MD, where
+    OpenMM already evaluates it.  Config ``link_atoms`` (default True) switches link atoms off.
     """
     cfg = dict(config or {})
     xyz = _as_xyz_array(xyz_full_ang)
@@ -2080,22 +2088,37 @@ def run_openmm_qmmm_single_point_probe(
     if probe_dir:
         os.makedirs(probe_dir, exist_ok=True)
     step_fn = qmmm_step_fn if callable(qmmm_step_fn) else qmmm_step_file_based
+    include_lj = bool(cfg.get("include_lj", lj_sigma_nm is not None and lj_epsilon_kj is not None))
+    step_kwargs = dict(
+        xyz_full_ang=xyz,
+        atomic_numbers_full=z,
+        qm_indices=qm_idx,
+        mm_indices=mm_idx,
+        q_mm=q_mm,
+        mopac_executable=mopac_exe,
+        mopac_keywords=mopac_keywords,
+        qm_total_charge=qm_charge,
+        qm_multiplicity=qm_mult,
+        workdir=probe_dir,
+        dielectric=dielectric,
+        runner=runner,
+        timeout_s=timeout_s,
+        bond_pairs=bond_pairs,
+        link_atoms=bool(cfg.get("link_atoms", True)),
+        lj_sigma_nm=lj_sigma_nm,
+        lj_epsilon_kj=lj_epsilon_kj,
+        include_lj=include_lj,
+    )
     try:
-        qmmm = step_fn(
-            xyz_full_ang=xyz,
-            atomic_numbers_full=z,
-            qm_indices=qm_idx,
-            mm_indices=mm_idx,
-            q_mm=q_mm,
-            mopac_executable=mopac_exe,
-            mopac_keywords=mopac_keywords,
-            qm_total_charge=qm_charge,
-            qm_multiplicity=qm_mult,
-            workdir=probe_dir,
-            dielectric=dielectric,
-            runner=runner,
-            timeout_s=timeout_s,
-        )
+        import inspect
+
+        accepted = inspect.signature(step_fn).parameters
+        if not any(p.kind == p.VAR_KEYWORD for p in accepted.values()):
+            step_kwargs = {k: v for k, v in step_kwargs.items() if k in accepted}
+    except (TypeError, ValueError):
+        pass
+    try:
+        qmmm = step_fn(**step_kwargs)
     except Exception as exc:
         return {
             "ok": False,
@@ -2136,6 +2159,9 @@ def run_openmm_qmmm_single_point_probe(
             f_qm_internal=qmmm.get("forces_qm_internal_kj_mol_nm"),
             f_qmmm_elec_qm=qmmm.get("forces_qmmm_elec_qm_kj_mol_nm"),
             f_qmmm_elec_mm=qmmm.get("forces_qmmm_elec_mm_kj_mol_nm"),
+            f_link_mm=qmmm.get("forces_link_mm_kj_mol_nm"),
+            f_lj_qm=qmmm.get("forces_lj_qm_kj_mol_nm") if qmmm.get("include_lj") else None,
+            f_lj_mm=qmmm.get("forces_lj_mm_kj_mol_nm") if qmmm.get("include_lj") else None,
         )
         f_qm = np.asarray(qmmm.get("forces_qmmm_elec_qm_kj_mol_nm"), dtype=float)
         f_mm = np.asarray(qmmm.get("forces_qmmm_elec_mm_kj_mol_nm"), dtype=float)
@@ -2186,6 +2212,9 @@ def run_openmm_qmmm_distance_scan_probe(
     workdir="",
     runner=None,
     qmmm_step_fn=None,
+    bond_pairs=None,
+    lj_sigma_nm=None,
+    lj_epsilon_kj=None,
 ):
     cfg = dict(config or {})
     xyz = _as_xyz_array(xyz_full_ang)
@@ -2225,6 +2254,9 @@ def run_openmm_qmmm_distance_scan_probe(
             workdir=pt_dir,
             runner=runner,
             qmmm_step_fn=qmmm_step_fn,
+            bond_pairs=bond_pairs,
+            lj_sigma_nm=lj_sigma_nm,
+            lj_epsilon_kj=lj_epsilon_kj,
         )
         one_ok = bool(one.get("ok", False))
         e_qm = _safe_float((one.get("qmmm", {}) or {}).get("energy_qm_hartree", np.nan))
