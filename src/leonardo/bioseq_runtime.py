@@ -135,7 +135,7 @@ TOOL_URLS = {
     "hmmer": "https://www.ebi.ac.uk/Tools/hmmer/search/phmmer",
     "msa": "https://www.ebi.ac.uk/jdispatcher/msa/clustalo",
     "interpro": "https://www.ebi.ac.uk/interpro/search/sequence/",
-    "iupred": "https://iupred2a.elte.hu/",
+    "iupred": "https://iupred.elte.hu/",
     "tmhmm": "https://services.healthtech.dtu.dk/services/DeepTMHMM-1.0/",
     "signalp": "https://services.healthtech.dtu.dk/services/SignalP-6.0/",
     "prosite": "https://prosite.expasy.org/scanprosite/",
@@ -144,7 +144,7 @@ TOOL_URLS = {
 
 UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
 UNIPROT_FEATURE_FIELDS = (
-    "accession,id,protein_name,organism_name,"
+    "accession,id,protein_name,organism_name,annotation_score,"
     "ft_motif,ft_domain,ft_region,ft_binding,ft_act_site,ft_site,sequence"
 )
 UNIPROT_FUNCTIONAL_FEATURE_TYPES = {
@@ -431,17 +431,22 @@ def predict_signal_peptide(sequence):
     }
 
 
-def find_simple_motifs(sequence, max_hits=80):
+MOTIF_REPORT_LIMIT = 80
+
+
+def find_simple_motifs(sequence, max_hits=MOTIF_REPORT_LIMIT):
     seq = clean_sequence(sequence)
     if not seq:
         return []
+    # Most specific first: max_hits must only ever trim the very frequent phospho-site
+    # patterns, never a rare signature such as RGD (fibronectin has 1 RGD among ~80 hits).
     motifs = [
-        ("N-glycosylation motif", f"N[{AA_NONPROLINE_TEXT}][ST][{AA_NONPROLINE_TEXT}]", True),
-        ("P-loop NTP-binding-like motif", f"[AG][{AA_STANDARD_TEXT}]{{4}}GK[ST]", True),
-        ("Casein kinase II phospho-like motif", f"[ST][{AA_STANDARD_TEXT}]{{2}}[DE]", True),
-        ("PKC phospho-like motif", f"[ST][{AA_STANDARD_TEXT}][RK]", True),
         ("RGD motif", r"RGD", True),
+        ("P-loop NTP-binding-like motif", f"[AG][{AA_STANDARD_TEXT}]{{4}}GK[ST]", True),
+        ("N-glycosylation motif", f"N[{AA_NONPROLINE_TEXT}][ST][{AA_NONPROLINE_TEXT}]", True),
         ("Lys/Arg basic cluster", r"[KR]{4,}", False),
+        ("PKC phospho-like motif", f"[ST][{AA_STANDARD_TEXT}][RK]", True),
+        ("Casein kinase II phospho-like motif", f"[ST][{AA_STANDARD_TEXT}]{{2}}[DE]", True),
     ]
     out = []
     limit = int(max(1, max_hits))
@@ -572,7 +577,7 @@ def format_uniprot_feature_summary_line(feature, sequence=""):
     return detail
 
 
-def build_motif_summary_lines(sequence, local_motifs=None, uniprot_summary=None, max_items=80):
+def build_motif_summary_lines(sequence, local_motifs=None, uniprot_summary=None, max_items=80, motif_total=None):
     """
     Build a concise, UI-ready motif summary.
 
@@ -584,7 +589,11 @@ def build_motif_summary_lines(sequence, local_motifs=None, uniprot_summary=None,
     uniprot = dict(uniprot_summary or {})
     features = list(uniprot.get("features", []) or []) if bool(uniprot.get("ok", False)) else []
     lines = ["Motif and Functional-Site Summary", f"Sequence length: {len(seq)} aa", ""]
-    lines.append(f"Local pattern motifs: {len(motifs)}")
+    total = int(motif_total) if motif_total is not None else len(motifs)
+    shown = min(len(motifs), int(max(1, max_items)))
+    lines.append(
+        f"Local pattern motifs: {total}" + (f" (showing {shown}, most specific first)" if shown < total else "")
+    )
     if motifs:
         for m in motifs[: int(max(1, max_items))]:
             lines.append("- " + format_local_motif_summary_line(m, seq))
@@ -606,6 +615,8 @@ def build_motif_summary_lines(sequence, local_motifs=None, uniprot_summary=None,
         header_bits = [x for x in (src, protein, organism) if x]
         if header_bits:
             lines.append("Source: " + " | ".join(header_bits))
+        if str(uniprot.get("warning", "") or "").strip():
+            lines.append("WARNING: " + str(uniprot.get("warning")).strip())
         if features:
             for f in features[: int(max(1, max_items))]:
                 lines.append("- " + format_uniprot_feature_summary_line(f, seq))
@@ -638,7 +649,8 @@ def build_simulation_readiness_report(sequence):
     tm = predict_tm_segments(seq)
     dis = predict_disorder_segments(seq)
     sig = predict_signal_peptide(seq)
-    motifs = find_simple_motifs(seq)
+    all_motifs = find_simple_motifs(seq, max_hits=len(seq) * 6 + 1)
+    motifs = all_motifs[:MOTIF_REPORT_LIMIT]
     tm_segments = list(tm.get("segments", []) or [])
     dis_segments = list(dis.get("segments", []) or [])
     dis_frac = float(dis.get("fraction", 0.0) or 0.0)
@@ -676,6 +688,7 @@ def build_simulation_readiness_report(sequence):
         "disorder_fraction": float(dis_frac),
         "signal_peptide": dict(sig),
         "motifs": motifs,
+        "motif_total": int(len(all_motifs)),
         "suggested_structured_core": {"start": int(core_start), "end": int(core_end)},
         "recommendations": list(recommendations),
     }
@@ -762,6 +775,66 @@ def compute_msa_conservation(fasta_text):
     }
 
 
+# UniProt/PDB sequences are mapped by alignment, so point mutants, tags and gaps keep
+# their annotation positions; below these thresholds it is not the same protein.
+SEQUENCE_MATCH_MIN_IDENTITY = 0.90
+SEQUENCE_MATCH_MIN_COVERAGE = 0.90
+_ALIGN_SAFE = str.maketrans({"U": "C", "O": "K", "J": "L"})
+
+
+def align_residue_index_map(query, target):
+    """
+    Map residues of ``query`` onto ``target`` by pairwise alignment (end gaps free).
+
+    Returns ``{"map": {query_index: target_index}, "identity": float, "coverage": float}``
+    with 1-based indices; identity is over aligned pairs, coverage over the query.
+    Uses Biopython's PairwiseAligner (BLOSUM62) when available, else Leonardo's own
+    Needleman-Wunsch.
+    """
+    q = clean_sequence(query)
+    t = clean_sequence(target)
+    empty = {"map": {}, "identity": 0.0, "coverage": 0.0}
+    if not q or not t:
+        return empty
+    pairs = []
+    try:
+        from Bio.Align import PairwiseAligner, substitution_matrices
+
+        aligner = PairwiseAligner()
+        aligner.mode = "global"
+        aligner.substitution_matrix = substitution_matrices.load("BLOSUM62")
+        aligner.open_gap_score = -10.0
+        aligner.extend_gap_score = -0.5
+        # free end gaps (semi-global); Biopython 1.86 renamed the attributes
+        for new, old in (("end_insertion_score", "target_end_gap_score"), ("end_deletion_score", "query_end_gap_score")):
+            setattr(aligner, new if hasattr(aligner, new) else old, 0.0)
+        aln = aligner.align(q.translate(_ALIGN_SAFE), t.translate(_ALIGN_SAFE))[0]
+        q_blocks, t_blocks = aln.aligned
+        for (qa, qb), (ta, _tb) in zip(q_blocks, t_blocks):
+            pairs.extend((int(qa + k), int(ta + k)) for k in range(int(qb - qa)))
+    except Exception:
+        from .mutator import needleman_wunsch_affine
+
+        try:
+            a_q, a_t = needleman_wunsch_affine(q, t)[:2]
+        except Exception:
+            return empty
+        iq = it = 0
+        for cq, ct in zip(a_q, a_t):
+            if cq != "-" and ct != "-":
+                pairs.append((iq, it))
+            iq += cq != "-"
+            it += ct != "-"
+    if not pairs:
+        return empty
+    same = sum(1 for i, j in pairs if q[i] == t[j])
+    return {
+        "map": {i + 1: j + 1 for i, j in pairs},
+        "identity": float(same) / float(len(pairs)),
+        "coverage": float(len(pairs)) / float(len(q)),
+    }
+
+
 def _uniprot_location_value(location, key):
     try:
         val = (location.get(key, {}) or {}).get("value", None)
@@ -829,7 +902,8 @@ def _uniprot_sequence_match_score(query_seq, entry):
     qseq = clean_sequence(query_seq)
     eseq = clean_sequence(((entry or {}).get("sequence", {}) or {}).get("value", ""))
     score = 0.0
-    if "reviewed" in str((entry or {}).get("entryType", "") or "").lower():
+    entry_type = str((entry or {}).get("entryType", "") or "").lower()
+    if "reviewed" in entry_type and "unreviewed" not in entry_type:     # Swiss-Prot
         score += 20.0
     try:
         score += float((entry or {}).get("annotationScore", 0.0) or 0.0)
@@ -854,21 +928,9 @@ def _select_uniprot_entry(results, sequence=""):
     return dict(max(rows, key=lambda row: _uniprot_sequence_match_score(sequence, row)))
 
 
-def _uniprot_query_offset(query_seq, entry_seq):
-    qseq = clean_sequence(query_seq)
-    eseq = clean_sequence(entry_seq)
-    if not qseq or not eseq:
-        return None
-    idx = eseq.find(qseq)
-    if idx >= 0:
-        return int(idx)
-    idx = qseq.find(eseq)
-    if idx >= 0:
-        return int(-idx)
-    return None
-
-
-def _uniprot_feature_to_row(feature, query_offset=None, query_length=0):
+def _uniprot_feature_to_row(feature, index_map=None):
+    """Feature row; with ``index_map`` (UniProt position -> local position) adds the
+    local range covered by the feature."""
     if not isinstance(feature, dict):
         return {}
     ftype = str(feature.get("type", "") or "").strip()
@@ -898,34 +960,23 @@ def _uniprot_feature_to_row(feature, query_offset=None, query_length=0):
         "description": desc,
         "feature_id": fid,
     }
-    if query_offset is not None and int(query_length or 0) > 0:
-        qs = int(start) - int(query_offset)
-        qe = int(end) - int(query_offset)
-        if qe >= 1 and qs <= int(query_length):
-            row["query_start"] = int(max(1, qs))
-            row["query_end"] = int(min(int(query_length), qe))
-            row["overlaps_query"] = True
-        else:
-            row["overlaps_query"] = False
+    if index_map is not None:
+        local = [index_map[p] for p in range(int(start), int(end) + 1) if p in index_map]
+        if local:
+            row["query_start"] = int(min(local))
+            row["query_end"] = int(max(local))
+        row["overlaps_query"] = bool(local)
     return row
 
 
-def _uniprot_features_from_entry(entry, sequence="", max_features=40):
-    eseq = clean_sequence(((entry or {}).get("sequence", {}) or {}).get("value", ""))
-    qseq = clean_sequence(sequence)
-    offset = _uniprot_query_offset(qseq, eseq)
+def _uniprot_features_from_entry(entry, sequence="", max_features=40, index_map=None):
     rows = []
     for feature in list((entry or {}).get("features", []) or []):
-        row = _uniprot_feature_to_row(
-            feature,
-            query_offset=offset,
-            query_length=len(qseq),
-        )
+        row = _uniprot_feature_to_row(feature, index_map=index_map)
         if not row:
             continue
-        # If the user pasted an observed fragment, keep annotations that overlap
-        # that fragment.  For full-length/no-match cases keep all UniProt rows.
-        if offset is not None and qseq and not bool(row.get("overlaps_query", False)):
+        # A pasted fragment keeps only the annotations it contains.
+        if index_map is not None and not bool(row.get("overlaps_query", False)):
             continue
         rows.append(row)
         if len(rows) >= int(max(1, max_features)):
@@ -976,8 +1027,27 @@ def fetch_uniprot_feature_summary(
         return {"ok": False, "error": f"No UniProtKB entry found for {query}.", "url": url, "features": []}
     entry = _select_uniprot_entry(results, sequence=seq)
     entry_seq = clean_sequence((entry.get("sequence", {}) or {}).get("value", ""))
-    features = _uniprot_features_from_entry(entry, sequence=seq, max_features=int(max(1, max_features)))
     accession_out = str(entry.get("primaryAccession", "") or "").strip()
+    index_map = None
+    warning = ""
+    identity = coverage = float("nan")
+    if seq and entry_seq:
+        aln = align_residue_index_map(seq, entry_seq)
+        identity, coverage = float(aln["identity"]), float(aln["coverage"])
+        if identity >= SEQUENCE_MATCH_MIN_IDENTITY and coverage >= SEQUENCE_MATCH_MIN_COVERAGE:
+            index_map = {u: q for q, u in aln["map"].items()}
+        else:
+            warning = (
+                f"The sequence does not match UniProt {accession_out} "
+                f"(identity {100 * identity:.0f}%, coverage {100 * coverage:.0f}%)."
+            )
+            if source == "pdb":
+                # the PDB cross-reference picked some other protein of the entry
+                return {"ok": False, "error": warning + " No annotations were mapped.", "url": url,
+                        "features": [], "accession": accession_out}
+            warning += " Positions below are UniProt numbering, not positions in your sequence."
+    features = _uniprot_features_from_entry(
+        entry, sequence=seq, max_features=int(max(1, max_features)), index_map=index_map)
     return {
         "ok": True,
         "source": source,
@@ -992,6 +1062,9 @@ def fetch_uniprot_feature_summary(
         "query_sequence_length": int(len(seq)),
         "features": features,
         "feature_count": int(len(features)),
+        "sequence_identity": identity,
+        "sequence_coverage": coverage,
+        "warning": warning,
     }
 
 
@@ -1011,6 +1084,7 @@ def summarize_question_answers(sequence):
     dis_frac = float(rep.get("disorder_fraction", 0.0) or 0.0)
     core = dict(rep.get("suggested_structured_core", {}) or {})
     motifs = list(rep.get("motifs", []) or [])
+    motif_total = int(rep.get("motif_total", len(motifs)) or len(motifs))
     out = []
     for row in list(BIOSEQ_QUESTION_MAP):
         q = str(row.get("question", "") or "").strip()
@@ -1023,7 +1097,7 @@ def summarize_question_answers(sequence):
         elif "which region should be simulated" in ql:
             ans = f"Suggested structured core: {int(core.get('start', 1))}-{int(core.get('end', len(seq)))}"
         elif "functional sites" in ql:
-            ans = f"Simple motif scan found {len(motifs)} hit(s)."
+            ans = f"Simple motif scan found {motif_total} hit(s)."
         elif "mutation" in ql:
             ans = "Prioritize mutations at highly conserved/motif-domain residues."
         else:
@@ -1047,6 +1121,7 @@ __all__ = [
     "build_simulation_readiness_report",
     "compute_msa_conservation",
     "fetch_uniprot_feature_summary",
+    "align_residue_index_map",
     "build_external_tool_urls",
     "summarize_question_answers",
 ]

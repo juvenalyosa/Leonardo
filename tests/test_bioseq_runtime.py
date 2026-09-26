@@ -234,3 +234,78 @@ def test_external_urls_contains_all_keys():
     for key in ("blast", "hmmer", "msa", "interpro", "iupred", "tmhmm", "signalp", "prosite", "coevolution"):
         assert key in urls
         assert str(urls[key]).startswith("http")
+
+
+_TRYPSIN_LIKE = "IVGGYTCGANTVPYQVSLNSGYHFCGGSLINSQWVVSAAHCYKSGIQVRLGEDNINVVEGNEQFISASKSIVHPSYNSNTLNNDIMLIKLKSAASLNSRVASISLPTSCASAGTQCLISGWGNTKSSGTSYPDVLKCLKAPILSDSSCKSAYPGQITSNMFCAGYLEGGKDSCQGDSGGPVVCSGKLQGIVSWGSGCAQKNKPGVYTKVCNYVSWIKQTIASN"
+
+
+def _uniprot_payload(entry_seq, entry_type="UniProtKB reviewed (Swiss-Prot)", accession="P00760"):
+    return {"results": [{
+        "primaryAccession": accession,
+        "uniProtkbId": "TRY1_BOVIN",
+        "entryType": entry_type,
+        "annotationScore": 5.0,
+        "sequence": {"value": entry_seq},
+        "features": [
+            {"type": "Active site", "location": {"start": {"value": 63}, "end": {"value": 63}}, "description": "His"},
+            {"type": "Active site", "location": {"start": {"value": 200}, "end": {"value": 200}}, "description": "Ser"},
+        ],
+    }]}
+
+
+def test_motif_cap_never_drops_rare_signatures():
+    # 150 CK2-like sites and one RGD near the end: the cap must only trim phospho motifs
+    seq = "SAAE" * 150 + "GGRGDGG"
+    hits = find_simple_motifs(seq)
+    assert len(hits) == 80
+    assert any(h["motif"] == "RGD motif" for h in hits)
+    rep = build_simulation_readiness_report(seq)
+    assert rep["motif_total"] > len(rep["motifs"]) == 80
+    assert any(m["motif"] == "RGD motif" for m in rep["motifs"])
+    lines = build_motif_summary_lines(seq, local_motifs=rep["motifs"], motif_total=rep["motif_total"])
+    assert f"Local pattern motifs: {rep['motif_total']} (showing 80" in lines[3]
+
+
+def test_alignment_map_handles_tags_gaps_and_mutations():
+    from bioseq_runtime import align_residue_index_map
+
+    observed = _TRYPSIN_LIKE[:60] + _TRYPSIN_LIKE[70:]          # disordered loop missing
+    observed = observed[:5] + "W" + observed[6:]                  # point mutation
+    m = align_residue_index_map("HHHHHH" + observed, _TRYPSIN_LIKE)  # plus a His-tag
+    assert m["map"][7] == 1 and m["map"][6 + 61] == 71           # after the loop gap
+    assert m["identity"] > 0.97 and 0.9 < m["coverage"] < 1.0
+
+
+def test_uniprot_positions_survive_a_point_mutation():
+    entry_seq = "M" * 23 + _TRYPSIN_LIKE                          # signal/propeptide before the chain
+    ser = _TRYPSIN_LIKE.index("GDSGGP") + 2
+    mutant = _TRYPSIN_LIKE[:ser] + "A" + _TRYPSIN_LIKE[ser + 1:]  # S195A
+    res = fetch_uniprot_feature_summary(
+        mutant, pdb_id="3PTB", urlopen_fn=_fake_uniprot_opener_factory(_uniprot_payload(entry_seq), []))
+    assert res["ok"] and not res["warning"]
+    local = {f["start"]: f.get("query_start") for f in res["features"]}
+    assert local[200] == ser + 1 == 177 and mutant[local[200] - 1] == "A"
+    assert local[63] == 40
+
+
+def test_uniprot_mismatch_is_reported_not_silently_annotated():
+    other = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAACRER"
+    payload = _uniprot_payload("M" * 23 + _TRYPSIN_LIKE)
+    by_pdb = fetch_uniprot_feature_summary(other, pdb_id="3PTB", urlopen_fn=_fake_uniprot_opener_factory(payload, []))
+    assert not by_pdb["ok"] and "does not match" in by_pdb["error"] and by_pdb["features"] == []
+    by_acc = fetch_uniprot_feature_summary(other, accession="P00760", urlopen_fn=_fake_uniprot_opener_factory(payload, []))
+    assert by_acc["ok"] and "UniProt numbering" in by_acc["warning"]
+    assert all("query_start" not in f for f in by_acc["features"])
+
+
+def test_uniprot_prefers_swiss_prot_over_trembl():
+    from bioseq_runtime import _select_uniprot_entry
+
+    trembl = _uniprot_payload(_TRYPSIN_LIKE, "UniProtKB unreviewed (TrEMBL)", "A0A000")["results"][0]
+    swiss = _uniprot_payload(_TRYPSIN_LIKE[:-1], "UniProtKB reviewed (Swiss-Prot)", "P00760")["results"][0]
+    trembl["annotationScore"] = swiss["annotationScore"] = 1.0
+    assert _select_uniprot_entry([trembl, swiss], sequence="")["primaryAccession"] == "P00760"
+
+
+def test_iupred_link_points_to_current_iupred3():
+    assert build_external_tool_urls("")["iupred"] == "https://iupred.elte.hu/"
