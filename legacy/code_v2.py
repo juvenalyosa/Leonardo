@@ -7566,8 +7566,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "electrostatic": "Single-point QM/MM run focused on electrostatic coupling diagnostics.",
             "optimization": "QM/MM geometry optimization using MOPAC keywords.",
             "thermochemistry": "QM/MM thermochemistry calculation using MOPAC THERMO mode.",
-            "reaction_scan": "Distance scan between two selected atoms with QM/MM single-point evaluations.",
-            "transition_state": "Transition-state refinement of the embedded QM region using MOPAC TS keywords.",
+            "reaction_scan": "Relaxed QM/MM distance scan: the QM region is re-optimized at every distance inside the fixed enzyme.",
+            "transition_state": "QM/MM transition-state search (dimer method, embedding updated every step) + frequency check.",
             "mopac_qst2": "Two-endpoint TS search: MOPAC SADDLE followed by TS refinement and frequency validation.",
             "mopac_qst3": "Three-structure workflow: use a TS guess object, refine with MOPAC TS, then validate frequencies.",
             "mopac_ts_frequency": "Validate a TS candidate with MOPAC FORCE/FORCETS and require one imaginary mode.",
@@ -10821,6 +10821,29 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ib = self._qmmm_find_topology_atom_index(atom_rows, d_b)
             if ia < 0 or ib < 0:
                 return {"ok": False, "error": "Could not map reaction-scan atom selection to prepared topology."}
+            if bool(cfg.get("scan_relaxed", True)):
+                # Relaxed scan: the whole QM region is re-optimized at every point, with the embedding recomputed at
+                # each step (the rigid scan below only moves one atom and ignores relaxation).  With a third atom
+                # (scan_atom_c) the transfer coordinate xi = d(A-B) - d(B-C) is scanned instead of d(A-B), and an
+                # interior maximum is refined automatically to the transition state.
+                d_c = dict(cfg.get("scan_atom_c", {}) or {})
+                ic = self._qmmm_find_topology_atom_index(atom_rows, d_c) if d_c else -1
+                return mod.run_openmm_qmmm_relaxed_scan(
+                    xyz_full_ang=run_kwargs["xyz_full_ang"],
+                    atomic_numbers_full=run_kwargs["atomic_numbers_full"],
+                    mm_charges_e=run_kwargs["mm_charges_e"],
+                    atom_rows=run_kwargs["atom_rows"],
+                    scan_pair=(int(ia), int(ib)),
+                    scan_start_ang=float(cfg.get("scan_start_ang", 1.2)),
+                    scan_end_ang=float(cfg.get("scan_end_ang", 2.8)),
+                    n_points=int(max(3, int(cfg.get("scan_n_points", 9)))),
+                    config=dict(cfg),
+                    workdir=str(workdir),
+                    bond_pairs=run_kwargs.get("bond_pairs"),
+                    lj_sigma_nm=run_kwargs.get("lj_sigma_nm"),
+                    lj_epsilon_kj=run_kwargs.get("lj_epsilon_kj"),
+                    transfer_atom=(int(ic) if ic >= 0 else None),
+                )
             scan_out = mod.run_openmm_qmmm_distance_scan_probe(
                 xyz_full_ang=run_kwargs["xyz_full_ang"],
                 atomic_numbers_full=run_kwargs["atomic_numbers_full"],
@@ -10845,6 +10868,30 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 one["scan_pair"] = [int(ia), int(ib)]
                 return one
             return {"ok": False, "error": "Reaction scan completed without a valid point."}
+        if op == "transition_state":
+            # Dimer search driven from Python: MOPAC's own TS keyword would keep the mol.in potential frozen at the
+            # starting geometry.  The scan atoms (if set) give the reaction direction.
+            mode_pair = None
+            d_a = dict(cfg.get("scan_atom_a", {}) or {})
+            d_b = dict(cfg.get("scan_atom_b", {}) or {})
+            if d_a and d_b:
+                ia = self._qmmm_find_topology_atom_index(atom_rows, d_a)
+                ib = self._qmmm_find_topology_atom_index(atom_rows, d_b)
+                if ia >= 0 and ib >= 0:
+                    mode_pair = (int(ia), int(ib))
+            return mod.run_openmm_qmmm_ts_search(
+                xyz_full_ang=run_kwargs["xyz_full_ang"],
+                atomic_numbers_full=run_kwargs["atomic_numbers_full"],
+                mm_charges_e=run_kwargs["mm_charges_e"],
+                atom_rows=run_kwargs["atom_rows"],
+                config=dict(cfg),
+                workdir=str(workdir),
+                mode_pair=mode_pair,
+                run_frequencies=bool(cfg.get("ts_frequencies", True)),
+                bond_pairs=run_kwargs.get("bond_pairs"),
+                lj_sigma_nm=run_kwargs.get("lj_sigma_nm"),
+                lj_epsilon_kj=run_kwargs.get("lj_epsilon_kj"),
+            )
         return mod.run_openmm_qmmm_single_point_probe(**run_kwargs)
     def _collect_openmm_run_payload(self, minimize_only=False):
         if not HAS_OPENMM or OMM is None or OMM_APP is None or OMM_UNIT is None:

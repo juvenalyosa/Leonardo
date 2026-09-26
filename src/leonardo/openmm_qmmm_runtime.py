@@ -2301,6 +2301,218 @@ def run_openmm_qmmm_distance_scan_probe(
     }
 
 
+def _qmmm_embedded_model(xyz_full_ang, atomic_numbers_full, mm_charges_e, atom_rows, config, workdir,
+                         bond_pairs=None, lj_sigma_nm=None, lj_epsilon_kj=None):
+    """Resolve the QM/MM partition like the single-point probe and build an EmbeddedQMMMModel."""
+    from .qmmm_mopac_runtime import _mopac_extract_method_from_keywords
+    from .qmmm_reaction_runtime import EmbeddedQMMMModel
+
+    cfg = dict(config or {})
+    xyz = _as_xyz_array(xyz_full_ang)
+    rows = []
+    for row in list(atom_rows or []):
+        one = dict(row or {})
+        idx = int(one.get("index", -1))
+        if 0 <= idx < int(xyz.shape[0]):
+            one["x"], one["y"], one["z"] = (float(v) for v in xyz[idx])
+        rows.append(one)
+    reg = resolve_qmmm_regions(atom_rows=rows, n_atoms=int(xyz.shape[0]), config=cfg)
+    model = EmbeddedQMMMModel(
+        xyz, atomic_numbers_full, reg["qm_indices"], reg["mm_indices"], mm_charges_e, workdir,
+        mopac_executable=str(cfg.get("mopac_executable", "mopac") or "mopac"),
+        method=_mopac_extract_method_from_keywords(str(cfg.get("mopac_keywords", "") or ""), default="PM7"),
+        qm_total_charge=int(cfg.get("qm_total_charge", 0)), qm_multiplicity=int(max(1, int(cfg.get("qm_multiplicity", 1)))),
+        bond_pairs=bond_pairs, lj_sigma_nm=lj_sigma_nm, lj_epsilon_kj=lj_epsilon_kj,
+        dielectric=float(cfg.get("dielectric", 1.0)), timeout_s=int(max(1, int(cfg.get("timeout_s", 600)))),
+    )
+    return model, reg
+
+
+def _write_qm_path(workdir, model, frames, comments, name):
+    from .qmmm_mopac_runtime import _symbol_from_atomic_number
+
+    path = os.path.join(workdir, name)
+    with open(path, "w", encoding="utf-8") as fh:
+        for xyz, c in zip(frames, comments):
+            fh.write(f"{len(model.qm)}\n{c}\n")
+            for i, p in zip(model.qm, np.asarray(xyz).reshape((-1, 3))):
+                fh.write(f"{_symbol_from_atomic_number(model.z[i]):2s} {p[0]:12.6f} {p[1]:12.6f} {p[2]:12.6f}\n")
+    return path
+
+
+def run_openmm_qmmm_relaxed_scan(
+    xyz_full_ang,
+    atomic_numbers_full,
+    mm_charges_e,
+    atom_rows,
+    scan_pair,
+    scan_start_ang,
+    scan_end_ang,
+    n_points=9,
+    config=None,
+    workdir="",
+    bond_pairs=None,
+    lj_sigma_nm=None,
+    lj_epsilon_kj=None,
+    k_kj_mol_ang2=None,
+    transfer_atom=None,
+):
+    """
+    Relaxed QM/MM scan inside the enzyme (see ``qmmm_reaction_runtime``): at every target value the whole QM region
+    is optimized with the embedding recomputed at each step; the MM environment stays fixed.
+
+    * Distance scan of d(i, j) with ``scan_pair`` = (i, j) and ``scan_start/end`` in Angstrom.
+    * With ``transfer_atom`` = c, a **transfer-coordinate** scan xi = d(i, j) − d(j, c): atom/group j moves from i
+      to c (recommended for proton/phosphoryl transfers; a one-distance scan shows false maxima there).  Then
+      ``scan_start/end`` are xi values, e.g. −1.2 → +1.2 Å.
+
+    Returns the single-point QM/MM probe at the **highest** point of the scan (the transition-state estimate)
+    with ``scan`` holding every point; ``scan_path.xyz`` and ``scan_profile.csv`` are written in ``workdir``.
+    """
+    cfg = dict(config or {})
+    run_dir = str(workdir or "").strip() or os.path.join(os.getcwd(), "qmmm_relaxed_scan")
+    os.makedirs(run_dir, exist_ok=True)
+    i, j = int(scan_pair[0]), int(scan_pair[1])
+    try:
+        model, reg = _qmmm_embedded_model(xyz_full_ang, atomic_numbers_full, mm_charges_e, atom_rows, cfg, run_dir,
+                                          bond_pairs, lj_sigma_nm, lj_epsilon_kj)
+        targets = np.linspace(float(scan_start_ang), float(scan_end_ang), int(max(2, int(n_points))))
+        common = dict(fmax_kj_mol_ang=float(cfg.get("fmax_kj_mol_ang", 2.0)), steps=int(cfg.get("max_opt_steps", 300)))
+        if transfer_atom is not None:
+            k_r = float(cfg.get("scan_restraint_kj_mol_ang2", k_kj_mol_ang2 or 5000.0))
+            scan = model.relaxed_transfer_scan(i, j, int(transfer_atom), targets, k_kj_mol_ang2=k_r, **common)
+        else:
+            k_r = float(cfg.get("scan_restraint_kj_mol_ang2", k_kj_mol_ang2 or 20000.0))
+            scan = model.relaxed_distance_scan(i, j, targets, k_kj_mol_ang2=k_r, **common)
+    except Exception as exc:
+        return {"ok": False, "operation": "reaction_scan", "error": f"Relaxed QM/MM scan failed: {exc}"}
+    rows = scan["rows"]
+    coord = "xi_ang" if transfer_atom is not None else "distance_ang"
+    target = "target_xi_ang" if transfer_atom is not None else "target_distance_ang"
+    _write_qm_path(run_dir, model, [r["qm_xyz"] for r in rows],
+                   [f"point={r['point']} {coord}={r[coord]:.4f} E_rel_kJ_mol={r['energy_rel_kj_mol']:.3f}" for r in rows],
+                   "scan_path.xyz")
+    with open(os.path.join(run_dir, "scan_profile.csv"), "w", encoding="utf-8") as fh:
+        fh.write(f"point,{target},{coord},energy_kj_mol,energy_rel_kj_mol,converged,steps\n")
+        for r in rows:
+            fh.write(f"{r['point']},{r[target]:.4f},{r[coord]:.4f},{r['energy_kj_mol']:.4f},"
+                     f"{r['energy_rel_kj_mol']:.4f},{int(r['converged'])},{r['steps']}\n")
+    top = scan["highest_point"]
+    probe_cfg = dict(cfg)
+    probe_cfg.update({"operation": "probe", "qm_indices": list(model.qm), "mm_indices": list(model.mm)})
+    one = run_openmm_qmmm_single_point_probe(
+        model.full_coordinates(top["qm_xyz"]), atomic_numbers_full, mm_charges_e, atom_rows, config=probe_cfg,
+        workdir=os.path.join(run_dir, "highest_point"), bond_pairs=bond_pairs, lj_sigma_nm=lj_sigma_nm,
+        lj_epsilon_kj=lj_epsilon_kj)
+    from .qmmm_reaction_runtime import path_tangent_mode
+
+    k_top = int(top["point"]) - 1
+    tangent = path_tangent_mode([r["qm_xyz"] for r in rows], k_top)
+    ts_block = None
+    if bool(cfg.get("scan_refine_ts", True)) and bool(scan["interior_maximum"]):
+        # The highest point of a relaxed scan and the path tangent there are the best dimer start (the tangent,
+        # not a single bond direction, points along the reaction mode of all QM atoms).
+        try:
+            ts = model.refine_ts_dimer(top["qm_xyz"], mode_guess=tangent,
+                                       fmax_kj_mol_ang=float(cfg.get("fmax_kj_mol_ang", 2.0)),
+                                       steps=int(cfg.get("max_opt_steps", 300)))
+            freq = model.vibrations(ts["qm_xyz"]) if (ts["converged"] and bool(cfg.get("ts_frequencies", True))) else None
+            _write_qm_path(run_dir, model, [ts["qm_xyz"]], [f"TS E_kJ_mol={ts['energy_kj_mol']:.3f}"], "ts.xyz")
+            ts_block = {
+                "converged": bool(ts["converged"]), "stopped_reason": ts["stopped_reason"], "steps": int(ts["steps"]),
+                "energy_kj_mol": float(ts["energy_kj_mol"]),
+                "barrier_kj_mol": (float(ts["energy_kj_mol"] - rows[0]["energy_kj_mol"]) if ts["converged"] else None),
+                "curvature_ev_ang2": float(ts["curvature_ev_ang2"]),
+                "frequencies_cm1": None if freq is None else [float(v) for v in np.sort(freq["freq_cm_signed"])[:8]],
+                "frequency_validation": None if freq is None else dict(freq["validation"]),
+                "full_xyz_ang": model.full_coordinates(ts["qm_xyz"]), "ts_xyz": os.path.join(run_dir, "ts.xyz"),
+            }
+        except Exception as exc:
+            ts_block = {"converged": False, "stopped_reason": f"TS refinement failed: {exc}"}
+    public_rows = [{k: v for k, v in r.items() if k != "qm_xyz"} for r in rows]
+    one["operation"] = "reaction_scan"
+    if ts_block is not None:
+        one["ts"] = ts_block
+    one["scan"] = {
+        "relaxed": True, "coordinate": ("transfer_xi" if transfer_atom is not None else "distance"),
+        "scan_pair": [i, j], "transfer_atom": (None if transfer_atom is None else int(transfer_atom)),
+        "scan_start_ang": float(scan_start_ang), "scan_end_ang": float(scan_end_ang),
+        "n_points": len(rows), "n_successful": int(sum(1 for r in rows if r["converged"])),
+        "rows": public_rows, "barrier_estimate_kj_mol": float(scan["barrier_estimate_kj_mol"]),
+        "highest_point": {k: v for k, v in top.items() if k != "qm_xyz"},
+        "interior_maximum": bool(scan["interior_maximum"]),
+        "n_energy_evaluations": int(scan["n_energy_evaluations"]),
+        "path_xyz": os.path.join(run_dir, "scan_path.xyz"), "profile_csv": os.path.join(run_dir, "scan_profile.csv"),
+        "ts_guess_full_xyz_ang": model.full_coordinates(top["qm_xyz"]),
+        "ts_mode_guess_qm": np.asarray(tangent, dtype=float),
+    }
+    return one
+
+
+def run_openmm_qmmm_ts_search(
+    xyz_full_ang,
+    atomic_numbers_full,
+    mm_charges_e,
+    atom_rows,
+    config=None,
+    workdir="",
+    mode_pair=None,
+    run_frequencies=True,
+    bond_pairs=None,
+    lj_sigma_nm=None,
+    lj_epsilon_kj=None,
+    mode_guess_qm=None,
+):
+    """
+    Transition-state search inside the enzyme with the dimer method (embedding recomputed at every step), started
+    from ``xyz_full_ang`` (e.g. the highest point of a relaxed scan).  The reaction direction is ``mode_guess_qm``
+    (n_QM × 3, best: the ``ts_mode_guess_qm`` tangent returned by the relaxed scan) or, as a weaker fallback,
+    ``mode_pair`` = (i, j), the bond being formed/broken.  Numerical frequencies then check for exactly one imaginary
+    mode.  If the dimer finds no negative curvature it stops and reports why (``ts.stopped_reason``).
+    """
+    from .qmmm_reaction_runtime import bond_direction_mode
+
+    cfg = dict(config or {})
+    run_dir = str(workdir or "").strip() or os.path.join(os.getcwd(), "qmmm_ts_search")
+    os.makedirs(run_dir, exist_ok=True)
+    try:
+        model, reg = _qmmm_embedded_model(xyz_full_ang, atomic_numbers_full, mm_charges_e, atom_rows, cfg, run_dir,
+                                          bond_pairs, lj_sigma_nm, lj_epsilon_kj)
+        if mode_guess_qm is not None:
+            mode = np.asarray(mode_guess_qm, dtype=float).reshape((len(model.qm), 3))
+        else:
+            mode = bond_direction_mode(model, *mode_pair) if mode_pair else None
+        ts = model.refine_ts_dimer(model.xyz_ref[model.qm], mode_guess=mode,
+                                   fmax_kj_mol_ang=float(cfg.get("fmax_kj_mol_ang", 2.0)),
+                                   steps=int(cfg.get("max_opt_steps", 300)))
+        freq = model.vibrations(ts["qm_xyz"]) if (bool(run_frequencies) and ts["converged"]) else None
+    except Exception as exc:
+        return {"ok": False, "operation": "transition_state", "error": f"QM/MM transition-state search failed: {exc}"}
+    _write_qm_path(run_dir, model, [ts["qm_xyz"]], [f"TS E_kJ_mol={ts['energy_kj_mol']:.3f}"], "ts.xyz")
+    probe_cfg = dict(cfg)
+    probe_cfg.update({"operation": "probe", "qm_indices": list(model.qm), "mm_indices": list(model.mm)})
+    one = run_openmm_qmmm_single_point_probe(
+        model.full_coordinates(ts["qm_xyz"]), atomic_numbers_full, mm_charges_e, atom_rows, config=probe_cfg,
+        workdir=os.path.join(run_dir, "ts_point"), bond_pairs=bond_pairs, lj_sigma_nm=lj_sigma_nm,
+        lj_epsilon_kj=lj_epsilon_kj)
+    one["operation"] = "transition_state"
+    one["ts"] = {
+        "converged": bool(ts["converged"]), "stopped_reason": ts["stopped_reason"], "steps": int(ts["steps"]),
+        "energy_kj_mol": float(ts["energy_kj_mol"]),
+        "curvature_ev_ang2": float(ts["curvature_ev_ang2"]), "max_force_kj_mol_ang": float(ts["max_force_kj_mol_ang"]),
+        "frequencies_cm1": None if freq is None else [float(v) for v in np.sort(freq["freq_cm_signed"])[:8]],
+        "frequency_validation": None if freq is None else dict(freq["validation"]),
+        "ts_xyz": os.path.join(run_dir, "ts.xyz"), "full_xyz_ang": model.full_coordinates(ts["qm_xyz"]),
+        "n_energy_evaluations": int(model.n_calls),
+    }
+    if not ts["converged"]:
+        one.setdefault("warnings", []).append(f"Transition-state search did not converge: {ts['stopped_reason'] or 'step limit reached'}")
+    if freq is not None and not bool(freq["validation"].get("ok", False)):
+        one.setdefault("warnings", []).append(
+            f"The stationary point has {freq['validation'].get('imaginary_mode_count')} imaginary modes (a TS needs exactly one).")
+    return one
+
+
 __all__ = [
     "classify_residue_kind",
     "is_standard_openmm_small_molecule_resn",
@@ -2326,4 +2538,6 @@ __all__ = [
     "prepare_openmm_system_for_qmmm_coupling",
     "run_openmm_qmmm_single_point_probe",
     "run_openmm_qmmm_distance_scan_probe",
+    "run_openmm_qmmm_relaxed_scan",
+    "run_openmm_qmmm_ts_search",
 ]
