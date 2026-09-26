@@ -1,7 +1,11 @@
 import json
 import os
+import platform
 import re
 import shlex
+import shutil
+import subprocess
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +19,7 @@ AF_ENGINE_PROFILES = {
     AF_ENGINE_COLABFOLD: {
         "label": "ColabFold / AlphaFold2",
         "short": "Fast AF2/AF2-multimer workflow through colabfold_batch.",
-        "local_needs": ["colabfold_batch", "GPU recommended"],
+        "local_needs": ["colabfold_batch", "NVIDIA GPU (CUDA)"],
         "remote_needs": ["Google Colab or another ColabFold runtime"],
     },
     AF_ENGINE_AF3_LOCAL: {
@@ -35,6 +39,64 @@ AF_ENGINE_PROFILES = {
 
 AF3_SERVER_URL = "https://alphafoldserver.com/"
 COLABFOLD_NOTEBOOK_URL = "https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb"
+
+
+GPU_REQUIRED_TITLE = "GPU required"
+GPU_REQUIRED_MESSAGE = (
+    "No compatible NVIDIA GPU was detected on this computer. AlphaFold / ColabFold "
+    "structure prediction requires an NVIDIA GPU with CUDA. Use Google Colab instead "
+    "(free GPU runtime): Leonardo prepares the job, you run it in the browser and "
+    "import the result. For AlphaFold 3, use the AlphaFold Server handoff."
+)
+_APPLE_GPU_NOTE = " Apple Silicon GPUs are not supported by ColabFold/AlphaFold."
+
+
+def af_detect_local_gpu(which_fn=None, run_fn=None, exists_fn=None, system=None, machine=None):
+    """
+    Detect an NVIDIA/CUDA GPU usable by ColabFold or AlphaFold 3.
+
+    Returns ``{"available": bool, "reason": str, "apple_silicon": bool}``.
+    Only NVIDIA counts: ColabFold (JAX) and the official AF3 Docker image need CUDA;
+    an Apple GPU (Metal) or a CPU-only JAX would run a prediction for hours or fail.
+    The probes are injectable for testing.
+    """
+    which_fn = which_fn or shutil.which
+    run_fn = run_fn or subprocess.run
+    exists_fn = exists_fn or os.path.exists
+    system = str(system if system is not None else platform.system())
+    machine = str(machine if machine is not None else platform.machine()).lower()
+    apple_silicon = system == "Darwin" and machine in {"arm64", "aarch64"}
+    nvsmi = which_fn("nvidia-smi")
+    if nvsmi:
+        try:
+            pr = run_fn([str(nvsmi), "-L"], capture_output=True, text=True, timeout=6, check=False)
+            txt = str(getattr(pr, "stdout", "") or "")
+            if int(getattr(pr, "returncode", 1)) == 0 and "GPU" in txt.upper():
+                first = txt.strip().splitlines()[0].strip() if txt.strip() else "NVIDIA GPU"
+                return {"available": True, "reason": f"nvidia-smi: {first}", "apple_silicon": apple_silicon}
+        except Exception:
+            pass
+    for dev in ("/dev/nvidia0", "/proc/driver/nvidia/version"):
+        try:
+            if exists_fn(dev):
+                return {"available": True, "reason": f"NVIDIA device ({dev})", "apple_silicon": apple_silicon}
+        except Exception:
+            continue
+    reason = "no NVIDIA GPU detected"
+    if apple_silicon:
+        reason += " (Apple Silicon GPU is not supported)"
+    return {"available": False, "reason": reason, "apple_silicon": apple_silicon}
+
+
+def af_gpu_requirement_message(engine, gpu_info):
+    """English warning shown when the selected engine needs a local GPU that is missing, else ''."""
+    info = dict(gpu_info or {})
+    if bool(info.get("available")) or str(engine or "") == AF_ENGINE_AF3_SERVER:
+        return ""
+    msg = GPU_REQUIRED_MESSAGE
+    if bool(info.get("apple_silicon")):
+        msg += _APPLE_GPU_NOTE
+    return msg
 
 
 def af_engine_profile(engine):
@@ -182,7 +244,25 @@ def af_build_colabfold_job_script(
             "cmd = " + json.dumps(run_cmd),
             "",
             "# Fallback for Colab/MMseqs2 failures: replace the --msa-mode value in cmd with 'single_sequence'.",
-            "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'colabfold[alphafold]'], check=True)",
+            "",
+            "gpu_check = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True) if shutil.which('nvidia-smi') else None",
+            "if gpu_check is None or gpu_check.returncode != 0 or 'GPU' not in gpu_check.stdout:",
+            "    raise SystemExit('GPU required: this Colab session has no GPU. '",
+            "                     'Use Runtime > Change runtime type > GPU, then run this cell again.')",
+            "print(gpu_check.stdout.strip())",
+            "# Same install as the official ColabFold notebook: keep Colab's preinstalled CUDA JAX",
+            "# (alphafold-minus-jax); for Amber, match OpenMM to the installed JAX CUDA plugin.",
+            f"use_amber = {bool(amber_relax)!r}",
+            "extras = 'alphafold-minus-jax,openmm' if use_amber else 'alphafold-minus-jax'",
+            "pkgs = [f'colabfold[{extras}] @ git+https://github.com/sokrypton/ColabFold']",
+            "if use_amber:",
+            "    from importlib.metadata import distributions",
+            "    installed = {d.metadata['Name'] for d in distributions()}",
+            "    for cuda in ('cuda13', 'cuda12'):",
+            "        if f'jax-{cuda}-plugin' in installed:",
+            "            pkgs.append(f'openmm[{cuda}]')",
+            "            break",
+            "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '--no-warn-conflicts', *pkgs], check=True)",
             "with open('input.fasta', 'w', encoding='utf-8') as handle:",
             "    handle.write(f'>{job_name}\\n{sequence}\\n')",
             "print(f'Wrote input.fasta for {job_name} with {len(sequence)} residues')",
@@ -417,17 +497,54 @@ def af_build_alphafold3_docker_command(
 def af_alphafold3_required_path_status(model_dir="", db_dir="", docker_executable="docker"):
     """Return human-readable readiness checks for a local AF3 Docker run."""
     checks = []
-    docker_ok = False
-    try:
-        docker_ok = bool(docker_executable)
-    except Exception:
-        docker_ok = False
+    docker_ok = bool(docker_executable) and bool(
+        os.path.isfile(str(docker_executable)) or shutil.which(str(docker_executable))
+    )
     checks.append(("Docker executable", bool(docker_ok), str(docker_executable or "")))
     for label, path_value in (("Model parameters", model_dir), ("Public databases", db_dir)):
         ptxt = str(path_value or "").strip()
         ok = bool(ptxt) and os.path.isdir(os.path.expanduser(ptxt))
         checks.append((label, bool(ok), ptxt))
     return checks
+
+
+def af_safe_extract_zip(zip_path, dest_dir):
+    """Extract a result ZIP, refusing members that would land outside ``dest_dir``."""
+    dest = Path(str(dest_dir)).resolve()
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(str(zip_path), "r") as zf:
+        for member in zf.infolist():
+            target = (dest / member.filename).resolve()
+            if target != dest and dest not in target.parents:
+                raise ValueError(f"unsafe path in ZIP: {member.filename}")
+        zf.extractall(str(dest))
+    return str(dest)
+
+
+def af_extract_result_zips(root_dir):
+    """
+    Unpack ColabFold/AF3 result ZIPs dropped into a sync folder so their models can be found.
+
+    Each ``name.zip`` goes to ``name_extracted/`` next to it, once; a ZIP newer than its
+    folder (re-downloaded) is extracted again. Returns the folders extracted in this call.
+    """
+    root = Path(str(root_dir))
+    if not root.is_dir():
+        return []
+    extracted = []
+    for zp in sorted(root.rglob("*.zip")):
+        try:
+            if not zp.is_file() or "_extracted" in zp.parent.name:
+                continue
+            dest = zp.with_name(zp.stem + "_extracted")
+            if dest.is_dir() and dest.stat().st_mtime >= zp.stat().st_mtime:
+                continue
+            af_safe_extract_zip(zp, dest)
+            os.utime(dest)
+            extracted.append(str(dest))
+        except (OSError, ValueError, zipfile.BadZipFile):
+            continue
+    return extracted
 
 
 def af_is_relaxed_name(name):

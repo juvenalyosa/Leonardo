@@ -129,7 +129,7 @@ def test_colabfold_job_script_is_complete_prefilled_cell():
         msa_mode="single_sequence",
     )
 
-    assert "colabfold[alphafold]" in script
+    assert "alphafold-minus-jax" in script
     assert "input.fasta" in script
     assert "ACDEFGHIKLMNPQRSTVWY" in script
     assert "alphafold2_ptm" in script
@@ -158,3 +158,83 @@ def test_engine_profile_describes_af3_local():
     profile = af_engine_profile(AF_ENGINE_AF3_LOCAL)
     assert "Docker" in " ".join(profile["local_needs"])
     assert "AlphaFold 3" in profile["label"]
+
+
+class _Proc:
+    def __init__(self, returncode=0, stdout=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, ""
+
+
+def test_gpu_detection_accepts_only_nvidia():
+    from alphafold_runtime import af_detect_local_gpu
+
+    nvidia = af_detect_local_gpu(
+        which_fn=lambda _n: "/usr/bin/nvidia-smi",
+        run_fn=lambda *a, **k: _Proc(0, "GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-1)\n"),
+        exists_fn=lambda _p: False, system="Linux", machine="x86_64")
+    assert nvidia["available"] and "A100" in nvidia["reason"]
+
+    device_node = af_detect_local_gpu(
+        which_fn=lambda _n: None, exists_fn=lambda p: p == "/dev/nvidia0", system="Linux", machine="x86_64")
+    assert device_node["available"]
+
+    broken_driver = af_detect_local_gpu(
+        which_fn=lambda _n: "/usr/bin/nvidia-smi",
+        run_fn=lambda *a, **k: _Proc(9, "NVIDIA-SMI has failed"),
+        exists_fn=lambda _p: False, system="Linux", machine="x86_64")
+    assert not broken_driver["available"]
+
+    mac = af_detect_local_gpu(which_fn=lambda _n: None, exists_fn=lambda _p: False, system="Darwin", machine="arm64")
+    assert not mac["available"] and mac["apple_silicon"] and "Apple Silicon" in mac["reason"]
+
+
+def test_gpu_requirement_message_is_english_and_points_to_colab():
+    from alphafold_runtime import AF_ENGINE_AF3_SERVER, AF_ENGINE_COLABFOLD, af_gpu_requirement_message
+
+    no_gpu = {"available": False, "apple_silicon": False}
+    msg = af_gpu_requirement_message(AF_ENGINE_COLABFOLD, no_gpu)
+    assert "requires an NVIDIA GPU" in msg and "Google Colab" in msg
+    assert "requires" in af_gpu_requirement_message(AF_ENGINE_AF3_LOCAL, no_gpu)
+    assert "Apple Silicon" in af_gpu_requirement_message(AF_ENGINE_COLABFOLD, {"available": False, "apple_silicon": True})
+    assert af_gpu_requirement_message(AF_ENGINE_COLABFOLD, {"available": True}) == ""
+    assert af_gpu_requirement_message(AF_ENGINE_AF3_SERVER, no_gpu) == ""      # server runs remotely
+
+
+def test_colab_cell_mirrors_official_install_and_stops_without_gpu_runtime():
+    import ast
+
+    script = af_build_colabfold_job_script(job_name="demo", sequence="ACDEFGHIKLMNPQRSTVWY")
+    ast.parse(script)
+    # official notebook: keep Colab's CUDA JAX, never reinstall jax
+    assert "alphafold-minus-jax" in script and "git+https://github.com/sokrypton/ColabFold" in script
+    assert "jax[" not in script and "use_amber = False" in script
+    assert "Change runtime type > GPU" in script
+    assert script.index("nvidia-smi") < script.index("pip")            # fail fast, before installing
+    relax = af_build_colabfold_job_script(job_name="demo", sequence="ACDEFGHIKLMNPQRSTVWY", amber_relax=True)
+    assert "use_amber = True" in relax and "openmm[{cuda}]" in relax
+
+
+def test_sync_folder_unpacks_colab_zip_and_finds_model(tmp_path):
+    import os
+    import zipfile
+
+    import pytest
+    from alphafold_runtime import af_extract_result_zips, af_safe_extract_zip
+
+    zpath = tmp_path / "colabfold_output.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        zf.writestr("demo_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb", "ATOM\n")
+        zf.writestr("demo_unrelaxed_rank_002_alphafold2_ptm_model_2_seed_000.pdb", "ATOM\n")
+    assert af_find_best_model_recursive(tmp_path) is None            # models still inside the ZIP
+    assert af_extract_result_zips(tmp_path) == [str(tmp_path / "colabfold_output_extracted")]
+    assert "rank_001" in af_find_best_model_recursive(tmp_path, token="demo")
+    assert af_extract_result_zips(tmp_path) == []                     # not unpacked twice
+    os.utime(zpath, (os.path.getmtime(zpath) + 100,) * 2)             # re-downloaded ZIP
+    assert len(af_extract_result_zips(tmp_path)) == 1
+
+    evil = tmp_path / "evil.zip"
+    with zipfile.ZipFile(evil, "w") as zf:
+        zf.writestr("../outside.pdb", "ATOM\n")
+    with pytest.raises(ValueError, match="unsafe"):
+        af_safe_extract_zip(evil, tmp_path / "x")
+    assert not (tmp_path / "outside.pdb").exists()

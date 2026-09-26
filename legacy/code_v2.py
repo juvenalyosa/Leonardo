@@ -47,6 +47,11 @@ try:
     from .alphafold_runtime import af_build_colabfold_job_notebook
     from .alphafold_runtime import af_build_colabfold_job_script
     from .alphafold_runtime import af_collect_existing_dirs
+    from .alphafold_runtime import GPU_REQUIRED_TITLE
+    from .alphafold_runtime import af_detect_local_gpu
+    from .alphafold_runtime import af_extract_result_zips
+    from .alphafold_runtime import af_safe_extract_zip
+    from .alphafold_runtime import af_gpu_requirement_message
     from .alphafold_runtime import af_engine_profile
     from .alphafold_runtime import af_extract_plddt_pae_from_json
     from .alphafold_runtime import af_find_best_model_recursive
@@ -425,6 +430,11 @@ except Exception:
     from alphafold_runtime import af_build_colabfold_job_notebook
     from alphafold_runtime import af_build_colabfold_job_script
     from alphafold_runtime import af_collect_existing_dirs
+    from alphafold_runtime import GPU_REQUIRED_TITLE
+    from alphafold_runtime import af_detect_local_gpu
+    from alphafold_runtime import af_extract_result_zips
+    from alphafold_runtime import af_safe_extract_zip
+    from alphafold_runtime import af_gpu_requirement_message
     from alphafold_runtime import af_engine_profile
     from alphafold_runtime import af_extract_plddt_pae_from_json
     from alphafold_runtime import af_find_best_model_recursive
@@ -23169,6 +23179,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             subtitle.setStyleSheet("color: #4b5563;")
             vbox.addWidget(subtitle)
 
+            # Shown on every tab when the selected engine needs a GPU this computer lacks.
+            self.lbl_af_gpu_warning = QtWidgets.QLabel("")
+            self.lbl_af_gpu_warning.setWordWrap(True)
+            self.lbl_af_gpu_warning.setTextFormat(QtCore.Qt.RichText)
+            self.lbl_af_gpu_warning.setStyleSheet(
+                "background: #fff4e5; color: #7a3e00; border: 1px solid #f0b060; "
+                "border-radius: 6px; padding: 8px 10px;"
+            )
+            self.lbl_af_gpu_warning.setVisible(False)
+            vbox.addWidget(self.lbl_af_gpu_warning)
+
             tabs = QtWidgets.QTabWidget(self._af_dialog)
             vbox.addWidget(tabs, 1)
 
@@ -23512,6 +23533,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print(f"AlphaFold UI Setup Error: {e}")
     def _show_alphafold_dialog(self):
         try:
+            self._af_gpu_info(refresh=True)
             self._refresh_af_source_combo()
             self._on_af_engine_changed()
             self._on_af_exec_mode_changed()
@@ -23576,31 +23598,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         gpu_reason = "GPU not requested"
         if gpu_required:
             # Official AF3 Docker execution expects NVIDIA GPU access through Docker.
-            gpu_ok = False
-            gpu_reason = "no NVIDIA GPU detected"
-            nvsmi = shutil.which("nvidia-smi")
-            if nvsmi:
-                try:
-                    pr = subprocess.run(
-                        [str(nvsmi), "-L"],
-                        capture_output=True,
-                        text=True,
-                        timeout=6,
-                        check=False,
-                    )
-                    txt = (str(pr.stdout or "") + "\n" + str(pr.stderr or "")).strip()
-                    if (pr.returncode == 0) and ("GPU" in txt.upper()):
-                        gpu_ok = True
-                        gpu_reason = "nvidia-smi"
-                except Exception:
-                    pass
-            if not gpu_ok:
-                try:
-                    if os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version"):
-                        gpu_ok = True
-                        gpu_reason = "nvidia-device"
-                except Exception:
-                    pass
+            gpu_ok, gpu_reason = self._af_local_gpu_available(deep=bool(deep_probe))
         ready = bool(docker_path) and model_ok and db_ok and bool(gpu_ok)
         missing = []
         if not docker_path:
@@ -23651,6 +23649,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_af_plot_msa.setEnabled(engine == AF_ENGINE_COLABFOLD)
         except Exception:
             pass
+        self._af_update_gpu_warning()
         try:
             self._on_af_exec_mode_changed()
         except Exception:
@@ -23787,58 +23786,59 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return str(self.cmb_af_exec_mode.currentData() or "auto")
         except Exception:
             return "auto"
+    def _af_gpu_info(self, refresh=False):
+        # nvidia-smi can take seconds; probe once per dialog opening, not on every UI refresh
+        info = getattr(self, "_af_gpu_info_cache", None)
+        if refresh or not isinstance(info, dict):
+            try:
+                info = dict(af_detect_local_gpu() or {})
+            except Exception:
+                info = {"available": False, "reason": "GPU detection failed", "apple_silicon": False}
+            self._af_gpu_info_cache = info
+        return dict(info)
     def _af_local_gpu_available(self, deep=False):
         """
-        Detect whether local ColabFold GPU execution is likely available.
-        Heuristic priority: nvidia-smi/device nodes, optional deep JAX probe.
+        Detect whether local ColabFold GPU execution is available: an NVIDIA/CUDA GPU.
+        Apple (Metal) GPUs and CPU-only JAX do not count.
         """
-        # Fast NVIDIA probe
-        nvsmi = shutil.which("nvidia-smi")
-        if nvsmi:
-            try:
-                pr = subprocess.run(
-                    [str(nvsmi), "-L"],
-                    capture_output=True,
-                    text=True,
-                    timeout=6,
-                    check=False,
-                )
-                txt = (str(pr.stdout or "") + "\\n" + str(pr.stderr or "")).strip()
-                if (pr.returncode == 0) and ("GPU" in txt.upper()):
-                    return True, "nvidia-smi"
-            except Exception:
-                pass
+        info = self._af_gpu_info(refresh=bool(deep))
+        return bool(info.get("available")), str(info.get("reason") or "no local GPU detected")
+    def _af_ask_gpu_fallback(self, gpu_msg):
+        """Return "colab", "local" or "cancel" for a local run requested without a detected GPU."""
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle(GPU_REQUIRED_TITLE)
+        box.setText(f"<b>{GPU_REQUIRED_TITLE}</b>")
+        box.setInformativeText(
+            f"{gpu_msg}\n\nIf this computer does have an NVIDIA GPU that was not detected, "
+            "you can still run locally."
+        )
+        btn_colab = box.addButton("Prepare for Google Colab", QtWidgets.QMessageBox.AcceptRole)
+        btn_local = box.addButton("Run locally anyway", QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(btn_colab)
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked is btn_colab:
+            return "colab"
+        if clicked is btn_local:
+            return "local"
+        return "cancel"
+    def _af_update_gpu_warning(self):
+        lbl = getattr(self, "lbl_af_gpu_warning", None)
+        if lbl is None:
+            return ""
+        msg = ""
         try:
-            if os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version"):
-                return True, "nvidia-device"
+            msg = af_gpu_requirement_message(self._af_current_engine(), self._af_gpu_info())
+        except Exception:
+            msg = ""
+        try:
+            lbl.setText(f"<b>&#9888; {GPU_REQUIRED_TITLE}.</b> {msg}" if msg else "")
+            lbl.setVisible(bool(msg))
         except Exception:
             pass
-        if deep:
-            # Deep probe using JAX (if installed in current PyMOL Python env).
-            try:
-                probe_cmd = [
-                    str(sys.executable),
-                    "-c",
-                    (
-                        "import jax; "
-                        "plats=sorted(set([str(getattr(d,'platform','')).lower() for d in jax.devices()])); "
-                        "print(','.join(plats))"
-                    ),
-                ]
-                pr = subprocess.run(
-                    probe_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-                if pr.returncode == 0:
-                    plats = [x.strip().lower() for x in str(pr.stdout or "").strip().split(",") if x.strip()]
-                    if any(x in {"gpu", "cuda", "rocm", "metal"} for x in plats):
-                        return True, f"jax:{'/'.join(plats)}"
-            except Exception:
-                pass
-        return False, "no local GPU detected"
+        return msg
     def _af_resolve_exec_mode(self, deep_probe=False):
         mode = self._af_current_exec_mode()
         if mode != "auto":
@@ -24319,6 +24319,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(sync_root, exist_ok=True)
         except Exception:
             pass
+        # the Leonardo Colab cell downloads a ZIP; unpack it so its models can be found
+        for unpacked in af_extract_result_zips(sync_root):
+            self._af_append_log(f"Unpacked result ZIP: {unpacked}")
         best = self._af_find_best_model_recursive(sync_root, token=token, prefer_relaxed=self._af_relax_requested())
         if not best:
             if not silent:
@@ -24386,9 +24389,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             dst = os.path.join(out_root, f"import_colab_{ts}")
             try:
-                os.makedirs(dst, exist_ok=True)
-                with zipfile.ZipFile(fpath, "r") as zf:
-                    zf.extractall(dst)
+                af_safe_extract_zip(fpath, dst)
                 best = self._af_find_best_model_recursive(dst, token=str(getattr(self, "_af_pending_job_name", "") or ""), prefer_relaxed=self._af_relax_requested())
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "AlphaFold", f"Failed to import ZIP: {e}")
@@ -25049,6 +25050,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
             return
+        if mode == "local":
+            has_gpu, _gpu_reason = self._af_local_gpu_available(deep=True)
+            if not has_gpu:
+                gpu_msg = af_gpu_requirement_message(engine, self._af_gpu_info())
+                self._af_update_gpu_warning()
+                self._af_append_log(f"{GPU_REQUIRED_TITLE}: {gpu_msg}")
+                choice = self._af_ask_gpu_fallback(gpu_msg)
+                if choice == "cancel":
+                    self.lbl_af_status.setText(f"{GPU_REQUIRED_TITLE}: local run cancelled (no NVIDIA GPU).")
+                    return
+                if choice == "colab":
+                    mode = "colab_remote"
+                else:
+                    # detection can miss a real GPU (nvidia-smi not on PATH, WSL2, containers)
+                    self._af_append_log("Running locally without a detected NVIDIA GPU at the user's request.")
         if mode == "colab_remote":
             sync_root = self._af_sync_root_dir()
             try:
