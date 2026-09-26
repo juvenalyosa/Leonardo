@@ -446,3 +446,79 @@ GRADIENTS:KCAL/MOL/ANGSTROM[3]=
     assert "EF" in first_line
     assert "QMMM" in first_line
     assert "1SCF" not in first_line
+
+
+# ---------------------------------------------------------------------------
+# mol.in format, energy units and element symbols (regressions found with real MOPAC 23.2.3)
+# ---------------------------------------------------------------------------
+from qmmm_mopac_runtime import HARTREE_TO_KCAL, KCAL_TO_HARTREE, build_mopac_mol_in_text  # noqa: E402
+
+
+def test_build_mopac_mol_in_text_layout_and_units():
+    phi_au = np.array([0.1, -0.05])
+    txt = build_mopac_mol_in_text(phi_au, ["O", "H"], np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0]]))
+    lines = txt.strip().splitlines()
+    assert len(lines) == 4                                   # title, counts, one line per QM atom
+    assert lines[1].split() == ["2", "0"]                    # QM atoms, link atoms
+    sym, x, y, z, v = lines[2].split()
+    assert sym == "O" and float(x) == 0.0
+    assert math.isclose(float(v), 0.1 * HARTREE_TO_KCAL, rel_tol=1e-9)        # kcal/mol/e, not Eh/e
+    assert math.isclose(float(lines[3].split()[4]), -0.05 * HARTREE_TO_KCAL, rel_tol=1e-9)
+
+
+def test_build_mopac_mol_in_text_rejects_mismatched_sizes():
+    import pytest
+    with pytest.raises(ValueError):
+        build_mopac_mol_in_text([0.1, 0.2], ["O"], np.zeros((2, 3)))
+
+
+def test_parse_mopac_aux_heat_of_formation_is_kcal_not_ev():
+    # A plain PM7 1SCF GRAD job writes only HEAT_OF_FORMATION (kcal/mol, Fortran D exponent).
+    aux_text = """
+HEAT_OF_FORMATION:KCAL/MOL=-0.577823D+02
+ATOM_CHARGES[03]=
+ -0.64500 0.32300 0.32300
+GRADIENTS:KCAL/MOL/ANGSTROM[09]=
+ 1.0 0.0 0.0 -0.5 0.0 0.0 -0.5 0.0 0.0
+"""
+    parsed = parse_mopac_aux_text(aux_text)
+    assert parsed["ok"] is True
+    assert parsed["energy_source"] == "heat_of_formation_kcal_mol"
+    assert math.isclose(parsed["energy_hartree"], -57.7823 * KCAL_TO_HARTREE, rel_tol=1e-9)
+    assert math.isclose(parsed["heat_of_formation_kcal_mol"], -57.7823, rel_tol=1e-9)
+    assert math.isclose(parsed["heat_of_formation_ev"], -57.7823 / 23.060548, rel_tol=1e-5)
+
+
+def test_mopac_input_writer_knows_transition_metals_and_rejects_unknown():
+    import pytest
+    txt = build_mopac_input_text([25, 8], np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
+    assert txt.splitlines()[3].split()[0] == "Mn"            # used to be written silently as carbon
+    with pytest.raises(ValueError):
+        build_mopac_input_text([0], np.zeros((1, 3)))
+
+
+def _water_step(q_mm, tmp_path):
+    import shutil
+    exe = shutil.which("mopac") or shutil.which("MOPAC")
+    xyz = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0], [-3.0, 0.0, 0.0]])
+    return qmmm_step_file_based(
+        xyz_full_ang=xyz, atomic_numbers_full=[8, 1, 1, 11], qm_indices=[0, 1, 2], mm_indices=[3],
+        q_mm=[q_mm], mopac_executable=exe, workdir=str(tmp_path), timeout_s=60,
+    )
+
+
+def test_qmmm_step_runs_with_real_mopac(tmp_path):
+    """End-to-end with the real MOPAC binary: the mocked tests above never exercised mol.in."""
+    import shutil
+    import pytest
+    if not (shutil.which("mopac") or shutil.which("MOPAC")):
+        pytest.skip("MOPAC is not installed")
+    neutral = _water_step(0.0, tmp_path / "neutral")
+    charged = _water_step(1.0, tmp_path / "charged")
+    assert neutral["ok"] and charged["ok"]
+    # zero external charge reproduces the gas-phase PM7 heat of formation of water (-57.8 kcal/mol)
+    assert math.isclose(neutral["heat_of_formation_kcal_mol"], -57.78, abs_tol=0.1)
+    # a +1 charge 3 A from the oxygen polarizes the water (O more negative) and stabilizes it
+    assert charged["q_qm"][0] < neutral["q_qm"][0] - 0.03
+    assert charged["energy_qm_hartree"] < neutral["energy_qm_hartree"]
+    assert (charged["heat_of_formation_kcal_mol"] - neutral["heat_of_formation_kcal_mol"]) < -2.0
