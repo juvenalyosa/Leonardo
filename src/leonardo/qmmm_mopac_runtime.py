@@ -173,31 +173,15 @@ _COVALENT_RADII_A = {
 
 
 _ATOMIC_SYMBOLS = {
-    1: "H",
-    2: "He",
-    3: "Li",
-    4: "Be",
-    5: "B",
-    6: "C",
-    7: "N",
-    8: "O",
-    9: "F",
-    10: "Ne",
-    11: "Na",
-    12: "Mg",
-    13: "Al",
-    14: "Si",
-    15: "P",
-    16: "S",
-    17: "Cl",
-    18: "Ar",
-    19: "K",
-    20: "Ca",
-    26: "Fe",
-    29: "Cu",
-    30: "Zn",
-    35: "Br",
-    53: "I",
+    z: sym
+    for z, sym in enumerate(
+        (
+            "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr "
+            "Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm "
+            "Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn"
+        ).split(),
+        start=1,
+    )
 }
 
 _ATOMIC_MASSES_AMU = {
@@ -237,11 +221,14 @@ def _as_1d(arr, name="array"):
 
 
 def _symbol_from_atomic_number(z):
+    """Element symbol for atomic number ``z`` (1–86).  Unknown numbers raise instead of silently becoming carbon."""
     try:
         zi = int(z)
     except Exception:
-        zi = 6
-    return str(_ATOMIC_SYMBOLS.get(zi, "C"))
+        raise ValueError(f"Invalid atomic number: {z!r}")
+    if zi not in _ATOMIC_SYMBOLS:
+        raise ValueError(f"Atomic number {zi} is not supported by the MOPAC input writer.")
+    return str(_ATOMIC_SYMBOLS[zi])
 
 
 def _clean_element_symbol(value):
@@ -900,11 +887,37 @@ def build_mopac_input_text(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_mopac_mol_in_text(phi_qm):
+HARTREE_TO_KCAL = 627.5094740631
+
+
+def build_mopac_mol_in_text(phi_qm, symbols, xyz_ang, n_link=0, title="Leonardo QM/MM electrostatic potential"):
+    """
+    Text of MOPAC's ``mol.in`` file for the ``QMMM`` keyword (electrostatic embedding).
+
+    MOPAC reads, in this order:
+      line 1: free text (title)
+      line 2: number of QM atoms and number of link atoms
+      then one line per QM atom, in the same order as the ``.mop`` geometry:
+        element symbol, x, y, z (Angstrom) and the external electrostatic potential at that atom
+        in kcal/mol/e.
+
+    ``phi_qm`` is given in atomic units (Eh/e, as returned by :func:`compute_phi_on_qm_atoms`) and is
+    converted here.  Any other layout is rejected by MOPAC 23 with "A file named 'mol.in' exists, but is
+    corrupt", and the QM/MM job then produces no ``.aux``.
+    """
     vals = np.asarray(phi_qm, dtype=float).reshape(-1)
-    lines = [str(int(vals.size))]
-    for i, v in enumerate(vals, start=1):
-        lines.append(f"{int(i):5d} {float(v): .12e}")
+    xyz = _as_xyz_array(xyz_ang)
+    syms = [str(s).strip() for s in list(symbols or [])]
+    if len(syms) != int(vals.size) or int(xyz.shape[0]) != int(vals.size):
+        raise ValueError("mol.in needs one symbol, one xyz row and one potential value per QM atom.")
+    if not np.all(np.isfinite(vals)):
+        raise ValueError("mol.in potential contains non-finite values.")
+    phi_kcal = vals * HARTREE_TO_KCAL
+    lines = [str(title or "Leonardo QM/MM electrostatic potential").replace("\n", " "),
+             f"{int(vals.size)} {int(max(0, int(n_link)))}"]
+    for sym, coord, v in zip(syms, xyz, phi_kcal):
+        x, y, z = (float(c) for c in coord)
+        lines.append(f"{sym:2s} {x:14.8f} {y:14.8f} {z:14.8f} {float(v): .10f}")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -972,23 +985,31 @@ def parse_mopac_aux_text(aux_text):
         "normal_modes_cart": np.zeros((0, 0, 0), dtype=float),
         "thermochemistry": {},
     }
-    e_ev = _extract_first_float(
+    # Energy: MOPAC's .aux reports TOTAL_ENERGY in eV only for some job types; plain 1SCF/GRAD/EF jobs
+    # report only HEAT_OF_FORMATION, in kcal/mol.  Each value is converted with its own unit (reading the
+    # heat of formation as eV inflated every energy difference ~23x).  Both quantities differ from the true
+    # total energy by a constant for a fixed set of atoms, so energy differences are valid with either.
+    e_tot_ev = _extract_first_float(
+        txt,
+        patterns=[r"TOTAL_ENERGY:EV[^=\n]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)",
+                  r"TOTAL_ENERGY[^=\n:]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)"],
+    )
+    hof_kcal = _extract_first_float(
         txt,
         patterns=[
-            r"TOTAL_ENERGY[^=\n]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)",
-            r"HEAT_OF_FORMATION[^=\n]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)",
+            r"HEAT_OF_FORMATION:KCAL/MOL[^=\n]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)",
+            r"HEAT_OF_FORMATION[^=\n:]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)",
         ],
     )
-    if e_ev is not None:
-        out["energy_hartree"] = float(e_ev) * float(EV_TO_HARTREE)
-    hof_ev = _extract_first_float(
-        txt,
-        patterns=[
-            r"HEAT_OF_FORMATION[^=\n]*=\s*([-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?)",
-        ],
-    )
-    if hof_ev is not None:
-        out["heat_of_formation_ev"] = float(hof_ev)
+    if e_tot_ev is not None and np.isfinite(e_tot_ev):
+        out["energy_hartree"] = float(e_tot_ev) * float(EV_TO_HARTREE)
+        out["energy_source"] = "total_energy_ev"
+    elif hof_kcal is not None and np.isfinite(hof_kcal):
+        out["energy_hartree"] = float(hof_kcal) * float(KCAL_TO_HARTREE)
+        out["energy_source"] = "heat_of_formation_kcal_mol"
+    if hof_kcal is not None and np.isfinite(hof_kcal):
+        out["heat_of_formation_kcal_mol"] = float(hof_kcal)
+        out["heat_of_formation_ev"] = float(hof_kcal) * float(KCAL_TO_HARTREE) / float(EV_TO_HARTREE)
     q = _extract_float_vector_after_key(txt, "ATOM_CHARGES")
     if q.size > 0:
         out["atom_charges"] = np.asarray(q, dtype=float).reshape(-1)
@@ -1955,7 +1976,7 @@ def qmmm_step_file_based(
             )
         )
     with open(mol_in_file, "w", encoding="utf-8") as fh:
-        fh.write(build_mopac_mol_in_text(phi))
+        fh.write(build_mopac_mol_in_text(phi, [_symbol_from_atomic_number(int(zi)) for zi in z_qm], xyz_qm))
     run_fn = runner if callable(runner) else subprocess.run
     cmdline = [str(mopac_executable), os.path.basename(mop_file)]
     cp = run_fn(
@@ -2013,6 +2034,8 @@ def qmmm_step_file_based(
         "mopac_keywords": str(mopac_keywords),
         "energy_qm_hartree": float(parsed.get("energy_hartree")),
         "heat_of_formation_ev": parsed.get("heat_of_formation_ev"),
+        "heat_of_formation_kcal_mol": parsed.get("heat_of_formation_kcal_mol"),
+        "energy_source": parsed.get("energy_source"),
         "thermochemistry": dict(parsed.get("thermochemistry", {}) or {}),
         "forces_qm_internal_kj_mol_nm": np.asarray(f_qm_internal, dtype=float),
         "energy_qmmm_elec_kj_mol": float(electro.get("energy_kj_mol", 0.0)),
@@ -2029,6 +2052,7 @@ __all__ = [
     "ANGSTROM_TO_BOHR",
     "EV_TO_HARTREE",
     "KCAL_TO_HARTREE",
+    "HARTREE_TO_KCAL",
     "OPENMM_COULOMB_CONSTANT",
     "QMMM_MOPAC_OPERATION_PROFILES",
     "qmmm_mopac_normalize_operation",
