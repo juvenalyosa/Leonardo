@@ -82,79 +82,150 @@ def _coerce_start_pos(start_pos):
         raise MutationError(f"Invalid sequence start position: {start_pos!r}") from exc
 
 
-def _validate_present_position(aa_dict, pos, mutation):
-    if int(pos) not in aa_dict:
-        raise MutationError(
-            f"Mutation {mutation} references position {int(pos)}, "
-            "but that position is outside the current sequence."
-        )
+class _ReferenceNumbering:
+    """Map mutation position numbers to indices of the *reference* sequence.
+
+    Positions follow HGVS semantics: every mutation in a list refers to the
+    original sequence, never to the sequence left behind by an earlier indel.
+    ``residue_numbers`` (one label per residue) supports structure numbering
+    with gaps or insertion codes; labels that are not plain integers (``184A``)
+    or that repeat cannot be addressed by a numeric mutation label.
+    """
+
+    def __init__(self, seq, start_pos=1, residue_numbers=None):
+        self.seq = seq
+        self.index = {}
+        if residue_numbers is None:
+            start_i = _coerce_start_pos(start_pos)
+            self.index = {start_i + i: i for i in range(len(seq))}
+            return
+        labels = list(residue_numbers)
+        if len(labels) != len(seq):
+            raise MutationError(
+                f"Residue numbering has {len(labels)} label(s) for a sequence of {len(seq)} residue(s)."
+            )
+        seen = {}
+        for i, label in enumerate(labels):
+            txt = str(label).strip() if label is not None else ""
+            if not re.fullmatch(r"-?\d+", txt):
+                continue
+            seen.setdefault(int(txt), []).append(i)
+        self.index = {pos: idx[0] for pos, idx in seen.items() if len(idx) == 1}
+        self.ambiguous = {pos for pos, idx in seen.items() if len(idx) > 1}
+
+    def at(self, pos, mutation):
+        pos = int(pos)
+        if pos in getattr(self, "ambiguous", ()):
+            raise MutationError(f"Mutation {mutation} references position {pos}, which is not unique in the numbering.")
+        if pos not in self.index:
+            raise MutationError(
+                f"Mutation {mutation} references position {pos}, "
+                "but that position is outside the current sequence."
+            )
+        return self.index[pos]
+
+    def check(self, idx, expected_aa, pos, mutation, label="position"):
+        expected = str(expected_aa or "").strip().upper()
+        if expected and self.seq[idx] != expected:
+            raise MutationError(
+                f"Mutation {mutation} mismatch at {label} {int(pos)}: "
+                f"found '{self.seq[idx]}' but expected '{expected}'."
+            )
+
+    def span(self, start_pos, start_aa, end_pos, end_aa, mutation):
+        if int(end_pos) < int(start_pos):
+            raise MutationError(f"Mutation {mutation} has an inverted range ({int(start_pos)}>{int(end_pos)}).")
+        try:
+            i0 = self.at(start_pos, mutation)
+            i1 = self.at(end_pos, mutation)
+        except MutationError as exc:
+            raise MutationError(f"Mutation {mutation} references missing/out-of-bounds position(s): {exc}") from exc
+        if i1 < i0:
+            raise MutationError(f"Mutation {mutation} has an inverted range in the sequence numbering.")
+        self.check(i0, start_aa, start_pos, mutation, label="range start")
+        self.check(i1, end_aa, end_pos, mutation, label="range end")
+        return i0, i1
 
 
-def _validate_expected_aa(aa_dict, pos, expected_aa, mutation, label="position"):
-    expected = str(expected_aa or "").strip().upper()
-    if not expected:
-        return
-    _validate_present_position(aa_dict, pos, mutation)
-    found = str(aa_dict.get(int(pos), "") or "")
-    if found != expected:
-        raise MutationError(
-            f"Mutation {mutation} mismatch at {label} {int(pos)}: "
-            f"found '{found}' but expected '{expected}'."
-        )
+def _parse_mutation(mutation, numbering):
+    """Return ``(i0, i1, replacement)``: replace reference indices ``i0..i1`` (inclusive) by
+    ``replacement``. A pure insertion before index ``i`` is ``(i, i - 1, text)``."""
+    snp = re.match(r'^([A-Z])(\d+)([A-Z])$', mutation)
+    if snp:
+        old_aa, pos, new_aa = snp.groups()
+        idx = numbering.at(pos, mutation)
+        numbering.check(idx, old_aa, pos, mutation)
+        return idx, idx, new_aa
+
+    if 'DELINS' in mutation:
+        m = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DELINS([A-Z]+)$', mutation)
+        if not m:
+            raise MutationError(f"Could not parse delins mutation: '{mutation}'.")
+        start_aa, start, end_aa, end, insertion = m.groups()
+        if end is None:
+            end, end_aa = start, start_aa
+        i0, i1 = numbering.span(start, start_aa, end, end_aa, mutation)
+        return i0, i1, insertion
+
+    if 'DEL' in mutation:
+        m = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DEL$', mutation)
+        if not m:
+            raise MutationError(f"Could not parse deletion mutation: '{mutation}'.")
+        start_aa, start, end_aa, end = m.groups()
+        if end is None:
+            end, end_aa = start, start_aa
+        i0, i1 = numbering.span(start, start_aa, end, end_aa, mutation)
+        return i0, i1, ""
+
+    if 'INS' in mutation:
+        m = re.match(r'^([A-Z]?)(\d+)_([A-Z]?)(\d+)INS([A-Z]+)$', mutation)
+        if not m:
+            raise MutationError(f"Could not parse insertion mutation: '{mutation}'.")
+        left_aa, left, right_aa, right, insertion = m.groups()
+        if int(right) != int(left) + 1:
+            raise MutationError(
+                f"Insertion {mutation} must reference adjacent flanking residues "
+                f"({int(left)} and {int(left) + 1})."
+            )
+        i_left = numbering.at(left, mutation)
+        i_right = numbering.at(right, mutation)
+        if i_right != i_left + 1:
+            raise MutationError(f"Insertion {mutation} flanking residues are not adjacent in the sequence.")
+        numbering.check(i_left, left_aa, left, mutation, label="left flank")
+        numbering.check(i_right, right_aa, right, mutation, label="right flank")
+        return i_right, i_left, insertion
+
+    if 'DUP' in mutation:
+        m = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DUP$', mutation)
+        if not m:
+            raise MutationError(f"Could not parse duplication mutation: '{mutation}'.")
+        start_aa, start, end_aa, end = m.groups()
+        if end is None:
+            end, end_aa = start, start_aa
+        i0, i1 = numbering.span(start, start_aa, end, end_aa, mutation)
+        return i1 + 1, i1, numbering.seq[i0:i1 + 1]
+
+    raise MutationError(f"Unsupported mutation format: '{mutation}'.")
 
 
-def _validate_contiguous_range(aa_dict, start_pos, end_pos, mutation):
-    start_i = int(start_pos)
-    end_i = int(end_pos)
-    if end_i < start_i:
-        raise MutationError(f"Mutation {mutation} has an inverted range ({start_i}>{end_i}).")
-    missing = [pos for pos in range(start_i, end_i + 1) if pos not in aa_dict]
-    if missing:
-        preview = ", ".join(str(x) for x in missing[:8])
-        if len(missing) > 8:
-            preview += ", ..."
-        raise MutationError(
-            f"Mutation {mutation} references missing/out-of-bounds position(s): {preview}."
-        )
-    return [aa_dict[pos] for pos in range(start_i, end_i + 1)]
-
-
-def _shift_after_deletion(aa_dict, start_del, end_del):
-    shift = (int(end_del) - int(start_del)) + 1
-    new_dict = {}
-    for pos_key, aa in sorted(aa_dict.items()):
-        if pos_key < int(start_del):
-            new_dict[pos_key] = aa
-        elif pos_key > int(end_del):
-            new_dict[pos_key - shift] = aa
-    return new_dict
-
-
-def _replace_range_with_sequence(aa_dict, start_pos, end_pos, insertion):
-    deleted_len = int(end_pos) - int(start_pos) + 1
-    net_shift = int(len(insertion)) - int(deleted_len)
-    new_dict = {}
-    for pos_key, aa in sorted(aa_dict.items()):
-        if pos_key < int(start_pos):
-            new_dict[pos_key] = aa
-        elif pos_key > int(end_pos):
-            new_dict[pos_key + net_shift] = aa
-    for i, aa in enumerate(str(insertion)):
-        new_dict[int(start_pos) + i] = aa
-    return new_dict
-
-
-def _insert_after_position(aa_dict, pos_after, insertion):
-    insertion_len = len(insertion)
-    new_dict = {}
-    for pos_key, aa in sorted(aa_dict.items()):
-        if pos_key <= int(pos_after):
-            new_dict[pos_key] = aa
-        else:
-            new_dict[pos_key + insertion_len] = aa
-    for i, aa in enumerate(str(insertion)):
-        new_dict[int(pos_after) + 1 + i] = aa
-    return new_dict
+def _check_no_overlap(edits):
+    """Edits must touch disjoint parts of the reference; otherwise their combined effect is ambiguous."""
+    for a in range(len(edits)):
+        for b in range(a + 1, len(edits)):
+            (s1, e1, _r1, m1), (s2, e2, _r2, m2) = edits[a], edits[b]
+            ins1, ins2 = e1 < s1, e2 < s2
+            if ins1 and ins2:
+                clash = s1 == s2
+            elif ins1:
+                clash = s2 < s1 <= e2          # insertion point strictly inside the replaced range
+            elif ins2:
+                clash = s1 < s2 <= e1
+            else:
+                clash = s1 <= e2 and s2 <= e1
+            if clash:
+                raise MutationError(
+                    f"Mutations {m1} and {m2} affect overlapping residues; combine them into one delins."
+                )
 
 # =============================================================================
 #  1. HELPER FUNCTIONS FOR SEQUENCE MANIPULATION
@@ -163,9 +234,7 @@ def _insert_after_position(aa_dict, pos_after, insertion):
 def convert_to_dict(sequence, start_pos):
     """
     Converts a sequence string to a dictionary mapping position numbers to amino acids.
-    This data structure is ideal for mutations because it handles insertions and
-    deletions without needing to manually re-calculate list indices.
-    
+
     Example: "AGK", start_pos=1 -> {1: 'A', 2: 'G', 3: 'K'}
     """
     start_i = _coerce_start_pos(start_pos)
@@ -190,10 +259,14 @@ def convert_to_sequence(aa_dict):
 #  2. CORE MUTATION LOGIC
 # =============================================================================
 
-def mutate_sequence(sequence, mutations, start_pos=1):
+def mutate_sequence(sequence, mutations, start_pos=1, residue_numbers=None):
     """
-    Applies a list of mutations to a protein sequence using a dictionary-based approach
-    to robustly handle changes in sequence length.
+    Applies a list of mutations to a protein sequence.
+
+    Every position refers to the original (reference) sequence, as in HGVS:
+    ``["K2_T3del", "A7G"]`` mutates the residue numbered 7 in the input even
+    though the deletion shifts it. Mutations that touch overlapping residues
+    are rejected instead of being applied in an order-dependent way.
 
     Args:
         sequence (str): The original amino acid sequence.
@@ -204,132 +277,30 @@ def mutate_sequence(sequence, mutations, start_pos=1):
                           - Insertion: "A10_B11insGGG"
                           - Deletion-Insertion: "A10delinsGGG", "10_12delinsGGG"
                           - Duplication: "A10dup", "10_12dup"
-        start_pos (int): The starting position number of the sequence (e.g., 1 for 1-based indexing).
+        start_pos (int): The number of the first residue (e.g., 1 for 1-based indexing).
+        residue_numbers (list, optional): One position label per residue (e.g. PDB numbering
+                          with gaps or insertion codes); overrides ``start_pos``.
 
     Returns:
         str: The mutated sequence.
     """
-    # Convert the sequence to a dictionary for position-addressed edits. The
-    # dictionary is rebuilt after indels so subsequent mutations are applied to
-    # the current sequence state, matching the historical behavior of this tool.
-    aa_dict = convert_to_dict(sequence, start_pos)
-
+    seq = _clean_protein_sequence(sequence)
+    numbering = _ReferenceNumbering(seq, start_pos, residue_numbers)
+    edits = []
     for mutation in _iter_mutation_labels(mutations):
-        # --- Case 1: Substitution (e.g., A123B) ---
-        # Regex: ^([A-Z])(\d+)([A-Z])$ -> Start, one letter, numbers, one letter, End.
-        snp_match = re.match(r'^([A-Z])(\d+)([A-Z])$', mutation)
-        if snp_match:
-            old_aa, pos, new_aa = snp_match.groups()
-            pos = int(pos)
-            _validate_expected_aa(aa_dict, pos, old_aa, mutation)
-            aa_dict[pos] = new_aa
-            continue  # Move to the next mutation.
+        i0, i1, replacement = _parse_mutation(mutation, numbering)
+        edits.append((i0, i1, replacement, mutation))
+    _check_no_overlap(edits)
 
-        # --- Case 2: Deletion (e.g., A10del or 10_12del) ---
-        # Check for 'del' but exclude 'delins' which is handled separately.
-        if 'DEL' in mutation and 'DELINS' not in mutation:
-            # First, try to match a range deletion (e.g., 10_12del).
-            range_del_match = re.match(r'^([A-Z]?)(\d+)_([A-Z]?)(\d+)DEL$', mutation)
-            if range_del_match:
-                start_aa, start_del, end_aa, end_del = range_del_match.groups()
-                start_del, end_del = int(start_del), int(end_del)
-            else:
-                # If not a range, try to match a single-residue deletion (e.g., A10del).
-                single_del_match = re.match(r'^([A-Z]?)(\d+)DEL$', mutation)
-                if single_del_match:
-                    start_aa, pos_del = single_del_match.groups()
-                    end_aa = start_aa
-                    start_del, end_del = int(pos_del), int(pos_del)
-                else:
-                    raise MutationError(f"Could not parse deletion mutation: '{mutation}'.")
-
-            _validate_contiguous_range(aa_dict, start_del, end_del, mutation)
-            _validate_expected_aa(aa_dict, start_del, start_aa, mutation, label="range start")
-            _validate_expected_aa(aa_dict, end_del, end_aa, mutation, label="range end")
-            aa_dict = _shift_after_deletion(aa_dict, start_del, end_del)
-            continue
-        
-        # --- Case 3: Deletion-Insertion (e.g., A10delinsGGG or 10_12delinsGGG) ---
-        if 'DELINS' in mutation:
-            # This regex is robust: it handles optional start/end amino acids and optional end positions.
-            # Example: A10delinsGGG -> start_pos=10, end_pos=10, insertion="GGG"
-            # Example: 10_12delinsGGG -> start_pos=10, end_pos=12, insertion="GGG"
-            delins_match = re.match(r'^([A-Z]?)(\d+)(?:_([A-Z]?)(\d+))?DELINS([A-Z]+)$', mutation)
-            if delins_match:
-                start_aa, start_pos_del, end_aa, end_pos_del, insertion = delins_match.groups()
-                start_pos_del = int(start_pos_del)
-                end_pos_del = int(end_pos_del) if end_pos_del else start_pos_del
-                _validate_contiguous_range(aa_dict, start_pos_del, end_pos_del, mutation)
-                _validate_expected_aa(aa_dict, start_pos_del, start_aa, mutation, label="range start")
-                _validate_expected_aa(aa_dict, end_pos_del, end_aa, mutation, label="range end")
-                aa_dict = _replace_range_with_sequence(aa_dict, start_pos_del, end_pos_del, insertion)
-            else:
-                raise MutationError(f"Could not parse delins mutation: '{mutation}'.")
-            continue
-
-        # --- Case 4: Insertion (e.g., A10_B11insGGG) ---
-        # Insertions happen *between* two residues.
-        if 'INS' in mutation:
-            ins_match = re.match(r'^([A-Z]?)(\d+)_([A-Z]?)(\d+)INS([A-Z]+)$', mutation)
-            if ins_match:
-                left_aa, pos_after, right_aa, pos_before, insertion = ins_match.groups()
-                pos_after = int(pos_after)
-                pos_before = int(pos_before)
-                if pos_before != pos_after + 1:
-                    raise MutationError(
-                        f"Insertion {mutation} must reference adjacent flanking residues "
-                        f"({pos_after} and {pos_after + 1})."
-                    )
-                _validate_expected_aa(aa_dict, pos_after, left_aa, mutation, label="left flank")
-                _validate_expected_aa(aa_dict, pos_before, right_aa, mutation, label="right flank")
-                aa_dict = _insert_after_position(aa_dict, pos_after, insertion)
-            else:
-                raise MutationError(f"Could not parse insertion mutation: '{mutation}'.")
-            continue
-
-        # --- Case 5: Duplication (e.g., A10dup or 10_12dup) ---
-        if 'DUP' in mutation:
-            # Check for range duplication first.
-            range_dup_match = re.match(r'^([A-Z]?)(\d+)_([A-Z]?)(\d+)DUP$', mutation)
-            if range_dup_match:
-                start_aa, start_dup, end_aa, end_dup = range_dup_match.groups()
-                start_dup, end_dup = int(start_dup), int(end_dup)
-            else:
-                # Check for single residue duplication.
-                single_dup_match = re.match(r'^([A-Z]?)(\d+)DUP$', mutation)
-                if single_dup_match:
-                    start_aa, pos_dup = single_dup_match.groups()
-                    end_aa = start_aa
-                    start_dup, end_dup = int(pos_dup), int(pos_dup)
-                else:
-                    raise MutationError(f"Could not parse duplication mutation: '{mutation}'.")
-            
-            duplicated_segment = _validate_contiguous_range(aa_dict, start_dup, end_dup, mutation)
-            _validate_expected_aa(aa_dict, start_dup, start_aa, mutation, label="range start")
-            _validate_expected_aa(aa_dict, end_dup, end_aa, mutation, label="range end")
-            dup_len = len(duplicated_segment)
-            
-            # Rebuild the dictionary.
-            new_dict = {}
-            # 1. Copy residues up to the end of the duplicated segment.
-            for pos_key, aa in sorted(aa_dict.items()):
-                if pos_key <= end_dup:
-                    new_dict[pos_key] = aa
-                # 2. Shift all subsequent residues.
-                else: 
-                    new_dict[pos_key + dup_len] = aa
-
-            # 3. Insert the duplicated segment immediately after the original segment.
-            for i, aa in enumerate(duplicated_segment):
-                new_dict[end_dup + 1 + i] = aa
-            
-            aa_dict = new_dict # Update the main dictionary.
-            continue
-
-        raise MutationError(f"Unsupported mutation format: '{mutation}'.")
-
-    # Convert the final dictionary back to a sequence string.
-    return convert_to_sequence(aa_dict)
+    out = []
+    cursor = 0
+    # insertions before index i come before a replacement that starts at i
+    for i0, i1, replacement, _m in sorted(edits, key=lambda e: (e[0], e[1] >= e[0])):
+        out.append(seq[cursor:i0])
+        out.append(replacement)
+        cursor = max(cursor, i1 + 1)
+    out.append(seq[cursor:])
+    return "".join(out)
 
 # =============================================================================
 #  3. ALIGNMENT AND VERIFICATION
@@ -371,9 +342,11 @@ def needleman_wunsch_affine(seq1, seq2, match_score=1, mismatch_score=-1, gap_op
     for i in range(1, n + 1):
         M[i][0], Iy[i][0] = -float('inf'), -float('inf')
         Ix[i][0] = gap_open + (i - 1) * gap_extend # Cost of a gap of length i in seq2.
+        Ptr_Ix[i][0] = 'Ix' # A leading gap can only continue along the first column.
     for j in range(1, m + 1):
         M[0][j], Ix[0][j] = -float('inf'), -float('inf')
         Iy[0][j] = gap_open + (j - 1) * gap_extend # Cost of a gap of length j in seq1.
+        Ptr_Iy[0][j] = 'Iy'
 
     # --- FILL DP TABLES ---
     for i in range(1, n + 1):
@@ -416,6 +389,11 @@ def needleman_wunsch_affine(seq1, seq2, match_score=1, mismatch_score=-1, gap_op
     matrix = max(last_scores, key=last_scores.get)
 
     while i > 0 or j > 0:
+        # On the first row/column only one move remains, whatever the pointer says.
+        if i == 0:
+            matrix = 'Iy'
+        elif j == 0:
+            matrix = 'Ix'
         if matrix == 'M': # A match or mismatch step.
             align1 = seq1[i-1] + align1
             align2 = seq2[j-1] + align2
@@ -432,7 +410,9 @@ def needleman_wunsch_affine(seq1, seq2, match_score=1, mismatch_score=-1, gap_op
             align2 = seq2[j-1] + align2
             matrix = Ptr_Iy[i][j]
             j -= 1
-            
+        else:
+            raise RuntimeError(f"Alignment backtracking lost its path at ({i}, {j}).")
+
     return align1, align2
 
 def verify_and_print_alignment(original_seq, mutated_seq, context_chars=20):

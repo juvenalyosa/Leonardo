@@ -402,3 +402,55 @@ def test_modeler_runtime_maps_highlight_indices_to_observed_positions():
         observed_positions=[101, 102, 103, 104],
     )
     assert shifted == [102, 103]
+
+
+def _res(resseq, aa, bonded=True, icode=""):
+    return {"resseq": resseq, "icode": icode, "resn": aa, "aa1": aa, "bonded_to_prev": bonded}
+
+
+def test_chain_entry_separates_numbering_jumps_from_real_breaks():
+    from modeler_runtime import build_modeler_chain_entry
+
+    residues = [_res(16, "I", None), _res(17, "V"), _res(20, "G"),          # 17 -> 20 bonded: numbering jump
+                _res(20, "S", True, "A"),                                    # insertion code kept
+                _res(21, "K"), _res(25, "L", False),                         # real break: 22-24 missing
+                _res(26, "W", None), _res(30, "Y", None)]                    # unknown bond: numbering decides
+    e = build_modeler_chain_entry("A", residues)
+    assert e["observed_seq"] == "IVGSKLWY"
+    assert e["residue_labels"] == ["16", "17", "20", "20A", "21", "25", "26", "30"]
+    assert e["numbering_jumps"] == [("17", "20")]
+    assert e["internal_gaps"] == [(22, 24), (27, 29)]
+    assert e["missing_total"] == 6
+    assert len(e["positions"]) == len(e["observed_seq"])
+
+
+def test_gap_fill_aligns_instead_of_trusting_residue_numbers():
+    from modeler_runtime import build_modeler_chain_entry, modeler_gap_fill_sequence
+
+    full = "MKTAYIAKQRQISFVKSHFSRQ"
+    # observed 3..10 and 14..20 (real break), numbered from 103 to test that numbers are not used
+    obs = [(i, aa) for i, aa in enumerate(full, start=1) if 3 <= i <= 10 or 14 <= i <= 20]
+    residues = [_res(100 + i, aa, not (i == 14)) for i, aa in obs]
+    residues[0]["bonded_to_prev"] = None
+    e = build_modeler_chain_entry("A", residues)
+    fill = modeler_gap_fill_sequence(e, full)
+    assert fill["ok"] and fill["filled"] == 3
+    assert fill["sequence"] == full[2:20]
+    assert fill["residue_labels"][8:11] == ["111", "112", "113"]      # interpolated inside the break
+
+    # the observed sequence itself as "reference" (auto-filled widget) must not invent residues
+    same = modeler_gap_fill_sequence(e, e["observed_seq"])
+    assert same["ok"] and same["filled"] == 0 and same["sequence"] == e["observed_seq"]
+
+    wrong = modeler_gap_fill_sequence(e, "GGGGGGGGGGGGGGGGGGGGGG")
+    assert not wrong["ok"] and "does not match" in wrong["error"]
+
+
+def test_mutation_window_uses_structure_labels():
+    from modeler_runtime import resolve_modeler_mutation_input_sequence
+
+    payload = resolve_modeler_mutation_input_sequence(
+        "ACDEF", 10, explicit_sequence="ACDEFGHIK", explicit_start=10,
+        mutation_positions=[15], mode="gap", prepared_labels=["10", "11", "11A", "12", "15"])
+    assert payload["prepared_fits"] is True
+    assert payload["used_explicit_sequence"] is False

@@ -124,3 +124,83 @@ def test_modeler_stage_local_template_pdbs_fetches_remote_cif_when_legacy_pdb_mi
     assert fake_cmd.saved == [
         (str(tmp_path / "modeling_job" / "9gbe.pdb"), "(_modeler_tpl_9gbe) and polymer", 1)
     ]
+
+
+_RECEPTOR_3PTB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "benchmarks", "redocking", "3ptb_ben", "receptor_3ptb_no_ben_no_waters.pdb")
+
+
+class _Widget:
+    def __init__(self, value=None, data=None):
+        self._value, self._data = value, data
+
+    def toPlainText(self):
+        return self._value
+
+    def value(self):
+        return self._value
+
+    def currentData(self):
+        return self._data
+
+    def setPlainText(self, value):
+        self._value = value
+
+    def setValue(self, value):
+        self._value = value
+
+
+def _build_modeler_numbering_dialog(full_sequence=""):
+    from Bio.PDB import PDBParser
+
+    class DummyDialog:
+        pass
+
+    for name in (
+        "_aa3_to_aa1",
+        "_normalize_chain_id",
+        "_modeler_clean_sequence",
+        "_modeler_make_chain_entry",
+        "_modeler_chain_entry_from_residue_records",
+        "_modeler_extract_chain_data_from_biopython",
+        "_modeler_prepare_base_sequence",
+        "_modeler_structure_numbering_for",
+        "_modeler_apply_mutations_with_start_resolution",
+    ):
+        setattr(DummyDialog, name, getattr(code_v2.ProtLigInteractDialog, name))
+    dlg = DummyDialog()
+    dlg._modeler_build_structure_from_object = lambda _obj: PDBParser(QUIET=True).get_structure("r", _RECEPTOR_3PTB)
+    dlg._modeler_current_mode = lambda: "gap"
+    dlg._modeler_sequence_prompted = False
+    dlg._modeler_chain_data = dlg._modeler_extract_chain_data_from_biopython("receptor")
+    dlg.cmb_modeler_chain = _Widget(data="A")
+    dlg.txt_modeler_full_sequence = _Widget(full_sequence)
+    dlg.spin_modeler_seq_start = _Widget(16)
+    return dlg
+
+
+def test_modeler_chain_analysis_keeps_insertion_codes_and_ignores_numbering_jumps():
+    dlg = _build_modeler_numbering_dialog()
+    data = dlg._modeler_chain_data["A"]
+    # trypsin (chymotrypsinogen numbering): 223 residues, 184A/188A/221A, jumps such as 34 -> 37
+    assert data["observed_len"] == 223
+    assert {"184A", "188A", "221A"} <= set(data["residue_labels"])
+    assert data["internal_gaps"] == [] and data["missing_total"] == 0
+    assert ("34", "37") in data["numbering_jumps"]
+
+
+def test_modeler_gap_mode_uses_structure_numbering_for_mutations():
+    import mutator
+
+    observed = _build_modeler_numbering_dialog()._modeler_chain_data["A"]["observed_seq"]
+    # the widget is auto-filled with the observed chain: no residue may be invented
+    dlg = _build_modeler_numbering_dialog(full_sequence=observed)
+    seq, start, _ch, _data, _notes = dlg._modeler_prepare_base_sequence()
+    assert seq == observed and start == 16
+
+    out = dlg._modeler_apply_mutations_with_start_resolution(
+        seq, ["S195A"], start_pos=start, mutator_mod=mutator, allow_auto_resolve=False)
+    labels = dlg._modeler_chain_data["A"]["residue_labels"]
+    i195 = labels.index("195")
+    assert seq[i195] == "S"                                   # catalytic serine of trypsin
+    assert out["mutated_sequence"] == seq[:i195] + "A" + seq[i195 + 1:]
