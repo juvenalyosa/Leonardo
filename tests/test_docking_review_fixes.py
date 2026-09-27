@@ -114,22 +114,34 @@ def test_pubchem_hint_does_not_replace_another_ligand():
 
 
 def test_basic_groups_are_protonated_at_ph_7_4():
+    from rdkit import Chem
+
+    # _repair_and_protonate now delegates to the pKa module (empirical by default)
+    dlg = _dialog("_repair_and_protonate", "_pka_method", "_pka_cache_dir")
+    dlg._append_debug_log = lambda *_a: None
+    for smi, charge in (("NC(=N)c1ccccc1", 1), ("CCN", 1), ("c1ccncc1", 0), ("CCC(=O)O", -1)):
+        mol = dlg._repair_and_protonate(Chem.MolFromSmiles(smi), target_ph=7.4)
+        assert Chem.GetFormalCharge(mol) == charge, smi
+    assert dlg._last_protonation_info["method"] == "empirical"
+
+
+def test_dimorphite_fallback_path_still_protonates():
     pytest.importorskip("dimorphite_dl")
     from rdkit import Chem
 
-    dlg = _dialog("_repair_and_protonate", "_try_dimorphite_protonate_smiles")
+    dlg = _dialog("_repair_and_protonate_dimorphite", "_try_dimorphite_protonate_smiles")
     for smi, charge in (("NC(=N)c1ccccc1", 1), ("CCN", 1), ("c1ccncc1", 0), ("CCC(=O)O", -1)):
-        mol = dlg._repair_and_protonate(Chem.MolFromSmiles(smi), target_ph=7.4)
+        mol = dlg._repair_and_protonate_dimorphite(Chem.MolFromSmiles(smi), target_ph=7.4)
         assert Chem.GetFormalCharge(mol) == charge, smi
 
 
 def test_amidine_fallback_without_dimorphite():
     from rdkit import Chem
 
-    dlg = _dialog("_repair_and_protonate")
+    dlg = _dialog("_repair_and_protonate_dimorphite")
     dlg._try_dimorphite_protonate_smiles = lambda smiles, ph: None
     for smi, charge in (("NC(=N)c1ccccc1", 1), ("CC(=O)N", 0), ("NC(=NO)c1ccccc1", 0)):
-        assert Chem.GetFormalCharge(dlg._repair_and_protonate(Chem.MolFromSmiles(smi))) == charge, smi
+        assert Chem.GetFormalCharge(dlg._repair_and_protonate_dimorphite(Chem.MolFromSmiles(smi))) == charge, smi
 
 
 def test_torsion_qc_checks_rigid_ligands(tmp_path):

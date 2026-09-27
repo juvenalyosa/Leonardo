@@ -1024,6 +1024,55 @@ def mean_charge(result, ph):
     return sum(p * charges[st] for st, p in pops.items())
 
 
+def population_curves(result, ph_values, min_population=0.05):
+    """
+    Microstate populations and mean net charge over ``ph_values``, for plotting.
+
+    Returns ``{"ph": [...], "mean_charge": [...], "states": [{"state", "charge",
+    "populations"}]}``; microstates that never reach ``min_population`` are left out.
+    """
+    energies = {tuple(m["state"]): float(m["g"]) for m in result.get("microstates", [])}
+    charges = {tuple(m["state"]): m["charge"] for m in result.get("microstates", [])}
+    phs = [float(v) for v in ph_values]
+    if not energies:
+        return {"ph": phs, "mean_charge": [None] * len(phs), "states": []}
+    table = {st: [] for st in energies}
+    mean_q = []
+    for ph in phs:
+        pops = microstate_populations(energies, ph)
+        for st in energies:
+            table[st].append(pops[st])
+        mean_q.append(sum(p * charges[st] for st, p in pops.items()))
+    states = [{"state": list(st), "charge": charges[st], "populations": vals}
+              for st, vals in table.items() if max(vals) >= float(min_population)]
+    return {"ph": phs, "mean_charge": mean_q, "states": states}
+
+
+def molecule_for_state(mol, result, state, embed_if_2d=True, seed=20260927):
+    """
+    Protonated molecule for one microstate of a :func:`compute_pka` result, with
+    hydrogens. Heavy-atom coordinates of ``mol`` are kept; a 2D/coordinate-less input
+    is embedded in 3D (ETKDG + MMFF) when ``embed_if_2d``.
+    """
+    parent = neutral_parent(mol)
+    by_atom = {s["atom"]: s for s in result["sites"]}
+    enumerated = [by_atom[a] for a in result["enumerated_atoms"]]
+    out = build_state_molecule(parent, enumerated, list(state), fixed=result["fixed_sites"], add_hs=True)
+    is_3d = out.GetNumConformers() > 0 and any(abs(p[2]) > 1e-4 for p in out.GetConformer().GetPositions())
+    if embed_if_2d and not is_3d:
+        from rdkit.Chem import AllChem
+
+        out.RemoveAllConformers()
+        params = AllChem.ETKDGv3()
+        params.randomSeed = int(seed)
+        if AllChem.EmbedMolecule(out, params) == 0:
+            try:
+                AllChem.MMFFOptimizeMolecule(out, maxIters=2000)
+            except Exception:
+                pass
+    return out
+
+
 def protonate_molecule(mol, ph=7.4, method="empirical", cache_dir=None, add_hs=True, **kwargs):
     """
     Dominant protonation state of ``mol`` at ``ph``.
@@ -1085,4 +1134,6 @@ __all__ = [
     "states_at_ph",
     "mean_charge",
     "protonate_molecule",
+    "population_curves",
+    "molecule_for_state",
 ]

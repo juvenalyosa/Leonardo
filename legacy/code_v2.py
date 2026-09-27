@@ -308,6 +308,7 @@ try:
     from .openmm_dynamics_runtime import validate_openmm_cv_definitions
     from .small_molecule_runtime import build_small_molecule_prep_qc
     from .small_molecule_runtime import prepare_small_molecule_working_mol
+    from .pka_runtime import protonate_molecule as pka_protonate_molecule
     from .small_molecule_runtime import summarize_small_molecule_state
     from .modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
     from .modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
@@ -687,6 +688,7 @@ except Exception:
     from openmm_dynamics_runtime import validate_openmm_cv_definitions
     from small_molecule_runtime import build_small_molecule_prep_qc
     from small_molecule_runtime import prepare_small_molecule_working_mol
+    from pka_runtime import protonate_molecule as pka_protonate_molecule
     from small_molecule_runtime import summarize_small_molecule_state
     from modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
     from modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
@@ -3033,6 +3035,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "btn_open_bioseq",
                 "btn_open_psi4",
                 "btn_open_ligand_tools",
+                "btn_open_pka",
                 "btn_open_pocket_docking",
                 "btn_open_redocking",
                 "btn_open_virtual_screening",
@@ -9161,22 +9164,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         smiles_hint = self._openmm_component_smiles_hint(c)
         hydrated_pdb = os.path.join(work, "component_hydrated.pdb")
         hydrated_sdf = os.path.join(work, "component_hydrated.sdf")
-        try:
-            use_target_ph = float(self._current_small_molecule_target_ph())
-        except Exception:
-            use_target_ph = 7.4
+        # MD ligands/cofactors are protonated at the MD pH (it used to be the docking pH)
+        use_target_ph = float(self._openmm_ligand_target_ph())
         param_net_charge = int(net_charge)
         inferred_charge = int(self._rdkit_formal_charge_from_smiles(smiles_hint))
-        if int(param_net_charge) == 0 and int(inferred_charge) != 0:
-            param_net_charge = int(inferred_charge)
+        protonation_note = ""
         if smiles_hint:
             hyd = self._openmm_build_hydrated_component_pdb(
                 src_pdb,
                 hydrated_pdb,
                 c,
                 smiles_hint=smiles_hint,
+                target_ph=float(use_target_ph),
             )
             if bool(hyd.get("ok", False)) and os.path.isfile(hydrated_pdb):
+                if hyd.get("formal_charge") is not None:
+                    inferred_charge = int(hyd["formal_charge"])
+                prot = dict(hyd.get("protonation") or {})
+                protonation_note = (f"protonation:{prot.get('method', '?')}@pH{float(use_target_ph):.2f}"
+                                    f"(charge {inferred_charge:+d})")
                 try:
                     if self._prepare_ligand_3d_from_source(
                         src_pdb,
@@ -9185,10 +9191,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         target_ph=float(use_target_ph),
                     ):
                         src_for_param = str(hydrated_sdf)
+                        q_sdf = self._ligand_file_formal_charge(hydrated_sdf)
+                        if q_sdf is not None:
+                            inferred_charge = int(q_sdf)     # the molecule antechamber actually reads
                     else:
                         src_for_param = str(hydrated_pdb)
                 except Exception:
                     src_for_param = str(hydrated_pdb)
+        # net charge 0 in the dialog means "automatic": use the pH-protonated molecule's charge,
+        # not the raw CCD SMILES (which is usually the neutral form)
+        if int(param_net_charge) == 0 and int(inferred_charge) != 0:
+            param_net_charge = int(inferred_charge)
+        elif int(param_net_charge) != int(inferred_charge):
+            self._append_debug_log(
+                f"OpenMM component {tag}: requested net charge {int(param_net_charge):+d} differs from the "
+                f"protonated molecule at pH {float(use_target_ph):.2f} ({int(inferred_charge):+d})."
+            )
         res = self._openmm_parameterize_ligand_source_to_xml(
             source_file=src_for_param,
             out_dir=work,
@@ -9204,8 +9222,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return res
         if int(param_net_charge) != int(net_charge):
             res["notes"] = list(res.get("notes", []) or []) + [
-                f"auto_net_charge_from_smiles:{int(net_charge)}->{int(param_net_charge)}"
+                f"auto_net_charge_from_protonation:{int(net_charge)}->{int(param_net_charge)}"
             ]
+        if protonation_note:
+            res["notes"] = list(res.get("notes", []) or []) + [protonation_note]
         xml_path = str(res.get("xml_forcefield", "") or "").strip()
         if (not xml_path) or (not os.path.isfile(xml_path)):
             xml_path = str(res.get("xml", "") or "").strip()
@@ -9648,7 +9668,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "inpcrd": (str(inpcrd) if os.path.isfile(inpcrd) else ""),
             "hydrated_pdb": (str(hydrated_pdb) if os.path.isfile(hydrated_pdb) else ""),
         }
-    def _openmm_build_hydrated_component_pdb(self, source_pdb, out_pdb, comp, smiles_hint=""):
+    def _openmm_ligand_target_ph(self):
+        """pH for ligands/cofactors that go into MD: the OpenMM (MD) pH, else the docking pH."""
+        try:
+            if hasattr(self, "spin_openmm_ph"):
+                return float(self.spin_openmm_ph.value())
+        except Exception:
+            pass
+        try:
+            return float(self._current_small_molecule_target_ph())
+        except Exception:
+            return 7.4
+    def _openmm_build_hydrated_component_pdb(self, source_pdb, out_pdb, comp, smiles_hint="", target_ph=None):
         src = str(source_pdb or "").strip()
         outp = str(out_pdb or "").strip()
         smi = str(smiles_hint or "").strip()
@@ -9668,7 +9699,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
             mapped = AllChem.AssignBondOrdersFromTemplate(ref, crystal)
-            mapped_h = Chem.AddHs(mapped, addCoords=True)
+            # protonation at the MD pH before charges/parameters (the CCD SMILES is usually the
+            # neutral form); crystal heavy atoms keep coordinates and names
+            ph = float(self._openmm_ligand_target_ph() if target_ph is None else target_ph)
+            protonation = {}
+            try:
+                mapped_h, protonation = pka_protonate_molecule(mapped, ph, method=self._pka_method(),
+                                                               cache_dir=self._pka_cache_dir())
+            except Exception as exc:
+                protonation = {"method": "none", "error": str(exc)}
+                mapped_h = Chem.AddHs(mapped, addCoords=True)
             resn = str(c.get("resn", "") or "LIG").strip().upper()[:3] or "LIG"
             chain_id = str(c.get("chain", "") or "").strip()[:1]
             resi_raw = str(c.get("resi", "") or "1").strip()
@@ -9730,6 +9770,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "atom_count": int(sum(1 for line in lines if str(line[:6]).strip().upper() in {"ATOM", "HETATM"})),
                 "hydrogen_count": int(sum(1 for line in lines if str(line[76:78]).strip().upper() == "H")),
                 "path": str(outp),
+                "formal_charge": int(Chem.GetFormalCharge(mapped_h)),
+                "protonation": dict(protonation or {}),
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -9913,7 +9955,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         if smiles_hint:
                             hyd_tmp = outp + f".component_{idx:03d}.hydrated.tmp.pdb"
                             tmp_paths.append(hyd_tmp)
-                            hyd = self._openmm_build_hydrated_component_pdb(
+                            hyd = self._openmm_build_hydrated_component_pdb(  # MD pH (default)
                                 tmp_comp,
                                 hyd_tmp,
                                 comp,
@@ -19035,6 +19077,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_param.setColumnStretch(3, 1)
             lbox.addLayout(row_param)
             row_qm = QtWidgets.QHBoxLayout()
+            # protonation first: it fixes the net charge and atom types used by every charge method
+            self.btn_ligand_pka = QtWidgets.QPushButton("pKa & Protonation...")
+            self.btn_ligand_pka.setToolTip(
+                "Site pKa values and protonation state at a pH (empirical or PM7). Decide the state here "
+                "before building charges/parameters."
+            )
+            self.btn_ligand_pka.clicked.connect(self._show_pka_dialog)
+            row_qm.addWidget(self.btn_ligand_pka)
             self.btn_ligand_qm_espfit = QtWidgets.QPushButton("QM Charges (Psi4 ESP Fit)...")
             self.btn_ligand_qm_espfit.clicked.connect(self._on_open_psi4_espfit_for_ligand)
             row_qm.addWidget(self.btn_ligand_qm_espfit)
@@ -19407,6 +19457,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self.verticalLayout.insertWidget(insert_idx, self.btn_open_ligand_tools)
             else:
                 self.layout().addWidget(self.btn_open_ligand_tools)
+            self.btn_open_pka = QtWidgets.QPushButton("pKa & Protonation...")
+            self.btn_open_pka.setToolTip(
+                "pKa of small molecules (empirical or PM7/COSMO) and pH-dependent protonation states; "
+                "hand the chosen state to docking or parametrization"
+            )
+            self.btn_open_pka.clicked.connect(self._show_pka_dialog)
+            if hasattr(self, "verticalLayout"):
+                idx_lt = self.verticalLayout.indexOf(self.btn_open_ligand_tools)
+                self.verticalLayout.insertWidget(idx_lt + 1 if idx_lt >= 0 else self.verticalLayout.count(),
+                                                 self.btn_open_pka)
+            else:
+                self.layout().addWidget(self.btn_open_pka)
             self.btn_open_pocket_docking = QtWidgets.QPushButton("Pocket & Docking...")
             self.btn_open_pocket_docking.setToolTip(
                 "fpocket pocket detection, ligand sourcing, antechamber parameterization, "
@@ -34864,7 +34926,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return importlib.util.find_spec("meeko") is not None
         except Exception:
             return False
-    def _vs_prepare_ligand_with_meeko(self, mol, out_pdbqt):
+    def _vs_prepare_ligand_with_meeko(self, mol, out_pdbqt, target_ph=None):
+        """Meeko PDBQT for a ligand. With ``target_ph`` the ligand is first protonated at that pH
+        by the pKa module (Virtual Screening / Lead Optimization libraries arrive as drawn);
+        docking passes None because its ligand was already protonated (or chosen in the pKa window)."""
         if (not HAS_RDKIT) or mol is None:
             return False, "RDKit unavailable or invalid molecule"
         try:
@@ -34891,6 +34956,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 core = rebuilt
         except Exception:
             pass
+        if target_ph is not None:
+            try:
+                core = Chem.RemoveHs(pka_protonate_molecule(core, float(target_ph), method=self._pka_method(),
+                                                            cache_dir=self._pka_cache_dir())[0])
+            except Exception as exc:
+                self._append_debug_log(f"Meeko prep: pKa protonation skipped ({exc}).")
         try:
             work = Chem.AddHs(core, addCoords=True)
         except Exception as e:
@@ -35234,7 +35305,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             return False, str(e)
     def _vs_prepare_meeko_for_docking(self, mol, out_pdbqt):
-        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt)
+        ph = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
+        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt, target_ph=ph)
     def _vs_fallback_prepare_ligand_for_docking(self, lig_sdf, fallback_job, target_ph_local):
         try:
             os.makedirs(fallback_job, exist_ok=True)
@@ -36824,6 +36896,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 net_charge_raw = self.spin_net_charge.value() if hasattr(self, "spin_net_charge") else 0
             except Exception:
                 net_charge_raw = 0
+            # Each analog has its own protonation state and net charge: the docking-panel
+            # net charge used to be applied to every hit. Protonate at the VS pH first.
+            hit_mol = hit.get("mol") if isinstance(hit, dict) else None
+            if hit_mol is not None:
+                try:
+                    ph_vs = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
+                    prot_mol, prot_info = pka_protonate_molecule(hit_mol, ph_vs, method=self._pka_method(),
+                                                                 cache_dir=self._pka_cache_dir())
+                    hit = dict(hit, mol=prot_mol)
+                    net_charge_raw = int(prot_info["charge"])
+                except Exception as exc:
+                    self._append_debug_log(f"Lead-opt refine: pKa protonation of hit {hit_idx} failed ({exc}).")
             try:
                 charge_method_raw = str(self.cmb_charge_method.currentData()) if hasattr(self, "cmb_charge_method") else "bcc"
             except Exception:
@@ -37138,7 +37222,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             return False, str(e)
     def _leadopt_prepare_meeko_for_docking(self, mol, out_pdbqt):
-        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt)
+        ph = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
+        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt, target_ph=ph)
     def _leadopt_fallback_prepare_ligand_for_docking(self, lig_sdf, fallback_job, item_local, target_ph_local):
         try:
             os.makedirs(fallback_job, exist_ok=True)
@@ -42019,7 +42104,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 clean_sdf,
                 smiles_hint=smi_hint,
                 target_ph=ph,
-                reprotonate=True,     # the docking pH applies unless input charges are preserved
+                # the docking pH applies unless input charges are preserved or the state was
+                # chosen in the pKa window
+                reprotonate=not self._pka_ligand_is_locked(original_source),
             ):
                 q_in = self._ligand_file_formal_charge(original_source)
                 q_out = self._ligand_file_formal_charge(clean_sdf)
@@ -43474,11 +43561,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     os.makedirs(os.path.dirname(clean_sdf), exist_ok=True)
                 except Exception:
                     pass
+                # Protonation is decided here, before charges and GAFF types: a source that
+                # already has hydrogens (PubChem 3D SDF) used to keep them, so acids were
+                # parametrized as neutral COOH. A state chosen in the pKa window is kept.
                 if self._prepare_ligand_3d_from_source(
                     source_file,
                     clean_sdf,
                     smiles_hint=self._current_pubchem_smiles_hint(),
                     target_ph=self._current_small_molecule_target_ph(),
+                    reprotonate=not self._pka_ligand_is_locked(source_file),
                 ):
                     source_file = clean_sdf
                     try:
@@ -43487,8 +43578,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         clean_mol = None
                     if clean_mol is not None:
                         charge_state = self._sync_small_molecule_formal_charge(clean_mol)
-                        net_charge = int(charge_state.get("formal_charge", net_charge) or net_charge)
-                        rdkit_formal_charge = int(charge_state.get("formal_charge", net_charge) or net_charge)
+                        formal = charge_state.get("formal_charge")
+                        # "formal or net_charge" dropped a formal charge of 0 in favour of a stale spinbox
+                        if formal is not None:
+                            net_charge = int(formal)
+                            rdkit_formal_charge = int(formal)
                         try:
                             rdkit_atomic_z_sum = int(sum(int(a.GetAtomicNum()) for a in clean_mol.GetAtoms()))
                         except Exception:
@@ -51279,10 +51373,150 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             print(f"Dimorphite protonation warning: {e}")
         return None
+    def _pka_method(self):
+        """Method used for automatic protonation everywhere ("empirical" or "pm7")."""
+        return str(getattr(self, "_pka_default_method", "empirical") or "empirical")
+    def _show_pka_dialog(self):
+        """pKa & Protonation window (protonation is decided before charges/parameters)."""
+        try:
+            try:
+                from .pka_dialog import PkaDialog
+            except ImportError:
+                from leonardo.pka_dialog import PkaDialog
+            dlg = getattr(self, "_pka_dialog", None)
+            if dlg is None:
+                dlg = PkaDialog(
+                    self,
+                    submit_task=lambda fn, ok, err, fin: self._submit_background_task(
+                        fn, on_success=ok, on_error=err, on_finished=fin, task_name="pKa calculation"),
+                    load_selection=self._pka_selection_molecule,
+                    current_docking_ligand=lambda: str(getattr(self, "_docking_ligand_file", "") or ""),
+                    use_for_docking=lambda mol, info: self._pka_use_state(mol, info, target="docking"),
+                    use_for_parametrization=lambda mol, info: self._pka_use_state(mol, info, target="parametrization"),
+                    cache_dir=self._pka_cache_dir(),
+                    default_ph=float(self._current_small_molecule_target_ph()),
+                    default_method=self._pka_method(),
+                    set_default_method=self._pka_set_default_method,
+                )
+                self._pka_dialog = dlg
+            self._fit_dialog_to_screen(dlg, preferred_w=1060, preferred_h=860, min_w=900, min_h=700)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "pKa & Protonation", f"Failed to open the pKa window: {e}")
+    def _pka_set_default_method(self, method):
+        self._pka_default_method = str(method or "empirical")
+        self._append_debug_log(f"Automatic protonation method set to: {self._pka_default_method}")
+    def _pka_selection_molecule(self):
+        """Small molecule from the PyMOL selection 'sele' with bond orders (CCD template, else obabel)."""
+        if not HAS_RDKIT:
+            raise RuntimeError("RDKit is required.")
+        sel = "sele"
+        try:
+            n_atoms = int(cmd.count_atoms(f"({sel}) and not hydro"))
+        except Exception:
+            n_atoms = 0
+        if n_atoms <= 0:
+            raise RuntimeError("Select the ligand/cofactor in PyMOL first (it must be in the selection 'sele').")
+        if n_atoms > 200:
+            raise RuntimeError(f"The selection has {n_atoms} heavy atoms; select a single small molecule.")
+        resns = set()
+        cmd.iterate(f"({sel}) and not hydro", "resns.add(resn)", space={"resns": resns})
+        pdb_block = cmd.get_pdbstr(f"({sel}) and not hydro")
+        crystal = Chem.MolFromPDBBlock(pdb_block, removeHs=True, sanitize=False)
+        if crystal is None:
+            raise RuntimeError("RDKit could not read the selection.")
+        mol = None
+        resn = sorted(resns)[0] if len(resns) == 1 else ""
+        template_smiles = self._openmm_component_smiles_hint({"resn": resn}) if resn else ""
+        if template_smiles:
+            try:
+                template = Chem.RemoveHs(Chem.MolFromSmiles(template_smiles))
+                mol = AllChem.AssignBondOrdersFromTemplate(template, crystal)
+            except Exception:
+                mol = None
+        if mol is None:
+            # no template: bond orders perceived by Open Babel from the coordinates
+            obabel = self._dock_tool_path("obabel")
+            if obabel:
+                import tempfile
+                with tempfile.TemporaryDirectory() as td:
+                    pin, pout = os.path.join(td, "sel.pdb"), os.path.join(td, "sel.sdf")
+                    with open(pin, "w", encoding="utf-8") as fh:
+                        fh.write(pdb_block)
+                    subprocess.run([obabel, pin, "-O", pout], capture_output=True, timeout=120, check=False)
+                    if os.path.isfile(pout):
+                        mol = next((m for m in Chem.SDMolSupplier(pout, removeHs=True) if m is not None), None)
+        if mol is None:
+            raise RuntimeError("Could not assign bond orders to the selection (no CCD template, Open Babel failed).")
+        label = f"PyMOL selection ({resn or 'mixed residues'}, {n_atoms} heavy atoms)"
+        return mol, label
+    def _pka_use_state(self, mol, info, target="docking"):
+        """Hand a protonation state from the pKa window to docking or parametrization. The state is
+        locked: docking/parametrization keep its hydrogens instead of re-protonating."""
+        try:
+            from .pka_dialog import write_state_sdf
+        except ImportError:
+            from leonardo.pka_dialog import write_state_sdf
+        lig_dir = os.path.join(self._dock_workspace_dir(), "ligands")
+        os.makedirs(lig_dir, exist_ok=True)
+        tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(lig_dir, f"pka_state_{tag}_pH{float(info.get('ph', 7.4)):.2f}.sdf")
+        write_state_sdf(mol, info, path)
+        label = f"pKa module: {info.get('method')}, pH {float(info.get('ph', 7.4)):.2f}, charge {int(info.get('charge', 0)):+d}"
+        self._set_docking_ligand_file(path, source_label=label)
+        self._pka_locked_ligand_file = str(path)
+        try:
+            if hasattr(self, "spin_docking_ph"):
+                self.spin_docking_ph.setValue(float(info.get("ph", 7.4)))
+            if hasattr(self, "spin_net_charge"):
+                self.spin_net_charge.setValue(int(info.get("charge", 0)))
+        except Exception:
+            pass
+        self._append_debug_log(f"pKa state sent to {target}: {path} ({label}; population "
+                               f"{100 * float(info.get('population', float('nan'))):.0f}%)")
+        if target == "parametrization":
+            return (f"State set as the ligand source (net charge {int(info.get('charge', 0)):+d}). "
+                    "Now run 'Build Charged MOL2 + Amber FF' to assign charges and parameters.")
+        return f"State set as the docking ligand (net charge {int(info.get('charge', 0)):+d}); it will not be re-protonated."
+    def _pka_ligand_is_locked(self, path):
+        """True when ``path`` is a state chosen in the pKa window (keep its hydrogens)."""
+        locked = str(getattr(self, "_pka_locked_ligand_file", "") or "")
+        return bool(locked) and os.path.abspath(str(path or "")) == os.path.abspath(locked)
+    def _pka_cache_dir(self):
+        try:
+            return os.path.join(self._dock_workspace_dir(), "pka_cache")
+        except Exception:
+            return None
     def _repair_and_protonate(self, mol, target_ph=7.4):
         """
-        Repair common ligand ionization states for interaction typing.
-        Uses Dimorphite-DL at target pH when available.
+        pH-dependent protonation of a small molecule (heavy-atom coordinates kept).
+
+        Delegates to leonardo.pka_runtime (empirical class pKa by default, PM7 when chosen
+        in the pKa window); the older Dimorphite-DL path is only a fallback when the pKa
+        module cannot handle the molecule. The result (method, site pKa, population,
+        warnings) is kept in self._last_protonation_info.
+        """
+        if not HAS_RDKIT:
+            return None
+        try:
+            out, info = pka_protonate_molecule(mol, float(target_ph), method=self._pka_method(),
+                                               cache_dir=self._pka_cache_dir())
+            self._last_protonation_info = dict(info)
+            for warn in list(info.get("warnings", []) or [])[:4]:
+                self._append_debug_log(f"Protonation ({info.get('method')}, pH {float(target_ph):.2f}): {warn}")
+            return out
+        except Exception as exc:
+            try:
+                self._append_debug_log(f"pKa module could not protonate the ligand ({exc}); using Dimorphite-DL fallback.")
+            except Exception:
+                pass
+            self._last_protonation_info = {"method": "dimorphite_fallback", "ph": float(target_ph), "error": str(exc)}
+            return self._repair_and_protonate_dimorphite(mol, target_ph=target_ph)
+    def _repair_and_protonate_dimorphite(self, mol, target_ph=7.4):
+        """
+        Fallback: repair common ligand ionization states with Dimorphite-DL at target pH.
         """
         if not HAS_RDKIT:
             return None
