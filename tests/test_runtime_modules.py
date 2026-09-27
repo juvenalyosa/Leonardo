@@ -2070,9 +2070,12 @@ def test_abfe_runtime_build_adaptive_steering_update_decision():
         contact_count_4a=[4.0, 3.0, 2.0, 2.0],
         total_e_kj=[-110.0, -108.0, -107.0, -105.0],
     )
-    assert str(far_hold_done["reason"]) == "far_hold_complete"
+    assert str(far_hold_done["reason"]) == "far_hold_complete_enter_return"
     assert bool(far_hold_done["far_hold_stable"]) is True
     assert str(far_hold_done["phase"]) == "return"
+    # the return leg starts with the full pull force, not the reduced far-hold force
+    assert bool(far_hold_done["update_pull_k"]) is True
+    assert np.isclose(float(far_hold_done["pull_k_kj_nm2"]), float(hold_state["initial_pull_k_kj_nm2"]))
 
 
 def test_abfe_runtime_steering_policy_state_and_bandit_push():
