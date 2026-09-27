@@ -48,6 +48,7 @@ py-modules = [
   "mutator",
   "openmm_dynamics_runtime",
   "openmm_qmmm_runtime",
+  "pka_runtime",
   "psi4_cluster_runtime",
   "psi4_runtime",
   "qmmm_mopac_runtime",
