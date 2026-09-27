@@ -31,7 +31,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-IUPAC_URL = "https://raw.githubusercontent.com/IUPAC/Dissociation-Constants/main/iupac_high-confidence_v2_4.csv"
+# pinned to the v2.4 release so the deterministic selection (and the calibration) is reproducible
+IUPAC_URL = "https://raw.githubusercontent.com/IUPAC/Dissociation-Constants/v2.4/iupac_high-confidence_v2_4.csv"
+IUPAC_SHA256 = "5cd5ca8bda1952be8b223bb1fbe681780de9335617f9f7c0ee2c8f8c6f01cbf3"
 DEFAULT_CACHE = os.path.join(os.path.expanduser("~"), ".cache", "leonardo", "iupac_pka")
 ALLOWED_ELEMENTS = {"C", "H", "N", "O", "S", "F", "Cl", "Br", "I", "P"}
 
@@ -41,6 +43,10 @@ def load_iupac(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         print(f"downloading {IUPAC_URL}")
         urllib.request.urlretrieve(IUPAC_URL, path)
+    with open(path, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    if digest != IUPAC_SHA256:
+        raise SystemExit(f"{path}: SHA-256 {digest} does not match the pinned IUPAC v2.4 file {IUPAC_SHA256}")
     with open(path, encoding="utf-8") as fh:
         return list(csv.DictReader(fh))
 
@@ -166,13 +172,20 @@ def main():
     ap.add_argument("--report-out", default=os.path.join(HERE, "PM7_BENCHMARK.md"))
     ap.add_argument("--details-out", default=os.path.join(DEFAULT_CACHE, "pm7_benchmark_details.json"),
                     help="per-molecule results (contain IUPAC values; kept outside the repository)")
+    ap.add_argument("--from-details", default="",
+                    help="rebuild calibration and report from a previous --details-out file (no PM7 runs)")
     args = ap.parse_args()
 
     from leonardo import pka_runtime as P
 
-    mols = select_molecules(load_iupac(args.iupac_csv), args.per_class)
-    print(f"selected {len(mols)} molecules")
-    mols = run_pm7(mols, args.n_conformers, args.workers)
+    if args.from_details:
+        with open(args.from_details, encoding="utf-8") as fh:
+            mols = json.load(fh)["molecules"]
+        print(f"loaded {len(mols)} molecules from {args.from_details}")
+    else:
+        mols = select_molecules(load_iupac(args.iupac_csv), args.per_class)
+        print(f"selected {len(mols)} molecules")
+        mols = run_pm7(mols, args.n_conformers, args.workers)
     train = [m for m in mols if m["split"] == "train"]
     test = [m for m in mols if m["split"] == "test"]
     def in_domain(m):
@@ -185,12 +198,31 @@ def main():
     cal = P.fit_calibration(rows, shrinkage=lam, robust=True)
     cal_global = P.fit_calibration(rows, shrinkage=1.0e9, robust=True)
     cal_class = P.fit_calibration([{"class": m["class"], "x": m["x"], "y": m["y"]} for m in train], min_class_n=5)
+    # PM7 vs class-typical per class, decided on the calibration set only (leave-one-out),
+    # never on the test set: classes where empirical wins are marked pm7_recommended = false
+    index = {id(m): i for i, m in enumerate(train)}
+    for m in train:
+        others = [{"class": q["class"], "x": q["x"], "y": q["y"]} for q in train
+                  if in_domain(q) and index[id(q)] != index[id(m)]]
+        m["loo"] = P.apply_calibration(P.fit_calibration(others, shrinkage=lam, robust=True),
+                                       m["class"], m["x"], m["ref"])[0]
+    for m in mols:
+        cls = next(c for c in P.SITE_CLASSES if c["name"] == m["class"])
+        m["empirical"] = cls["empirical"][0]
+    recommend = {}
+    for name in sorted({m["class"] for m in mols}):
+        sub = [m for m in train if m["class"] == name]
+        pm7_mae = sum(abs(m["loo"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
+        emp_mae = sum(abs(m["empirical"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
+        recommend[name] = {"pm7_loo_mae": pm7_mae, "empirical_mae": emp_mae,
+                           "pm7_recommended": bool(not sub or pm7_mae <= emp_mae)}
+        if name in cal["classes"]:
+            cal["classes"][name]["pm7_recommended"] = recommend[name]["pm7_recommended"]
     for m in mols:
         m["pred"] = P.apply_calibration(cal, m["class"], m["x"], m["ref"])[0]
         m["pred_global"] = P.apply_calibration(cal_global, m["class"], m["x"], m["ref"])[0]
         m["pred_class"] = P.apply_calibration(cal_class, m["class"], m["x"], m["ref"])[0]
-        cls = next(c for c in P.SITE_CLASSES if c["name"] == m["class"])
-        m["empirical"] = cls["empirical"][0]
+        m["shipped"] = m["pred"] if recommend[m["class"]]["pm7_recommended"] else m["empirical"]
 
     def err(sub, key):
         return [m[key] - m["exp"] for m in sub]
@@ -200,6 +232,7 @@ def main():
         "test_global_slope": _stats(err(test, "pred_global")),
         "test_per_class_slope": _stats(err(test, "pred_class")),
         "test_shrinkage": _stats(err(test, "pred")),
+        "test_shipped_with_recommendation": _stats(err(test, "shipped")),
         "test_empirical_class_typical": _stats(err(test, "empirical")),
         "test_flagged": _stats(err([m for m in test if m["flags"]], "pred")),
         "test_unflagged": _stats(err([m for m in test if not m["flags"]], "pred")),
@@ -210,8 +243,11 @@ def main():
     for name in sorted({m["class"] for m in mols}):
         per_class[name] = {
             "n_train": sum(1 for m in train if m["class"] == name),
+            "n_cal": int(cal["classes"].get(name, {}).get("n", 0)),
             "test": _stats(err([m for m in test if m["class"] == name], "pred")),
+            "test_empirical": _stats(err([m for m in test if m["class"] == name], "empirical")),
             "slope": cal["classes"].get(name, cal["global"])["slope"],
+            **recommend[name],
         }
     per_flag = {}
     for flag in sorted({f for m in test for f in m["flags"]}):
@@ -234,6 +270,7 @@ def main():
             "test": summary["test_shrinkage"],
             "data": "IUPAC Digitized pKa Dataset v2.4 (CC BY-NC 4.0; not redistributed), "
                     "selection in benchmarks/pka/run_pka_benchmark.py",
+            "data_sha256": IUPAC_SHA256,
         }},
     }
     with open(args.calibration_out, "w", encoding="utf-8") as fh:
@@ -270,17 +307,25 @@ def main():
     ]
     for key, label in (("test_uncalibrated", "PM7 uncalibrated"), ("test_global_slope", "PM7, global robust slope"),
                        ("test_per_class_slope", "PM7, per-class least squares (all molecules)"),
-                       ("test_shrinkage", "**PM7, robust per-class slope with shrinkage (shipped)**"),
+                       ("test_shrinkage", "PM7, robust per-class slope with shrinkage (all classes)"),
+                       ("test_shipped_with_recommendation", "**Shipped: PM7, empirical where PM7 is not recommended**"),
                        ("test_empirical_class_typical", "Empirical (class-typical pKa)"),
                        ("test_in_domain", "shipped model, in-domain sites"),
                        ("test_out_of_domain", "shipped model, out-of-domain sites (warned)"),
                        ("test_flagged", "shipped model, any warning flag"),
                        ("test_unflagged", "shipped model, no warning flag")):
         lines.append(f"| {label} | {fmt(summary[key])} |")
-    lines += ["", "## Per class (shipped model, test set)", "", "| Class | train n | slope | test n | MAE | RMSE | within 1 |",
-              "|---|---|---|---|---|---|---|"]
+    lines += ["", "## Per class", "",
+              "`cal n`: in-domain molecules the slope was fitted on (of `train n`). PM7 vs empirical is",
+              "decided on the calibration set (leave-one-out MAE), never on the test set. Classes with",
+              "fewer than 5 test molecules are not statistically meaningful.", "",
+              "| Class | train n | cal n | slope | LOO MAE PM7 / empirical | PM7 recommended | test PM7: n, MAE, RMSE, within 1 | test empirical MAE |",
+              "|---|---|---|---|---|---|---|---|"]
     for name, row in per_class.items():
-        lines.append(f"| {name} | {row['n_train']} | {row['slope']:.2f} | {fmt(row['test'])} |")
+        emp = row["test_empirical"]
+        lines.append(f"| {name} | {row['n_train']} | {row['n_cal']} | {row['slope']:.2f} | "
+                     f"{row['pm7_loo_mae']:.2f} / {row['empirical_mae']:.2f} | {'yes' if row['pm7_recommended'] else '**no**'} | "
+                     f"{fmt(row['test']).replace(' | ', ', ')} | {emp.get('mae', float('nan')):.2f} |")
     lines += ["", "## Per warning flag (test set)", "", "| Flag | n | MAE | RMSE | within 1 |", "|---|---|---|---|---|"]
     for flag, st in per_flag.items():
         lines.append(f"| {flag} | {fmt(st)} |")

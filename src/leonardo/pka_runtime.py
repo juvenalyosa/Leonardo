@@ -30,7 +30,9 @@ from itertools import product
 
 RT_LN10 = 1.3642  # kcal/mol at 298.15 K
 MAX_ENUMERATED_SITES = 4
-PKA_RUNTIME_VERSION = "1"
+# Part of the result-cache key: bump whenever SITE_CLASSES, flags or microstate rules change,
+# otherwise results computed with the old rules are served from the cache.
+PKA_RUNTIME_VERSION = "2"
 
 # --------------------------------------------------------------------------- #
 # Site classes
@@ -675,6 +677,10 @@ def _default_mopac_runner(input_text, timeout=600, exe=None):
             return ""
 
 
+# reference-compound energies are the same for every molecule of a class: computed once per process
+_REFERENCE_DELTA_CACHE = {}
+
+
 class MopacBackend:
     """
     PM7/COSMO (water) relative pKa.
@@ -771,10 +777,21 @@ class MopacBackend:
     def reference_delta(self, cls_name, progress=None, cancel=None):
         Chem = _chem()
         ref = next(c for c in SITE_CLASSES if c["name"] == cls_name)["reference"]
+        key = (cls_name, ref["acid"], ref["base"], PM7_KEYWORDS, self.seed, self.n_conformers,
+               getattr(self.runner, "__name__", str(id(self.runner))))
+        if self.runner is _default_mopac_runner and key in _REFERENCE_DELTA_CACHE:
+            return _REFERENCE_DELTA_CACHE[key]
         acid = Chem.AddHs(Chem.MolFromSmiles(ref["acid"]))
         base = Chem.AddHs(Chem.MolFromSmiles(ref["base"]))
         e_acid, e_base = self.state_energies([acid, base], progress=progress, cancel=cancel)
-        return e_base - e_acid, float(ref["pka"])
+        value = (e_base - e_acid, float(ref["pka"]))
+        if self.runner is _default_mopac_runner:
+            _REFERENCE_DELTA_CACHE[key] = value
+        return value
+
+    def _pm7_recommended(self, cls_name):
+        entry = ((self.calibration or {}).get("classes") or {}).get(cls_name) or {}
+        return bool(entry.get("pm7_recommended", True))
 
     # -- pKa ----------------------------------------------------------------- #
     def evaluate(self, parent, enumerated, fixed, progress=None, cancel=None, **_kwargs):
@@ -794,7 +811,8 @@ class MopacBackend:
                 if st[s_idx]:
                     continue
                 prot = tuple(True if i == s_idx else b for i, b in enumerate(st))
-                if not site.get("qm_supported"):
+                if not site.get("qm_supported") or not self._pm7_recommended(site["class"]):
+                    # no QM class, or the benchmark found the class-typical value more accurate
                     micro[f"{_state_key(st)}|{s_idx}"] = float(site["empirical_pka"])
                     continue
                 if site["class"] not in refs:
@@ -815,6 +833,8 @@ class MopacBackend:
             pka = micro[f"{_state_key(ctx)}|{s_idx}"]
             if s_idx in outliers:
                 sd, source = float(site["empirical_sd"]), "class_typical (PM7 outlier)"
+            elif site.get("qm_supported") and not self._pm7_recommended(site["class"]):
+                sd, source = float(site["empirical_sd"]), "class_typical (PM7 not recommended for this class)"
             elif site.get("qm_supported"):
                 entry = ((self.calibration or {}).get("classes") or {}).get(site["class"]) or {}
                 sd = float(entry.get("rmse", ((self.calibration or {}).get("global") or {}).get("rmse", 1.5)))
@@ -823,6 +843,10 @@ class MopacBackend:
                 sd, source = float(site["empirical_sd"]), "class_typical"
             site_pkas.append({"pka": float(pka), "sd": sd, "source": source})
         warnings = [] if self.calibration else ["PM7 pKa values are uncalibrated (no calibration file)"]
+        for s_idx, site in enumerate(enumerated):
+            if site.get("qm_supported") and not self._pm7_recommended(site["class"]):
+                warnings.append(f"site {site['atom']} ({site['class']}): PM7 was less accurate than the "
+                                "class-typical pKa for this class in the benchmark; empirical pKa used")
         for s_idx in sorted(outliers):
             warnings.append(f"site {enumerated[s_idx]['atom']} ({enumerated[s_idx]['class']}): PM7 energy is "
                             "implausible for this group; empirical pKa used")

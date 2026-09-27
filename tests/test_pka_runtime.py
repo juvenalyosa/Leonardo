@@ -256,3 +256,27 @@ def test_pm7_real_calculations():
     assert 10.0 < benz["sites"][0]["pka"] < 13.5                                # exp 11.6
     _mol, gly = protonate_molecule(Chem.MolFromSmiles("NCC(=O)O"), 7.4, method="pm7")
     assert gly["smiles"] == "[NH3+]CC(=O)[O-]"                                  # zwitterion from coupled microstates
+
+
+def test_pm7_not_recommended_class_uses_empirical_with_warning():
+    runner = _fake_runner({0: -9.9, 1: 76.0})
+    cal = {"global": {"slope": 1.0, "rmse": 0.5}, "version": "t",
+           "classes": {"amine3": {"slope": 0.9, "rmse": 2.2, "n": 20, "pm7_recommended": False}}}
+    res = compute_pka(Chem.MolFromSmiles("CCN(CC)CC"), method="pm7",
+                      backend_options={"runner": runner, "n_conformers": 1, "workers": 1, "calibration": cal})
+    site = res["sites"][0]
+    assert site["pka"] == pytest.approx(site["empirical_pka"])
+    assert "not recommended" in site["pka_source"]
+    assert any("less accurate than the class-typical" in w for w in res["warnings"])
+
+
+def test_shipped_calibration_records_data_provenance():
+    import json
+    import os
+
+    import pka_runtime
+
+    with open(os.path.join(os.path.dirname(pka_runtime.__file__), "pka_calibration.json")) as fh:
+        pm7 = json.load(fh)["methods"]["pm7"]
+    assert pm7["robust"] is True and len(pm7["data_sha256"]) == 64
+    assert pm7["classes"]["amine3"]["pm7_recommended"] is False           # decided on the calibration set

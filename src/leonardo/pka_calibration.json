@@ -5,83 +5,97 @@
     "amidine": {
      "n": 18,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 2.1546208842845216,
      "slope": 0.5747854194423954
     },
     "amine1": {
      "n": 20,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 0.7417827693637319,
      "slope": 0.6773184965784115
     },
     "amine2": {
      "n": 20,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 1.2718132757472984,
      "slope": 0.7650744833231634
     },
     "amine3": {
      "n": 20,
      "own": true,
+     "pm7_recommended": false,
      "rmse": 2.222751812051905,
      "slope": 0.869975493062479
     },
     "aniline": {
      "n": 8,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 1.0040845036003376,
      "slope": 0.41241627264889136
     },
     "carboxylic_aliphatic": {
      "n": 20,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 1.2800145940549017,
      "slope": 0.6248381154987652
     },
     "carboxylic_aromatic": {
      "n": 20,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 0.5969049936499773,
      "slope": 0.5571052865509277
     },
     "guanidine": {
      "n": 3,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 1.7060024072778501,
      "slope": 0.8080420078187867
     },
     "imidazole": {
      "n": 19,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 1.0743269708754932,
      "slope": 0.9810342360675661
     },
     "phenol": {
      "n": 13,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 0.5945469274805492,
      "slope": 0.3809794214453054
     },
     "pyridine": {
      "n": 15,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 0.4779105246698938,
      "slope": 0.7960381796689793
     },
     "thiol_aliphatic": {
      "n": 8,
      "own": true,
+     "pm7_recommended": true,
      "rmse": 0.9622445656510388,
      "slope": 1.0697980303638848
     },
     "thiol_aromatic": {
      "n": 4,
      "own": false,
+     "pm7_recommended": true,
      "rmse": 0.41477084517659396,
      "slope": 0.673400984009842
     }
    },
    "data": "IUPAC Digitized pKa Dataset v2.4 (CC BY-NC 4.0; not redistributed), selection in benchmarks/pka/run_pka_benchmark.py",
+   "data_sha256": "5cd5ca8bda1952be8b223bb1fbe681780de9335617f9f7c0ee2c8f8c6f01cbf3",
    "excluded_flags": [
     "acyl_substituted",
     "cyclic_imine",
