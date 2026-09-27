@@ -44,6 +44,20 @@ PKA_RUNTIME_VERSION = "1"
 _NOT_ACYL_N = "!$(N-[#6]=[#7,#8,#16]);!$(N-[#7,#8,#16]);!$(N-S(=O)=O);!$(N-C#N)"
 SITE_CLASSES = [
     {
+        # exocyclic imine on a ring carbon with two ring/exocyclic N neighbours: cyclic
+        # guanidine (2-iminopyrimidine); the ring N is not the basic site
+        "name": "guanidine", "kind": "base",
+        "smarts": "[NX2;!R;+0;!$(N-C=O);!$(N-S(=O)=O);!$(N-[#8,#7])]=[#6;R]([#7])[#7]",
+        "reference": {"name": "guanidine", "acid": "NC(N)=[NH2+]", "base": "NC(N)=N", "pka": 13.6},
+        "empirical": (12.0, 1.5),
+    },
+    {
+        "name": "amidine", "kind": "base",
+        "smarts": "[NX2;!R;+0;!$(N-[#8,#7]);!$(N-C=O)]=[#6;R]([#7])[#6]",
+        "reference": {"name": "acetamidine", "acid": "CC(N)=[NH2+]", "base": "CC(N)=N", "pka": 12.52},
+        "empirical": (11.0, 1.5),
+    },
+    {
         "name": "guanidine", "kind": "base",
         "smarts": "[NX2;+0;!$(N-C=O);!$(N-S(=O)=O);!$(N-[#8,#7])]=[CX3]([NX3])[NX3]",
         "reference": {"name": "guanidine", "acid": "NC(N)=[NH2+]", "base": "NC(N)=N", "pka": 13.6},
@@ -135,7 +149,16 @@ _DIMORPHITE_FALLBACK_TYPES = {
     "Phosphonate_ester", "Primary_hydroxyl_amine",
 }
 
-_ACCEPTOR_ON_RING = "[$([N+](=O)[O-]),$(C#N),$([CX3]=O),$(S(=O)=O)]"
+# Flags that put a site outside the domain its class calibration describes: such sites are
+# left out of calibration fits (they still get a pKa, with a warning). "tertiary_amine" is
+# intrinsic to its class and stays in.
+CALIBRATION_EXCLUDED_FLAGS = frozenset({
+    "resonance_acceptor", "polyaza_ring", "ortho_heteroatom", "acyl_substituted",
+    "unusual_group", "tertiary_aniline", "cyclic_imine", "empirical_only",
+})
+
+_ACCEPTOR_ON_RING = "[$([N+](=O)[O-]),$(C#N),$([CX3]=O),$(S(=O)=O),$([NX2]=O)]"
+_UNUSUAL_GROUPS = "[$([SX6]),$([SX5]),$([PX5]),$([IX3,IX5]),$([BrX3]),$([ClX3,ClX5])]"
 
 
 class PkaError(Exception):
@@ -195,6 +218,19 @@ def _site_flags(mol, cls_name, atom_idx):
         flags.append("resonance_acceptor")
     if cls_name == "amine3":
         flags.append("tertiary_amine")
+    if cls_name == "aniline":
+        n_atom = mol.GetAtomWithIdx(int(atom_idx))
+        alkyl = [nb for nb in n_atom.GetNeighbors() if not nb.GetIsAromatic()]
+        # N,N-dialkyl or tert-alkyl anilines: steric twist breaks N-ring conjugation
+        if len(alkyl) >= 2 or any(nb.GetDegree() >= 4 for nb in alkyl):
+            flags.append("tertiary_aniline")
+    Chem_ = _chem()
+    if mol.HasSubstructMatch(Chem_.MolFromSmarts(_UNUSUAL_GROUPS)):
+        flags.append("unusual_group")      # hypervalent S/P/halogen: PM7 is unreliable
+    if cls_name in ("amidine", "guanidine") and mol.GetAtomWithIdx(int(atom_idx)).IsInRing() is False and any(
+        nb.IsInRing() for nb in mol.GetAtomWithIdx(int(atom_idx)).GetNeighbors() if nb.GetAtomicNum() == 6
+    ):
+        flags.append("cyclic_imine")
     if cls_name in ("pyridine", "imidazole"):
         atom = mol.GetAtomWithIdx(int(atom_idx))
         for ring in mol.GetRingInfo().AtomRings():
@@ -203,6 +239,25 @@ def _site_flags(mol, cls_name, atom_idx):
                 if n_count > (2 if cls_name == "imidazole" else 1):
                     flags.append("polyaza_ring")
                     break
+    if cls_name == "pyridine":
+        # electronegative substituent next to the ring N (2-chloro-, 2-methoxypyridine):
+        # field and lone-pair effects the reference compound does not share
+        atom = mol.GetAtomWithIdx(int(atom_idx))
+        for ring_nb in atom.GetNeighbors():
+            for sub in ring_nb.GetNeighbors():
+                if sub.GetIdx() != atom.GetIdx() and not sub.IsInRing() and sub.GetAtomicNum() in (7, 8, 9, 16, 17, 35, 53):
+                    flags.append("ortho_heteroatom")
+                    break
+            if "ortho_heteroatom" in flags:
+                break
+    if cls_name in ("amidine", "guanidine"):
+        # acyl/sulfonyl on the group: conjugation lowers basicity by several units
+        Chem = _chem()
+        carbon = next((nb for nb in mol.GetAtomWithIdx(int(atom_idx)).GetNeighbors() if nb.GetAtomicNum() == 6), None)
+        group_n = [atom_idx] + ([nb.GetIdx() for nb in carbon.GetNeighbors() if nb.GetAtomicNum() == 7] if carbon else [])
+        patt = Chem.MolFromSmarts("[#7]-[$([CX3]=[OX1]),$([SX4](=O)=O)]")
+        if any(m[0] in group_n for m in mol.GetSubstructMatches(patt)):
+            flags.append("acyl_substituted")
     return flags
 
 
@@ -390,34 +445,94 @@ def macroscopic_pkas(energies):
 # --------------------------------------------------------------------------- #
 # Calibration (used by the QM backends)
 # --------------------------------------------------------------------------- #
-def fit_calibration(rows, min_class_n=5):
+def _robust_slope(sub, min_abs_x=0.5):
+    """Theil-Sen slope through the origin: median of y/x over points with |x| >= min_abs_x.
+    One point, one vote, so a single PM7 failure (large |x|) cannot drag the slope."""
+    ratios = sorted(r["y"] / r["x"] for r in sub if abs(r["x"]) >= float(min_abs_x))
+    if not ratios:
+        return None, 0
+    mid = len(ratios) // 2
+    med = ratios[mid] if len(ratios) % 2 else 0.5 * (ratios[mid - 1] + ratios[mid])
+    return med, len(ratios)
+
+
+def fit_calibration(rows, min_class_n=5, shrinkage=None, robust=False):
     """
     Linear calibration of relative QM pKa values.
 
     ``rows``: dicts with ``class``, ``x`` = (dG_deprot(mol) - dG_deprot(ref)) / RT ln10
     and ``y`` = pKa_exp - pKa_ref. The model is ``y = slope * x`` (the reference itself
-    maps to its experimental pKa). Classes with at least ``min_class_n`` points get
-    their own slope, the rest use the global slope. Returns
-    ``{"global": {...}, "classes": {name: {"slope", "rmse", "n", "own"}}}``.
-    """
-    def _fit(sub):
-        sxx = sum(r["x"] * r["x"] for r in sub)
-        slope = (sum(r["x"] * r["y"] for r in sub) / sxx) if sxx > 0 else 1.0
-        rmse = math.sqrt(sum((r["y"] - slope * r["x"]) ** 2 for r in sub) / len(sub)) if sub else float("nan")
-        return slope, rmse
+    maps to its experimental pKa).
 
+    Without ``shrinkage``, classes with at least ``min_class_n`` points get their own
+    least-squares slope and the rest use the global slope. With ``shrinkage`` = lambda
+    (in units of sum x^2), every class slope is pulled towards the global one:
+    ``slope_c = (Sxy_c + lambda * s_global) / (Sxx_c + lambda)``, so a class with few
+    points or one outlier (4-nitroaniline in the anilines) cannot run away.
+    Returns ``{"global": {...}, "classes": {name: {"slope", "rmse", "n", "own"}},
+    "shrinkage": lambda}``.
+    """
     rows = [r for r in rows if r.get("x") is not None and r.get("y") is not None]
-    g_slope, g_rmse = _fit(rows) if rows else (1.0, float("nan"))
+
+    def _sums(sub):
+        return sum(r["x"] * r["x"] for r in sub), sum(r["x"] * r["y"] for r in sub)
+
+    def _rmse(sub, slope):
+        return math.sqrt(sum((r["y"] - slope * r["x"]) ** 2 for r in sub) / len(sub)) if sub else float("nan")
+
+    if robust:
+        # Theil-Sen per class, pulled towards the global Theil-Sen slope with a pseudo-count
+        # ``shrinkage`` (number of global "votes"); classes without usable points get the global slope
+        g_slope, _n = _robust_slope(rows)
+        g_slope = 1.0 if g_slope is None else g_slope
+        k = float(shrinkage or 0.0)
+        classes = {}
+        for name in sorted({r["class"] for r in rows}):
+            sub = [r for r in rows if r["class"] == name]
+            ts, m = _robust_slope(sub)
+            if ts is None or m < 3:
+                slope, own = g_slope, False
+            else:
+                slope, own = (m * ts + k * g_slope) / (m + k), True
+            classes[name] = {"slope": slope, "rmse": _rmse(sub, slope), "n": len(sub), "own": own}
+        return {"global": {"slope": g_slope, "rmse": _rmse(rows, g_slope), "n": len(rows)},
+                "classes": classes, "shrinkage": shrinkage, "robust": True}
+    sxx, sxy = _sums(rows)
+    g_slope = (sxy / sxx) if sxx > 0 else 1.0
     classes = {}
     for name in sorted({r["class"] for r in rows}):
         sub = [r for r in rows if r["class"] == name]
-        if len(sub) >= int(min_class_n):
-            slope, rmse = _fit(sub)
-            classes[name] = {"slope": slope, "rmse": rmse, "n": len(sub), "own": True}
+        cxx, cxy = _sums(sub)
+        if shrinkage is not None:
+            lam = float(shrinkage)
+            slope = (cxy + lam * g_slope) / (cxx + lam) if (cxx + lam) > 0 else g_slope
+            own = True
+        elif len(sub) >= int(min_class_n) and cxx > 0:
+            slope, own = cxy / cxx, True
         else:
-            rmse = math.sqrt(sum((r["y"] - g_slope * r["x"]) ** 2 for r in sub) / len(sub))
-            classes[name] = {"slope": g_slope, "rmse": rmse, "n": len(sub), "own": False}
-    return {"global": {"slope": g_slope, "rmse": g_rmse, "n": len(rows)}, "classes": classes}
+            slope, own = g_slope, False
+        classes[name] = {"slope": slope, "rmse": _rmse(sub, slope), "n": len(sub), "own": own}
+    return {"global": {"slope": g_slope, "rmse": _rmse(rows, g_slope), "n": len(rows)},
+            "classes": classes, "shrinkage": shrinkage}
+
+
+def choose_shrinkage(rows, grid=None, robust=False):
+    """Shrinkage with the lowest leave-one-out MAE on ``rows`` (1e9 ~ global slope only).
+    For ``robust`` fits the shrinkage is a pseudo-count of global votes."""
+    if grid is None:
+        grid = (0.0, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 1.0e9) if robust else (0.0, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1.0e9)
+    rows = [r for r in rows if r.get("x") is not None and r.get("y") is not None]
+    best = None
+    for lam in grid:
+        errs = []
+        for i, r in enumerate(rows):
+            cal = fit_calibration(rows[:i] + rows[i + 1:], shrinkage=lam, robust=robust)
+            slope = (cal["classes"].get(r["class"]) or cal["global"])["slope"]
+            errs.append(abs(r["y"] - slope * r["x"]))
+        mae = sum(errs) / len(errs) if errs else float("inf")
+        if best is None or mae < best[1] - 1e-9:
+            best = (float(lam), mae)
+    return best[0] if best else None
 
 
 def apply_calibration(calibration, cls_name, x, ref_pka):
@@ -467,31 +582,270 @@ def build_state_molecule(parent, sites, state, fixed=(), add_hs=True):
 # --------------------------------------------------------------------------- #
 # Backends
 # --------------------------------------------------------------------------- #
+class PkaBackendError(RuntimeError):
+    """A QM backend could not produce energies (MOPAC missing, no converged conformer, ...)."""
+
+
+class PkaCancelled(RuntimeError):
+    """The caller's cancel() returned True."""
+
+
 class EmpiricalBackend:
     """Class-typical pKa per site; no QM. Uncertainty = class spread."""
 
     name = "empirical"
+    calibration_version = "none"
 
-    def site_pkas(self, parent, sites, **_kwargs):
-        return [
-            {"pka": float(s["empirical_pka"]), "sd": float(s["empirical_sd"]), "source": "class_typical"}
-            for s in sites
-        ]
+    def evaluate(self, parent, enumerated, fixed, **_kwargs):
+        return {
+            "site_pkas": [
+                {"pka": float(s["empirical_pka"]), "sd": float(s["empirical_sd"]), "source": "class_typical"}
+                for s in enumerated
+            ],
+            "micro_pka": None,
+            "warnings": [],
+        }
+
+    def site_pkas(self, parent, sites, **kwargs):
+        return self.evaluate(parent, sites, (), **kwargs)["site_pkas"]
 
 
-_BACKENDS = {"empirical": EmpiricalBackend}
+def _state_key(state):
+    return "".join("1" if b else "0" for b in state)
+
+
+PM7_KEYWORDS = "PM7 EPS=78.4 GNORM=1.0 CYCLES=2000"
+# |relative deprotonation energy| beyond this (in pKa units, before calibration) is a PM7
+# failure (e.g. SF5-aniline gave -64), not chemistry: the site falls back to empirical.
+QM_OUTLIER_LIMIT = 15.0
+PM7_RETRY_KEYWORDS = "PM7 EPS=78.4 GNORM=5.0 CYCLES=4000"
+CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pka_calibration.json")
+
+
+def load_calibration(method="pm7", path=None):
+    """Calibration shipped with Leonardo for a QM method, or None if absent."""
+    target = path or CALIBRATION_FILE
+    try:
+        with open(target, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    entry = (data.get("methods") or {}).get(str(method))
+    if not entry:
+        return None
+    return dict(entry, version=str(data.get("version", "unknown")))
+
+
+def parse_mopac_heat_of_formation(out_text):
+    """Final heat of formation (kcal/mol) of a MOPAC geometry optimization, or None if the
+    run did not converge ("EXCESS NUMBER OF OPTIMIZATION CYCLES", SCF failure, error)."""
+    import re
+
+    text = str(out_text or "")
+    if "EXCESS NUMBER OF OPTIMIZATION CYCLES" in text or "UNABLE TO ACHIEVE SELF-CONSISTENCE" in text:
+        return None
+    m = re.search(r"FINAL HEAT OF FORMATION\s*=\s*(-?\d+\.\d+)\s*KCAL/MOL", text)
+    return float(m.group(1)) if m else None
+
+
+def _default_mopac_runner(input_text, timeout=600, exe=None):
+    """Run MOPAC on one input in a private directory; returns the .out text ('' on failure)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    mopac = exe or shutil.which("mopac")
+    if not mopac:
+        raise PkaBackendError("MOPAC executable not found (install mopac or choose the empirical method)")
+    with tempfile.TemporaryDirectory(prefix="leonardo_pka_") as td:
+        inp = os.path.join(td, "job.mop")
+        with open(inp, "w", encoding="utf-8") as fh:
+            fh.write(input_text)
+        # one thread per MOPAC process: the backend already runs conformers in parallel, and
+        # MOPAC's own OpenMP threads would oversubscribe the CPU
+        env = dict(os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
+        try:
+            subprocess.run([mopac, inp], cwd=td, capture_output=True, timeout=float(timeout), check=False, env=env)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        try:
+            with open(os.path.join(td, "job.out"), encoding="utf-8", errors="ignore") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+
+
+class MopacBackend:
+    """
+    PM7/COSMO (water) relative pKa.
+
+    For each microstate of the enumerated sites, ``n_conformers`` ETKDG/MMFF conformers
+    are optimized with PM7/COSMO and the lowest heat of formation is kept (conformers
+    that do not converge are retried with looser settings). The micro pKa of an edge
+    (site s protonated vs deprotonated, other sites fixed) is relative to the class
+    reference compound, then calibrated per class.
+    """
+
+    name = "pm7"
+
+    def __init__(self, calibration=None, n_conformers=10, workers=None, runner=None, seed=20260927,
+                 timeout=600):
+        self.calibration = calibration if calibration is not None else load_calibration("pm7")
+        self.calibration_version = str((self.calibration or {}).get("version", "uncalibrated"))
+        self.n_conformers = int(max(1, n_conformers))
+        self.workers = int(workers or min(8, os.cpu_count() or 2))
+        self.runner = runner or _default_mopac_runner
+        self.seed = int(seed)
+        self.timeout = float(timeout)
+        self._energy_cache = {}
+
+    # -- energies ----------------------------------------------------------- #
+    def _conformer_inputs(self, mol_h, keywords, seed):
+        Chem = _chem()
+        from rdkit.Chem import AllChem
+
+        from .qmmm_mopac_runtime import build_mopac_input_text
+
+        mol = Chem.Mol(mol_h)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = int(seed)
+        cids = list(AllChem.EmbedMultipleConfs(mol, numConfs=self.n_conformers, params=params))
+        if not cids:
+            params.useRandomCoords = True
+            cids = list(AllChem.EmbedMultipleConfs(mol, numConfs=self.n_conformers, params=params))
+        if not cids:
+            return []
+        try:
+            AllChem.MMFFOptimizeMoleculeConfs(mol, maxIters=2000)
+        except Exception:
+            try:
+                AllChem.UFFOptimizeMoleculeConfs(mol, maxIters=2000)
+            except Exception:
+                pass
+        z = [a.GetAtomicNum() for a in mol.GetAtoms()]
+        q = Chem.GetFormalCharge(mol)
+        out = []
+        for cid in cids:
+            xyz = mol.GetConformer(cid).GetPositions()
+            out.append(build_mopac_input_text(z, xyz, keywords=keywords, total_charge=q,
+                                              title="Leonardo pKa microstate"))
+        return out
+
+    def state_energies(self, mols_h, progress=None, cancel=None):
+        """Lowest PM7/COSMO heat of formation per molecule (canonical SMILES cached)."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        Chem = _chem()
+        keys = [Chem.MolToSmiles(m) for m in mols_h]
+        todo = [(k, m) for k, m in zip(keys, mols_h) if k not in self._energy_cache]
+        todo = list(dict(todo).items())
+        for attempt, keywords in enumerate((PM7_KEYWORDS, PM7_RETRY_KEYWORDS)):
+            if not todo:
+                break
+            jobs = []
+            for k, m in todo:
+                for text in self._conformer_inputs(m, keywords, self.seed + 1000 * attempt):
+                    jobs.append((k, text))
+            best = {}
+            done = 0
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
+                futures = [(k, pool.submit(self.runner, text, self.timeout)) for k, text in jobs]
+                for k, fut in futures:
+                    if callable(cancel) and cancel():
+                        for _k, f in futures:
+                            f.cancel()
+                        raise PkaCancelled("pKa calculation cancelled")
+                    hof = parse_mopac_heat_of_formation(fut.result())
+                    done += 1
+                    if hof is not None:
+                        best[k] = hof if k not in best else min(best[k], hof)
+                    if callable(progress) and done % 10 == 0:
+                        progress(f"PM7 conformers: {done}/{len(jobs)}")
+            self._energy_cache.update(best)
+            todo = [(k, m) for k, m in todo if k not in best]
+        if todo:
+            raise PkaBackendError(f"PM7 did not converge for {len(todo)} protonation state(s): "
+                                  + ", ".join(k for k, _m in todo[:3]))
+        return [self._energy_cache[k] for k in keys]
+
+    def reference_delta(self, cls_name, progress=None, cancel=None):
+        Chem = _chem()
+        ref = next(c for c in SITE_CLASSES if c["name"] == cls_name)["reference"]
+        acid = Chem.AddHs(Chem.MolFromSmiles(ref["acid"]))
+        base = Chem.AddHs(Chem.MolFromSmiles(ref["base"]))
+        e_acid, e_base = self.state_energies([acid, base], progress=progress, cancel=cancel)
+        return e_base - e_acid, float(ref["pka"])
+
+    # -- pKa ----------------------------------------------------------------- #
+    def evaluate(self, parent, enumerated, fixed, progress=None, cancel=None, **_kwargs):
+        n = len(enumerated)
+        if n == 0:
+            return {"site_pkas": [], "micro_pka": {}, "warnings": []}
+        states = enumerate_microstates(n)
+        mols = [build_state_molecule(parent, enumerated, st, fixed=fixed, add_hs=True) for st in states]
+        if callable(progress):
+            progress(f"PM7/COSMO: {len(states)} microstate(s) x {self.n_conformers} conformer(s)")
+        energies = dict(zip(states, self.state_energies(mols, progress=progress, cancel=cancel)))
+        refs = {}
+        micro = {}
+        outliers = set()
+        for st in states:
+            for s_idx, site in enumerate(enumerated):
+                if st[s_idx]:
+                    continue
+                prot = tuple(True if i == s_idx else b for i, b in enumerate(st))
+                if not site.get("qm_supported"):
+                    micro[f"{_state_key(st)}|{s_idx}"] = float(site["empirical_pka"])
+                    continue
+                if site["class"] not in refs:
+                    refs[site["class"]] = self.reference_delta(site["class"], progress=progress, cancel=cancel)
+                d_ref, ref_pka = refs[site["class"]]
+                x = ((energies[st] - energies[prot]) - d_ref) / RT_LN10
+                if abs(x) > QM_OUTLIER_LIMIT:
+                    outliers.add(s_idx)
+                    micro[f"{_state_key(st)}|{s_idx}"] = float(site["empirical_pka"])
+                    continue
+                pka, _err = apply_calibration(self.calibration, site["class"], x, ref_pka)
+                micro[f"{_state_key(st)}|{s_idx}"] = pka
+        site_pkas = []
+        for s_idx, site in enumerate(enumerated):
+            # context: other sites protonated when their empirical pKa is above this one's
+            ctx = tuple((i != s_idx) and (float(o["empirical_pka"]) >= float(site["empirical_pka"]))
+                        for i, o in enumerate(enumerated))
+            pka = micro[f"{_state_key(ctx)}|{s_idx}"]
+            if s_idx in outliers:
+                sd, source = float(site["empirical_sd"]), "class_typical (PM7 outlier)"
+            elif site.get("qm_supported"):
+                entry = ((self.calibration or {}).get("classes") or {}).get(site["class"]) or {}
+                sd = float(entry.get("rmse", ((self.calibration or {}).get("global") or {}).get("rmse", 1.5)))
+                source = "pm7_cosmo" + ("" if self.calibration else "_uncalibrated")
+            else:
+                sd, source = float(site["empirical_sd"]), "class_typical"
+            site_pkas.append({"pka": float(pka), "sd": sd, "source": source})
+        warnings = [] if self.calibration else ["PM7 pKa values are uncalibrated (no calibration file)"]
+        for s_idx in sorted(outliers):
+            warnings.append(f"site {enumerated[s_idx]['atom']} ({enumerated[s_idx]['class']}): PM7 energy is "
+                            "implausible for this group; empirical pKa used")
+        return {"site_pkas": site_pkas, "micro_pka": micro, "warnings": warnings}
+
+
+_BACKENDS = {"empirical": EmpiricalBackend, "pm7": MopacBackend}
 
 
 def register_backend(name, factory):
-    """Register a pKa backend (used by the MOPAC/Psi4 phases and by tests)."""
+    """Register a pKa backend (used by the Psi4 phase and by tests)."""
     _BACKENDS[str(name)] = factory
 
 
-def _backend(method):
+def _backend(method, **kwargs):
     key = str(method or "empirical").strip().lower()
     if key not in _BACKENDS:
         raise PkaError(f"unknown pKa method '{method}' (available: {', '.join(sorted(_BACKENDS))})")
-    return _BACKENDS[key]()
+    factory = _BACKENDS[key]
+    try:
+        return factory(**kwargs) if kwargs else factory()
+    except TypeError:
+        return factory()
 
 
 # --------------------------------------------------------------------------- #
@@ -535,31 +889,58 @@ def _cache_store(cache_dir, key, payload):
 # Public API
 # --------------------------------------------------------------------------- #
 def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cache_dir=None,
-                calibration_version="none", progress=None, cancel=None, **backend_kwargs):
+                progress=None, cancel=None, backend_options=None):
     """
     Site and macroscopic pKa values plus the microstate energies of a molecule.
 
+    Sites to enumerate are chosen with the empirical pKa (see
+    :func:`select_enumerated_sites`); the backend then gives the micro pKa of every
+    microstate edge, so coupled sites use QM energies. If a QM backend fails the result
+    falls back to the empirical values with a warning.
+
     Returns a JSON-serializable dict: ``sites`` (with ``pka``/``sd``/flags),
     ``fixed_sites``, ``microstates`` (pattern, charge, relative G), ``macro_pkas``,
-    ``warnings`` and ``provenance``. Results are cached per molecule + method.
+    ``warnings`` and ``provenance``. Results are cached per molecule + method +
+    calibration version.
     """
     parent = neutral_parent(mol)
-    key = _cache_key(parent, method, calibration_version)
+    backend = _backend(method, **dict(backend_options or {}))
+    calibration_version = str(getattr(backend, "calibration_version", "none"))
+    key = _cache_key(parent, backend.name, calibration_version)
     cached = _cache_load(cache_dir, key)
     if cached is not None:
         cached.setdefault("provenance", {})["cache"] = "hit"
         return cached
-    backend = _backend(method)
     sites = find_ionizable_sites(parent)
     if callable(progress):
         progress(f"{len(sites)} ionizable site(s) found")
-    values = backend.site_pkas(parent, sites, cancel=cancel, progress=progress, **backend_kwargs)
-    for s, v in zip(sites, values):
+    enumerated, fixed, warnings = select_enumerated_sites(sites, focus_ph=focus_ph, ph_range=ph_range)
+    method_used = backend.name
+    try:
+        if hasattr(backend, "evaluate"):
+            evaluation = backend.evaluate(parent, enumerated, fixed, progress=progress, cancel=cancel)
+        else:   # minimal backends: independent site pKa values
+            evaluation = {"site_pkas": backend.site_pkas(parent, enumerated), "micro_pka": None, "warnings": []}
+    except PkaBackendError as exc:
+        warnings.append(f"{backend.name} failed ({exc}); empirical pKa values used")
+        evaluation = EmpiricalBackend().evaluate(parent, enumerated, fixed)
+        method_used, calibration_version = "empirical", "none"
+    warnings.extend(evaluation.get("warnings") or [])
+    for s, v in zip(enumerated, evaluation["site_pkas"]):
         s["pka"] = float(v["pka"])
         s["sd"] = float(v.get("sd", s["empirical_sd"]))
-        s["pka_source"] = str(v.get("source", backend.name))
-    enumerated, fixed, warnings = select_enumerated_sites(sites, focus_ph=focus_ph, ph_range=ph_range)
-    energies = microstate_free_energies([s["pka"] for s in enumerated])
+        s["pka_source"] = str(v.get("source", method_used))
+    for s in fixed:
+        s.setdefault("pka", float(s["empirical_pka"]))
+        s.setdefault("sd", float(s["empirical_sd"]))
+        s.setdefault("pka_source", "class_typical (fixed state)")
+    micro_table = evaluation.get("micro_pka") or None
+    pkas = [s["pka"] for s in enumerated]
+
+    def _micro(partial, s_idx):
+        return float(micro_table.get(f"{_state_key(partial)}|{s_idx}", pkas[s_idx]))
+
+    energies = microstate_free_energies(pkas, micro_pka_fn=_micro if micro_table else None)
     base_charge = sum(a.GetFormalCharge() for a in parent.GetAtoms())
     base_charge += sum(1 for s in fixed if s["kind"] == "base" and s["fixed_protonated"])
     base_charge -= sum(1 for s in fixed if s["kind"] == "acid" and not s["fixed_protonated"])
@@ -571,22 +952,25 @@ def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cac
         "resonance_acceptor": "acceptor-substituted aromatic ring (charge delocalization; larger QM error expected)",
         "tertiary_amine": "tertiary amine (larger QM error expected, ~1-2.5 pKa units in the literature)",
         "polyaza_ring": "ring with several nitrogens (the reference compound is a poorer match)",
+        "ortho_heteroatom": "electronegative substituent next to the ring N (larger QM error expected)",
+        "acyl_substituted": "acyl/sulfonyl on the amidine/guanidine (much less basic; larger error expected)",
         "empirical_only": "no QM class for this group; empirical pKa used",
     }
-    for s in sites:
+    all_sites = sorted(enumerated + fixed, key=lambda x: x["atom"])
+    for s in all_sites:
         for flag in s["flags"]:
-            if flag in flag_text and (flag != "empirical_only" or backend.name != "empirical"):
+            if flag in flag_text and (flag != "empirical_only" or method_used != "empirical"):
                 warnings.append(f"site {s['atom']} ({s['class']}): {flag_text[flag]}")
     result = {
         "smiles": _chem().MolToSmiles(parent),
-        "method": backend.name,
-        "sites": sites,
+        "method": method_used,
+        "sites": all_sites,
         "enumerated_atoms": [s["atom"] for s in enumerated],
         "fixed_sites": fixed,
         "microstates": micro,
         "macro_pkas": macroscopic_pkas(energies) if enumerated else [],
         "warnings": warnings,
-        "provenance": {"method": backend.name, "calibration_version": str(calibration_version),
+        "provenance": {"method": method_used, "calibration_version": calibration_version,
                        "runtime_version": PKA_RUNTIME_VERSION, "cache": "miss"},
     }
     _cache_store(cache_dir, key, result)
@@ -665,6 +1049,13 @@ __all__ = [
     "apply_calibration",
     "build_state_molecule",
     "EmpiricalBackend",
+    "MopacBackend",
+    "PkaBackendError",
+    "PkaCancelled",
+    "load_calibration",
+    "parse_mopac_heat_of_formation",
+    "choose_shrinkage",
+    "CALIBRATION_EXCLUDED_FLAGS",
     "register_backend",
     "compute_pka",
     "states_at_ph",

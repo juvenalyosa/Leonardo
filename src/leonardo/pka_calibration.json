@@ -1,0 +1,115 @@
+{
+ "methods": {
+  "pm7": {
+   "classes": {
+    "amidine": {
+     "n": 18,
+     "own": true,
+     "rmse": 2.1546208842845216,
+     "slope": 0.5747854194423954
+    },
+    "amine1": {
+     "n": 20,
+     "own": true,
+     "rmse": 0.7417827693637319,
+     "slope": 0.6773184965784115
+    },
+    "amine2": {
+     "n": 20,
+     "own": true,
+     "rmse": 1.2718132757472984,
+     "slope": 0.7650744833231634
+    },
+    "amine3": {
+     "n": 20,
+     "own": true,
+     "rmse": 2.222751812051905,
+     "slope": 0.869975493062479
+    },
+    "aniline": {
+     "n": 8,
+     "own": true,
+     "rmse": 1.0040845036003376,
+     "slope": 0.41241627264889136
+    },
+    "carboxylic_aliphatic": {
+     "n": 20,
+     "own": true,
+     "rmse": 1.2800145940549017,
+     "slope": 0.6248381154987652
+    },
+    "carboxylic_aromatic": {
+     "n": 20,
+     "own": true,
+     "rmse": 0.5969049936499773,
+     "slope": 0.5571052865509277
+    },
+    "guanidine": {
+     "n": 3,
+     "own": true,
+     "rmse": 1.7060024072778501,
+     "slope": 0.8080420078187867
+    },
+    "imidazole": {
+     "n": 19,
+     "own": true,
+     "rmse": 1.0743269708754932,
+     "slope": 0.9810342360675661
+    },
+    "phenol": {
+     "n": 13,
+     "own": true,
+     "rmse": 0.5945469274805492,
+     "slope": 0.3809794214453054
+    },
+    "pyridine": {
+     "n": 15,
+     "own": true,
+     "rmse": 0.4779105246698938,
+     "slope": 0.7960381796689793
+    },
+    "thiol_aliphatic": {
+     "n": 8,
+     "own": true,
+     "rmse": 0.9622445656510388,
+     "slope": 1.0697980303638848
+    },
+    "thiol_aromatic": {
+     "n": 4,
+     "own": false,
+     "rmse": 0.41477084517659396,
+     "slope": 0.673400984009842
+    }
+   },
+   "data": "IUPAC Digitized pKa Dataset v2.4 (CC BY-NC 4.0; not redistributed), selection in benchmarks/pka/run_pka_benchmark.py",
+   "excluded_flags": [
+    "acyl_substituted",
+    "cyclic_imine",
+    "empirical_only",
+    "ortho_heteroatom",
+    "polyaza_ring",
+    "resonance_acceptor",
+    "tertiary_aniline",
+    "unusual_group"
+   ],
+   "global": {
+    "n": 188,
+    "rmse": 1.3723680142583894,
+    "slope": 0.673400984009842
+   },
+   "model": "pKa = pKa_ref + slope_class * (dG_deprot - dG_deprot_ref)/(RT ln10); PM7/COSMO(EPS=78.4) lowest heat of formation over ETKDG/MMFF conformers",
+   "n_conformers": 10,
+   "outlier_limit": 15.0,
+   "robust": true,
+   "shrinkage": 5.0,
+   "test": {
+    "mae": 0.9852054622654428,
+    "n": 109,
+    "rmse": 1.439271482210594,
+    "within_1": 0.6605504587155964
+   },
+   "train_n": 188
+  }
+ },
+ "version": "pm7-2026.09.27"
+}

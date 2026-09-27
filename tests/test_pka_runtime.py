@@ -161,3 +161,98 @@ def test_calibration_per_class_with_global_fallback():
     pka, err = apply_calibration(cal, "pyridine", 2.0, 5.23)
     assert pka == pytest.approx(5.23 + 1.8) and err == pytest.approx(0.0, abs=1e-9)
     assert RT_LN10 == pytest.approx(1.364, abs=0.001)
+
+
+# --------------------------------------------------------------------------- #
+# Phase 2: flags, shrinkage, PM7 backend
+# --------------------------------------------------------------------------- #
+def test_new_difficulty_flags():
+    two_cl = find_ionizable_sites(Chem.MolFromSmiles("Clc1ccccn1"))[0]
+    assert "ortho_heteroatom" in two_cl["flags"]
+    assert "ortho_heteroatom" not in find_ionizable_sites(Chem.MolFromSmiles("Cc1ccccn1"))[0]["flags"]
+    acyl = find_ionizable_sites(Chem.MolFromSmiles("CC(=O)NC(N)=N"))[0]
+    assert acyl["class"] == "guanidine" and "acyl_substituted" in acyl["flags"]
+    assert "acyl_substituted" not in find_ionizable_sites(Chem.MolFromSmiles("NC(N)=N"))[0]["flags"]
+
+
+def test_shrinkage_pulls_outlier_class_towards_global_slope():
+    from pka_runtime import choose_shrinkage
+
+    rows = [{"class": "phenol", "x": x, "y": 0.5 * x} for x in (-4, -3, -2, -1, 1, 2, 3)]
+    rows += [{"class": "aniline", "x": x, "y": 0.5 * x} for x in (-2, -1, 1, 2)]
+    rows += [{"class": "aniline", "x": -6.0, "y": -1.0}]          # one outlier drags the class slope
+    free = fit_calibration(rows, min_class_n=5)["classes"]["aniline"]["slope"]
+    shrunk = fit_calibration(rows, shrinkage=30.0)["classes"]["aniline"]["slope"]
+    g = fit_calibration(rows)["global"]["slope"]
+    assert abs(shrunk - g) < abs(free - g)
+    assert choose_shrinkage(rows) is not None
+
+
+def _fake_runner(hofs, fail_first=()):
+    """MOPAC stand-in: heat of formation from the net charge in the input line."""
+    calls = []
+
+    def run(text, timeout=0):
+        calls.append(text)
+        first = text.splitlines()[0]
+        charge = int(first.split("CHARGE=")[1].split()[0])
+        if "GNORM=1.0" in first and charge in fail_first:
+            return " ** EXCESS NUMBER OF OPTIMIZATION CYCLES **\n"
+        return f"          FINAL HEAT OF FORMATION =   {hofs[charge]:.5f} KCAL/MOL\n"
+    run.calls = calls
+    return run
+
+
+def test_mopac_heat_of_formation_parser():
+    from pka_runtime import parse_mopac_heat_of_formation
+
+    assert parse_mopac_heat_of_formation("  FINAL HEAT OF FORMATION =  -206.41478 KCAL/MOL = -863 KJ/MOL") == -206.41478
+    assert parse_mopac_heat_of_formation("EXCESS NUMBER OF OPTIMIZATION CYCLES\nFINAL HEAT OF FORMATION = -1.0 KCAL/MOL") is None
+    assert parse_mopac_heat_of_formation("") is None
+
+
+def test_pm7_backend_retries_non_converged_states_and_is_relative_to_reference():
+    from pka_runtime import MopacBackend
+
+    # same energies for molecule and reference -> pKa equals the reference pKa (4.76)
+    runner = _fake_runner({0: -111.0, -1: -206.0}, fail_first=(-1,))
+    backend = MopacBackend(calibration={"global": {"slope": 1.0, "rmse": 0.5}, "classes": {}, "version": "t"},
+                           n_conformers=2, workers=1, runner=runner)
+    res = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="pm7", backend_options={"runner": runner,
+                      "n_conformers": 2, "workers": 1, "calibration": backend.calibration})
+    site = res["sites"][0]
+    assert res["method"] == "pm7" and site["pka"] == pytest.approx(4.76) and site["pka_source"] == "pm7_cosmo"
+    assert any("GNORM=5.0" in c for c in runner.calls)          # anion retried with looser settings
+
+
+def test_pm7_failure_falls_back_to_empirical_with_warning():
+    def broken(text, timeout=0):
+        return ""
+    res = compute_pka(Chem.MolFromSmiles("CCN"), method="pm7",
+                      backend_options={"runner": broken, "n_conformers": 1, "workers": 1})
+    assert res["method"] == "empirical" and any("pm7 failed" in w for w in res["warnings"])
+
+
+def test_shipped_calibration_is_loadable():
+    from pka_runtime import load_calibration
+
+    cal = load_calibration("pm7")
+    assert cal is not None and cal["classes"] and cal["version"].startswith("pm7-")
+    assert all(0.2 < c["slope"] < 2.0 for c in cal["classes"].values())
+
+
+def _has_mopac():
+    import shutil
+
+    return shutil.which("mopac") is not None
+
+
+@pytest.mark.skipif(not _has_mopac(), reason="MOPAC not installed")
+def test_pm7_real_calculations():
+    acetic = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="pm7")
+    assert acetic["sites"][0]["pka"] == pytest.approx(4.76, abs=0.01)          # the reference itself
+    _mol, benz = protonate_molecule(Chem.MolFromSmiles("NC(=N)c1ccccc1"), 7.4, method="pm7")
+    assert benz["method"] == "pm7" and benz["charge"] == 1
+    assert 10.0 < benz["sites"][0]["pka"] < 13.5                                # exp 11.6
+    _mol, gly = protonate_molecule(Chem.MolFromSmiles("NCC(=O)O"), 7.4, method="pm7")
+    assert gly["smiles"] == "[NH3+]CC(=O)[O-]"                                  # zwitterion from coupled microstates
