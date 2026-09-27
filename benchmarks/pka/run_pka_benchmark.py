@@ -229,20 +229,41 @@ def main():
     for m in mols:
         cls = next(c for c in P.SITE_CLASSES if c["name"] == m["class"])
         m["empirical"] = cls["empirical"][0]
+    # what the runtime uses where this method is not recommended: the class-typical pKa for PM7,
+    # the shipped PM7 model for Psi4 (its leave-one-out value on the calibration set)
+    fallback_name = "empirical"
+    for m in mols:
+        m["fallback"] = m["fallback_loo"] = m["empirical"]
+    if args.method == "psi4":
+        if not args.compare_details:
+            raise SystemExit("--method psi4 needs --compare-details with the PM7 details file "
+                             "(Psi4 falls back to PM7 per class)")
+        with open(args.compare_details, encoding="utf-8") as fh:
+            pm7_by_key = {m["inchikey"]: m for m in json.load(fh)["molecules"]}
+        pm7_rec = {c: bool(v.get("pm7_recommended", True))
+                   for c, v in ((P.load_calibration("pm7") or {}).get("classes") or {}).items()}
+        fallback_name = "PM7"
+        for m in mols:
+            o = pm7_by_key.get(m["inchikey"])
+            if o is None:
+                continue
+            m["fallback"] = o.get("shipped", m["empirical"])
+            m["fallback_loo"] = o["loo"] if ("loo" in o and pm7_rec.get(m["class"], True)) else m["empirical"]
     recommend = {}
     for name in sorted({m["class"] for m in mols}):
         sub = [m for m in train if m["class"] == name]
-        pm7_mae = sum(abs(m["loo"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
+        qm_mae = sum(abs(m["loo"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
         emp_mae = sum(abs(m["empirical"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
-        recommend[name] = {"qm_loo_mae": pm7_mae, "empirical_mae": emp_mae,
-                           "qm_recommended": bool(not sub or pm7_mae <= emp_mae)}
+        fb_mae = sum(abs(m["fallback_loo"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
+        recommend[name] = {"qm_loo_mae": qm_mae, "empirical_mae": emp_mae, "fallback_mae": fb_mae,
+                           "qm_recommended": bool(not sub or qm_mae <= fb_mae)}
         if name in cal["classes"]:
             cal["classes"][name][rec_key] = recommend[name]["qm_recommended"]
     for m in mols:
         m["pred"] = P.apply_calibration(cal, m["class"], m["x"], m["ref"])[0]
         m["pred_global"] = P.apply_calibration(cal_global, m["class"], m["x"], m["ref"])[0]
         m["pred_class"] = P.apply_calibration(cal_class, m["class"], m["x"], m["ref"])[0]
-        m["shipped"] = m["pred"] if recommend[m["class"]]["qm_recommended"] else m["empirical"]
+        m["shipped"] = m["pred"] if recommend[m["class"]]["qm_recommended"] else m["fallback"]
 
     def err(sub, key):
         return [m[key] - m["exp"] for m in sub]
@@ -341,23 +362,23 @@ def main():
     for key, label in (("test_uncalibrated", f"{qm} uncalibrated"), ("test_global_slope", f"{qm}, global robust slope"),
                        ("test_per_class_slope", f"{qm}, per-class least squares (all molecules)"),
                        ("test_shrinkage", f"{qm}, robust per-class slope with shrinkage (all classes)"),
-                       ("test_shipped_with_recommendation", f"**Shipped: {qm}, empirical where {qm} is not recommended**"),
+                       ("test_shipped_with_recommendation", f"**Shipped: {qm}, {fallback_name} where {qm} is not recommended**"),
                        ("test_empirical_class_typical", "Empirical (class-typical pKa)"),
-                       ("test_in_domain", "shipped model, in-domain sites"),
-                       ("test_out_of_domain", "shipped model, out-of-domain sites (warned)"),
-                       ("test_flagged", "shipped model, any warning flag"),
-                       ("test_unflagged", "shipped model, no warning flag")):
+                       ("test_in_domain", f"{qm} (all classes), in-domain sites"),
+                       ("test_out_of_domain", f"{qm} (all classes), out-of-domain sites (warned)"),
+                       ("test_flagged", f"{qm} (all classes), any warning flag"),
+                       ("test_unflagged", f"{qm} (all classes), no warning flag")):
         lines.append(f"| {label} | {fmt(summary[key])} |")
     lines += ["", "## Per class", "",
-              f"`cal n`: in-domain molecules the slope was fitted on (of `train n`). {qm} vs empirical is",
+              f"`cal n`: in-domain molecules the slope was fitted on (of `train n`). {qm} vs {fallback_name} is",
               "decided on the calibration set (leave-one-out MAE), never on the test set. Classes with",
               "fewer than 5 test molecules are not statistically meaningful.", "",
-              f"| Class | train n | cal n | slope | LOO MAE {qm} / empirical | {qm} recommended | test {qm}: n, MAE, RMSE, within 1 | test empirical MAE |",
+              f"| Class | train n | cal n | slope | LOO MAE {qm} / {fallback_name} | {qm} recommended | test {qm}: n, MAE, RMSE, within 1 | test empirical MAE |",
               "|---|---|---|---|---|---|---|---|"]
     for name, row in per_class.items():
         emp = row["test_empirical"]
         lines.append(f"| {name} | {row['n_train']} | {row['n_cal']} | {row['slope']:.2f} | "
-                     f"{row['qm_loo_mae']:.2f} / {row['empirical_mae']:.2f} | {'yes' if row['qm_recommended'] else '**no**'} | "
+                     f"{row['qm_loo_mae']:.2f} / {row['fallback_mae']:.2f} | {'yes' if row['qm_recommended'] else '**no**'} | "
                      f"{fmt(row['test']).replace(' | ', ', ')} | {emp.get('mae', float('nan')):.2f} |")
     lines += ["", "## Per warning flag (test set)", "", "| Flag | n | MAE | RMSE | within 1 |", "|---|---|---|---|---|"]
     for flag, st in per_flag.items():

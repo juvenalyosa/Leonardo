@@ -1002,14 +1002,20 @@ def _default_psi4_runner(input_text, timeout=3600, threads=2, exe=None):
             return ""
 
 
+PSI4_EXPERIMENTAL_WARNING = ("Psi4 method is experimental: in the benchmark HF/3-21G was slower and less accurate "
+                              "than PM7, which is used for most site classes (benchmarks/pka/PSI4_BENCHMARK.md)")
+
+
 class Psi4Backend(MopacBackend):
     """
-    Psi4 single points (PCM water) on PM7/COSMO geometries.
+    Psi4 single points (PCM water) on PM7/COSMO geometries. Experimental.
 
     The conformer search is the PM7 one (lowest heat of formation over ETKDG/MMFF
     conformers); one cheap single point per microstate at that geometry replaces the
-    PM7 energy. Reference compounds, calibration and per-class fallback work as in
-    :class:`MopacBackend`. Level and basis are deliberately small (default HF/3-21G).
+    PM7 energy. Reference compounds and calibration work as in :class:`MopacBackend`.
+    Level and basis are deliberately small (default HF/3-21G). Classes where the
+    benchmark found Psi4 less accurate than PM7 (``qm_recommended`` false in the
+    calibration) use the PM7 value, from the heats of formation already computed.
     """
 
     name = "psi4"
@@ -1087,6 +1093,41 @@ class Psi4Backend(MopacBackend):
                 raise PkaBackendError(f"Psi4 single point failed for {len(failed)} protonation state(s): "
                                       + ", ".join(failed[:3]))
         return [self._psi4_cache[k] for k in keys]
+
+    def _pm7_backend(self):
+        """PM7 backend sharing this backend's conformer search (no extra MOPAC runs)."""
+        pm7 = MopacBackend(n_conformers=self.n_conformers, workers=self.workers, runner=self.runner,
+                           seed=self.seed, timeout=self.timeout)
+        pm7._energy_cache = self._energy_cache
+        pm7._best_output = self._best_output
+        return pm7
+
+    def evaluate(self, parent, enumerated, fixed, progress=None, cancel=None, **_kwargs):
+        # the base class puts the class-typical value on classes that are not recommended;
+        # for Psi4 those sites get the PM7 value instead
+        out = super().evaluate(parent, enumerated, fixed, progress=progress, cancel=cancel)
+        out["warnings"].insert(0, PSI4_EXPERIMENTAL_WARNING)
+        use_pm7 = [i for i, site in enumerate(enumerated)
+                   if site.get("qm_supported") and not self._qm_recommended(site["class"])]
+        if not use_pm7:
+            return out
+        pm7 = self._pm7_backend().evaluate(parent, enumerated, fixed, progress=progress, cancel=cancel)
+        for key, value in pm7["micro_pka"].items():
+            if int(key.split("|")[1]) in use_pm7:
+                out["micro_pka"][key] = value
+        replaced = {enumerated[i]["atom"] for i in use_pm7}
+        out["warnings"] = [w for w in out["warnings"]
+                           if not any(w.startswith(f"site {a} (") and "class-typical" in w for a in replaced)]
+        for i in use_pm7:
+            site = enumerated[i]
+            pm7_site = dict(pm7["site_pkas"][i])
+            if pm7_site["source"] == "pm7_cosmo":
+                pm7_site["source"] = "pm7_cosmo (Psi4 not recommended for this class)"
+            out["site_pkas"][i] = pm7_site
+            out["warnings"].append(f"site {site['atom']} ({site['class']}): Psi4 was less accurate than PM7 for "
+                                   "this class in the benchmark; PM7 pKa used")
+        out["warnings"].extend(w for w in pm7["warnings"] if any(w.startswith(f"site {a} (") for a in replaced))
+        return out
 
 
 _BACKENDS = {"empirical": EmpiricalBackend, "pm7": MopacBackend, "psi4": Psi4Backend}

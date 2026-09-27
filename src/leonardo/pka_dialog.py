@@ -18,7 +18,7 @@ from . import pka_runtime as P
 METHODS = [
     ("Empirical (fast, class-typical pKa)", "empirical"),
     ("PM7 / COSMO (semiempirical QM, calibrated)", "pm7"),
-    ("Psi4 HF/3-21G + PCM on PM7 geometries (minutes per molecule)", "psi4"),
+    ("Psi4 HF/3-21G + PCM (experimental: slower and less accurate than PM7)", "psi4"),
 ]
 SITE_COLUMNS = ["Atom", "Class", "Type", "pKa", "±", "Source", "Warnings"]
 STATE_COLUMNS = ["Population", "Charge", "SMILES"]

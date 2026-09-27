@@ -21,10 +21,10 @@ out-of-domain flags: acyl_substituted, cyclic_imine, empirical_only, ortho_heter
 | PM7, robust per-class slope with shrinkage (all classes) | n=109 | 0.99 | 1.44 | 66% |
 | **Shipped: PM7, empirical where PM7 is not recommended** | n=109 | 0.90 | 1.27 | 67% |
 | Empirical (class-typical pKa) | n=109 | 1.37 | 1.77 | 50% |
-| shipped model, in-domain sites | n=95 | 0.88 | 1.30 | 69% |
-| shipped model, out-of-domain sites (warned) | n=14 | 1.72 | 2.17 | 43% |
-| shipped model, any warning flag | n=24 | 1.89 | 2.39 | 42% |
-| shipped model, no warning flag | n=85 | 0.73 | 1.02 | 73% |
+| PM7 (all classes), in-domain sites | n=95 | 0.88 | 1.30 | 69% |
+| PM7 (all classes), out-of-domain sites (warned) | n=14 | 1.72 | 2.17 | 43% |
+| PM7 (all classes), any warning flag | n=24 | 1.89 | 2.39 | 42% |
+| PM7 (all classes), no warning flag | n=85 | 0.73 | 1.02 | 73% |
 
 ## Per class
 

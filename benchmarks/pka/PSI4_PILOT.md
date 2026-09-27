@@ -19,6 +19,8 @@ Acids: PM7 0.70, HF/3-21G 0.89, B3LYP/6-31G* 0.85. Bases: PM7 1.07, HF/3-21G 1.6
 B3LYP/6-31G* 1.52. Psi4 was worse than PM7 in 9-10 of 13 classes; its wins (amine2,
 carboxylic_aromatic, thiol_aromatic) are 0.1-0.2 units at n <= 5.
 
-Conclusion: at these levels Psi4 is slower and less accurate than PM7, so no Psi4
-calibration is shipped. `Psi4Backend` is kept for larger levels (`theory=`, `basis=`)
-and is reported as uncalibrated without a calibration entry.
+Conclusion: at these levels Psi4 is slower and less accurate than PM7. It is kept as an
+**experimental** method: the full benchmark (`PSI4_BENCHMARK.md`, HF/3-21G, 327 molecules,
+held-out test set) recommends Psi4 only for aliphatic carboxylic acids and aromatic thiols,
+and the runtime uses PM7 for every other class, so the shipped Psi4 model is on par with PM7
+(test MAE 0.90 both) at a much higher cost.

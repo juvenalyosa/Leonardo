@@ -122,7 +122,137 @@
     "rmse": 1.439271482210594,
     "within_1": 0.6605504587155964
    },
-   "train_n": 188
+   "train_n": 188,
+   "version": "pm7-2026.09.27"
+  },
+  "psi4": {
+   "basis": "3-21g",
+   "classes": {
+    "amidine": {
+     "n": 17,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 3.1239141185549295,
+     "slope": 0.3464816113840287
+    },
+    "amine1": {
+     "n": 20,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.8395450769910717,
+     "slope": 0.2340823952256511
+    },
+    "amine2": {
+     "n": 19,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.392206401707911,
+     "slope": 0.18722421805774306
+    },
+    "amine3": {
+     "n": 19,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 2.1707274493313973,
+     "slope": 0.3000719231980357
+    },
+    "aniline": {
+     "n": 8,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.854706439582661,
+     "slope": 0.13475221760206657
+    },
+    "carboxylic_aliphatic": {
+     "n": 20,
+     "own": true,
+     "qm_recommended": true,
+     "rmse": 1.3433809967233274,
+     "slope": 0.22909221100279933
+    },
+    "carboxylic_aromatic": {
+     "n": 20,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 0.8294960085345756,
+     "slope": 0.22294889888017294
+    },
+    "guanidine": {
+     "n": 3,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 4.233042167774909,
+     "slope": 0.3814269007205329
+    },
+    "imidazole": {
+     "n": 19,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.8386562494035879,
+     "slope": 0.3745769413401604
+    },
+    "phenol": {
+     "n": 13,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.6681704849966252,
+     "slope": 0.18427030647435377
+    },
+    "pyridine": {
+     "n": 15,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.0022976867063478,
+     "slope": 0.33781386259757096
+    },
+    "thiol_aliphatic": {
+     "n": 8,
+     "own": true,
+     "qm_recommended": false,
+     "rmse": 1.4575891442587772,
+     "slope": 0.26971158099256093
+    },
+    "thiol_aromatic": {
+     "n": 4,
+     "own": false,
+     "qm_recommended": true,
+     "rmse": 0.1583819082578726,
+     "slope": 0.2475276226702124
+    }
+   },
+   "data": "IUPAC Digitized pKa Dataset v2.4 (CC BY-NC 4.0; not redistributed), selection in benchmarks/pka/run_pka_benchmark.py",
+   "data_sha256": "5cd5ca8bda1952be8b223bb1fbe681780de9335617f9f7c0ee2c8f8c6f01cbf3",
+   "excluded_flags": [
+    "acyl_substituted",
+    "cyclic_imine",
+    "empirical_only",
+    "ortho_heteroatom",
+    "polyaza_ring",
+    "resonance_acceptor",
+    "tertiary_aniline",
+    "unusual_group"
+   ],
+   "global": {
+    "n": 185,
+    "rmse": 1.9135407469577235,
+    "slope": 0.2475276226702124
+   },
+   "model": "pKa = pKa_ref + slope_class * (dG_deprot - dG_deprot_ref)/(RT ln10); Psi4 hf/3-21g single point, CPCM water (GePol UFF, area 1), at the lowest PM7/COSMO conformer of ETKDG/MMFF conformers",
+   "n_conformers": 10,
+   "outlier_limit": 15.0,
+   "pcm_area": 1.0,
+   "pcm_solver": "CPCM",
+   "robust": true,
+   "shrinkage": 20.0,
+   "test": {
+    "mae": 1.5332786544393318,
+    "n": 109,
+    "rmse": 2.023802448383019,
+    "within_1": 0.4036697247706422
+   },
+   "theory": "hf",
+   "train_n": 185,
+   "version": "psi4-2026.09.27"
   }
  },
  "version": "pm7-2026.09.27"

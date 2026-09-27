@@ -385,3 +385,18 @@ def test_psi4_real_calculation():
     acetic = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="psi4", backend_options={"n_conformers": 2})
     assert acetic["method"] == "psi4"
     assert acetic["sites"][0]["pka"] == pytest.approx(4.76, abs=0.01)          # the reference itself
+
+
+def test_psi4_is_experimental_and_falls_back_to_pm7_per_class():
+    mopac = _fake_mopac_with_geometry({0: -10.0, 1: 140.0})
+    psi4 = _fake_psi4({0: -134.0, 1: -134.4})
+    cal = {"global": {"slope": 1.0, "rmse": 1.0}, "version": "t", "theory": "hf", "basis": "3-21g",
+           "classes": {"amine1": {"slope": 0.7, "rmse": 1.2, "n": 20, "qm_recommended": False}}}
+    res = compute_pka(Chem.MolFromSmiles("CCN"), method="psi4", backend_options={
+        "runner": mopac, "psi4_runner": psi4, "n_conformers": 1, "workers": 1, "threads": 1, "calibration": cal})
+    site = res["sites"][0]
+    assert res["method"] == "psi4" and site["pka_source"] == "pm7_cosmo (Psi4 not recommended for this class)"
+    assert site["pka"] == pytest.approx(10.63)          # PM7 energies equal to the reference's
+    assert any("experimental" in w for w in res["warnings"])
+    assert any("less accurate than PM7" in w for w in res["warnings"])
+    assert not any("class-typical" in w for w in res["warnings"])
