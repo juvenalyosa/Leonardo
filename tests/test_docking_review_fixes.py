@@ -117,7 +117,7 @@ def test_basic_groups_are_protonated_at_ph_7_4():
     from rdkit import Chem
 
     # _repair_and_protonate now delegates to the pKa module (empirical by default)
-    dlg = _dialog("_repair_and_protonate", "_pka_method", "_pka_cache_dir")
+    dlg = _dialog("_repair_and_protonate", "_pka_method", "_pka_cache_dir", "_pka_backend_options")
     dlg._append_debug_log = lambda *_a: None
     for smi, charge in (("NC(=N)c1ccccc1", 1), ("CCN", 1), ("c1ccncc1", 0), ("CCC(=O)O", -1)):
         mol = dlg._repair_and_protonate(Chem.MolFromSmiles(smi), target_ph=7.4)

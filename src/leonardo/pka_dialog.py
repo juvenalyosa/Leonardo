@@ -406,9 +406,10 @@ class PkaDialog(QtWidgets.QDialog):
         if self.tbl_states.rowCount():
             self.tbl_states.selectRow(0)
         warnings = list(res.get("warnings", []))
-        if rows and rows[0]["population"] < 0.6 and res.get("enumerated_atoms"):
-            warnings.append(f"Mixed population at pH {ph:.2f}: the dominant state is only "
-                            f"{100 * rows[0]['population']:.0f}%. A single parametrized state is an approximation.")
+        if rows and rows[0]["charge_population"] < 0.6 and res.get("enumerated_atoms"):
+            warnings.append(f"Mixed population at pH {ph:.2f}: the dominant charge state is only "
+                            f"{100 * rows[0]['charge_population']:.0f}%. A single parametrized state is an "
+                            "approximation.")
         self.txt_warnings.setPlainText("\n".join(warnings))
         self._plot(ph)
 

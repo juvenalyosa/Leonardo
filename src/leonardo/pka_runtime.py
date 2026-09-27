@@ -34,7 +34,7 @@ RT_LN10 = 1.3642  # kcal/mol at 298.15 K
 MAX_ENUMERATED_SITES = 4
 # Part of the result-cache key: bump whenever SITE_CLASSES, flags or microstate rules change,
 # otherwise results computed with the old rules are served from the cache.
-PKA_RUNTIME_VERSION = "2"
+PKA_RUNTIME_VERSION = "3"
 
 # --------------------------------------------------------------------------- #
 # Site classes
@@ -413,6 +413,103 @@ def microstate_free_energies(site_pkas, micro_pka_fn=None):
     return energies
 
 
+# Charge-charge coupling between two ionizable sites (pKa units): when site j carries charge
+# q_j (+1 protonated base, -1 deprotonated acid), the micro pKa of site i shifts by
+# -W_ij * q_j. W depends on the pair type and on the topological distance d between the
+# charge centres (carboxyl/amidine/guanidine carbon, otherwise the site atom); it is
+# symmetric, so the thermodynamic cycle of the microstates closes. Fitted on two-site
+# molecules of the IUPAC set (half held out; benchmarks/pka/MULTISITE_VALIDATION.md).
+# Charge delocalization through conjugated paths is stronger than this and is under-shifted.
+# One set per source of the per-site pKa values (each fitted with its own values).
+SITE_COUPLING = {
+    "empirical": {
+        "++": {"a": 15.25, "power": 1.5},          # two cationic sites (diamines, piperazines)
+        "--": {"a": 4.75, "decay": 1.5},           # two anionic sites (diacids)
+        "+-": {"a": 5.0, "power": 1.5},            # cation/anion (amino acids, zwitterions)
+    },
+    "pm7": {                                       # also used by the Psi4 backend (PM7 geometries)
+        "++": {"a": 7.75, "power": 1.0},
+        "--": {"a": 6.75, "power": 1.0},
+        "+-": {"a": 4.5, "decay": 2.0},
+    },
+}
+_CHARGE_ON_CARBON = frozenset({"carboxylic_aliphatic", "carboxylic_aromatic", "amidine", "guanidine"})
+
+
+def _charge_center(parent, site):
+    atom = parent.GetAtomWithIdx(int(site["atom"]))
+    if site["class"] in _CHARGE_ON_CARBON:
+        for nb in atom.GetNeighbors():
+            if nb.GetAtomicNum() == 6:
+                return nb.GetIdx()
+    return int(site["atom"])
+
+
+def _pair_coupling(kind_i, kind_j, distance, coupling="empirical"):
+    key = "".join(sorted("+" if k == "base" else "-" for k in (kind_i, kind_j)))
+    par = SITE_COUPLING[coupling][key]
+    d = max(1.0, float(distance))
+    if "power" in par:
+        return float(par["a"]) / d ** float(par["power"])
+    return float(par["a"]) * math.exp(-(d - 1.0) / float(par["decay"]))
+
+
+def site_coupling_matrix(parent, sites, coupling="empirical"):
+    """W[i][j] (pKa units) between the ionizable sites of ``parent`` (see SITE_COUPLING)."""
+    Chem = _chem()
+    if len(sites) < 2:
+        return [[0.0] * len(sites) for _ in sites]
+    dm = Chem.GetDistanceMatrix(parent)
+    centers = [_charge_center(parent, s) for s in sites]
+    n = len(sites)
+    w = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = dm[centers[i]][centers[j]]
+            if d >= 1e6:            # disconnected (should not happen for one fragment)
+                continue
+            w[i][j] = w[j][i] = _pair_coupling(sites[i]["kind"], sites[j]["kind"], d, coupling)
+    return w
+
+
+def _site_charge(site, protonated):
+    if site["kind"] == "base":
+        return 1 if protonated else 0
+    return 0 if protonated else -1
+
+
+def coupled_micro_pkas(parent, enumerated, fixed, base_pkas, coupling="empirical"):
+    """
+    Micro pKa table ``{"<state>|<site>": pKa}`` from per-site pKa values with every other
+    site neutral (``base_pkas``) plus the pairwise charge coupling; fixed sites contribute
+    with their fixed state.
+    """
+    all_sites = list(enumerated) + list(fixed)
+    w = site_coupling_matrix(parent, all_sites, coupling)
+    n = len(enumerated)
+    fixed_q = [_site_charge(f, bool(f.get("fixed_protonated", False))) for f in fixed]
+    table = {}
+    for st in enumerate_microstates(n):
+        for i in range(n):
+            if st[i]:
+                continue
+            shift = sum(w[i][j] * _site_charge(enumerated[j], st[j]) for j in range(n) if j != i)
+            shift += sum(w[i][n + k] * q for k, q in enumerate(fixed_q))
+            table[f"{_state_key(st)}|{i}"] = float(base_pkas[i]) - shift
+    return table
+
+
+def displayed_site_pkas(enumerated, micro):
+    """One pKa per site for tables: the micro pKa with the other sites protonated when their
+    empirical pKa is above this one's (the order in which they titrate)."""
+    out = []
+    for s_idx, site in enumerate(enumerated):
+        ctx = tuple((i != s_idx) and (float(o["empirical_pka"]) >= float(site["empirical_pka"]))
+                    for i, o in enumerate(enumerated))
+        out.append(micro[f"{_state_key(ctx)}|{s_idx}"])
+    return out
+
+
 def microstate_populations(energies, ph):
     """Boltzmann populations at ``ph``: G_i(pH) = G_i + n_H,i * RT ln10 * pH."""
     ph = float(ph)
@@ -608,12 +705,14 @@ class EmpiricalBackend:
     calibration_version = "none"
 
     def evaluate(self, parent, enumerated, fixed, **_kwargs):
+        micro = coupled_micro_pkas(parent, enumerated, fixed, [float(s["empirical_pka"]) for s in enumerated])
+        shown = displayed_site_pkas(enumerated, micro) if enumerated else []
         return {
             "site_pkas": [
-                {"pka": float(s["empirical_pka"]), "sd": float(s["empirical_sd"]), "source": "class_typical"}
-                for s in enumerated
+                {"pka": float(p), "sd": float(s["empirical_sd"]), "source": "class_typical"}
+                for s, p in zip(enumerated, shown)
             ],
-            "micro_pka": None,
+            "micro_pka": micro,
             "warnings": [],
         }
 
@@ -705,6 +804,7 @@ class MopacBackend:
     label = "PM7/COSMO"
     short_label = "PM7"
     source_tag = "pm7_cosmo"
+    coupling_key = "pm7"
 
     def __init__(self, calibration=None, n_conformers=10, workers=None, runner=None, seed=20260927,
                  timeout=600):
@@ -819,39 +919,39 @@ class MopacBackend:
         n = len(enumerated)
         if n == 0:
             return {"site_pkas": [], "micro_pka": {}, "warnings": []}
-        states = enumerate_microstates(n)
+        # QM gives each site's pKa with every other site neutral (acids protonated, bases
+        # not): the neutral state plus one state per site with only that site charged. The
+        # interaction between charged sites comes from the fitted coupling term: PM7/COSMO
+        # energies of multiply charged states over-couple (a diacid's second pKa came out
+        # 3-4 units too high), benchmarks/pka/MULTISITE_VALIDATION.md.
+        neutral = tuple(site["kind"] == "acid" for site in enumerated)
+        states = [neutral] + [tuple((not b) if i == s_idx else b for i, b in enumerate(neutral)) for s_idx in range(n)]
         mols = [build_state_molecule(parent, enumerated, st, fixed=fixed, add_hs=True) for st in states]
         if callable(progress):
-            progress(f"{self.label}: {len(states)} microstate(s) x {self.n_conformers} conformer(s)")
+            progress(f"{self.label}: {len(states)} protonation state(s) x {self.n_conformers} conformer(s)")
         energies = dict(zip(states, self.state_energies(mols, progress=progress, cancel=cancel)))
         refs = {}
-        micro = {}
+        base_pkas = []
         outliers = set()
-        for st in states:
-            for s_idx, site in enumerate(enumerated):
-                if st[s_idx]:
-                    continue
-                prot = tuple(True if i == s_idx else b for i, b in enumerate(st))
-                if not site.get("qm_supported") or not self._qm_recommended(site["class"]):
-                    # no QM class, or the benchmark found the class-typical value more accurate
-                    micro[f"{_state_key(st)}|{s_idx}"] = float(site["empirical_pka"])
-                    continue
-                if site["class"] not in refs:
-                    refs[site["class"]] = self.reference_delta(site["class"], progress=progress, cancel=cancel)
-                d_ref, ref_pka = refs[site["class"]]
-                x = ((energies[st] - energies[prot]) - d_ref) / RT_LN10
-                if abs(x) > QM_OUTLIER_LIMIT:
-                    outliers.add(s_idx)
-                    micro[f"{_state_key(st)}|{s_idx}"] = float(site["empirical_pka"])
-                    continue
-                pka, _err = apply_calibration(self.calibration, site["class"], x, ref_pka)
-                micro[f"{_state_key(st)}|{s_idx}"] = pka
-        site_pkas = []
         for s_idx, site in enumerate(enumerated):
-            # context: other sites protonated when their empirical pKa is above this one's
-            ctx = tuple((i != s_idx) and (float(o["empirical_pka"]) >= float(site["empirical_pka"]))
-                        for i, o in enumerate(enumerated))
-            pka = micro[f"{_state_key(ctx)}|{s_idx}"]
+            if not site.get("qm_supported") or not self._qm_recommended(site["class"]):
+                # no QM class, or the benchmark found the class-typical value more accurate
+                base_pkas.append(float(site["empirical_pka"]))
+                continue
+            charged = states[1 + s_idx]
+            prot, deprot = (neutral, charged) if site["kind"] == "acid" else (charged, neutral)
+            if site["class"] not in refs:
+                refs[site["class"]] = self.reference_delta(site["class"], progress=progress, cancel=cancel)
+            d_ref, ref_pka = refs[site["class"]]
+            x = ((energies[deprot] - energies[prot]) - d_ref) / RT_LN10
+            if abs(x) > QM_OUTLIER_LIMIT:
+                outliers.add(s_idx)
+                base_pkas.append(float(site["empirical_pka"]))
+                continue
+            base_pkas.append(apply_calibration(self.calibration, site["class"], x, ref_pka)[0])
+        micro = coupled_micro_pkas(parent, enumerated, fixed, base_pkas, coupling=self.coupling_key)
+        site_pkas = []
+        for s_idx, (site, pka) in enumerate(zip(enumerated, displayed_site_pkas(enumerated, micro))):
             if s_idx in outliers:
                 sd, source = float(site["empirical_sd"]), f"class_typical ({self.short_label} outlier)"
             elif site.get("qm_supported") and not self._qm_recommended(site["class"]):
@@ -1281,15 +1381,26 @@ def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cac
 
 
 def states_at_ph(result, ph, min_population=0.05):
-    """Protonation states of a :func:`compute_pka` result at ``ph``, most populated first.
-    Each: ``state`` (per enumerated site), ``population``, ``charge``."""
+    """
+    Protonation states of a :func:`compute_pka` result at ``ph``. Each: ``state`` (per
+    enumerated site), ``population``, ``charge`` and ``charge_population`` (all microstates
+    with that net charge).
+
+    Ordered by charge population, then microstate population: the first row is the most
+    populated microstate of the dominant net charge. (By microstate alone, piperazine at
+    pH 7.4 would come out +2: its +1 population is split over two equivalent microstates.)
+    """
     energies = {tuple(m["state"]): float(m["g"]) for m in result.get("microstates", [])}
     if not energies:
-        return [{"state": [], "population": 1.0, "charge": None}]
+        return [{"state": [], "population": 1.0, "charge": None, "charge_population": 1.0}]
     pops = microstate_populations(energies, ph)
     charges = {tuple(m["state"]): m["charge"] for m in result["microstates"]}
-    rows = [{"state": list(st), "population": p, "charge": charges[st]} for st, p in pops.items()]
-    rows.sort(key=lambda r: -r["population"])
+    by_charge = {}
+    for st, p in pops.items():
+        by_charge[charges[st]] = by_charge.get(charges[st], 0.0) + p
+    rows = [{"state": list(st), "population": p, "charge": charges[st], "charge_population": by_charge[charges[st]]}
+            for st, p in pops.items()]
+    rows.sort(key=lambda r: (-r["charge_population"], -r["population"]))
     keep = [r for r in rows if r["population"] >= float(min_population)]
     return keep or rows[:1]
 
@@ -1372,6 +1483,7 @@ def protonate_molecule(mol, ph=7.4, method="empirical", cache_dir=None, add_hs=T
         "method": result["method"],
         "ph": float(ph),
         "population": float(best["population"]),
+        "charge_population": float(best["charge_population"]),
         "charge": int(Chem.GetFormalCharge(out)),
         "input_charge": int(Chem.GetFormalCharge(mol)),
         "sites": [{k: s[k] for k in ("atom", "class", "kind", "pka", "sd", "flags")} for s in result["sites"]],
@@ -1379,9 +1491,10 @@ def protonate_molecule(mol, ph=7.4, method="empirical", cache_dir=None, add_hs=T
         "warnings": list(result["warnings"]),
         "smiles": Chem.MolToSmiles(Chem.RemoveHs(out)),
     }
-    if best["population"] < 0.6 and result["enumerated_atoms"]:
+    if best["charge_population"] < 0.6 and result["enumerated_atoms"]:
         info["warnings"].append(
-            f"dominant state is only {100 * best['population']:.0f}% populated at pH {float(ph):.1f}"
+            f"dominant charge state ({int(best['charge']):+d}) is only {100 * best['charge_population']:.0f}% "
+            f"populated at pH {float(ph):.1f}"
         )
     return out, info
 

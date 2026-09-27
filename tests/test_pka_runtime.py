@@ -400,3 +400,34 @@ def test_psi4_is_experimental_and_falls_back_to_pm7_per_class():
     assert any("experimental" in w for w in res["warnings"])
     assert any("less accurate than PM7" in w for w in res["warnings"])
     assert not any("class-typical" in w for w in res["warnings"])
+
+
+def test_dominant_charge_wins_over_split_microstates():
+    # piperazine at pH 7.4: +1 is the dominant charge, split over two equivalent microstates
+    _mol, info = protonate_molecule(Chem.MolFromSmiles("C1CNCCN1"), 7.4)
+    assert info["charge"] == 1 and info["charge_population"] > 0.5 > info["population"]
+
+
+def test_empirical_sites_are_coupled():
+    # like charges push the second pKa away, opposite charges pull the acid down
+    en = compute_pka(Chem.MolFromSmiles("NCCN"))["macro_pkas"]
+    assert en[1] - en[0] > 2.0                                           # exp 6.85 / 9.93
+    succ = compute_pka(Chem.MolFromSmiles("OC(=O)CCC(=O)O"))["macro_pkas"]
+    assert 1.0 < succ[1] - succ[0] < 3.0                                # exp 4.2 / 5.6
+    gly = compute_pka(Chem.MolFromSmiles("NCC(=O)O"))
+    acid = next(s for s in gly["sites"] if s["kind"] == "acid")
+    assert acid["pka"] < acid["empirical_pka"] - 1.0                   # exp 2.35, class-typical 4.5
+    _mol, info = protonate_molecule(Chem.MolFromSmiles("NCC(=O)O"), 7.4)
+    assert info["smiles"] == "[NH3+]CC(=O)[O-]"
+
+
+def test_coupling_is_thermodynamically_consistent():
+    from pka_runtime import coupled_micro_pkas, find_ionizable_sites, neutral_parent, select_enumerated_sites
+
+    parent = neutral_parent(Chem.MolFromSmiles("NCCCC(=O)O"))
+    enum, fixed, _w = select_enumerated_sites(find_ionizable_sites(parent))
+    micro = coupled_micro_pkas(parent, enum, fixed, [s["empirical_pka"] for s in enum])
+    # both paths from the neutral-acid/neutral-base corner to the zwitterion close the cycle
+    path_a = micro["00|0"] + micro["10|1"]
+    path_b = micro["00|1"] + micro["01|0"]
+    assert path_a == pytest.approx(path_b)
