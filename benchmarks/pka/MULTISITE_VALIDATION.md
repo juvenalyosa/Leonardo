@@ -60,6 +60,9 @@ population is split over two equivalent microstates).
 | pm7 | **all** | 217 | 1.08 | 61% | 168/194 (87%) |
 
 Parameters: `benchmarks/pka/fit_site_coupling.py --method empirical|pm7` (fit half only).
+Rerunning the PM7 fit reproduces the anion-anion and cation-anion parameters; for two cationic
+sites the optimum is flat (7.75/d shipped vs 13.5/d^1.5 on a rerun: equal at d = 3, held-out
+MAE 0.980 vs 0.985, same charge states), because PM7 energies differ slightly between runs.
 Not covered: coupling through conjugated/aromatic paths (e.g. two ring nitrogens of a
 pyrimidine) is much stronger than the distance law and is under-estimated; groups the module
 does not model (aromatic NH, amide NH, enols) were excluded from the set.
