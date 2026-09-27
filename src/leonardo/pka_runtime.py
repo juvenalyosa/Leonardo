@@ -22,6 +22,7 @@ Henderson-Hasselbalch per site, so coupled sites (zwitterions, diacids) are
 handled.
 """
 
+import functools
 import hashlib
 import json
 import math
@@ -173,6 +174,12 @@ def _chem():
     return Chem
 
 
+@functools.lru_cache(maxsize=None)
+def _smarts(pattern):
+    """Compiled SMARTS, cached (site detection runs per molecule in virtual screening)."""
+    return _chem().MolFromSmarts(pattern)
+
+
 # --------------------------------------------------------------------------- #
 # Molecule handling
 # --------------------------------------------------------------------------- #
@@ -263,6 +270,7 @@ def _site_flags(mol, cls_name, atom_idx):
     return flags
 
 
+@functools.lru_cache(maxsize=1)
 def _dimorphite_table():
     try:
         import dimorphite_dl
@@ -305,7 +313,7 @@ def find_ionizable_sites(mol):
     taken = set()
     sites = []
     for cls in SITE_CLASSES:
-        patt = Chem.MolFromSmarts(cls["smarts"])
+        patt = _smarts(cls["smarts"])
         for match in parent.GetSubstructMatches(patt):
             idx = int(match[0])
             if idx in taken:
@@ -323,7 +331,7 @@ def find_ionizable_sites(mol):
     for name, special, smarts, triples in _dimorphite_table():
         if name not in _DIMORPHITE_FALLBACK_TYPES:
             continue
-        patt = Chem.MolFromSmarts(smarts)
+        patt = _smarts(smarts)
         if patt is None:
             continue
         for match in with_h.GetSubstructMatches(patt):
@@ -930,6 +938,8 @@ def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cac
     parent = neutral_parent(mol)
     backend = _backend(method, **dict(backend_options or {}))
     calibration_version = str(getattr(backend, "calibration_version", "none"))
+    if backend.name == "empirical":
+        cache_dir = None     # milliseconds per molecule: a disk cache would only write one file per ligand
     key = _cache_key(parent, backend.name, calibration_version)
     cached = _cache_load(cache_dir, key)
     if cached is not None:

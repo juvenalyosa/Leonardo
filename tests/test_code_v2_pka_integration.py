@@ -1,3 +1,5 @@
+import os
+
 import code_v2
 import pytest
 from rdkit import Chem
@@ -67,3 +69,36 @@ def test_meeko_prep_protonates_library_ligands_only_when_asked(tmp_path):
     assert charge_sum(out) == pytest.approx(1.0, abs=0.01)                 # amidinium for VS/lead-opt
     ok, msg = dlg._vs_prepare_ligand_with_meeko(Chem.MolFromSmiles("NC(=N)c1ccccc1"), str(out))
     assert ok and charge_sum(out) == pytest.approx(0.0, abs=0.01)          # docking path: input kept as given
+
+
+def test_md_component_keeps_crystal_atom_names_and_coordinates(tmp_path):
+    """OpenMM matches residue templates by atom name: protonation must not rename heavy atoms."""
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "benchmarks", "redocking", "3ptb_ben", "ben_crystal_template.pdb")
+    dlg = _dialog("_openmm_build_hydrated_component_pdb", "_openmm_ligand_target_ph")
+    dlg._current_small_molecule_target_ph = lambda: 7.4
+    out = tmp_path / "ben_hydrated.pdb"
+    res = dlg._openmm_build_hydrated_component_pdb(src, str(out), {"resn": "BEN", "chain": "A", "resi": "1"},
+                                                   smiles_hint="[NH2+]=C(N)c1ccccc1", target_ph=7.4)
+    assert res["ok"] and res["formal_charge"] == 1
+
+    def heavy(path):
+        return sorted((ln[12:16].strip(), ln[17:20].strip(), round(float(ln[30:38]), 3), round(float(ln[38:46]), 3),
+                       round(float(ln[46:54]), 3)) for ln in open(path)
+                      if ln.startswith(("ATOM", "HETATM")) and ln[76:78].strip() != "H")
+    assert heavy(src) == heavy(str(out))
+
+
+def test_locked_state_note_warns_when_ph_changed(tmp_path):
+    from leonardo.pka_dialog import write_state_sdf
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("NC(=[NH2+])c1ccccc1"))
+    AllChem.EmbedMolecule(mol, randomSeed=1)
+    path = write_state_sdf(mol, {"method": "pm7", "ph": 7.4, "charge": 1, "population": 1.0},
+                           str(tmp_path / "state.sdf"))
+    dlg = _dialog("_pka_ligand_is_locked", "_pka_locked_state_note")
+    dlg._pka_locked_ligand_file = path
+    note, warn = dlg._pka_locked_state_note(path, 7.4)
+    assert note == "protonation_locked:pka_window(pm7, pH 7.40)" and warn is None
+    _note, warn = dlg._pka_locked_state_note(path, 5.0)
+    assert warn and "pH 7.40" in warn

@@ -129,11 +129,22 @@ def test_many_sites_are_capped_with_a_warning():
 
 
 def test_cache_returns_the_stored_result(tmp_path):
+    class SlowQM:
+        name = "slowqm"
+        calibration_version = "t1"
+
+        def site_pkas(self, parent, sites, **_):
+            return [{"pka": 9.0, "sd": 0.5, "source": "slowqm"} for _s in sites]
+
+    register_backend("slowqm", SlowQM)
     mol = Chem.MolFromSmiles("CCN")
-    first = compute_pka(mol, cache_dir=str(tmp_path))
+    first = compute_pka(mol, method="slowqm", cache_dir=str(tmp_path))
     assert first["provenance"]["cache"] == "miss"
-    second = compute_pka(mol, cache_dir=str(tmp_path))
+    second = compute_pka(mol, method="slowqm", cache_dir=str(tmp_path))
     assert second["provenance"]["cache"] == "hit" and second["sites"] == first["sites"]
+    # the empirical method is milliseconds per molecule: nothing is written (virtual screening)
+    compute_pka(Chem.MolFromSmiles("CCCN"), cache_dir=str(tmp_path / "emp"))
+    assert not (tmp_path / "emp").exists()
 
 
 def test_custom_backend_and_unknown_method():

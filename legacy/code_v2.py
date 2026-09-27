@@ -42118,6 +42118,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 ext = os.path.splitext(source)[1].lower()
         elif preserve_charges:
             notes.append("preserve_input_charges")
+        lock_note, lock_warn = self._pka_locked_state_note(original_source, ph)
+        if lock_note:
+            notes.append(lock_note)
+        if lock_warn:
+            notes.append("warning:" + lock_warn)
+            self._append_debug_log(lock_warn)
 
         def _load_qc_mol(path):
             if not HAS_RDKIT:
@@ -43571,6 +43577,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     target_ph=self._current_small_molecule_target_ph(),
                     reprotonate=not self._pka_ligand_is_locked(source_file),
                 ):
+                    _lock_note, lock_warn = self._pka_locked_state_note(
+                        str(self._docking_ligand_file), self._current_small_molecule_target_ph())
+                    if lock_warn:
+                        self._append_debug_log(lock_warn)
+                        QtWidgets.QMessageBox.warning(self, "Protonation state", lock_warn)
                     source_file = clean_sdf
                     try:
                         clean_mol = self._ligand_editor_mol_from_file(clean_sdf)
@@ -51484,6 +51495,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """True when ``path`` is a state chosen in the pKa window (keep its hydrogens)."""
         locked = str(getattr(self, "_pka_locked_ligand_file", "") or "")
         return bool(locked) and os.path.abspath(str(path or "")) == os.path.abspath(locked)
+    def _pka_locked_state_note(self, path, current_ph):
+        """(note, warning) for a ligand locked from the pKa window, or (None, None)."""
+        if not self._pka_ligand_is_locked(path) or not HAS_RDKIT:
+            return None, None
+        try:
+            m = next((x for x in Chem.SDMolSupplier(str(path), removeHs=False) if x is not None), None)
+            method = m.GetProp("LEONARDO_PROTONATION_METHOD") if m is not None and m.HasProp("LEONARDO_PROTONATION_METHOD") else "?"
+            ph = float(m.GetProp("LEONARDO_PROTONATION_PH")) if m is not None and m.HasProp("LEONARDO_PROTONATION_PH") else None
+        except Exception:
+            method, ph = "?", None
+        note = f"protonation_locked:pka_window({method}, pH {ph:.2f})" if ph is not None else "protonation_locked:pka_window"
+        warn = None
+        if ph is not None and abs(float(current_ph) - ph) > 0.5:
+            warn = (f"The ligand's protonation state was chosen at pH {ph:.2f} in the pKa window, but the current pH "
+                    f"is {float(current_ph):.2f}; the locked state is used. Recompute it in the pKa window if needed.")
+        return note, warn
     def _pka_cache_dir(self):
         try:
             return os.path.join(self._dock_workspace_dir(), "pka_cache")
