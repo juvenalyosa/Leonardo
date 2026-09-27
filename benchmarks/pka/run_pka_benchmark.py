@@ -1,5 +1,5 @@
 """
-PM7/COSMO pKa calibration and benchmark for leonardo.pka_runtime.
+PM7/COSMO and Psi4 pKa calibration and benchmark for leonardo.pka_runtime.
 
 Data: IUPAC Digitized pKa Dataset (high-confidence, v2.4), aqueous pKa values from
 Perrin (1965, 1972) and Serjeant & Dempsey (1979). It is licensed CC BY-NC 4.0
@@ -15,6 +15,10 @@ every third one (by InChIKey) held out as the test set.
 
 Usage:
     python benchmarks/pka/run_pka_benchmark.py [--per-class 30] [--iupac-csv PATH]
+    python benchmarks/pka/run_pka_benchmark.py --method psi4 [--theory hf --basis 3-21g]
+        [--compare-details ~/.cache/leonardo/iupac_pka/pm7_benchmark_details.json]
+
+Each method has its own entry in src/leonardo/pka_calibration.json; the other entries are kept.
 """
 
 import argparse
@@ -111,14 +115,18 @@ def select_molecules(rows, per_class):
     return out
 
 
-def run_pm7(mols, n_conformers, workers):
+def run_qm(mols, args):
     from rdkit import Chem
 
     from leonardo import pka_runtime as P
 
-    backend = P.MopacBackend(calibration={"global": {"slope": 1.0, "rmse": float("nan")}, "classes": {},
-                                          "version": "identity"},
-                             n_conformers=n_conformers, workers=workers)
+    identity = {"global": {"slope": 1.0, "rmse": float("nan")}, "classes": {}, "version": "identity"}
+    if args.method == "psi4":
+        identity.update(theory=args.theory, basis=args.basis)
+        backend = P.Psi4Backend(calibration=identity, theory=args.theory, basis=args.basis,
+                                n_conformers=args.n_conformers, workers=args.workers, threads=args.threads)
+    else:
+        backend = P.MopacBackend(calibration=identity, n_conformers=args.n_conformers, workers=args.workers)
     states, meta = [], []
     for m in mols:
         parent = P.neutral_parent(Chem.MolFromSmiles(m["smiles"]))
@@ -134,7 +142,7 @@ def run_pm7(mols, n_conformers, workers):
         backend.state_energies(states, progress=lambda msg: None)
     except P.PkaBackendError as exc:        # keep going; failing molecules are dropped below
         print(f"warning: {exc}")
-    print(f"PM7 energies for {len(states)} states in {time.time() - t0:.0f}s")
+    print(f"{backend.label} energies for {len(states)} states in {time.time() - t0:.0f}s")
     for m, (parent, sites) in zip(mols, meta):
         try:
             ev = backend.evaluate(parent, sites, [])
@@ -147,9 +155,9 @@ def run_pm7(mols, n_conformers, workers):
         m["raw"] = ev["site_pkas"][0]["pka"]
         m["x"] = m["raw"] - ref
         m["y"] = m["exp"] - ref
-    print(f"{failed} molecule(s) without converged PM7 energies")
+    print(f"{failed} molecule(s) without converged {args.method} energies")
     outliers = [m for m in mols if m.get("raw") is not None and abs(m["x"]) > P.QM_OUTLIER_LIMIT]
-    print(f"{len(outliers)} PM7 outlier(s) (|x| > {P.QM_OUTLIER_LIMIT:g}; the runtime falls back to empirical): "
+    print(f"{len(outliers)} {args.method} outlier(s) (|x| > {P.QM_OUTLIER_LIMIT:g}; the runtime falls back to empirical): "
           + ", ".join(m["smiles"] for m in outliers))
     return [m for m in mols if m.get("raw") is not None and abs(m["x"]) <= P.QM_OUTLIER_LIMIT]
 
@@ -166,15 +174,27 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--iupac-csv", default=os.path.join(DEFAULT_CACHE, "iupac_high-confidence_v2_4.csv"))
     ap.add_argument("--per-class", type=int, default=30)
+    ap.add_argument("--method", choices=("pm7", "psi4"), default="pm7")
+    ap.add_argument("--theory", default="hf", help="Psi4 level of theory (single points on PM7 geometries)")
+    ap.add_argument("--basis", default="3-21g", help="Psi4 basis set")
+    ap.add_argument("--threads", type=int, default=2, help="threads per Psi4 process")
     ap.add_argument("--n-conformers", type=int, default=10)
     ap.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 2))
     ap.add_argument("--calibration-out", default=os.path.join(REPO, "src", "leonardo", "pka_calibration.json"))
-    ap.add_argument("--report-out", default=os.path.join(HERE, "PM7_BENCHMARK.md"))
-    ap.add_argument("--details-out", default=os.path.join(DEFAULT_CACHE, "pm7_benchmark_details.json"),
-                    help="per-molecule results (contain IUPAC values; kept outside the repository)")
+    ap.add_argument("--report-out", default="", help="default: benchmarks/pka/<METHOD>_BENCHMARK.md")
+    ap.add_argument("--details-out", default="",
+                    help="per-molecule results (contain IUPAC values; kept outside the repository); "
+                         "default: <cache>/<method>_benchmark_details.json")
     ap.add_argument("--from-details", default="",
-                    help="rebuild calibration and report from a previous --details-out file (no PM7 runs)")
+                    help="rebuild calibration and report from a previous --details-out file (no QM runs)")
+    ap.add_argument("--compare-details", default="",
+                    help="details file of another method (e.g. PM7) to compare on the same test molecules")
     args = ap.parse_args()
+    args.theory, args.basis = args.theory.lower(), args.basis.lower()
+    qm = "PM7" if args.method == "pm7" else f"Psi4 {args.theory.upper()}/{args.basis}"
+    args.report_out = args.report_out or os.path.join(HERE, f"{args.method.upper()}_BENCHMARK.md")
+    args.details_out = args.details_out or os.path.join(DEFAULT_CACHE, f"{args.method}_benchmark_details.json")
+    rec_key = "pm7_recommended" if args.method == "pm7" else "qm_recommended"
 
     from leonardo import pka_runtime as P
 
@@ -185,7 +205,7 @@ def main():
     else:
         mols = select_molecules(load_iupac(args.iupac_csv), args.per_class)
         print(f"selected {len(mols)} molecules")
-        mols = run_pm7(mols, args.n_conformers, args.workers)
+        mols = run_qm(mols, args)
     train = [m for m in mols if m["split"] == "train"]
     test = [m for m in mols if m["split"] == "test"]
     def in_domain(m):
@@ -214,15 +234,15 @@ def main():
         sub = [m for m in train if m["class"] == name]
         pm7_mae = sum(abs(m["loo"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
         emp_mae = sum(abs(m["empirical"] - m["exp"]) for m in sub) / len(sub) if sub else float("nan")
-        recommend[name] = {"pm7_loo_mae": pm7_mae, "empirical_mae": emp_mae,
-                           "pm7_recommended": bool(not sub or pm7_mae <= emp_mae)}
+        recommend[name] = {"qm_loo_mae": pm7_mae, "empirical_mae": emp_mae,
+                           "qm_recommended": bool(not sub or pm7_mae <= emp_mae)}
         if name in cal["classes"]:
-            cal["classes"][name]["pm7_recommended"] = recommend[name]["pm7_recommended"]
+            cal["classes"][name][rec_key] = recommend[name]["qm_recommended"]
     for m in mols:
         m["pred"] = P.apply_calibration(cal, m["class"], m["x"], m["ref"])[0]
         m["pred_global"] = P.apply_calibration(cal_global, m["class"], m["x"], m["ref"])[0]
         m["pred_class"] = P.apply_calibration(cal_class, m["class"], m["x"], m["ref"])[0]
-        m["shipped"] = m["pred"] if recommend[m["class"]]["pm7_recommended"] else m["empirical"]
+        m["shipped"] = m["pred"] if recommend[m["class"]]["qm_recommended"] else m["empirical"]
 
     def err(sub, key):
         return [m[key] - m["exp"] for m in sub]
@@ -253,12 +273,16 @@ def main():
     for flag in sorted({f for m in test for f in m["flags"]}):
         per_flag[flag] = _stats(err([m for m in test if flag in m["flags"]], "pred"))
 
-    version = time.strftime("pm7-%Y.%m.%d")
-    calibration = {
-        "version": version,
-        "methods": {"pm7": {
-            "model": "pKa = pKa_ref + slope_class * (dG_deprot - dG_deprot_ref)/(RT ln10); "
-                     "PM7/COSMO(EPS=78.4) lowest heat of formation over ETKDG/MMFF conformers",
+    version = time.strftime(f"{args.method}-%Y.%m.%d")
+    if args.method == "psi4":
+        energy_model = (f"Psi4 {args.theory}/{args.basis} single point, {P.PSI4_PCM_SOLVER} water "
+                        f"(GePol UFF, area {P.PSI4_PCM_AREA:g}), at the lowest PM7/COSMO conformer "
+                        "of ETKDG/MMFF conformers")
+    else:
+        energy_model = "PM7/COSMO(EPS=78.4) lowest heat of formation over ETKDG/MMFF conformers"
+    entry = {
+            "model": "pKa = pKa_ref + slope_class * (dG_deprot - dG_deprot_ref)/(RT ln10); " + energy_model,
+            "version": version,
             "n_conformers": args.n_conformers,
             "shrinkage": lam,
             "robust": True,
@@ -271,8 +295,17 @@ def main():
             "data": "IUPAC Digitized pKa Dataset v2.4 (CC BY-NC 4.0; not redistributed), "
                     "selection in benchmarks/pka/run_pka_benchmark.py",
             "data_sha256": IUPAC_SHA256,
-        }},
     }
+    if args.method == "psi4":
+        entry.update(theory=args.theory, basis=args.basis, pcm_solver=P.PSI4_PCM_SOLVER, pcm_area=P.PSI4_PCM_AREA)
+    # one entry per method: keep the others (a PM7 run must not erase the Psi4 calibration and vice versa)
+    try:
+        with open(args.calibration_out, encoding="utf-8") as fh:
+            calibration = json.load(fh)
+    except (OSError, ValueError):
+        calibration = {}
+    calibration.setdefault("methods", {})[args.method] = entry
+    calibration["version"] = version if args.method == "pm7" else calibration.get("version", version)
     with open(args.calibration_out, "w", encoding="utf-8") as fh:
         json.dump(calibration, fh, indent=1, sort_keys=True)
         fh.write("\n")
@@ -286,7 +319,7 @@ def main():
         return f"n={st['n']} | {st['mae']:.2f} | {st['rmse']:.2f} | {100 * st['within_1']:.0f}%"
 
     lines = [
-        "# PM7/COSMO pKa benchmark",
+        "# PM7/COSMO pKa benchmark" if args.method == "pm7" else f"# {qm} (PCM water, PM7/COSMO geometries) pKa benchmark",
         "",
         f"Calibration `{version}`, written by `benchmarks/pka/run_pka_benchmark.py`.",
         "",
@@ -305,10 +338,10 @@ def main():
         "| Model | n | MAE | RMSE | within 1 unit |",
         "|---|---|---|---|---|",
     ]
-    for key, label in (("test_uncalibrated", "PM7 uncalibrated"), ("test_global_slope", "PM7, global robust slope"),
-                       ("test_per_class_slope", "PM7, per-class least squares (all molecules)"),
-                       ("test_shrinkage", "PM7, robust per-class slope with shrinkage (all classes)"),
-                       ("test_shipped_with_recommendation", "**Shipped: PM7, empirical where PM7 is not recommended**"),
+    for key, label in (("test_uncalibrated", f"{qm} uncalibrated"), ("test_global_slope", f"{qm}, global robust slope"),
+                       ("test_per_class_slope", f"{qm}, per-class least squares (all molecules)"),
+                       ("test_shrinkage", f"{qm}, robust per-class slope with shrinkage (all classes)"),
+                       ("test_shipped_with_recommendation", f"**Shipped: {qm}, empirical where {qm} is not recommended**"),
                        ("test_empirical_class_typical", "Empirical (class-typical pKa)"),
                        ("test_in_domain", "shipped model, in-domain sites"),
                        ("test_out_of_domain", "shipped model, out-of-domain sites (warned)"),
@@ -316,19 +349,31 @@ def main():
                        ("test_unflagged", "shipped model, no warning flag")):
         lines.append(f"| {label} | {fmt(summary[key])} |")
     lines += ["", "## Per class", "",
-              "`cal n`: in-domain molecules the slope was fitted on (of `train n`). PM7 vs empirical is",
+              f"`cal n`: in-domain molecules the slope was fitted on (of `train n`). {qm} vs empirical is",
               "decided on the calibration set (leave-one-out MAE), never on the test set. Classes with",
               "fewer than 5 test molecules are not statistically meaningful.", "",
-              "| Class | train n | cal n | slope | LOO MAE PM7 / empirical | PM7 recommended | test PM7: n, MAE, RMSE, within 1 | test empirical MAE |",
+              f"| Class | train n | cal n | slope | LOO MAE {qm} / empirical | {qm} recommended | test {qm}: n, MAE, RMSE, within 1 | test empirical MAE |",
               "|---|---|---|---|---|---|---|---|"]
     for name, row in per_class.items():
         emp = row["test_empirical"]
         lines.append(f"| {name} | {row['n_train']} | {row['n_cal']} | {row['slope']:.2f} | "
-                     f"{row['pm7_loo_mae']:.2f} / {row['empirical_mae']:.2f} | {'yes' if row['pm7_recommended'] else '**no**'} | "
+                     f"{row['qm_loo_mae']:.2f} / {row['empirical_mae']:.2f} | {'yes' if row['qm_recommended'] else '**no**'} | "
                      f"{fmt(row['test']).replace(' | ', ', ')} | {emp.get('mae', float('nan')):.2f} |")
     lines += ["", "## Per warning flag (test set)", "", "| Flag | n | MAE | RMSE | within 1 |", "|---|---|---|---|---|"]
     for flag, st in per_flag.items():
         lines.append(f"| {flag} | {fmt(st)} |")
+    if args.compare_details:
+        with open(args.compare_details, encoding="utf-8") as fh:
+            other = {m["inchikey"]: m for m in json.load(fh)["molecules"]}
+        common = [m for m in test if m["inchikey"] in other and "shipped" in other[m["inchikey"]]]
+        lines += ["", f"## Shipped {qm} vs the other method's shipped model (same test molecules)", "",
+                  f"Other method: `{os.path.basename(args.compare_details)}`.", "",
+                  f"| Class | n | {qm} MAE | other MAE |", "|---|---|---|---|"]
+        for name in sorted({m["class"] for m in common}) + ["all"]:
+            sub = [m for m in common if name in ("all", m["class"])]
+            this_mae = sum(abs(m["shipped"] - m["exp"]) for m in sub) / len(sub)
+            other_mae = sum(abs(other[m["inchikey"]]["shipped"] - m["exp"]) for m in sub) / len(sub)
+            lines.append(f"| {'**all**' if name == 'all' else name} | {len(sub)} | {this_mae:.2f} | {other_mae:.2f} |")
     with open(args.report_out, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
     print("\n".join(lines))

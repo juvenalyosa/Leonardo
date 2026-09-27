@@ -14,8 +14,9 @@ downstream (Gasteiger, AM1-BCC, ...).
 Site pKa values come from a backend:
 
 - ``empirical``: class-typical pKa (fast, no QM), the default for bulk work.
-- ``pm7`` / ``psi4`` (later phases): relative (isodesmic) pKa against a reference
-  compound of the same class, with a per-class linear calibration.
+- ``pm7`` / ``psi4``: relative (isodesmic) pKa against a reference compound of the
+  same class, with a per-class linear calibration. ``psi4`` = cheap PCM single points
+  (default HF/3-21G) on the PM7/COSMO geometries.
 
 Populations always come from microstate free energies, never from independent
 Henderson-Hasselbalch per site, so coupled sites (zwitterions, diacids) are
@@ -643,7 +644,7 @@ def load_calibration(method="pm7", path=None):
     entry = (data.get("methods") or {}).get(str(method))
     if not entry:
         return None
-    return dict(entry, version=str(data.get("version", "unknown")))
+    return dict(entry, version=str(entry.get("version") or data.get("version", "unknown")))
 
 
 def parse_mopac_heat_of_formation(out_text):
@@ -701,10 +702,13 @@ class MopacBackend:
     """
 
     name = "pm7"
+    label = "PM7/COSMO"
+    short_label = "PM7"
+    source_tag = "pm7_cosmo"
 
     def __init__(self, calibration=None, n_conformers=10, workers=None, runner=None, seed=20260927,
                  timeout=600):
-        self.calibration = calibration if calibration is not None else load_calibration("pm7")
+        self.calibration = calibration if calibration is not None else load_calibration(self.name)
         self.calibration_version = str((self.calibration or {}).get("version", "uncalibrated"))
         self.n_conformers = int(max(1, n_conformers))
         self.workers = int(workers or min(8, os.cpu_count() or 2))
@@ -712,6 +716,7 @@ class MopacBackend:
         self.seed = int(seed)
         self.timeout = float(timeout)
         self._energy_cache = {}
+        self._best_output = {}      # canonical SMILES -> MOPAC output of the lowest conformer
 
     # -- energies ----------------------------------------------------------- #
     def _conformer_inputs(self, mol_h, keywords, seed):
@@ -769,10 +774,12 @@ class MopacBackend:
                         for _k, f in futures:
                             f.cancel()
                         raise PkaCancelled("pKa calculation cancelled")
-                    hof = parse_mopac_heat_of_formation(fut.result())
+                    out_text = fut.result()
+                    hof = parse_mopac_heat_of_formation(out_text)
                     done += 1
-                    if hof is not None:
-                        best[k] = hof if k not in best else min(best[k], hof)
+                    if hof is not None and (k not in best or hof < best[k]):
+                        best[k] = hof
+                        self._best_output[k] = out_text
                     if callable(progress) and done % 10 == 0:
                         progress(f"PM7 conformers: {done}/{len(jobs)}")
             self._energy_cache.update(best)
@@ -782,24 +789,30 @@ class MopacBackend:
                                   + ", ".join(k for k, _m in todo[:3]))
         return [self._energy_cache[k] for k in keys]
 
+    def _energy_level_key(self):
+        """Everything that changes a state energy; part of the reference-energy cache key."""
+        return (PM7_KEYWORDS, self.seed, self.n_conformers)
+
+    def _uses_default_runners(self):
+        return self.runner is _default_mopac_runner
+
     def reference_delta(self, cls_name, progress=None, cancel=None):
         Chem = _chem()
         ref = next(c for c in SITE_CLASSES if c["name"] == cls_name)["reference"]
-        key = (cls_name, ref["acid"], ref["base"], PM7_KEYWORDS, self.seed, self.n_conformers,
-               getattr(self.runner, "__name__", str(id(self.runner))))
-        if self.runner is _default_mopac_runner and key in _REFERENCE_DELTA_CACHE:
+        key = (self.name, cls_name, ref["acid"], ref["base"]) + tuple(self._energy_level_key())
+        if self._uses_default_runners() and key in _REFERENCE_DELTA_CACHE:
             return _REFERENCE_DELTA_CACHE[key]
         acid = Chem.AddHs(Chem.MolFromSmiles(ref["acid"]))
         base = Chem.AddHs(Chem.MolFromSmiles(ref["base"]))
         e_acid, e_base = self.state_energies([acid, base], progress=progress, cancel=cancel)
         value = (e_base - e_acid, float(ref["pka"]))
-        if self.runner is _default_mopac_runner:
+        if self._uses_default_runners():
             _REFERENCE_DELTA_CACHE[key] = value
         return value
 
-    def _pm7_recommended(self, cls_name):
+    def _qm_recommended(self, cls_name):
         entry = ((self.calibration or {}).get("classes") or {}).get(cls_name) or {}
-        return bool(entry.get("pm7_recommended", True))
+        return bool(entry.get("qm_recommended", entry.get("pm7_recommended", True)))
 
     # -- pKa ----------------------------------------------------------------- #
     def evaluate(self, parent, enumerated, fixed, progress=None, cancel=None, **_kwargs):
@@ -809,7 +822,7 @@ class MopacBackend:
         states = enumerate_microstates(n)
         mols = [build_state_molecule(parent, enumerated, st, fixed=fixed, add_hs=True) for st in states]
         if callable(progress):
-            progress(f"PM7/COSMO: {len(states)} microstate(s) x {self.n_conformers} conformer(s)")
+            progress(f"{self.label}: {len(states)} microstate(s) x {self.n_conformers} conformer(s)")
         energies = dict(zip(states, self.state_energies(mols, progress=progress, cancel=cancel)))
         refs = {}
         micro = {}
@@ -819,7 +832,7 @@ class MopacBackend:
                 if st[s_idx]:
                     continue
                 prot = tuple(True if i == s_idx else b for i, b in enumerate(st))
-                if not site.get("qm_supported") or not self._pm7_recommended(site["class"]):
+                if not site.get("qm_supported") or not self._qm_recommended(site["class"]):
                     # no QM class, or the benchmark found the class-typical value more accurate
                     micro[f"{_state_key(st)}|{s_idx}"] = float(site["empirical_pka"])
                     continue
@@ -840,32 +853,247 @@ class MopacBackend:
                         for i, o in enumerate(enumerated))
             pka = micro[f"{_state_key(ctx)}|{s_idx}"]
             if s_idx in outliers:
-                sd, source = float(site["empirical_sd"]), "class_typical (PM7 outlier)"
-            elif site.get("qm_supported") and not self._pm7_recommended(site["class"]):
-                sd, source = float(site["empirical_sd"]), "class_typical (PM7 not recommended for this class)"
+                sd, source = float(site["empirical_sd"]), f"class_typical ({self.short_label} outlier)"
+            elif site.get("qm_supported") and not self._qm_recommended(site["class"]):
+                sd, source = (float(site["empirical_sd"]),
+                              f"class_typical ({self.short_label} not recommended for this class)")
             elif site.get("qm_supported"):
                 entry = ((self.calibration or {}).get("classes") or {}).get(site["class"]) or {}
                 sd = float(entry.get("rmse", ((self.calibration or {}).get("global") or {}).get("rmse", 1.5)))
-                source = "pm7_cosmo" + ("" if self.calibration else "_uncalibrated")
+                source = self.source_tag + ("" if self.calibration else "_uncalibrated")
             else:
                 sd, source = float(site["empirical_sd"]), "class_typical"
             site_pkas.append({"pka": float(pka), "sd": sd, "source": source})
-        warnings = [] if self.calibration else ["PM7 pKa values are uncalibrated (no calibration file)"]
+        warnings = [] if self.calibration else [f"{self.short_label} pKa values are uncalibrated (no calibration file)"]
         for s_idx, site in enumerate(enumerated):
-            if site.get("qm_supported") and not self._pm7_recommended(site["class"]):
-                warnings.append(f"site {site['atom']} ({site['class']}): PM7 was less accurate than the "
+            if site.get("qm_supported") and not self._qm_recommended(site["class"]):
+                warnings.append(f"site {site['atom']} ({site['class']}): {self.short_label} was less accurate than the "
                                 "class-typical pKa for this class in the benchmark; empirical pKa used")
         for s_idx in sorted(outliers):
-            warnings.append(f"site {enumerated[s_idx]['atom']} ({enumerated[s_idx]['class']}): PM7 energy is "
+            warnings.append(f"site {enumerated[s_idx]['atom']} ({enumerated[s_idx]['class']}): {self.short_label} energy is "
                             "implausible for this group; empirical pKa used")
         return {"site_pkas": site_pkas, "micro_pka": micro, "warnings": warnings}
 
 
-_BACKENDS = {"empirical": EmpiricalBackend, "pm7": MopacBackend}
+HARTREE_TO_KCAL = 627.5095
+# Cheap single points on purpose (minutes per molecule, not hours): the per-class calibration
+# absorbs most of the systematic error of a small basis. Overridable per call.
+PSI4_DEFAULT_THEORY = "hf"
+PSI4_DEFAULT_BASIS = "3-21g"
+# Coarse GePol cavity: Area=0.3 (Psi4's usual value) is ~2x slower here and gave PCMSolver
+# "S matrix is not positive-definite" warnings on drug-sized anions; 1.0 gave none.
+PSI4_PCM_SOLVER = "CPCM"
+PSI4_PCM_AREA = 1.0
+
+
+def parse_mopac_final_geometry(out_text):
+    """Symbols and coordinates (Angstrom) of the last CARTESIAN COORDINATES block of a
+    MOPAC output (the optimized geometry, atoms in input order), or None."""
+    lines = str(out_text or "").splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == "CARTESIAN COORDINATES":
+            start = i
+    if start is None:
+        return None
+    atoms = []
+    for line in lines[start + 1:]:
+        parts = line.split()
+        if not parts:
+            if atoms:
+                break
+            continue
+        if len(parts) != 5 or not parts[0].isdigit():
+            break
+        try:
+            atoms.append((parts[1], float(parts[2]), float(parts[3]), float(parts[4])))
+        except ValueError:
+            break
+    return atoms or None
+
+
+def build_psi4_pka_input(atoms, charge, theory=PSI4_DEFAULT_THEORY, basis=PSI4_DEFAULT_BASIS,
+                         pcm_area=PSI4_PCM_AREA, pcm_solver=PSI4_PCM_SOLVER, memory_gb=2):
+    """Psi4 input for one PCM (water) single point; the energy is printed on a marker line."""
+    geom = "\n".join(f"  {sym} {x:.6f} {y:.6f} {z:.6f}" for sym, x, y, z in atoms)
+    return f"""memory {int(memory_gb)} GB
+
+molecule {{
+{int(charge)} 1
+{geom}
+units angstrom
+symmetry c1
+no_reorient
+no_com
+}}
+
+set {{
+  basis {basis}
+  scf_type df
+  maxiter 200
+  pcm true
+  pcm_scf_type total
+}}
+
+pcm = {{
+  Units = Angstrom
+  Medium {{
+    SolverType = {pcm_solver}
+    Solvent = Water
+  }}
+  Cavity {{
+    RadiiSet = UFF
+    Type = GePol
+    Scaling = False
+    Area = {float(pcm_area):g}
+    Mode = Implicit
+  }}
+}}
+
+e_pka = energy("{theory}")
+print_out("\\nLEONARDO_PKA_ENERGY %.12f\\n" % e_pka)
+"""
+
+
+def parse_psi4_pka_energy(out_text):
+    """Total energy (hartree) printed by :func:`build_psi4_pka_input`, or None."""
+    import re
+
+    found = re.findall(r"LEONARDO_PKA_ENERGY\s+(-?\d+\.\d+)", str(out_text or ""))
+    return float(found[-1]) if found else None
+
+
+def find_psi4_executable(exe=None):
+    import shutil
+    import sys
+
+    if exe and os.path.isfile(str(exe)) and os.access(str(exe), os.X_OK):
+        return str(exe)
+    found = shutil.which(str(exe or "psi4"))
+    if found:
+        return found
+    candidate = os.path.join(sys.prefix, "bin", "psi4")
+    return candidate if os.path.isfile(candidate) and os.access(candidate, os.X_OK) else None
+
+
+def _default_psi4_runner(input_text, timeout=3600, threads=2, exe=None):
+    """Run Psi4 on one input in a private directory (also its scratch); returns the output text."""
+    import subprocess
+    import tempfile
+
+    psi4 = find_psi4_executable(exe)
+    if not psi4:
+        raise PkaBackendError("Psi4 executable not found (install psi4 or choose PM7/empirical)")
+    with tempfile.TemporaryDirectory(prefix="leonardo_pka_psi4_") as td:
+        inp = os.path.join(td, "job.in")
+        out = os.path.join(td, "job.out")
+        with open(inp, "w", encoding="utf-8") as fh:
+            fh.write(input_text)
+        env = dict(os.environ, PSI_SCRATCH=td, OMP_NUM_THREADS=str(int(threads)), MKL_NUM_THREADS=str(int(threads)))
+        try:
+            subprocess.run([psi4, "-n", str(int(threads)), inp, out], cwd=td, capture_output=True,
+                           timeout=float(timeout), check=False, env=env)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        try:
+            with open(out, encoding="utf-8", errors="ignore") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+
+
+class Psi4Backend(MopacBackend):
+    """
+    Psi4 single points (PCM water) on PM7/COSMO geometries.
+
+    The conformer search is the PM7 one (lowest heat of formation over ETKDG/MMFF
+    conformers); one cheap single point per microstate at that geometry replaces the
+    PM7 energy. Reference compounds, calibration and per-class fallback work as in
+    :class:`MopacBackend`. Level and basis are deliberately small (default HF/3-21G).
+    """
+
+    name = "psi4"
+    short_label = "Psi4"
+
+    def __init__(self, calibration=None, theory=None, basis=None, n_conformers=10, workers=None, runner=None,
+                 psi4_runner=None, threads=2, psi4_exe=None, seed=20260927, timeout=600, psi4_timeout=3600,
+                 memory_gb=2):
+        cal = calibration if calibration is not None else load_calibration("psi4")
+        level = (str((cal or {}).get("theory") or PSI4_DEFAULT_THEORY).lower(),
+                 str((cal or {}).get("basis") or PSI4_DEFAULT_BASIS).lower())
+        self.qm_method = str(theory or level[0]).lower()
+        self.qm_basis = str(basis or level[1]).lower()
+        if not cal or (self.qm_method, self.qm_basis) != level:
+            cal = {}        # none shipped, or it is for another level: report uncalibrated values
+        super().__init__(calibration=cal, n_conformers=n_conformers, workers=workers, runner=runner,
+                         seed=seed, timeout=timeout)
+        if not self.calibration:
+            self.calibration = None
+            self.calibration_version = "uncalibrated"
+        self.calibration_version = f"{self.calibration_version}|{self.qm_method}/{self.qm_basis}"
+        self.threads = int(max(1, threads))
+        self.psi4_runner = psi4_runner or _default_psi4_runner
+        self.psi4_exe = psi4_exe
+        self.psi4_timeout = float(psi4_timeout)
+        self.memory_gb = int(max(1, memory_gb))
+        self.label = f"Psi4 {self.qm_method.upper()}/{self.qm_basis} PCM on PM7 geometries"
+        self.source_tag = f"psi4_{self.qm_method}_{self.qm_basis}_pcm"
+        self._psi4_cache = {}
+
+    def _energy_level_key(self):
+        return super()._energy_level_key() + (self.qm_method, self.qm_basis, PSI4_PCM_SOLVER, PSI4_PCM_AREA)
+
+    def _uses_default_runners(self):
+        return super()._uses_default_runners() and self.psi4_runner is _default_psi4_runner
+
+    def state_energies(self, mols_h, progress=None, cancel=None):
+        """Psi4 PCM energy (kcal/mol) per molecule at its lowest PM7/COSMO conformer."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        Chem = _chem()
+        MopacBackend.state_energies(self, mols_h, progress=progress, cancel=cancel)
+        keys = [Chem.MolToSmiles(m) for m in mols_h]
+        jobs = {}
+        for k, m in zip(keys, mols_h):
+            if k in self._psi4_cache or k in jobs:
+                continue
+            atoms = parse_mopac_final_geometry(self._best_output.get(k))
+            if not atoms or len(atoms) != m.GetNumAtoms():
+                raise PkaBackendError(f"no PM7 geometry for {k}")
+            jobs[k] = build_psi4_pka_input(atoms, Chem.GetFormalCharge(m), theory=self.qm_method,
+                                           basis=self.qm_basis, memory_gb=self.memory_gb)
+        if jobs:
+            if callable(progress):
+                progress(f"{self.label}: {len(jobs)} single point(s)")
+            done = 0
+            failed = []
+            with ThreadPoolExecutor(max_workers=max(1, self.workers // self.threads)) as pool:
+                futures = [(k, pool.submit(self.psi4_runner, text, self.psi4_timeout, self.threads, self.psi4_exe))
+                           for k, text in jobs.items()]
+                for k, fut in futures:
+                    if callable(cancel) and cancel():
+                        for _k, f in futures:
+                            f.cancel()
+                        raise PkaCancelled("pKa calculation cancelled")
+                    e = parse_psi4_pka_energy(fut.result())
+                    done += 1
+                    if e is None:
+                        failed.append(k)
+                    else:
+                        self._psi4_cache[k] = e * HARTREE_TO_KCAL
+                    if callable(progress):
+                        progress(f"Psi4 single points: {done}/{len(jobs)}")
+            if failed:
+                raise PkaBackendError(f"Psi4 single point failed for {len(failed)} protonation state(s): "
+                                      + ", ".join(failed[:3]))
+        return [self._psi4_cache[k] for k in keys]
+
+
+_BACKENDS = {"empirical": EmpiricalBackend, "pm7": MopacBackend, "psi4": Psi4Backend}
 
 
 def register_backend(name, factory):
-    """Register a pKa backend (used by the Psi4 phase and by tests)."""
+    """Register a pKa backend (used by tests)."""
     _BACKENDS[str(name)] = factory
 
 
@@ -1133,6 +1361,11 @@ __all__ = [
     "build_state_molecule",
     "EmpiricalBackend",
     "MopacBackend",
+    "Psi4Backend",
+    "parse_mopac_final_geometry",
+    "build_psi4_pka_input",
+    "parse_psi4_pka_energy",
+    "find_psi4_executable",
     "PkaBackendError",
     "PkaCancelled",
     "load_calibration",

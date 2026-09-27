@@ -291,3 +291,97 @@ def test_shipped_calibration_records_data_provenance():
         pm7 = json.load(fh)["methods"]["pm7"]
     assert pm7["robust"] is True and len(pm7["data_sha256"]) == 64
     assert pm7["classes"]["amine3"]["pm7_recommended"] is False           # decided on the calibration set
+
+
+# --------------------------------------------------------------------------- #
+# Psi4 backend (single points on PM7 geometries)
+# --------------------------------------------------------------------------- #
+def _fake_mopac_with_geometry(hofs):
+    """MOPAC stand-in that also prints the input geometry as the optimized one."""
+    def run(text, timeout=0):
+        lines = text.splitlines()
+        charge = int(lines[0].split("CHARGE=")[1].split()[0])
+        atoms = [ln.split() for ln in lines[3:] if ln.strip()]
+        geom = "\n".join(f"  {i + 1:3d}    {a[0]:2s} {float(a[1]):14.9f} {float(a[3]):14.9f} {float(a[5]):14.9f}"
+                         for i, a in enumerate(atoms))
+        return (f"          FINAL HEAT OF FORMATION =   {hofs[charge]:.5f} KCAL/MOL\n\n"
+                f"                             CARTESIAN COORDINATES\n\n{geom}\n\n\n Empirical Formula\n")
+    return run
+
+
+def _fake_psi4(energies):
+    """Psi4 stand-in: energy (hartree) from the charge line of the molecule block."""
+    calls = []
+
+    def run(text, timeout=0, threads=1, exe=None):
+        calls.append(text)
+        lines = text.splitlines()
+        charge = int(lines[lines.index("molecule {") + 1].split()[0])
+        if energies.get(charge) is None:
+            return "SCF failed"
+        return f"  @DF-RHF Final Energy: {energies[charge]}\n\nLEONARDO_PKA_ENERGY {energies[charge]:.12f}\n"
+    run.calls = calls
+    return run
+
+
+def test_psi4_parsers_and_input():
+    from pka_runtime import build_psi4_pka_input, parse_mopac_final_geometry, parse_psi4_pka_energy
+
+    out = ("                             CARTESIAN COORDINATES\n\n   1    C   0.0 0.0 0.0\n\n"
+           "                             CARTESIAN COORDINATES\n\n"
+           "   1    C       -0.659717925    -0.014220958    -0.017668622\n"
+           "   2    O        1.420524631     1.098403480     0.237487378\n\n\n  Empirical Formula: C O\n")
+    atoms = parse_mopac_final_geometry(out)
+    assert atoms == [("C", -0.659717925, -0.014220958, -0.017668622), ("O", 1.420524631, 1.098403480, 0.237487378)]
+    assert parse_mopac_final_geometry("no geometry") is None
+    text = build_psi4_pka_input(atoms, -1, theory="hf", basis="3-21g")
+    assert "-1 1" in text and "basis 3-21g" in text and 'energy("hf")' in text and "Area = 1" in text
+    assert parse_psi4_pka_energy("LEONARDO_PKA_ENERGY -228.5\nLEONARDO_PKA_ENERGY -227.123456789012") == -227.123456789012
+    assert parse_psi4_pka_energy("") is None
+
+
+def test_psi4_backend_uses_pm7_geometry_and_is_relative_to_reference():
+    psi4 = _fake_psi4({0: -227.0, -1: -226.5})
+    opts = {"runner": _fake_mopac_with_geometry({0: -111.0, -1: -206.0}), "psi4_runner": psi4, "n_conformers": 2,
+            "workers": 2, "threads": 1, "theory": "hf", "basis": "3-21g",
+            "calibration": {"global": {"slope": 1.0, "rmse": 0.7}, "classes": {}, "version": "t",
+                            "theory": "hf", "basis": "3-21g"}}
+    res = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="psi4", backend_options=opts)
+    site = res["sites"][0]
+    assert res["method"] == "psi4" and site["pka"] == pytest.approx(4.76)       # same energies as the reference
+    assert site["pka_source"] == "psi4_hf_3-21g_pcm"
+    # 2 states of the molecule; acetic acid is also the class reference -> no duplicate single points
+    assert len(psi4.calls) == 2
+    assert res["provenance"]["calibration_version"] == "t|hf/3-21g"
+
+
+def test_psi4_backend_never_uses_the_pm7_calibration():
+    from pka_runtime import Psi4Backend
+
+    backend = Psi4Backend(calibration={"global": {"slope": 0.5}, "classes": {}, "version": "x",
+                                       "theory": "b3lyp", "basis": "6-31g*"}, theory="hf", basis="3-21g")
+    assert backend.calibration is None and backend.calibration_version == "uncalibrated|hf/3-21g"
+    res = compute_pka(Chem.MolFromSmiles("CCN"), method="psi4", backend_options={
+        "runner": _fake_mopac_with_geometry({0: -10.0, 1: 140.0}), "psi4_runner": _fake_psi4({0: -134.0, 1: -134.4}),
+        "n_conformers": 1, "workers": 1, "threads": 1, "theory": "hf", "basis": "sto-3g"})
+    assert any("Psi4 pKa values are uncalibrated" in w for w in res["warnings"])
+
+
+def test_psi4_failure_falls_back_to_empirical_with_warning():
+    res = compute_pka(Chem.MolFromSmiles("CCN"), method="psi4", backend_options={
+        "runner": _fake_mopac_with_geometry({0: -10.0, 1: 140.0}), "psi4_runner": _fake_psi4({0: -134.0, 1: None}),
+        "n_conformers": 1, "workers": 1, "threads": 1})
+    assert res["method"] == "empirical" and any("psi4 failed" in w for w in res["warnings"])
+
+
+def _has_psi4():
+    from pka_runtime import find_psi4_executable
+
+    return find_psi4_executable() is not None and _has_mopac()
+
+
+@pytest.mark.skipif(not _has_psi4(), reason="Psi4 or MOPAC not installed")
+def test_psi4_real_calculation():
+    acetic = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="psi4", backend_options={"n_conformers": 2})
+    assert acetic["method"] == "psi4"
+    assert acetic["sites"][0]["pka"] == pytest.approx(4.76, abs=0.01)          # the reference itself

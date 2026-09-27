@@ -9704,8 +9704,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ph = float(self._openmm_ligand_target_ph() if target_ph is None else target_ph)
             protonation = {}
             try:
-                mapped_h, protonation = pka_protonate_molecule(mapped, ph, method=self._pka_method(),
-                                                               cache_dir=self._pka_cache_dir())
+                pka_method = self._pka_method()
+                mapped_h, protonation = pka_protonate_molecule(
+                    mapped, ph, method=pka_method, cache_dir=self._pka_cache_dir(),
+                    backend_options=self._pka_backend_options(pka_method))
             except Exception as exc:
                 protonation = {"method": "none", "error": str(exc)}
                 mapped_h = Chem.AddHs(mapped, addCoords=True)
@@ -34958,7 +34960,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             pass
         if target_ph is not None:
             try:
-                core = Chem.RemoveHs(pka_protonate_molecule(core, float(target_ph), method=self._pka_method(),
+                core = Chem.RemoveHs(pka_protonate_molecule(core, float(target_ph), method=self._pka_method(bulk=True),
                                                             cache_dir=self._pka_cache_dir())[0])
             except Exception as exc:
                 self._append_debug_log(f"Meeko prep: pKa protonation skipped ({exc}).")
@@ -36902,8 +36904,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if hit_mol is not None:
                 try:
                     ph_vs = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
-                    prot_mol, prot_info = pka_protonate_molecule(hit_mol, ph_vs, method=self._pka_method(),
-                                                                 cache_dir=self._pka_cache_dir())
+                    pka_method = self._pka_method()
+                    prot_mol, prot_info = pka_protonate_molecule(
+                        hit_mol, ph_vs, method=pka_method, cache_dir=self._pka_cache_dir(),
+                        backend_options=self._pka_backend_options(pka_method))
                     hit = dict(hit, mol=prot_mol)
                     net_charge_raw = int(prot_info["charge"])
                 except Exception as exc:
@@ -51384,9 +51388,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             print(f"Dimorphite protonation warning: {e}")
         return None
-    def _pka_method(self):
-        """Method used for automatic protonation everywhere ("empirical" or "pm7")."""
-        return str(getattr(self, "_pka_default_method", "empirical") or "empirical")
+    def _pka_method(self, bulk=False):
+        """Method used for automatic protonation everywhere ("empirical", "pm7" or "psi4").
+        Library-scale work (virtual screening) never runs Psi4 (minutes per molecule): PM7 instead."""
+        method = str(getattr(self, "_pka_default_method", "empirical") or "empirical")
+        return "pm7" if (bulk and method == "psi4") else method
+    def _pka_backend_options(self, method):
+        """Backend options for pka_runtime: the Psi4 executable Leonardo is configured with."""
+        if str(method) != "psi4":
+            return None
+        try:
+            exe = self._psi4_tool_path()
+        except Exception:
+            exe = None
+        return {"psi4_exe": exe} if exe else None
     def _show_pka_dialog(self):
         """pKa & Protonation window (protonation is decided before charges/parameters)."""
         try:
@@ -51408,6 +51423,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     default_ph=float(self._current_small_molecule_target_ph()),
                     default_method=self._pka_method(),
                     set_default_method=self._pka_set_default_method,
+                    backend_options=self._pka_backend_options,
                 )
                 self._pka_dialog = dlg
             self._fit_dialog_to_screen(dlg, preferred_w=1060, preferred_h=860, min_w=900, min_h=700)
@@ -51520,16 +51536,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """
         pH-dependent protonation of a small molecule (heavy-atom coordinates kept).
 
-        Delegates to leonardo.pka_runtime (empirical class pKa by default, PM7 when chosen
-        in the pKa window); the older Dimorphite-DL path is only a fallback when the pKa
+        Delegates to leonardo.pka_runtime (empirical class pKa by default, PM7 or Psi4 when
+        chosen in the pKa window); the older Dimorphite-DL path is only a fallback when the pKa
         module cannot handle the molecule. The result (method, site pKa, population,
         warnings) is kept in self._last_protonation_info.
         """
         if not HAS_RDKIT:
             return None
         try:
-            out, info = pka_protonate_molecule(mol, float(target_ph), method=self._pka_method(),
-                                               cache_dir=self._pka_cache_dir())
+            method = self._pka_method()
+            out, info = pka_protonate_molecule(mol, float(target_ph), method=method,
+                                               cache_dir=self._pka_cache_dir(),
+                                               backend_options=self._pka_backend_options(method))
             self._last_protonation_info = dict(info)
             for warn in list(info.get("warnings", []) or [])[:4]:
                 self._append_debug_log(f"Protonation ({info.get('method')}, pH {float(target_ph):.2f}): {warn}")

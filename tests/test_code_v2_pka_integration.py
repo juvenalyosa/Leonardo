@@ -10,7 +10,7 @@ def _dialog(*names):
     class DummyDialog:
         pass
 
-    for name in names + ("_pka_method", "_pka_cache_dir"):
+    for name in names + ("_pka_method", "_pka_cache_dir", "_pka_backend_options"):
         setattr(DummyDialog, name, getattr(code_v2.ProtLigInteractDialog, name))
     dlg = DummyDialog()
     dlg._append_debug_log = lambda *_a: None
@@ -31,6 +31,15 @@ def test_default_method_follows_the_pka_window():
     assert dlg._pka_method() == "empirical"
     dlg._pka_set_default_method("pm7")
     assert dlg._pka_method() == "pm7"
+
+
+def test_psi4_is_never_used_for_library_scale_protonation():
+    dlg = _dialog("_pka_set_default_method")
+    dlg._psi4_tool_path = lambda: "/opt/psi4/bin/psi4"
+    dlg._pka_set_default_method("psi4")
+    assert dlg._pka_method() == "psi4" and dlg._pka_method(bulk=True) == "pm7"
+    assert dlg._pka_backend_options("psi4") == {"psi4_exe": "/opt/psi4/bin/psi4"}
+    assert dlg._pka_backend_options("pm7") is None
 
 
 def test_md_components_are_protonated_at_the_md_ph(tmp_path):

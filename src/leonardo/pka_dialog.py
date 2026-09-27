@@ -18,6 +18,7 @@ from . import pka_runtime as P
 METHODS = [
     ("Empirical (fast, class-typical pKa)", "empirical"),
     ("PM7 / COSMO (semiempirical QM, calibrated)", "pm7"),
+    ("Psi4 HF/3-21G + PCM on PM7 geometries (minutes per molecule)", "psi4"),
 ]
 SITE_COLUMNS = ["Atom", "Class", "Type", "pKa", "±", "Source", "Warnings"]
 STATE_COLUMNS = ["Population", "Charge", "SMILES"]
@@ -65,7 +66,7 @@ class PkaDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None, submit_task=None, load_selection=None, current_docking_ligand=None,
                  use_for_docking=None, use_for_parametrization=None, cache_dir=None, default_ph=7.4,
-                 default_method="empirical", set_default_method=None):
+                 default_method="empirical", set_default_method=None, backend_options=None):
         super().__init__(parent)
         self.setWindowTitle("pKa & Protonation States")
         self.resize(1020, 820)
@@ -76,6 +77,7 @@ class PkaDialog(QtWidgets.QDialog):
         self._use_for_parametrization = use_for_parametrization
         self._cache_dir = cache_dir
         self._set_default_method = set_default_method
+        self._backend_options = backend_options
         self._mol = None
         self._mol_label = ""
         self._result = None
@@ -144,7 +146,7 @@ class PkaDialog(QtWidgets.QDialog):
         root.addWidget(grp_opt)
         self.cb_default_method = QtWidgets.QCheckBox(
             "Use this method for automatic protonation in all modules (docking, parametrization, MD ligands, "
-            "virtual screening, lead optimization)"
+            "virtual screening, lead optimization; virtual screening libraries use PM7 instead of Psi4)"
         )
         self.cb_default_method.setEnabled(callable(self._set_default_method))
         self.cb_default_method.toggled.connect(self._on_default_method_toggled)
@@ -291,9 +293,11 @@ class PkaDialog(QtWidgets.QDialog):
         self._cancel = False
         self._set_busy(True, f"Computing pKa with {method}...")
 
+        options = self._backend_options(method) if callable(self._backend_options) else None
+
         def job():
             return P.compute_pka(mol, method=method, focus_ph=ph, cache_dir=self._cache_dir,
-                                 cancel=lambda: self._cancel)
+                                 cancel=lambda: self._cancel, backend_options=options)
 
         if callable(self._submit_task):
             self._submit_task(job, self._on_result, self._on_error, lambda: self._set_busy(False))
