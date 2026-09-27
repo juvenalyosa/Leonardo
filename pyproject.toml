@@ -48,6 +48,7 @@ py-modules = [
   "mutator",
   "openmm_dynamics_runtime",
   "openmm_qmmm_runtime",
+  "pka_runtime",
   "psi4_cluster_runtime",
   "psi4_runtime",
   "qmmm_mopac_runtime",
@@ -75,7 +76,7 @@ py-modules = [
 "share/leonardo/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19" = ["assets/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19/*.js"]
 
 [tool.setuptools.package-data]
-leonardo = ["abfe_deploy_models.json"]
+leonardo = ["abfe_deploy_models.json", "pka_calibration.json"]
 
 [tool.black]
 line-length = 120
