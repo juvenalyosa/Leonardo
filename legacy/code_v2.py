@@ -368,6 +368,7 @@ try:
     from .redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
     from .redock_runtime import build_redocking_table_rows as redock_build_table_rows
     from .redock_runtime import pick_best_pose_row as redock_pick_best_pose_row
+    from .redock_runtime import pick_top_scored_pose_row as redock_pick_top_scored_pose_row
     from .redock_runtime import prepare_redocking_base_runtime as redock_prepare_base_runtime
     from .redock_runtime import prepare_redocking_ligand_override_runtime as redock_prepare_ligand_override_runtime
     from .redock_runtime import prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan
@@ -748,6 +749,7 @@ except Exception:
     from redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
     from redock_runtime import build_redocking_table_rows as redock_build_table_rows
     from redock_runtime import pick_best_pose_row as redock_pick_best_pose_row
+    from redock_runtime import pick_top_scored_pose_row as redock_pick_top_scored_pose_row
     from redock_runtime import prepare_redocking_base_runtime as redock_prepare_base_runtime
     from redock_runtime import prepare_redocking_ligand_override_runtime as redock_prepare_ligand_override_runtime
     from redock_runtime import prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan
@@ -19685,11 +19687,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_lig_mode.addStretch(1)
             ligand_layout.addLayout(row_lig_mode)
             row_grid = QtWidgets.QHBoxLayout()
-            row_grid.addWidget(QtWidgets.QLabel("Grid padding (A)"))
+            row_grid.addWidget(QtWidgets.QLabel("Grid padding per side (A)"))
             self.spin_redock_padding = QtWidgets.QDoubleSpinBox()
             self.spin_redock_padding.setDecimals(2)
             self.spin_redock_padding.setRange(2.0, 20.0)
             self.spin_redock_padding.setValue(3.0)
+            self.spin_redock_padding.setToolTip(
+                "Added on each side of the crystal ligand's extent; the box is centred on the ligand and "
+                "never leaves less than 1 A around it, whatever the min/max edge."
+            )
             self.spin_redock_padding.valueChanged.connect(self._on_redock_grid_controls_changed)
             row_grid.addWidget(self.spin_redock_padding)
             row_grid.addWidget(QtWidgets.QLabel("Min box edge (A)"))
@@ -20523,9 +20529,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return ""
         ch, ri, rn = ref_fields
         try:
-            return self._pymol_residue_selection(receptor_obj, ch, ri, rn, wrap=True)
+            sel = self._pymol_residue_selection(receptor_obj, ch, ri, rn, wrap=True)
         except Exception:
             return ""
+        # one conformer of the crystal ligand: with alternate locations every atom was taken
+        # twice (docking input, RMSD reference and search box)
+        return f"({sel}) and alt ''+A" if sel else ""
     def _redock_reference_geometry(self, receptor_obj, ref_fields):
         sel = self._redock_reference_selection(receptor_obj, ref_fields)
         if not sel:
@@ -20539,8 +20548,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         arr = np.asarray(coords, dtype=float)
         if arr.ndim != 2 or arr.shape[0] <= 0:
             return None, None, 0
-        center = np.mean(arr, axis=0)
-        span = np.max(arr, axis=0) - np.min(arr, axis=0)
+        lo = np.min(arr, axis=0)
+        hi = np.max(arr, axis=0)
+        # box centred on the ligand's bounding box (its centroid can sit off-centre, and the
+        # padding is added on each side of the span)
+        center = 0.5 * (lo + hi)
+        span = hi - lo
         return center, span, int(arr.shape[0])
     def _redock_reference_grid_payload(self, receptor_obj, ref_fields):
         center, span, nref = self._redock_reference_geometry(receptor_obj, ref_fields)
@@ -20672,6 +20685,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 return (1, 0, str(v))
 
+        # alternate locations give one CA per conformer: keep the first per residue
+        seen = set()
+        unique = []
+        for rec in out:
+            key = (rec["chain"], rec["resi"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(rec)
+        out = unique
         out.sort(key=lambda x: (str(x.get("chain", "")), _resi_key(x.get("resi", ""))))
         return out
 
@@ -21969,7 +21992,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 label=str(label),
                 state_map=dict(state_map or {}),
                 n_states=int(n_states),
-                pick_best_pose_row_fn=redock_pick_best_pose_row,
+                pick_best_pose_row_fn=redock_pick_top_scored_pose_row,
                 resolve_state_for_member_fn=redock_resolve_state_for_member,
                 best_pose_for_member_fn=lambda all_rows, q_label, q_member: redock_best_pose_for_member(
                     list(all_rows or []),
