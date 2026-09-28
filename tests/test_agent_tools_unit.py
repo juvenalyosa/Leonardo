@@ -50,3 +50,18 @@ def test_unattended_hetatm_choice_drops_the_crystal_ligand():
     finally:
         _headless.set_keep_hetero([])
         _headless.end()
+
+
+def test_vs_library_keeps_compound_names(tmp_path):
+    from rdkit import Chem
+
+    path = tmp_path / "lib.sdf"
+    with Chem.SDWriter(str(path)) as w:
+        for name, smi in (("benzamidine", "NC(=[NH2+])c1ccccc1"), ("phenol", "Oc1ccccc1")):
+            m = Chem.MolFromSmiles(smi)
+            m.SetProp("_Name", name)
+            w.write(m)
+    dlg = _dummy("_vs_load_sdf_library", "_select_best_ligand_fragment")
+    dlg._vs_library_sdf = str(path)
+    entries, info = dlg._vs_load_sdf_library(str(path), 10)
+    assert [e["name"] for e in entries] == ["benzamidine", "phenol"]

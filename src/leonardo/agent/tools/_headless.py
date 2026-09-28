@@ -10,7 +10,7 @@ jobs the originals run unchanged.
 
 import threading
 
-_state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set()}
+_state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set(), "presets": {}}
 
 # Leonardo labels every non-water, non-ion hetero group "cofactor" (the crystal ligand
 # included); in the dialog the user unticks the ligand. Unattended, only ions and these
@@ -58,12 +58,75 @@ def install():
     def get_double(parent, title, label, value=0.0, *args, **kwargs):
         if _state["depth"] <= 0:
             return _originals["getDouble"](parent, title, label, value, *args, **kwargs)
+        presets = _state.get("presets") or {}
+        chosen = presets.get(str(title), presets.get(str(label)))
+        value = value if chosen is None else chosen
         with _lock:
             _state["messages"].append({"kind": "information", "title": str(title),
-                                       "text": f"{label} -> default {value}"})
+                                       "text": f"{label} -> {value}"})
         return float(value), True
     QID.getDouble = staticmethod(get_double)
+
+    # integer / choice / text prompts: a value preset by the tool (keyed by the prompt title), else the default
+    for kind in ("getInt", "getItem", "getText"):
+        _originals[kind] = getattr(QID, kind)
+        setattr(QID, kind, _prompt(kind))
+
+    # instance message boxes (box = QMessageBox(...); box.exec_()): record the text, answer Ok/Yes
+    _originals["box_exec"] = QMB.exec_
+
+    def box_exec(box, *args, **kwargs):
+        if _state["depth"] <= 0:
+            return _originals["box_exec"](box, *args, **kwargs)
+        with _lock:
+            _state["messages"].append({"kind": "information", "title": str(box.windowTitle()),
+                                       "text": (str(box.text()) + "\n" + str(box.informativeText())).strip()[:3000]})
+        buttons = box.standardButtons()
+        return QMB.Yes if buttons & QMB.Yes else QMB.Ok
+    QMB.exec_ = box_exec
+    QMB.exec = box_exec
+
+    # matplotlib windows opened by analyses: nothing to show while the assistant works
+    try:
+        import matplotlib.pyplot as plt
+
+        _originals["plt_show"] = plt.show
+
+        def show(*args, **kwargs):
+            if _state["depth"] <= 0:
+                return _originals["plt_show"](*args, **kwargs)
+            return None
+        plt.show = show
+    except Exception:
+        pass
     _state["installed"] = True
+
+
+def preset_prompts(values):
+    """Answers for Leonardo's input prompts during the next job, keyed by prompt title (or label)."""
+    with _lock:
+        _state["presets"] = dict(values or {})
+
+
+def _prompt(kind):
+    def handler(parent, title, label, *args, **kwargs):
+        if _state["depth"] <= 0:
+            return _originals[kind](parent, title, label, *args, **kwargs)
+        presets = _state.get("presets") or {}
+        value = presets.get(str(title), presets.get(str(label)))
+        if value is None:
+            if kind == "getItem":
+                items = list(args[0]) if args else list(kwargs.get("items", []) or [])
+                current = int(args[1]) if len(args) > 1 else int(kwargs.get("current", 0) or 0)
+                value = items[current] if items else ""
+            elif kind == "getText":
+                value = args[1] if len(args) > 1 else kwargs.get("text", "")
+            else:
+                value = args[0] if args else kwargs.get("value", 0)
+        with _lock:
+            _state["messages"].append({"kind": "information", "title": str(title), "text": f"{label} -> {value}"})
+        return (int(value) if kind == "getInt" else value), True
+    return staticmethod(handler)
 
 
 def begin():
@@ -83,6 +146,7 @@ def reset():
         _state["depth"] = 0
         _state["messages"].clear()
         _state["keep_hetero"] = set()
+        _state["presets"] = {}
 
 
 def take_messages():

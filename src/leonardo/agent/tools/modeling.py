@@ -22,11 +22,11 @@ import json, sys
 args = json.load(open(sys.argv[1]))
 sys.path[:0] = args["paths"]
 import genmodels
-meta = genmodels.buildm(sequence=args["sequence"], templates=args["templates"], mutation=[],
+meta = genmodels.buildm(sequence=args["sequence"], templates=args["templates"], mutation=args["mutations"],
                         num_models=args["num_models"], start_pos=args["start_pos"],
                         num_processors=args["num_processors"], modeller_seed=args["seed"],
                         modeller_deterministic=bool(args["seed"]), return_metadata=True,
-                        pre_mutated_sequence=args["sequence"])
+                        pre_mutated_sequence=args["final_sequence"])
 json.dump(meta, open("agent_result.json", "w"))
 """
 
@@ -92,6 +92,112 @@ def _ca_table(sel):
     _cmd().iterate_state(1, f"({sel}) and name CA and polymer",
                          "rows[(chain, resi)] = (resn, x, y, z)", space={"rows": rows})
     return rows
+
+
+def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(), labels=None, start_pos=1,
+                    num_models=5, seed=1, staged=None, align_to="", extra=None, card=""):
+    """
+    Run genmodels.buildm in a child process as a job and load the best model as ``name``.
+    ``staged``: {template_code: pdb path} copied where buildm looks before downloading from RCSB.
+    ``labels``: residue label per residue of the final sequence (numbering of the source structure);
+    otherwise the model is numbered from ``start_pos``. ``align_to``: object the model is superposed on.
+    """
+    import shutil
+
+    dlg = ctx.dlg
+    final_sequence = final_sequence or sequence
+    try:
+        nproc = int(dlg.spin_modeler_nproc.value())
+    except Exception:
+        nproc = min(4, os.cpu_count() or 1)
+    nproc = max(1, min(nproc, int(num_models)))
+    run_root = os.path.join(ctx.workspace("modeling"), time.strftime(f"{name}_%Y%m%d_%H%M%S"))
+    os.makedirs(os.path.join(run_root, "modeling_job"), exist_ok=True)
+    for code, path in dict(staged or {}).items():
+        shutil.copy(path, os.path.join(run_root, "modeling_job", f"{code[:4].lower()}.pdb"))
+    with open(os.path.join(run_root, "agent_args.json"), "w") as fh:
+        json.dump({"paths": _genmodels_paths(dlg), "sequence": sequence, "final_sequence": final_sequence,
+                   "mutations": list(mutations), "templates": list(codes), "num_models": int(num_models),
+                   "start_pos": int(start_pos), "num_processors": nproc, "seed": int(seed) or None}, fh)
+    with open(os.path.join(run_root, "agent_build.py"), "w") as fh:
+        fh.write(_BUILD_SCRIPT)
+    log = open(os.path.join(run_root, "modeller.log"), "w")
+    proc = subprocess.Popen([_python_executable(), "agent_build.py", "agent_args.json"], cwd=run_root,
+                            stdout=log, stderr=subprocess.STDOUT)
+
+    def progress():
+        try:
+            with open(log.name) as fh:
+                steps = [ln.strip() for ln in fh if ln.startswith("STEP")]
+            return steps[-1] if steps else "starting MODELLER"
+        except Exception:
+            return ""
+
+    def renumber(cmd):
+        cas = []
+        cmd.iterate(f"({name}) and polymer and name CA", "cas.append(resv)", space={"cas": cas})
+        if labels and len(labels) == len(cas):
+            mapping = {resv: str(label) for resv, label in zip(cas, labels)}
+            cmd.alter(name, "resi = mapping.get(resv, resi)", space={"mapping": mapping})
+        elif cas and int(start_pos) != min(cas):
+            cmd.alter(name, f"resv = resv + {int(start_pos) - min(cas)}")
+        else:
+            return False
+        cmd.sort(name)
+        return True
+
+    def poll():
+        if proc.poll() is None:
+            return {"done": False, "progress": progress()}
+        log.close()
+        result_file = os.path.join(run_root, "agent_result.json")
+        if proc.returncode != 0 or not os.path.isfile(result_file):
+            with open(log.name) as fh:
+                tail = "".join(fh.readlines()[-15:])
+            return {"done": True, "error": f"MODELLER failed (exit {proc.returncode}): {tail[-1500:]}"}
+        meta = json.load(open(result_file))
+        best = meta.get("best_model_path") or ""
+        best = best if os.path.isabs(best) else os.path.join(run_root, best)
+        if not os.path.isfile(best):
+            return {"done": True, "error": "MODELLER finished without a best model"}
+        cmd = _cmd()
+        cmd.load(best, name)
+        fit = None
+        if align_to and align_to in cmd.get_names("objects"):
+            fit = cmd.super(f"({name}) and name CA", f"({align_to}) and polymer and name CA")
+        if renumber(cmd) or fit is not None:
+            best = os.path.join(run_root, f"{name}.pdb")
+            cmd.save(best, name)
+        register_in_leonardo(ctx, name, best)
+        presentation.style_protein(name)
+        presentation.focus(name)
+        scores = sorted(({"model": os.path.basename(r.get("path", "")),
+                          "dope": round(float(r.get("dope_score")), 1)}
+                         for r in meta.get("score_records", []) if r.get("dope_score") is not None),
+                        key=lambda r: r["dope"])
+        summary = _object_summary(name)
+        result = {
+            "object": name, "best_model": best, "run_dir": run_root,
+            "templates_used": meta.get("loaded_template_codes", list(codes)),
+            "models": [os.path.join(run_root, p) if not os.path.isabs(p) else p
+                       for p in meta.get("generated_model_paths", [])],
+            "dope_scores": scores, "residues": summary.get("chains"),
+            "scene": ctx.scene(f"{name}: best MODELLER model"),
+            "_card": (card or f"**{name}**: {meta.get('generated_model_count', len(scores))} models from "
+                              f"{', '.join(codes)}")
+                     + f"; best DOPE **{scores[0]['dope'] if scores else 'n/a'}** (lower is better; compare only "
+                       "models of the same sequence).",
+        }
+        if fit is not None:
+            result["rmsd_to_source_A"] = round(float(fit[0]), 2)
+        result.update(extra or {})
+        return {"done": True, "result": result}
+
+    def cancel():
+        if proc.poll() is None:
+            proc.kill()
+
+    return ctx.jobs.start("modeling", poll, cancel=cancel, description=f"MODELLER {name} from {', '.join(codes)}")
 
 
 def register(reg):
@@ -172,84 +278,7 @@ def register(reg):
         name = re.sub(r"[^A-Za-z0-9_]", "_", str(name)) or "model"
         if name in _cmd().get_names("objects"):
             raise ToolError(f"an object named {name!r} already exists; choose another name")
-        dlg = ctx.dlg
-        try:
-            nproc = int(dlg.spin_modeler_nproc.value())
-        except Exception:
-            nproc = min(4, os.cpu_count() or 1)
-        nproc = max(1, min(nproc, int(num_models)))
-        run_root = os.path.join(ctx.workspace("modeling"), time.strftime(f"{name}_%Y%m%d_%H%M%S"))
-        os.makedirs(run_root, exist_ok=True)
-        with open(os.path.join(run_root, "agent_args.json"), "w") as fh:
-            json.dump({"paths": _genmodels_paths(dlg), "sequence": seq, "templates": codes,
-                       "num_models": int(num_models), "start_pos": int(start_pos), "num_processors": nproc,
-                       "seed": int(seed) or None}, fh)
-        with open(os.path.join(run_root, "agent_build.py"), "w") as fh:
-            fh.write(_BUILD_SCRIPT)
-        log = open(os.path.join(run_root, "modeller.log"), "w")
-        proc = subprocess.Popen([_python_executable(), "agent_build.py", "agent_args.json"], cwd=run_root,
-                                stdout=log, stderr=subprocess.STDOUT)
-
-        def progress():
-            try:
-                with open(log.name) as fh:
-                    steps = [ln.strip() for ln in fh if ln.startswith("STEP")]
-                return steps[-1] if steps else "starting MODELLER"
-            except Exception:
-                return ""
-
-        def poll():
-            if proc.poll() is None:
-                return {"done": False, "progress": progress()}
-            log.close()
-            result_file = os.path.join(run_root, "agent_result.json")
-            if proc.returncode != 0 or not os.path.isfile(result_file):
-                with open(log.name) as fh:
-                    tail = "".join(fh.readlines()[-15:])
-                return {"done": True, "error": f"MODELLER failed (exit {proc.returncode}): {tail[-1500:]}"}
-            meta = json.load(open(result_file))
-            best = meta.get("best_model_path") or ""
-            best = best if os.path.isabs(best) else os.path.join(run_root, best)
-            if not os.path.isfile(best):
-                return {"done": True, "error": "MODELLER finished without a best model"}
-            cmd = _cmd()
-            cmd.load(best, name)
-            # MODELLER numbers the model from 1; use the requested numbering (e.g. UniProt 712-980)
-            first = []
-            cmd.iterate(f"({name}) and polymer and name CA", "first.append(resv)", space={"first": first})
-            offset = int(start_pos) - min(first) if first else 0
-            if offset:
-                cmd.alter(name, f"resv = resv + {offset}")
-                cmd.sort(name)
-                best_renumbered = os.path.join(run_root, f"{name}.pdb")
-                cmd.save(best_renumbered, name)
-                best = best_renumbered
-            register_in_leonardo(ctx, name, best)
-            presentation.style_protein(name)
-            presentation.focus(name)
-            scores = sorted(({"model": os.path.basename(r.get("path", "")),
-                              "dope": round(float(r.get("dope_score")), 1)}
-                             for r in meta.get("score_records", []) if r.get("dope_score") is not None),
-                            key=lambda r: r["dope"])
-            summary = _object_summary(name)
-            return {"done": True, "result": {
-                "object": name, "best_model": best, "run_dir": run_root,
-                "templates_used": meta.get("loaded_template_codes", codes),
-                "models": [os.path.join(run_root, p) if not os.path.isabs(p) else p
-                           for p in meta.get("generated_model_paths", [])],
-                "dope_scores": scores, "residues": summary.get("chains"),
-                "numbering": f"residues {int(start_pos)}-{int(start_pos) + len(seq) - 1} (renumbered copy: {best})",
-                "scene": ctx.scene(f"{name}: best MODELLER model ({', '.join(codes)})"),
-                "_card": (f"**{name}**: {meta.get('generated_model_count', len(scores))} models from "
-                          f"{', '.join(codes)}; best DOPE **{scores[0]['dope'] if scores else 'n/a'}** "
-                          "(lower is better; compare only models of the same sequence)."),
-            }}
-
-        def cancel():
-            if proc.poll() is None:
-                proc.kill()
-
-        return ctx.jobs.start("modeling", poll, cancel=cancel, description=f"MODELLER {name} from {', '.join(codes)}")
+        return _start_modeller(ctx, name, seq, codes, start_pos=start_pos, num_models=num_models, seed=seed)
 
     @reg.tool("align_structures", "Superpose one structure on another and compare them residue by residue: "
               "global RMSD and the Cα displacement of every matched residue after the fit. Optionally colors "
@@ -336,3 +365,107 @@ def register(reg):
                       + (f"; **{len(moved)}** move ≥ {color_threshold_A} Å (red)" if color_threshold_A else "")
                       + ". Largest: " + ", ".join(f"{r['resn']}{r['resi']} {r['d_ca_A']} Å" for r in big[:4])),
         }
+
+    def _chain_entry(ctx, object, chain):
+        cmd = _cmd()
+        if object not in cmd.get_names("objects"):
+            raise ToolError(f"no object named {object!r}")
+        chains = dict(ctx.dlg._modeler_extract_chain_data(object) or {})
+        if not chains:
+            raise ToolError(f"no protein chain found in {object}")
+        if not chain:
+            if len(chains) > 1:
+                raise ToolError(f"{object} has chains {sorted(chains)}; say which one")
+            chain = next(iter(chains))
+        if chain not in chains:
+            raise ToolError(f"chain {chain!r} not in {object} (chains: {sorted(chains)})")
+        return chain, chains[chain]
+
+    def _stage_self_template(ctx, object, chain):
+        """The structure itself as MODELLER template: its chain saved as '<tag><chain>'."""
+        cmd = _cmd()
+        path = os.path.join(ctx.workspace("modeling"), f"_template_{object}_{chain}.pdb")
+        cmd.save(path, f"({object}) and polymer and chain {chain} and not hydro and alt +A", state=1)
+        code = ("s" + re.sub(r"[^a-z0-9]", "", object.lower()) + "xxx")[:4] + chain
+        return code, path
+
+    @reg.tool("model_mutant", "Build a mutant of a loaded protein with MODELLER, using the structure itself as the "
+              "template: substitutions (A123V, p.Ala123Val), deletions, insertions, delins, duplications, stop; "
+              "several at once. Residue numbers are those of the structure. The mutant is superposed on the "
+              "original and keeps its numbering (for substitutions). About 1-3 min.",
+              {"properties": {
+                  "object": {"type": "string"}, "chain": {"type": "string"},
+                  "mutations": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                  "name": {"type": "string"},
+                  "num_models": {"type": "integer", "minimum": 1, "maximum": 20},
+                  "seed": {"type": "integer", "minimum": 0},
+              }, "required": ["object", "mutations"]},
+              permission="compute_heavy", title="Mutant model (MODELLER)")
+    def model_mutant(ctx, object, mutations, chain="", name="", num_models=3, seed=1):
+        from ... import mutator
+
+        chain, entry = _chain_entry(ctx, object, chain)
+        base = str(entry["observed_seq"])
+        labels = [str(x) for x in entry["residue_labels"]]
+        try:
+            mutated = mutator.mutate_sequence(base, list(mutations), residue_numbers=labels)
+        except Exception as exc:
+            raise ToolError(f"mutation error: {exc}") from exc
+        name = re.sub(r"[^A-Za-z0-9_]", "_", name or f"{object}_{'_'.join(mutations)}")[:60]
+        if name in _cmd().get_names("objects"):
+            raise ToolError(f"an object named {name!r} already exists")
+        code, path = _stage_self_template(ctx, object, chain)
+        extra = {"source": object, "chain": chain, "mutations": list(mutations)}
+        if entry.get("internal_gaps"):
+            extra["warning"] = (f"chain {chain} has missing residues {entry['internal_gaps']}; they stay missing "
+                                "(use repair_structure_gaps first for a complete chain)")
+        return _start_modeller(ctx, name, base, [code], final_sequence=mutated, labels=labels
+                               if len(mutated) == len(base) else None, start_pos=int(entry["start"]),
+                               num_models=num_models, seed=seed, staged={code: path}, align_to=object, extra=extra,
+                               card=f"Mutant **{name}** ({', '.join(mutations)}) of {object} chain {chain}")
+
+    @reg.tool("repair_structure_gaps", "Fill missing residues (internal gaps, and optionally the missing termini) "
+              "of a crystal structure chain with MODELLER, using the structure as template and the full sequence "
+              "(given, or the RCSB sequence of the entry). The repaired model keeps the crystal numbering and is "
+              "superposed on the original.",
+              {"properties": {
+                  "object": {"type": "string"}, "chain": {"type": "string"},
+                  "full_sequence": {"type": "string"},
+                  "fill_termini": {"type": "boolean"},
+                  "name": {"type": "string"},
+                  "num_models": {"type": "integer", "minimum": 1, "maximum": 20},
+                  "seed": {"type": "integer", "minimum": 0},
+              }, "required": ["object"]},
+              permission="compute_heavy", title="Gap repair (MODELLER)")
+    def repair_structure_gaps(ctx, object, chain="", full_sequence="", fill_termini=False, name="", num_models=3,
+                              seed=1):
+        from ... import modeler_runtime
+
+        dlg = ctx.dlg
+        chain, entry = _chain_entry(ctx, object, chain)
+        if full_sequence:
+            full = _clean_sequence(full_sequence)
+        else:
+            pdb_id = str(dlg._modeler_infer_pdb_id(object) or "")
+            if not pdb_id:
+                raise ToolError("cannot tell the PDB entry of this object; give full_sequence")
+            full = _clean_sequence(dlg._modeler_fetch_rcsb_chain_sequence(pdb_id, chain) or "")
+        gap = dict(modeler_runtime.modeler_gap_fill_sequence(entry, full, fill_termini=bool(fill_termini)) or {})
+        if not gap.get("ok"):
+            raise ToolError(f"the sequence does not match the structure: {gap.get('error') or gap}")
+        if not (int(gap.get("filled", 0)) + int(gap.get("filled_n_term", 0)) + int(gap.get("filled_c_term", 0))):
+            return {"object": object, "chain": chain, "filled": 0,
+                    "_card": f"Chain {chain} of {object} has no missing residues to fill."}
+        name = re.sub(r"[^A-Za-z0-9_]", "_", name or f"{object}_repaired")[:60]
+        if name in _cmd().get_names("objects"):
+            raise ToolError(f"an object named {name!r} already exists")
+        code, path = _stage_self_template(ctx, object, chain)
+        seq = str(gap["sequence"]).replace("X", "A")
+        n_fill = int(gap.get("filled", 0)) + int(gap.get("filled_n_term", 0)) + int(gap.get("filled_c_term", 0))
+        extra = {"source": object, "chain": chain, "residues_filled": n_fill,
+                 "gaps_before": entry.get("internal_gaps"),
+                 "identity_to_reference": gap.get("identity"), "coverage": gap.get("coverage")}
+        return _start_modeller(ctx, name, seq, [code], labels=[str(x) for x in gap.get("residue_labels") or []],
+                               start_pos=int(entry["start"]), num_models=num_models, seed=seed, staged={code: path},
+                               align_to=object, extra=extra,
+                               card=f"**{name}**: {n_fill} missing residue(s) of {object} chain {chain} built")

@@ -42,8 +42,25 @@ class AgentContext:
 def build_registry(context):
     reg = ToolRegistry()
     register_job_tools(reg, context.jobs)
-    from . import docking, md, modeling, pka, pockets, redocking, structure, view
+    from . import (
+        alphafold,
+        bioseq,
+        docking,
+        ligands,
+        md,
+        modeling,
+        pka,
+        pockets,
+        psi4,
+        qmmm,
+        redocking,
+        screening,
+        structure,
+        trajectory,
+        view,
+    )
 
-    for module in (structure, view, pockets, pka, docking, redocking, md, modeling):
+    for module in (structure, view, pockets, pka, ligands, docking, redocking, screening, md, trajectory,
+                   modeling, alphafold, bioseq, psi4, qmmm):
         module.register(reg)
     return reg

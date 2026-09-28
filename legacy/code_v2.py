@@ -11543,6 +11543,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             "Staged minimization restraint setup failed; continuing with unrestrained minimization."
                             + (f" Detail: {mk_rest.get('error', '')}" if mk_rest.get("error", "") else "")
                         )
+            if ensemble == "npt" and not bool(system.usesPeriodicBoundaryConditions()):
+                # gas phase / implicit solvent: no box, so no pressure coupling
+                ensemble = "nvt"
+                out["notes"].append("Non-periodic system (gas/implicit solvent): NPT not possible, using NVT.")
             if ensemble == "npt":
                 try:
                     system.addForce(
@@ -35122,8 +35126,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ident = ""
             for p in ("_Name", "NAME", "name", "ID", "id", "CID", "cid"):
                 try:
-                    if mol.HasProp(p):
-                        v = str(mol.GetProp(p)).strip()
+                    # the SDF record (m) keeps the properties; the rebuilt molecule does not
+                    if m.HasProp(p):
+                        v = str(m.GetProp(p)).strip()
                         if v and (not name):
                             name = v
                         if v and p.lower() in ("id", "cid") and (not ident):
@@ -50072,6 +50077,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 n_unbound_hold = int(n_unbound)
             estimator_window_mode = str(data.get("estimator_window_mode", "state_fallback") or "state_fallback")
+            # set by the local-MD replica (whether a binding estimate is meaningful for this run)
+            binding_estimate_status = str(data.get("binding_estimate_status", "") or "")
+            binding_estimate_note = str(data.get("binding_estimate_note", "") or "")
             if total_valid.size < 3:
                 QtWidgets.QMessageBox.warning(
                     self,
