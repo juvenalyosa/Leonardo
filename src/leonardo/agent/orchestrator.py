@@ -31,6 +31,9 @@ Leonardo tools you are given; there is no shell, no file system access and no co
 
 How to work:
 - Reply in the user's language.
+- Every plan step must be done with the tools you have. Before proposing a plan, check that each \
+step maps to a tool; if part of the request cannot be done with them, say so plainly first and offer \
+what you can do instead. Never propose a step you cannot execute.
 - For anything that computes, loads or changes the scene, first look at the current state with \
 the read-only tools, then call propose_plan with short, concrete steps. Wait for approval; do not \
 start computing before the plan is approved.

@@ -41,17 +41,8 @@ def register(reg):
         from pymol import cmd
 
         dlg = ctx.dlg
-        if object not in cmd.get_names("objects"):
-            raise ToolError(f"no object named {object!r}")
-        dlg._refresh_openmm_object_combo()
-        if dlg.cmb_openmm_object.findText(object) < 0:
-            raise ToolError(f"{object!r} is not available to the OpenMM module")
-        dlg.cmb_openmm_object.setCurrentText(object)
-        idx = dlg.cmb_openmm_solvent_mode.findData(solvent)
-        if idx >= 0:
-            dlg.cmb_openmm_solvent_mode.setCurrentIndex(idx)
+        _select_openmm_object(dlg, object, solvent, ph)
         dlg.spin_openmm_temperature.setValue(float(temperature_K))
-        dlg.spin_openmm_ph.setValue(float(ph))
         dt_fs = float(dlg.spin_openmm_timestep_fs.value())
         prod_steps = int(round(float(production_ns) * 1e6 / dt_fs))
         # heating/equilibration scale with the production run (Leonardo's own defaults, 10 + 40 ps,
@@ -69,37 +60,7 @@ def register(reg):
         if hasattr(dlg, "cb_openmm_min_only"):
             dlg.cb_openmm_min_only.setChecked(False)
 
-        captured = {}
-        original = dlg._openmm_finalize_worker_result
-
-        def finalize(launch, result):
-            try:
-                return original(launch, result)
-            finally:
-                captured["result"] = dict(result or {})
-                dlg._openmm_finalize_worker_result = original
-
-        dlg._openmm_finalize_worker_result = finalize
-
-        def start():
-            before = set(getattr(dlg, "_task_monitor_state", {}) or {})
-            dlg._run_openmm_workflow(minimize_only=False)
-            after = set(getattr(dlg, "_task_monitor_state", {}) or {})
-            captured["submitted"] = bool(after - before)
-
-        def is_done():
-            if "result" in captured:
-                return True
-            # nothing was submitted (setup error): finished immediately
-            return not captured.get("submitted", True)
-
-        def collect():
-            dlg._openmm_finalize_worker_result = original
-            res = captured.get("result")
-            if res is None:
-                raise ToolError("OpenMM did not start (see Leonardo's message)")
-            if not res.get("ok", True) and res.get("error"):
-                raise ToolError(str(res.get("error")))
+        def collect(res):
             out_obj = str(getattr(dlg, "_openmm_last_output_object", "") or "")
             info = {"object": out_obj, "production_ns": production_ns, "solvent": solvent,
                     "stages_ps": {"heating": round(heat_ps, 1), "equilibration": round(equil_ps, 1),
@@ -125,4 +86,120 @@ def register(reg):
                              + (f"final Cα RMSD {r['final_A']} Å (max {r['max_A']} Å)." if r else ""))
             return info
 
-        return start_dialog_job(ctx, "md", start, is_done, collect, description=f"OpenMM MD of {object}")
+        return _openmm_job(ctx, "md", False, collect, description=f"OpenMM MD of {object}")
+
+    @reg.tool("minimize_structure", "Energy-minimize a protein or complex with OpenMM: hydrogens added at the given pH, "
+              "ligands parameterized automatically, and a staged restrained minimization (heavy atoms "
+              "harmonically restrained, restraints released in stages) so the fold is kept. The minimized "
+              "structure is loaded as a new object. About 1-4 min on CPU for a 300-residue protein.",
+              {"properties": {
+                  "object": {"type": "string"},
+                  "solvent": {"type": "string", "enum": ["implicit", "explicit", "gas"]},
+                  "max_iterations": {"type": "integer", "minimum": 1, "maximum": 200000},
+                  "ph": {"type": "number", "minimum": 0, "maximum": 14},
+              }, "required": ["object"]},
+              permission="compute_light", title="Energy minimization (OpenMM)")
+    def minimize_structure(ctx, object, solvent="implicit", max_iterations=2000, ph=7.4):
+        dlg = ctx.dlg
+        _select_openmm_object(dlg, object, solvent, ph)
+        for spin in ("spin_openmm_minonly_iters", "spin_openmm_min_steps"):
+            if hasattr(dlg, spin):
+                getattr(dlg, spin).setValue(int(max_iterations))
+
+        def collect(res):
+            from pymol import cmd
+
+            out_obj = str(getattr(dlg, "_openmm_last_output_object", "") or "")
+            info = {"object": out_obj, "input": object, "solvent": solvent, "force_field": res.get("ff_used_label"),
+                    "platform": res.get("platform_used"), "minimized_pdb": res.get("final_pdb") or res.get("pdb_path"),
+                    "job_dir": res.get("job_dir"), "notes": list(res.get("notes", []) or [])[:6]}
+            profile = [p for p in (res.get("min_energy_profile") or []) if isinstance(p, (list, tuple)) and len(p) >= 2]
+            if profile:
+                info["energy_kJ_mol"] = {"start": round(float(profile[0][1]), 1), "end": round(float(profile[-1][1]), 1)}
+            if out_obj and out_obj in cmd.get_names("objects"):
+                n = cmd.count_states(out_obj)
+                if n > 1:          # keep only the final minimized frame
+                    cmd.create(f"{out_obj}_tmp", out_obj, n, 1)
+                    cmd.delete(out_obj)
+                    cmd.set_name(f"{out_obj}_tmp", out_obj)
+                try:
+                    info["heavy_atom_rmsd_vs_input_A"] = round(float(cmd.align(
+                        f"({out_obj}) and polymer and not elem H", f"({object}) and polymer and not elem H",
+                        cycles=0, transform=0)[0]), 2)
+                except Exception:
+                    pass
+                presentation.style_protein(out_obj)
+                cmd.disable(object)
+                presentation.focus(out_obj, buffer=2.0)
+                info["scene"] = ctx.scene(f"{object} minimized ({out_obj})")
+            e = info.get("energy_kJ_mol")
+            info["_card"] = (f"**{object}** minimized → **{out_obj}** ({solvent}, {info.get('force_field')})"
+                             + (f"; E {e['start']} → {e['end']} kJ/mol" if e else "")
+                             + (f"; heavy-atom RMSD {info['heavy_atom_rmsd_vs_input_A']} Å"
+                                if "heavy_atom_rmsd_vs_input_A" in info else "") + ".")
+            return info
+
+        return _openmm_job(ctx, "minimize", True, collect, description=f"OpenMM minimization of {object}")
+
+
+def _select_openmm_object(dlg, object, solvent, ph):
+    from pymol import cmd
+
+    if object not in cmd.get_names("objects"):
+        raise ToolError(f"no object named {object!r}")
+    dlg._refresh_openmm_object_combo()
+    if dlg.cmb_openmm_object.findText(object) < 0:
+        raise ToolError(f"{object!r} is not available to the OpenMM module")
+    dlg.cmb_openmm_object.setCurrentText(object)
+    idx = dlg.cmb_openmm_solvent_mode.findData(solvent)
+    if idx >= 0:
+        dlg.cmb_openmm_solvent_mode.setCurrentIndex(idx)
+    dlg.spin_openmm_ph.setValue(float(ph))
+
+
+def _openmm_job(ctx, kind, minimize_only, collect_result, description=""):
+    """Run Leonardo's OpenMM workflow as a job; ``collect_result(worker_result)`` builds the tool result."""
+    dlg = ctx.dlg
+    captured = {}
+    original = dlg._openmm_finalize_worker_result
+
+    def finalize(launch, result):
+        try:
+            return original(launch, result)
+        finally:
+            captured["result"] = dict(result or {})
+            dlg._openmm_finalize_worker_result = original
+
+    dlg._openmm_finalize_worker_result = finalize
+
+    def start():
+        before = set(getattr(dlg, "_task_monitor_state", {}) or {})
+        dlg._run_openmm_workflow(minimize_only=bool(minimize_only))
+        after = set(getattr(dlg, "_task_monitor_state", {}) or {})
+        captured["submitted"] = bool(after - before)
+
+    def run_buttons_enabled():
+        btn = getattr(dlg, "btn_openmm_run", None)
+        try:
+            return btn is None or bool(btn.isEnabled())
+        except Exception:
+            return True
+
+    def is_done():
+        if "result" in captured:
+            return True
+        if not captured.get("submitted", True):
+            return True          # nothing was submitted (setup error): finished immediately
+        # a failed background task never reaches finalize; Leonardo re-enables the run buttons
+        return run_buttons_enabled()
+
+    def collect():
+        dlg._openmm_finalize_worker_result = original
+        res = captured.get("result")
+        if res is None:
+            raise ToolError("OpenMM did not finish (see Leonardo's message)")
+        if not res.get("ok", True) and res.get("error"):
+            raise ToolError(str(res.get("error")))
+        return collect_result(res)
+
+    return start_dialog_job(ctx, kind, start, is_done, collect, description=description)

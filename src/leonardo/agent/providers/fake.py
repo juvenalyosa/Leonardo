@@ -29,6 +29,8 @@ class ScriptedProvider(Provider):
             yield TurnEnd("end_turn")
             return
         turn = self.turns.pop(0)
+        if callable(turn):          # built from earlier tool results
+            turn = turn()
         calls = 0
         for item in turn:
             if callable(cancel) and cancel():
