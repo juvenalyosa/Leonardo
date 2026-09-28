@@ -286,7 +286,8 @@ class AgentSession:
             return self._result(call, f"{spec.name} failed: {exc}", is_error=True)
         shown = {k: v for k, v in result.items() if not k.startswith("_")}
         self.ui.on_event("tool", dict(card, status="done", seconds=round(time.time() - started, 1), result=shown,
-                                      card=str(result.get("_card", "") or "")))
+                                      card=str(result.get("_card", "") or ""),
+                                      image=str(result.get("_image", "") or "")))
         return self._result(call, shown)
 
     def _wait_if_pending(self, result):

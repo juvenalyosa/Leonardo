@@ -93,13 +93,25 @@ def install():
         _originals["plt_show"] = plt.show
 
         def show(*args, **kwargs):
-            if _state["depth"] <= 0:
+            if _state["depth"] <= 0 or _state.get("plots_ok"):
                 return _originals["plt_show"](*args, **kwargs)
             return None
         plt.show = show
     except Exception:
         pass
     _state["installed"] = True
+
+
+class plots_allowed:
+    """Let a tool open an interactive plot window on purpose (Leonardo's IR spectrum) during a job."""
+
+    def __enter__(self):
+        _state["plots_ok"] = True
+        return self
+
+    def __exit__(self, *exc):
+        _state["plots_ok"] = False
+        return False
 
 
 def preset_prompts(values):

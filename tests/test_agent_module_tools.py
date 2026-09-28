@@ -122,3 +122,16 @@ def test_psi4_script_gets_orbitals_before_properties():
     src = code_v2.ProtLigInteractDialog._psi4_make_script.__code__.co_consts
     text = " ".join(str(c) for c in src if isinstance(c, str))
     assert "wfn_last.Ca()" in text and "psi4.energy(method_name, return_wfn=True)" in text
+
+
+def test_psi4_orbital_energies_from_output(tmp_path):
+    from leonardo.agent.tools import psi4
+
+    (tmp_path / "psi4_run.out").write_text(
+        "    Doubly Occupied:\n\n       1A    -19.200000     2A    -10.300000\n       9A     -0.267500\n\n"
+        "    Virtual:\n\n      10A      0.052100    11A      0.101000\n\n    Final Occupation by Irrep:\n")
+    e = psi4._orbital_energies(str(tmp_path))
+    assert e["homo_hartree"] == -0.2675 and e["lumo_hartree"] == 0.0521
+    assert e["gap_ev"] == round((0.0521 + 0.2675) * 27.211386, 3)
+    names = set(build_registry(AgentContext()).names())
+    assert {"show_ir_spectrum", "animate_vibration", "show_orbitals", "show_electrostatic_surface"} <= names

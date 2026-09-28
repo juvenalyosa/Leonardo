@@ -418,6 +418,8 @@ class ChatPanel(QtWidgets.QWidget):
             else:
                 body.setText(_result_summary(rest))
             timing.setText(f"{payload.get('seconds', 0)} s")
+            if payload.get("image"):
+                self._add_image(body, str(payload["image"]))
             if scene:
                 btn_scene.setVisible(True)
                 btn_scene.clicked.connect(lambda _=False, s=scene: self.scene_requested.emit(s))
@@ -426,6 +428,24 @@ class ChatPanel(QtWidgets.QWidget):
             body.setTextFormat(QtCore.Qt.RichText)
         elif status == "declined":
             body.setText("Skipped by the user.")
+
+    def _add_image(self, body, path):
+        """A plot produced by the tool (IR spectrum, profile...), fitted to the card; click opens it full size."""
+        import os
+
+        if not os.path.isfile(path):
+            return
+        pix = QtGui.QPixmap(path)
+        if pix.isNull():
+            return
+        lab = QtWidgets.QLabel()
+        lab.setPixmap(pix.scaledToWidth(min(400, pix.width()), QtCore.Qt.SmoothTransformation))
+        lab.setToolTip("Click to open the full-size image")
+        lab.setCursor(QtCore.Qt.PointingHandCursor)
+        lab.mousePressEvent = lambda _e, p=path: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(p))
+        layout = body.parentWidget().layout() if body.parentWidget() is not None else None
+        if layout is not None:
+            layout.insertWidget(layout.indexOf(body) + 1, lab)
 
     def progress(self, text):
         if self._tool_cards:
