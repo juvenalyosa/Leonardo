@@ -11,6 +11,24 @@ _KEEP = ("energy_hartree", "energy_opt_hartree", "energy_ts_hartree", "energy_fr
          "esp_fit_charges_file", "esp_fit_rms_au", "charged_mol2", "homo_ev", "lumo_ev", "gap_ev", "error")
 
 
+def _check_dispersion(method):
+    """-D3/-D4 functionals need an external program that QCEngine calls; say so before a long run."""
+    import os
+    import shutil
+    import sys
+
+    m = str(method).lower()
+    need = "s-dftd3" if "-d3" in m else ("dftd4" if "-d4" in m else "")
+    if not need:
+        return
+    found = shutil.which(need) or next((p for p in (os.path.join(sys.prefix, "bin", need),) if os.path.isfile(p)), None)
+    if not found:
+        pkg = "simple-dftd3 dftd3-python" if need == "s-dftd3" else "dftd4 dftd4-python"
+        raise ToolError(f"{method} needs the {need} program, which is not installed in this environment "
+                        f"(conda install -c conda-forge {pkg}). Alternatives without it: wb97x-d (built-in "
+                        "dispersion) or the functional without the -D suffix.")
+
+
 def register(reg):
     @reg.tool("run_psi4", "Quantum chemistry with Psi4 on a ligand, a whole small object or a selection: "
               "'energy' (single point), 'optimize', 'frequencies' (+ thermochemistry), 'stationary' (opt + freq), "
@@ -36,6 +54,7 @@ def register(reg):
         from pymol import cmd
 
         dlg = ctx.dlg
+        _check_dispersion(method)
         if object not in cmd.get_names("objects"):
             raise ToolError(f"no object named {object!r}")
         set_combo(dlg, "cmb_psi4_input_mode", "pymol")
@@ -75,6 +94,18 @@ def register(reg):
                 err = (res or {}).get("error") if isinstance(res, dict) else None
                 raise ToolError(str(err or run.get("error") or "Psi4 failed (see Leonardo's log)"))
             out = {k: jsonable(res.get(k)) for k in _KEEP if res.get(k) not in (None, "", [], {})}
+            # vibrations only (translations/rotations are ~0 cm-1); imaginary = modes with |ν| > 10i cm-1
+            real = [float(v) for v in list(res.get("freq_cm_real") or [])]
+            imag = [float(v) for v in list(res.get("freq_cm_imag") or [])]
+            trv = [str(t) for t in list(res.get("freq_trv") or [])]
+            if real or imag:
+                modes = range(max(len(real), len(imag)))
+                vib = [i for i in modes if (trv[i] == "V" if i < len(trv) else True)]
+                out["freq_cm_real"] = [round(real[i], 1) for i in vib if i < len(real) and real[i] > 10.0]
+                out["freq_cm_imag"] = [round(imag[i], 1) for i in vib if i < len(imag) and imag[i] > 10.0]
+            for key in ("ir_spectrum_csv", "vib_modes_npz", "property_wavefunction", "property_warning"):
+                if res.get(key):
+                    out[key] = res.get(key)
             out.update({"operation": operation, "method": method, "basis": basis,
                         "job_dir": str(getattr(dlg, "_psi4_last_job_dir", "") or "")})
             obj = str(getattr(dlg, "_psi4_last_loaded_object", "") or "")
@@ -87,8 +118,11 @@ def register(reg):
             imag = list(out.get("freq_cm_imag") or [])
             out["_card"] = (f"Psi4 **{operation}** {method}/{basis}"
                             + (f": E = **{float(e):.6f} Eh**" if e is not None else "")
-                            + (f"; {len(imag)} imaginary frequency(ies) {', '.join(f'{v:.0f}i' for v in imag[:3])}"
-                               if operation in ("frequencies", "stationary", "ts") else "")
+                            + (f"; {len(out.get('freq_cm_real') or [])} vibrational modes "
+                               f"({min(out['freq_cm_real']):.0f}-{max(out['freq_cm_real']):.0f} cm⁻¹), "
+                               + (f"{len(imag)} imaginary ({', '.join(f'{v:.0f}i' for v in imag[:3])})" if imag
+                                  else "no imaginary frequency (a minimum)")
+                               if operation in ("frequencies", "stationary", "ts") and out.get("freq_cm_real") else "")
                             + (f"; ESP charges → `{out.get('charged_mol2')}`" if operation == "esp_fit" else "") + ".")
             return out
 

@@ -30716,6 +30716,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines.append("                    result['ir_spectrum_csv'] = 'ir_spectrum.csv'")
         lines.append("                except Exception:")
         lines.append("                    pass")
+        # DFT frequencies come from finite differences of gradients: that wavefunction has no MO
+        # coefficients, so oeprop raises and cubeprop crashes Psi4 (SIGSEGV) after the frequencies are
+        # done. Properties and cubes then use a single point at the final geometry.
+        lines.append("        if wfn_last is not None:")
+        lines.append("            try:")
+        lines.append("                wfn_last.Ca()")
+        lines.append("            except Exception:")
+        lines.append("                try:")
+        lines.append("                    _e_sp, wfn_last = psi4.energy(method_name, return_wfn=True)")
+        lines.append("                    result['property_wavefunction'] = 'single_point_final_geometry'")
+        lines.append("                except Exception as _sp_e:")
+        lines.append("                    result['property_warning'] = f'no orbitals for properties: {_sp_e}'")
+        lines.append("                    wfn_last = None")
         lines.append("        if wfn_last is not None:")
         lines.append("            try:")
         lines.append("                psi4.oeprop(wfn_last, 'MULLIKEN_CHARGES')")

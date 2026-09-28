@@ -103,3 +103,22 @@ def test_finalize_job_reads_keyword_arguments(app):
     assert status["status"] == "done"
     assert got["r"] == {"success": True}
     assert dlg._finalize.__name__ == "_finalize"          # the original method is back
+
+
+def test_psi4_dispersion_check(monkeypatch):
+    from leonardo.agent.tools import psi4
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("sys.prefix", "/nonexistent")
+    with pytest.raises(ToolError, match="s-dftd3"):
+        psi4._check_dispersion("b3lyp-d3bj")
+    psi4._check_dispersion("wb97x-d")          # built-in dispersion: nothing external needed
+    psi4._check_dispersion("b3lyp")
+
+
+def test_psi4_script_gets_orbitals_before_properties():
+    import code_v2
+
+    src = code_v2.ProtLigInteractDialog._psi4_make_script.__code__.co_consts
+    text = " ".join(str(c) for c in src if isinstance(c, str))
+    assert "wfn_last.Ca()" in text and "psi4.energy(method_name, return_wfn=True)" in text

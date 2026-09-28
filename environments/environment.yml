@@ -42,6 +42,8 @@ dependencies:
 
   # QM and visualization stack
   - psi4=1.9.*
+  - simple-dftd3        # s-dftd3: -D3/-D3BJ dispersion for DFT in Psi4
+  - dftd3-python
   - mopac
   - libint=2.9.*
   - pcmsolver=1.2.3
