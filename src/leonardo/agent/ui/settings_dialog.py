@@ -26,8 +26,17 @@ class AssistantSettingsDialog(QtWidgets.QDialog):
         self.setStyleSheet(STYLESHEET)
         self.setMinimumWidth(560)
         self.settings = dict(settings or config.load_settings())
-        root = QtWidgets.QVBoxLayout(self)
+        # scrollable content + Save/Cancel pinned at the bottom, sized to the screen
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 10)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QtWidgets.QWidget()
+        root = QtWidgets.QVBoxLayout(content)
+        root.setContentsMargins(14, 14, 14, 6)
         root.setSpacing(12)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
 
         intro = QtWidgets.QLabel(
             "Choose the model that will drive Leonardo. API keys are stored in the system keychain, "
@@ -128,7 +137,18 @@ class AssistantSettingsDialog(QtWidgets.QDialog):
         buttons.button(QtWidgets.QDialogButtonBox.Save).setObjectName("primary")
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
+        bar = QtWidgets.QHBoxLayout()
+        bar.setContentsMargins(14, 0, 14, 0)
+        bar.addWidget(buttons)
+        outer.addLayout(bar)
+        root.addStretch(1)
+        try:
+            avail = QtWidgets.QApplication.primaryScreen().availableGeometry()
+            hint = content.sizeHint()
+            self.resize(min(hint.width() + 40, int(avail.width() * 0.9)),
+                        min(hint.height() + 70, int(avail.height() * 0.85)))
+        except Exception:
+            self.resize(620, 640)
 
         self._load_into_widgets()
         self.rb_anthropic.toggled.connect(lambda _on: self._fill_models())
