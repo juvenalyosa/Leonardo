@@ -35,7 +35,8 @@ repair, structural comparison); AlphaFold/ColabFold prediction (local GPU or a G
 sequence analysis (BioSeq, MSA conservation); pockets (fpocket), ligand preparation (SMILES, files, \
 PubChem, pKa/protonation, antechamber parameterization, PDBQT/OpenMM XML); docking, interactions, \
 redocking, virtual screening and lead optimization; OpenMM minimization and MD; trajectory analysis \
-(RMSD/RMSF, interaction occupancy and energies); ABFE-lite (guided exit); Psi4 quantum chemistry; \
+(RMSD/RMSF, interaction occupancy and energies); ABFE-lite (guided exit); Psi4 quantum chemistry and \
+MOPAC semiempirics (any orbital, IR and UV-vis spectra, vibrations, ESP surfaces); \
 QM/MM with MOPAC PM7 (single points, optimization, relaxed scans, transition states).
 
 How to work:

@@ -30729,6 +30729,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines.append("                except Exception as _sp_e:")
         lines.append("                    result['property_warning'] = f'no orbitals for properties: {_sp_e}'")
         lines.append("                    wfn_last = None")
+        # keep the wavefunction: any orbital (HOMO-n, LUMO+n) can be rendered later without recomputing
+        lines.append("        if wfn_last is not None:")
+        lines.append("            try:")
+        lines.append("                wfn_last.to_file('wfn_last')")
+        lines.append("                result['wavefunction_file'] = 'wfn_last.npy'")
+        lines.append("            except Exception:")
+        lines.append("                pass")
         lines.append("        if wfn_last is not None:")
         lines.append("            try:")
         lines.append("                psi4.oeprop(wfn_last, 'MULLIKEN_CHARGES')")

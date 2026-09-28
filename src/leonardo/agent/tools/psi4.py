@@ -127,7 +127,8 @@ def register(reg):
                     pass
             orb = _orbital_energies(out.get("job_dir", ""))
             if orb:
-                out.update(orb)
+                out.update({k: v for k, v in orb.items() if not k.startswith("_")})
+            ctx.__dict__.setdefault("qm", {})["last"] = "psi4"
             e = out.get("energy_opt_hartree") or out.get("energy_ts_hartree") or out.get("energy_hartree")
             imag = list(out.get("freq_cm_imag") or [])
             out["_card"] = (f"Psi4 **{operation}** {method}/{basis}"
@@ -143,7 +144,6 @@ def register(reg):
         return start_finalize_job(ctx, "psi4", dlg._on_psi4_run, "_psi4_finalize_background_run", collect,
                                   busy_button="btn_psi4_run", description=f"Psi4 {operation} {method}/{basis}")
 
-    register_analysis(reg)
 
 
 # -- analysis of the last Psi4 job: IR spectrum, vibrations, orbitals, ESP -------------------- #
@@ -182,7 +182,8 @@ def _orbital_energies(job_dir):
         return {}
     homo, lumo = max(occ), min(vir)
     return {"homo_hartree": homo, "lumo_hartree": lumo, "homo_ev": round(homo * _HARTREE_EV, 3),
-            "lumo_ev": round(lumo * _HARTREE_EV, 3), "gap_ev": round((lumo - homo) * _HARTREE_EV, 3)}
+            "lumo_ev": round(lumo * _HARTREE_EV, 3), "gap_ev": round((lumo - homo) * _HARTREE_EV, 3),
+            "_all_ev": [round(v * _HARTREE_EV, 3) for v in sorted(occ) + sorted(vir)]}
 
 
 def _ir_data(dlg, fwhm_cm=18.0):
@@ -281,109 +282,3 @@ def _focus_molecule(dlg, cmd):
     if obj and obj in cmd.get_names("objects"):
         cmd.orient(obj)
         cmd.zoom(obj, 4.0, complete=1)
-
-
-def register_analysis(reg):
-    @reg.tool("show_ir_spectrum", "Show the IR spectrum of the last Psi4 frequency job: an image in the chat and "
-              "Leonardo's interactive plot (click a peak to animate that vibration in the viewer). Harmonic "
-              "frequencies are not scaled.",
-              {"properties": {"fwhm_cm": {"type": "number", "minimum": 2, "maximum": 100,
-                                          "description": "band width of the broadened spectrum"},
-                              "interactive": {"type": "boolean"}}},
-              permission="view", title="IR spectrum")
-    def show_ir_spectrum(ctx, fwhm_cm=18.0, interactive=True):
-        png, peaks, csv = _present_ir(ctx.dlg, fwhm_cm, interactive)
-        return {"image": png, "strongest_bands": peaks, "csv": csv,
-                "_image": png,
-                "_card": "IR spectrum: strongest bands "
-                         + ", ".join(f"{p['frequency_cm1']:.0f} cm⁻¹ ({p['intensity_km_mol']:.0f} km/mol)"
-                                     for p in peaks[:4])
-                         + (". Click a peak in the plot window to animate it." if interactive else ".")}
-
-    @reg.tool("animate_vibration", "Animate a vibrational mode of the last Psi4 frequency job in the viewer: by "
-              "frequency (nearest mode), or the most intense IR band when no frequency is given.",
-              {"properties": {"frequency_cm": {"type": "number"},
-                              "amplitude_A": {"type": "number", "minimum": 0.05, "maximum": 1.0}}},
-              permission="view", title="Vibration")
-    def animate_vibration(ctx, frequency_cm=None, amplitude_A=0.22):
-        import numpy as np
-
-        dlg = ctx.dlg
-        _res, _jdir, vib, prep = _ir_data(dlg)
-        ii = np.asarray(prep.get("mode_indices", []), dtype=int)
-        xf = np.asarray(prep.get("freq_cm", []), dtype=float)
-        yf = np.asarray(prep.get("ir_km_mol", []), dtype=float)
-        j = int(np.argmin(np.abs(xf - float(frequency_cm)))) if frequency_cm is not None else int(np.argmax(yf))
-        with _headless.quiet():
-            obj = str(dlg._psi4_animate_vibrational_mode(vib_data=vib, mode_index=int(ii[j]),
-                                                         amplitude_a=float(amplitude_A)) or "")
-        from pymol import cmd
-
-        if not obj:
-            raise ToolError("could not build the vibration animation")
-        if obj:
-            presentation.focus(obj, buffer=3.0)
-            cmd.mplay()
-        return {"frequency_cm1": round(float(xf[j]), 1), "ir_intensity_km_mol": round(float(yf[j]), 1),
-                "object": obj, "scene": ctx.scene(f"vibration {xf[j]:.0f} cm-1"),
-                "_card": f"Animating the **{xf[j]:.0f} cm⁻¹** mode ({yf[j]:.0f} km/mol) in the viewer."}
-
-    @reg.tool("show_orbitals", "Show the HOMO and/or LUMO of the last Psi4 job as isosurfaces in the viewer "
-              "(blue/red = positive/negative phase), with their energies and the HOMO-LUMO gap.",
-              {"properties": {"orbitals": {"type": "array", "items": {"type": "string", "enum": ["homo", "lumo"]}},
-                              "isovalue": {"type": "number", "minimum": 0.005, "maximum": 0.2}}},
-              permission="view", title="Frontier orbitals")
-    def show_orbitals(ctx, orbitals=("homo", "lumo"), isovalue=0.03):
-        dlg = ctx.dlg
-        _res, jdir = _last_job(dlg)
-        want = {str(o).lower() for o in orbitals} or {"homo", "lumo"}
-        if hasattr(dlg, "cb_psi4_show_homo"):
-            dlg.cb_psi4_show_homo.setChecked("homo" in want)
-        if hasattr(dlg, "cb_psi4_show_lumo"):
-            dlg.cb_psi4_show_lumo.setChecked("lumo" in want)
-        before = dict(getattr(dlg, "_psi4_orbital_objects", {}) or {})
-        _headless.preset_prompts({"HOMO/LUMO Isovalue": float(isovalue)})
-        try:
-            with _headless.quiet() as q:
-                dlg._on_psi4_show_homo_lumo()
-        finally:
-            _headless.preset_prompts({})
-        objs = dict(getattr(dlg, "_psi4_orbital_objects", {}) or {})
-        if not objs or objs == before:
-            raise ToolError("; ".join(m["text"] for m in q.messages if m["kind"] in ("warning", "critical"))
-                            or "no orbital cubes in the last Psi4 job (it must run without PCM)")
-        energies = _orbital_energies(jdir)
-        shown = [o for o in objs.values() if o]
-        from pymol import cmd
-
-        _focus_molecule(dlg, cmd)
-        out = dict(energies, objects=shown, isovalue=isovalue,
-                   scene=ctx.scene(f"{'/'.join(sorted(want)).upper()} isosurfaces (±{isovalue})"))
-        out["_card"] = (f"{' and '.join(o.upper() for o in sorted(want))} shown (isovalue ±{isovalue})"
-                        + (f"; HOMO {energies['homo_ev']} eV, LUMO {energies['lumo_ev']} eV, gap "
-                           f"**{energies['gap_ev']} eV**" if energies else "") + ".")
-        return out
-
-    @reg.tool("show_electrostatic_surface", "Show the electrostatic potential of the last Psi4 job mapped on the "
-              "electron-density surface (red negative, blue positive), from the QM ESP cube.",
-              {"properties": {"esp_range": {"type": "number", "minimum": 0.005, "maximum": 0.5,
-                                            "description": "color scale limit (a.u.)"}}},
-              permission="view", title="Electrostatic surface")
-    def show_electrostatic_surface(ctx, esp_range=None):
-        dlg = ctx.dlg
-        _last_job(dlg)
-        if esp_range is not None and hasattr(dlg, "spin_psi4_esp_ramp"):
-            dlg.spin_psi4_esp_ramp.setValue(float(esp_range))
-        before = dict(getattr(dlg, "_psi4_esp_objects", {}) or {})
-        with _headless.quiet() as q:
-            dlg._on_psi4_show_electrostatic_surface()
-        objs = dict(getattr(dlg, "_psi4_esp_objects", {}) or {})
-        if not objs or objs == before:
-            raise ToolError("; ".join(m["text"] for m in q.messages if m["kind"] in ("warning", "critical"))
-                            or "could not build the ESP surface")
-        from pymol import cmd
-
-        shown = [str(o) for o in objs.values() if isinstance(o, str) and o in cmd.get_names("objects")]
-        _focus_molecule(dlg, cmd)
-        return {"objects": shown, "scene": ctx.scene("electrostatic potential on the density surface"),
-                "_card": "Electrostatic potential mapped on the density surface: red negative, blue positive."}
