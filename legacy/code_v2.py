@@ -1318,6 +1318,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._setup_display_settings_popup()
         self._setup_project_ui()
         self._setup_debug_panel()
+        self._setup_ai_assistant_ui()
         self._setup_launcher_hub()
         self._setup_interaction_workspace_popup()
         self._setup_main_open_box()
@@ -1326,6 +1327,34 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._apply_window_defaults()
         self._apply_ui_layout_polish()
         self._install_ui_polish_event_filter()
+    def _setup_ai_assistant_ui(self):
+        """Launcher button of the AI assistant (natural-language control of Leonardo's tools)."""
+        self._ai_controller = None
+        self.btn_open_ai_assistant = QtWidgets.QPushButton("AI Assistant...")
+        self.btn_open_ai_assistant.setToolTip(
+            "Ask in natural language (Claude or OpenAI): the assistant proposes a plan with Leonardo's tools, "
+            "waits for your approval and shows every step in the viewer"
+        )
+        self.btn_open_ai_assistant.clicked.connect(self._show_ai_assistant)
+        if hasattr(self, "verticalLayout"):
+            self.verticalLayout.addWidget(self.btn_open_ai_assistant)
+        else:
+            self.layout().addWidget(self.btn_open_ai_assistant)
+    def _show_ai_assistant(self):
+        """Open (or bring back) the AI assistant panel, docked in PyMOL's main window."""
+        try:
+            if self._ai_controller is None:
+                try:
+                    from .agent.tools import _headless
+                    from .agent.ui.controller import AssistantController
+                except ImportError:
+                    from leonardo.agent.tools import _headless
+                    from leonardo.agent.ui.controller import AssistantController
+                _headless.install()
+                self._ai_controller = AssistantController(self)
+            self._ai_controller.show()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "AI Assistant", f"Could not open the AI assistant: {e}")
     def _apply_window_defaults(self):
         """Use a comfortable initial size while still allowing docked-window scrolling."""
         try:
@@ -3032,6 +3061,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if not hasattr(self, "verticalLayout"):
                 return
             entries = [
+                "btn_open_ai_assistant",
                 "btn_open_modeler",
                 "btn_open_alphafold",
                 "btn_open_bioseq",
@@ -10239,6 +10269,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         mode = str(solvent_mode or "explicit").strip().lower()
         water = str(water_model or "tip3p").strip().lower()
         use_water_xml = bool(mode == "explicit" or include_waters)
+        # implicit water: OpenMM's GB/OBC2 parameters come from implicit/obc2.xml (the
+        # implicitSolvent= argument of createSystem only exists for AMBER prmtop files;
+        # OpenMM 8 rejects it with ForceField XMLs). There is no CHARMM36 implicit XML.
+        implicit_xml = ["implicit/obc2.xml"] if mode == "implicit" else []
         attempts = []
         family_order = [fam_pref, "amber14", "amber99sbildn", "charmm36"]
         seen = set()
@@ -10256,7 +10290,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 }
                 if use_water_xml:
                     files.append(str(wm.get(water, "amber14/tip3p.xml")))
-                attempts.append(("Amber14", files))
+                attempts.append(("Amber14" + (" + GB/OBC2" if implicit_xml else ""), files + implicit_xml))
             elif fam == "amber99sbildn":
                 files = ["amber99sbildn.xml"]
                 wm = {
@@ -10267,8 +10301,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 }
                 if use_water_xml:
                     files.append(str(wm.get(water, "tip3p.xml")))
-                attempts.append(("Amber99SB-ILDN", files))
+                attempts.append(("Amber99SB-ILDN" + (" + GB/OBC2" if implicit_xml else ""), files + implicit_xml))
             elif fam == "charmm36":
+                if implicit_xml:
+                    continue
                 files = ["charmm36.xml"]
                 if use_water_xml:
                     files.append("charmm36/water.xml")
@@ -11407,11 +11443,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             }
             if mode != "gas":
                 create_kwargs["nonbondedCutoff"] = float(cutoff_nm) * OMM_UNIT.nanometer
-            if mode == "implicit":
-                try:
-                    create_kwargs["implicitSolvent"] = OMM_APP.OBC2
-                except Exception:
-                    pass
             _emit(40, "Creating OpenMM system")
             ok_sys, system, removed_residues, err_sys = self._openmm_create_system_with_autodrop(
                 ff,

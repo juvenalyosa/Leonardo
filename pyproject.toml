@@ -21,6 +21,10 @@ leonardo-readiness = "leonardo.report_scientific_readiness:main"
 package-dir = {"" = "legacy", "leonardo" = "src/leonardo", "leonardo_benchmarks" = "benchmarks"}
 packages = [
   "leonardo",
+  "leonardo.agent",
+  "leonardo.agent.providers",
+  "leonardo.agent.tools",
+  "leonardo.agent.ui",
   "leonardo_benchmarks",
   "leonardo_benchmarks.abfe",
   "leonardo_benchmarks.abfe.ptb3_ben",
