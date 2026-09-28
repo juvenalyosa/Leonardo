@@ -1,5 +1,5 @@
 """
-Chat panel of the Leonardo AI assistant (a dock widget in PyMOL's main window).
+Chat panel of the Leonardo AI assistant (shown in its own window).
 
 The panel shows the conversation as cards: user messages, streamed assistant text,
 collapsible reasoning summaries, the plan (approve / request changes / reject), one
@@ -14,8 +14,8 @@ from pymol.Qt import QtCore, QtGui, QtWidgets
 from .style import ACCENT, ACCENT_2, ERR, MUTED, OK, PERMISSION_BADGE, STYLESHEET, WARN, pill_style
 
 STATUS_TEXT = {
-    "idle": ("Listo", OK), "thinking": ("Pensando", ACCENT), "executing": ("Ejecutando", ACCENT_2),
-    "cancelled": ("Detenido", WARN), "error": ("Error", ERR), "waiting": ("Esperando tu respuesta", WARN),
+    "idle": ("Ready", OK), "thinking": ("Thinking", ACCENT), "executing": ("Running", ACCENT_2),
+    "cancelled": ("Stopped", WARN), "error": ("Error", ERR), "waiting": ("Waiting for your answer", WARN),
 }
 TOOL_STATUS = {"running": ("⏳", ACCENT), "done": ("✓", OK), "failed": ("✕", ERR), "declined": ("⤫", WARN)}
 
@@ -95,16 +95,16 @@ class ChatPanel(QtWidgets.QWidget):
         self.lbl_model = _label("", "muted", wrap=False)
         title_box.addWidget(self.lbl_model)
         hl.addLayout(title_box, 1)
-        self.pill_status = _pill("Listo", OK)
+        self.pill_status = _pill("Ready", OK)
         hl.addWidget(self.pill_status)
-        btn_new = QtWidgets.QPushButton("Nuevo")
+        btn_new = QtWidgets.QPushButton("New")
         btn_new.setObjectName("ghost")
-        btn_new.setToolTip("Nueva conversación")
+        btn_new.setToolTip("Start a new conversation")
         btn_new.clicked.connect(self.new_chat_requested.emit)
         hl.addWidget(btn_new)
         btn_settings = QtWidgets.QPushButton("⚙")
         btn_settings.setObjectName("ghost")
-        btn_settings.setToolTip("Configuración del asistente")
+        btn_settings.setToolTip("Assistant settings")
         btn_settings.clicked.connect(self.settings_requested.emit)
         hl.addWidget(btn_settings)
         root.addWidget(header)
@@ -127,20 +127,21 @@ class ChatPanel(QtWidgets.QWidget):
         cl = QtWidgets.QVBoxLayout(composer)
         cl.setContentsMargins(12, 10, 12, 10)
         self.input = QtWidgets.QPlainTextEdit()
-        self.input.setPlaceholderText(
-            "Describe lo que quieres hacer, p. ej. «Carga 3PTB, encuentra el bolsillo de la benzamidina y "
-            "haz redocking del ligando cristalino a pH 7.4». Ctrl+Enter para enviar.")
+        self._default_placeholder = (
+            "Describe what you want to do, e.g. \"Load 3PTB, find the benzamidine pocket and redock the "
+            "crystal ligand at pH 7.4\". Ctrl+Enter to send.")
+        self.input.setPlaceholderText(self._default_placeholder)
         self.input.setFixedHeight(84)
         cl.addWidget(self.input)
         row = QtWidgets.QHBoxLayout()
         self.lbl_usage = _label("", "muted", wrap=False)
         row.addWidget(self.lbl_usage, 1)
-        self.btn_stop = QtWidgets.QPushButton("Detener")
+        self.btn_stop = QtWidgets.QPushButton("Stop")
         self.btn_stop.setObjectName("danger")
         self.btn_stop.setVisible(False)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
         row.addWidget(self.btn_stop)
-        self.btn_send = QtWidgets.QPushButton("Enviar")
+        self.btn_send = QtWidgets.QPushButton("Send")
         self.btn_send.setObjectName("primary")
         self.btn_send.clicked.connect(self._send)
         row.addWidget(self.btn_send)
@@ -155,6 +156,7 @@ class ChatPanel(QtWidgets.QWidget):
         self._tool_cards = []
         self._step_labels = {}
         self._busy = False
+        self._pending = None          # (kind, handler) while the agent waits for an answer
 
     # -- helpers -------------------------------------------------------------- #
     def _add(self, widget):
@@ -173,14 +175,39 @@ class ChatPanel(QtWidgets.QWidget):
 
     def set_busy(self, busy):
         self._busy = bool(busy)
-        self.btn_send.setEnabled(not busy)
+        if not busy:
+            self._pending = None      # the request ended: nothing is waiting for an answer any more
         self.btn_stop.setVisible(bool(busy))
-        self.input.setReadOnly(bool(busy))
+        self._sync_composer()
+
+    def _sync_composer(self):
+        """The composer is editable when idle and while the agent waits for an answer."""
+        waiting = self._pending is not None
+        self.input.setReadOnly(self._busy and not waiting)
+        self.btn_send.setEnabled((not self._busy) or waiting)
+        self.btn_send.setText("Answer" if waiting else "Send")
+        if waiting:
+            hint = {"plan": "Type the changes you want to the plan (sent as \"Request changes\"), or use the "
+                            "buttons above.",
+                    "question": "Type your answer here (or in the card above) and press Answer.",
+                    "confirm": "Use Run / Skip above, or type a reason to skip this step."}
+            self.input.setPlaceholderText(hint.get(self._pending[0], "Type your answer."))
+            self.input.setFocus()
+        else:
+            self.input.setPlaceholderText(self._default_placeholder)
+
+    def _set_pending(self, kind, handler):
+        self._pending = (kind, handler)
+        self._sync_composer()
+
+    def _clear_pending(self):
+        self._pending = None
+        self._sync_composer()
 
     def set_usage(self, usage, cost_text=""):
         tin = int(usage.get("input_tokens", 0))
         tout = int(usage.get("output_tokens", 0))
-        self.lbl_usage.setText(f"Tokens: {tin:,} entrada · {tout:,} salida" + (f" · {cost_text}" if cost_text else ""))
+        self.lbl_usage.setText(f"Tokens: {tin:,} in · {tout:,} out" + (f" · {cost_text}" if cost_text else ""))
 
     def clear(self):
         while self.feed.count() > 1:
@@ -190,10 +217,19 @@ class ChatPanel(QtWidgets.QWidget):
         self._end_text()
         self._tool_cards = []
         self._step_labels = {}
+        self._pending = None
+        self._sync_composer()
 
     def _send(self):
         text = self.input.toPlainText().strip()
-        if not text or self._busy:
+        if not text:
+            return
+        if self._pending is not None:
+            _kind, handler = self._pending
+            self.input.clear()
+            handler(text)
+            return
+        if self._busy:
             return
         self.input.clear()
         self.add_user(text)
@@ -230,13 +266,13 @@ class ChatPanel(QtWidgets.QWidget):
             box = QtWidgets.QWidget()
             bl = QtWidgets.QVBoxLayout(box)
             bl.setContentsMargins(4, 0, 4, 0)
-            toggle = QtWidgets.QPushButton("▸ Razonamiento")
+            toggle = QtWidgets.QPushButton("▸ Reasoning")
             toggle.setObjectName("ghost")
             toggle.setCheckable(True)
             self._thinking_label = _label("", "thinking")
             self._thinking_label.setVisible(False)
             toggle.toggled.connect(lambda on, lab=self._thinking_label, b=toggle: (
-                lab.setVisible(on), b.setText(("▾" if on else "▸") + " Razonamiento")))
+                lab.setVisible(on), b.setText(("▾" if on else "▸") + " Reasoning")))
             bl.addWidget(toggle, 0, QtCore.Qt.AlignLeft)
             bl.addWidget(self._thinking_label)
             self._add(box)
@@ -256,7 +292,7 @@ class ChatPanel(QtWidgets.QWidget):
         self._end_text()
         card, lay = _card("cardPlan")
         top = QtWidgets.QHBoxLayout()
-        top.addWidget(_label("Plan propuesto", "title", wrap=False))
+        top.addWidget(_label("Proposed plan", "title", wrap=False))
         top.addStretch(1)
         if plan.get("estimated_time"):
             top.addWidget(_pill(f"⏱ {plan['estimated_time']}", ACCENT))
@@ -270,7 +306,7 @@ class ChatPanel(QtWidgets.QWidget):
             head = QtWidgets.QHBoxLayout()
             head.addWidget(_label(f"**{st.get('title', '')}**", rich=True), 1)
             if st.get("heavy"):
-                head.addWidget(_pill("cálculo pesado", WARN))
+                head.addWidget(_pill("heavy calculation", WARN))
             status = _label("", "muted", wrap=False)
             head.addWidget(status)
             self._step_labels[i] = status
@@ -279,16 +315,16 @@ class ChatPanel(QtWidgets.QWidget):
             row.addLayout(col, 1)
             lay.addLayout(row)
         if plan.get("assumptions"):
-            lay.addWidget(_label("Supuestos: " + "; ".join(map(str, plan["assumptions"])), "muted"))
+            lay.addWidget(_label("Assumptions: " + "; ".join(map(str, plan["assumptions"])), "muted"))
         if interactive:
             feedback = QtWidgets.QLineEdit()
-            feedback.setPlaceholderText("Cambios o comentarios (opcional)")
+            feedback.setPlaceholderText("Changes or comments (optional)")
             lay.addWidget(feedback)
             buttons = QtWidgets.QHBoxLayout()
-            b_ok = QtWidgets.QPushButton("Aprobar y ejecutar")
+            b_ok = QtWidgets.QPushButton("Approve and run")
             b_ok.setObjectName("primary")
-            b_rev = QtWidgets.QPushButton("Pedir cambios")
-            b_no = QtWidgets.QPushButton("Rechazar")
+            b_rev = QtWidgets.QPushButton("Request changes")
+            b_no = QtWidgets.QPushButton("Reject")
             b_no.setObjectName("danger")
             buttons.addWidget(b_ok)
             buttons.addWidget(b_rev)
@@ -296,24 +332,34 @@ class ChatPanel(QtWidgets.QWidget):
             buttons.addWidget(b_no)
             lay.addLayout(buttons)
 
-            def done(decision):
+            answered = {"done": False}
+
+            def done(decision, text=None):
+                if answered["done"]:
+                    return
+                answered["done"] = True
                 for b in (b_ok, b_rev, b_no):
                     b.setEnabled(False)
+                note = (text if text is not None else feedback.text()).strip()
+                feedback.setText(note)
                 feedback.setReadOnly(True)
-                verdict = {"approve": ("Plan aprobado", OK), "revise": ("Cambios pedidos", WARN),
-                           "reject": ("Plan rechazado", ERR)}[decision]
+                verdict = {"approve": ("Plan approved", OK), "revise": ("Changes requested", WARN),
+                           "reject": ("Plan rejected", ERR)}[decision]
                 lay.addWidget(_pill(verdict[0], verdict[1]), 0, QtCore.Qt.AlignLeft)
-                self.answer_given.emit({"decision": decision, "feedback": feedback.text().strip()})
+                self._clear_pending()
+                self.answer_given.emit({"decision": decision, "feedback": note})
             b_ok.clicked.connect(lambda: done("approve"))
             b_rev.clicked.connect(lambda: done("revise") if feedback.text().strip() else feedback.setFocus())
             b_no.clicked.connect(lambda: done("reject"))
+            feedback.returnPressed.connect(b_rev.click)
+            self._set_pending("plan", lambda text: done("revise", text))
         self._add(card)
 
     def mark_step(self, step, status, summary=""):
         lab = self._step_labels.get(int(step))
         if lab is None:
             return
-        icon = {"running": "⏳ en curso", "done": "✓ hecho", "failed": "✕ falló", "skipped": "↷ omitido"}.get(status, status)
+        icon = {"running": "⏳ running", "done": "✓ done", "failed": "✕ failed", "skipped": "↷ skipped"}.get(status, status)
         color = {"running": ACCENT, "done": OK, "failed": ERR, "skipped": MUTED}.get(status, MUTED)
         lab.setText(icon)
         lab.setStyleSheet(f"color: {color};")
@@ -340,16 +386,16 @@ class ChatPanel(QtWidgets.QWidget):
             details = _label("", "muted", rich=True)
             details.setVisible(False)
             footer = QtWidgets.QHBoxLayout()
-            btn_details = QtWidgets.QPushButton("▸ Detalles")
+            btn_details = QtWidgets.QPushButton("▸ Details")
             btn_details.setObjectName("ghost")
             btn_details.setCheckable(True)
             btn_details.setVisible(False)
             btn_details.toggled.connect(lambda on, d=details, b=btn_details: (
-                d.setVisible(on), b.setText(("▾" if on else "▸") + " Detalles")))
+                d.setVisible(on), b.setText(("▾" if on else "▸") + " Details")))
             footer.addWidget(btn_details)
             timing = _label("", "muted", wrap=False)
             footer.addWidget(timing, 1)
-            btn_scene = QtWidgets.QPushButton("Ver en el visor")
+            btn_scene = QtWidgets.QPushButton("Show in viewer")
             btn_scene.setObjectName("ghost")
             btn_scene.setVisible(False)
             footer.addWidget(btn_scene)
@@ -379,7 +425,7 @@ class ChatPanel(QtWidgets.QWidget):
             body.setText(f"<span style='color:{ERR}'>{payload.get('error', '')}</span>")
             body.setTextFormat(QtCore.Qt.RichText)
         elif status == "declined":
-            body.setText("Omitido por el usuario.")
+            body.setText("Skipped by the user.")
 
     def progress(self, text):
         if self._tool_cards:
@@ -391,25 +437,34 @@ class ChatPanel(QtWidgets.QWidget):
         card, lay = _card("cardAsk")
         badge, color = PERMISSION_BADGE.get(payload.get("permission", ""), ("", WARN))
         head = QtWidgets.QHBoxLayout()
-        head.addWidget(_label(f"¿Ejecutar **{payload.get('title', payload.get('tool'))}**?", rich=True), 1)
+        head.addWidget(_label(f"Run **{payload.get('title', payload.get('tool'))}**?", rich=True), 1)
         head.addWidget(_pill(badge, color))
         lay.addLayout(head)
         lay.addWidget(_label(_short_args(payload.get("args"), 400), "muted"))
         row = QtWidgets.QHBoxLayout()
-        b_yes = QtWidgets.QPushButton("Ejecutar")
+        b_yes = QtWidgets.QPushButton("Run")
         b_yes.setObjectName("primary")
-        b_no = QtWidgets.QPushButton("Omitir")
+        b_no = QtWidgets.QPushButton("Skip")
         row.addWidget(b_yes)
         row.addWidget(b_no)
         row.addStretch(1)
         lay.addLayout(row)
 
-        def done(ok):
+        answered = {"done": False}
+
+        def done(ok, reason=""):
+            if answered["done"]:
+                return
+            answered["done"] = True
             b_yes.setEnabled(False)
             b_no.setEnabled(False)
-            self.answer_given.emit({"approved": bool(ok)})
+            if reason:
+                lay.addWidget(_label(f"Skipped: {reason}", "muted"))
+            self._clear_pending()
+            self.answer_given.emit({"approved": bool(ok), "feedback": reason})
         b_yes.clicked.connect(lambda: done(True))
         b_no.clicked.connect(lambda: done(False))
+        self._set_pending("confirm", lambda text: done(False, text))
         self._add(card)
 
     def ask_question(self, payload):
@@ -418,13 +473,20 @@ class ChatPanel(QtWidgets.QWidget):
         lay.addWidget(_label(str(payload.get("question", "")), rich=True))
         buttons = []
         free = QtWidgets.QLineEdit()
-        free.setPlaceholderText("Escribe tu respuesta")
+        free.setPlaceholderText("Type your answer")
+
+        answered = {"done": False}
 
         def done(text):
+            if answered["done"] or not str(text).strip():
+                return
+            answered["done"] = True
             for b in buttons:
                 b.setEnabled(False)
+            free.setText(str(text))
             free.setReadOnly(True)
             lay.addWidget(_pill(f"→ {text}", OK), 0, QtCore.Qt.AlignLeft)
+            self._clear_pending()
             self.answer_given.emit({"text": str(text)})
         opts = list(payload.get("options") or [])
         if opts:
@@ -438,11 +500,13 @@ class ChatPanel(QtWidgets.QWidget):
             lay.addLayout(flow)
         row = QtWidgets.QHBoxLayout()
         row.addWidget(free, 1)
-        b_send = QtWidgets.QPushButton("Responder")
+        b_send = QtWidgets.QPushButton("Answer")
         b_send.setObjectName("primary")
         b_send.clicked.connect(lambda: done(free.text().strip()) if free.text().strip() else None)
         free.returnPressed.connect(b_send.click)
         buttons.append(b_send)
         row.addWidget(b_send)
         lay.addLayout(row)
+        self._set_pending("question", done)
         self._add(card)
+        QtCore.QTimer.singleShot(60, free.setFocus)

@@ -119,9 +119,9 @@ class AssistantController(QtCore.QObject):
     # -- settings ------------------------------------------------------------------ #
     def _refresh_model_label(self):
         provider = "Claude" if self.settings.get("provider") == "anthropic" else "OpenAI"
-        model = config.model_for(self.settings) or "sin modelo"
-        policy = {"heavy": "confirma cálculos pesados", "every_step": "confirma cada paso",
-                  "plan_only": "solo aprueba el plan"}.get(self.settings.get("approval_policy"), "")
+        model = config.model_for(self.settings) or "no model"
+        policy = {"heavy": "confirms heavy calculations", "every_step": "confirms every step",
+                  "plan_only": "plan approval only"}.get(self.settings.get("approval_policy"), "")
         self.panel.set_model_label(f"{provider} · {model} · {policy}")
 
     def open_settings(self):
@@ -133,7 +133,7 @@ class AssistantController(QtCore.QObject):
             self._refresh_model_label()
             self._sync_external_server()
             if changed_model and self.session is not None:
-                self.panel.add_notice("Modelo cambiado: la próxima petición empieza una conversación nueva.")
+                self.panel.add_notice("Model changed: the next request starts a new conversation.")
                 self.session = None
 
     def _sync_external_server(self):
@@ -149,10 +149,10 @@ class AssistantController(QtCore.QObject):
                                       approval_policy=self.settings.get("approval_policy", "heavy"))
                 self.external = ExternalMcpServer(server, port=port)
                 url = self.external.start()
-                self.panel.add_notice(f"Servidor MCP activo en {url}")
+                self.panel.add_notice(f"MCP server running at {url}")
             except Exception as exc:
                 self.external = None
-                self.panel.add_error(f"No se pudo iniciar el servidor MCP: {exc}")
+                self.panel.add_error(f"Could not start the MCP server: {exc}")
 
     def _confirm_external(self, spec, args):
         def ask():

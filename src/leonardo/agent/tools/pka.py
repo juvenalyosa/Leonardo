@@ -68,7 +68,7 @@ def register(reg):
               "dominant protonation state/charge at a pH. Does not change the scene or the docking ligand.",
               {"properties": dict(LIGAND_SOURCE, method=METHOD, ph={"type": "number", "minimum": 0, "maximum": 14}),
                "required": []},
-              permission="compute_light", title="Calcular pKa", main_thread=False)
+              permission="compute_light", title="Compute pKa", main_thread=False)
     def compute_pka(ctx, smiles="", selection="", file="", method="empirical", ph=7.4):
         from ... import pka_runtime as P
 
@@ -84,7 +84,7 @@ def register(reg):
             "mean_charge": round(float(P.mean_charge(res, float(ph)) or 0.0), 2),
             "warnings": res.get("warnings", [])[:8],
             "_card": ("pKa: " + ", ".join(f"{s['class']} {float(s.get('pka', 0)):.1f}" for s in res.get("sites", []))
-                      + f"; carga dominante a pH {ph:g}: "
+                      + f"; dominant charge at pH {ph:g}: "
                       + (f"{states[0]['charge']:+d}" if states and states[0]['charge'] is not None else "n/a")),
         }
 
@@ -93,7 +93,7 @@ def register(reg):
               "coordinates; SMILES are embedded in 3D.",
               {"properties": dict(LIGAND_SOURCE, method=METHOD, ph={"type": "number", "minimum": 0, "maximum": 14}),
                "required": []},
-              permission="compute_light", title="Preparar ligando", main_thread=False)
+              permission="compute_light", title="Prepare ligand", main_thread=False)
     def prepare_docking_ligand(ctx, smiles="", selection="", file="", method="empirical", ph=7.4):
         from ... import pka_runtime as P
 
@@ -121,8 +121,8 @@ def register(reg):
             return {"message": message, "ligand_file": str(getattr(ctx.dlg, "_docking_ligand_file", "") or ""),
                     "scene": ctx.scene(f"docking ligand ({label}), charge {info['charge']:+d} at pH {ph:g}")}
         out = ctx.run_on_main(hand_off)
-        out["_card"] = (f"Ligando listo para docking: `{Chem.MolToSmiles(Chem.RemoveHs(state_mol))}`, carga "
-                        f"**{info['charge']:+d}** a pH {ph:g} ({info['method']}; población "
+        out["_card"] = (f"Ligand ready for docking: `{Chem.MolToSmiles(Chem.RemoveHs(state_mol))}`, charge "
+                        f"**{info['charge']:+d}** at pH {ph:g} ({info['method']}; population "
                         f"{100 * float(best['charge_population']):.0f}%).")
         out.update({"molecule": label, "smiles": Chem.MolToSmiles(Chem.RemoveHs(state_mol)),
                     "net_charge": info["charge"], "charge_population": round(float(best["charge_population"]), 3),

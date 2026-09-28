@@ -41,7 +41,7 @@ def register(reg):
               "about 10-60 s). Returns pockets ranked by fpocket score with center, size, druggability and "
               "lining residues; the best one is shown in the viewer.",
               {"properties": {"object": {"type": "string"}, "top": {"type": "integer", "minimum": 1, "maximum": 20}},
-               "required": ["object"]}, permission="compute_light", title="Buscar bolsillos (fpocket)")
+               "required": ["object"]}, permission="compute_light", title="Find pockets (fpocket)")
     def find_pockets(ctx, object, top=5):
         from pymol import cmd
 
@@ -66,8 +66,8 @@ def register(reg):
             except Exception:
                 pass
             best = rows[0]
-            card = (f"**{len(pockets)} bolsillos** en {object}. Mejor: #{best['id']} (score {best['fpocket_score']}, "
-                    f"{best['volume_A3'] or '?'} Å³), residuos {', '.join(best['residues'][:8])}.")
+            card = (f"**{len(pockets)} pockets** in {object}. Best: #{best['id']} (score {best['fpocket_score']}, "
+                    f"{best['volume_A3'] or '?'} Å³), residues {', '.join(best['residues'][:8])}.")
             return {"object": object, "pockets_found": len(pockets), "pockets": rows, "_card": card,
                     "scene": ctx.scene(f"{object}: pocket {pockets[0].get('id')} (best fpocket score)")}
 
@@ -78,7 +78,7 @@ def register(reg):
     @reg.tool("select_pocket", "Choose the pocket used for docking (by fpocket id or rank from find_pockets): "
               "sets the docking grid from it, draws the search box and focuses the view.",
               {"properties": {"pocket_id": {"type": "integer"}, "rank": {"type": "integer", "minimum": 1}}},
-              permission="view", title="Elegir bolsillo")
+              permission="view", title="Select pocket")
     def select_pocket(ctx, pocket_id=None, rank=None):
         dlg = ctx.dlg
         pockets = list(getattr(dlg, "_fpocket_pockets", []) or [])
@@ -109,8 +109,8 @@ def register(reg):
         row = _pocket_row(pocket, idx + 1)
         row.update({"grid_center": [round(v, 2) for v in center], "grid_size": [round(v, 2) for v in size],
                     "scene": ctx.scene(f"pocket {pocket.get('id')} and docking box"),
-                    "_card": (f"Bolsillo **#{pocket.get('id')}** elegido; caja de docking "
-                              f"{' × '.join(f'{v:.1f}' for v in size)} Å centrada en "
+                    "_card": (f"Pocket **#{pocket.get('id')}** selected; docking box "
+                              f"{' × '.join(f'{v:.1f}' for v in size)} Å centered at "
                               f"({', '.join(f'{v:.1f}' for v in center)}).")})
         if not os.path.isfile(str(pocket.get("pocket_file", ""))):
             row["note"] = "pocket file missing; residues unavailable"

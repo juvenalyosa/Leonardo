@@ -63,8 +63,8 @@ def register(reg):
             presentation.focus(f"({pose_obj}) or ({crystal})")
         success = dict(run.get("top1_success") or {})
         rms = [r["top1_rmsd_A"] for r in reps if r.get("top1_rmsd_A") is not None]
-        card = (f"Redocking de **{ligand[2]}**: éxito top-1 **{success.get('n_success', 0)}/{success.get('n', 0)}** "
-                f"(RMSD ≤ 2 Å); RMSD top-1 " + ", ".join(f"{float(v):.2f}" for v in rms) + " Å; puntaje "
+        card = (f"Redocking of **{ligand[2]}**: top-1 success **{success.get('n_success', 0)}/{success.get('n', 0)}** "
+                f"(RMSD ≤ 2 Å); RMSD top-1 " + ", ".join(f"{float(v):.2f}" for v in rms) + " Å; score "
                 f"{float(best.get('affinity', 0) or 0):.2f} kcal/mol.")
         return {
             "_card": card,

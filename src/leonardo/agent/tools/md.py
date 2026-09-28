@@ -35,7 +35,7 @@ def register(reg):
                                        "description": "Default: 20% of production (min 4 ps, max 40 ps); heating "
                                                       "10% (min 2 ps, max 10 ps)."},
               }, "required": ["object"]},
-              permission="compute_heavy", title="Dinámica molecular (OpenMM)")
+              permission="compute_heavy", title="Molecular dynamics (OpenMM)")
     def run_md(ctx, object, production_ns=0.1, solvent="implicit", temperature_K=300.0, ph=7.4,
                equilibration_ns=None):
         from pymol import cmd
@@ -120,9 +120,9 @@ def register(reg):
                 info["scene"] = ctx.scene(f"MD trajectory {out_obj} ({production_ns} ns, {solvent})")
             r = info.get("ca_rmsd_vs_first_frame") or {}
             info["_card"] = (f"MD **{production_ns} ns** ({solvent}, {info.get('force_field')}, {info.get('platform')}); "
-                             f"calentamiento {info['stages_ps']['heating']} ps + equilibrado "
+                             f"heating {info['stages_ps']['heating']} ps + equilibration "
                              f"{info['stages_ps']['equilibration']} ps. "
-                             + (f"RMSD Cα final {r['final_A']} Å (máx {r['max_A']} Å)." if r else ""))
+                             + (f"final Cα RMSD {r['final_A']} Å (max {r['max_A']} Å)." if r else ""))
             return info
 
         return start_dialog_job(ctx, "md", start, is_done, collect, description=f"OpenMM MD of {object}")

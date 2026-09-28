@@ -71,8 +71,8 @@ def register(reg):
                 "repeats": {k: rep.get(k) for k in ("n", "mean", "std", "ci_low", "ci_high", "confidence")},
                 "job_dir": stats.get("job_dir", ""),
                 "scene": ctx.scene(f"docking poses ({pose_obj}), best {poses[0]['score_kcal_mol']:.1f} kcal/mol"),
-                "_card": (f"**{len(poses)} poses**; mejor puntaje **{poses[0]['score_kcal_mol']:.2f} kcal/mol** "
-                          "(puntaje de smina, no es ΔG de unión). "
+                "_card": (f"**{len(poses)} poses**; best score **{poses[0]['score_kcal_mol']:.2f} kcal/mol** "
+                          "(smina score, not a binding ΔG). "
                           + ", ".join(f"#{p['mode']}: {p['score_kcal_mol']:.1f}" for p in poses[1:5])),
             }
 
@@ -89,7 +89,7 @@ def register(reg):
                   "ligand_chain": {"type": "string"}, "ligand_resi": {"type": "string"},
                   "ligand_resn": {"type": "string"},
               }},
-              permission="compute_light", title="Interacciones proteína-ligando")
+              permission="compute_light", title="Protein-ligand interactions")
     def analyze_interactions(ctx, pose_rank=None, object="", ligand_chain="", ligand_resi="", ligand_resn=""):
         dlg = ctx.dlg
         with _headless.quiet() as q:
@@ -148,8 +148,8 @@ def register(reg):
                 presentation.focus(lig, buffer=8.0)
         except Exception as exc:
             q.messages.append({"kind": "warning", "title": "view", "text": f"view setup: {exc}"})
-        card = (f"**{len(interactions)} interacciones** en {label}: "
-                + ", ".join(f"{n} {t}" for t, n in counts.most_common()) + ". Más cercanas: "
+        card = (f"**{len(interactions)} interactions** in {label}: "
+                + ", ".join(f"{n} {t}" for t, n in counts.most_common()) + ". Closest: "
                 + "; ".join(f"{i.get('type')} {i.get('prot_res')} {float(i.get('distance', 0)):.1f} Å" for i in top[:4]))
         return {
             "_card": card,

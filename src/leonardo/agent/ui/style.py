@@ -14,11 +14,11 @@ TEXT = "#E6EAF0"
 MUTED = "#8E98A8"
 
 PERMISSION_BADGE = {
-    "read": ("Consulta", MUTED),
-    "view": ("Vista", ACCENT),
-    "compute_light": ("Cálculo", OK),
-    "compute_heavy": ("Cálculo pesado", WARN),
-    "destructive": ("Modifica/Borra", ERR),
+    "read": ("Read", MUTED),
+    "view": ("View", ACCENT),
+    "compute_light": ("Compute", OK),
+    "compute_heavy": ("Heavy compute", WARN),
+    "destructive": ("Modifies/Deletes", ERR),
 }
 
 STYLESHEET = f"""

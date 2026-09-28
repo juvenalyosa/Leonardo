@@ -26,7 +26,7 @@ def _check_sel(sel):
 def register(reg):
     @reg.tool("focus_view", "Move the camera (animated) onto a PyMOL selection, e.g. a ligand or a pocket.",
               {"properties": {"selection": {"type": "string"}, "caption": {"type": "string"}},
-               "required": ["selection"]}, permission="view", title="Enfocar")
+               "required": ["selection"]}, permission="view", title="Focus")
     def focus_view(ctx, selection, caption=""):
         _check_sel(selection)
         presentation.focus(selection)
@@ -36,7 +36,7 @@ def register(reg):
               "transparent surface) and to ligands (sticks).",
               {"properties": {"object": {"type": "string"}, "surface": {"type": "boolean"},
                               "ligand_selection": {"type": "string"}},
-               "required": ["object"]}, permission="view", title="Estilo de presentación")
+               "required": ["object"]}, permission="view", title="Presentation style")
     def style_scene(ctx, object, surface=False, ligand_selection=""):
         _check_sel(object)
         presentation.apply_house_style()
@@ -50,7 +50,7 @@ def register(reg):
               {"properties": {"selection": {"type": "string"},
                               "representation": {"type": "string", "enum": REPRESENTATIONS},
                               "visible": {"type": "boolean"}},
-               "required": ["selection", "representation"]}, permission="view", title="Representación")
+               "required": ["selection", "representation"]}, permission="view", title="Representation")
     def show_representation(ctx, selection, representation, visible=True):
         _check_sel(selection)
         cmd = _cmd()
@@ -81,7 +81,7 @@ def register(reg):
               "residues) and focus on them.",
               {"properties": {"selection": {"type": "string"}, "label": {"type": "boolean"},
                               "caption": {"type": "string"}},
-               "required": ["selection"]}, permission="view", title="Resaltar residuos")
+               "required": ["selection"]}, permission="view", title="Highlight residues")
     def highlight_residues(ctx, selection, label=True, caption=""):
         _check_sel(selection)
         cmd = _cmd()
@@ -93,7 +93,7 @@ def register(reg):
 
     @reg.tool("measure_distance", "Measure and draw the distance (Å) between two single-atom selections.",
               {"properties": {"atom1": {"type": "string"}, "atom2": {"type": "string"}},
-               "required": ["atom1", "atom2"]}, permission="view", title="Distancia")
+               "required": ["atom1", "atom2"]}, permission="view", title="Distance")
     def measure_distance(ctx, atom1, atom2):
         cmd = _cmd()
         for s in (atom1, atom2):
@@ -104,7 +104,7 @@ def register(reg):
 
     @reg.tool("show_scene", "Recall a stored step scene (keys like AI01 returned by earlier steps).",
               {"properties": {"scene": {"type": "string"}}, "required": ["scene"]},
-              permission="view", title="Escena")
+              permission="view", title="Scene")
     def show_scene(ctx, scene):
         presentation.recall_scene(scene)
         return {"scene": scene}
@@ -112,7 +112,7 @@ def register(reg):
     @reg.tool("save_image", "Render the current view to a PNG (ray-traced) in Leonardo's workspace.",
               {"properties": {"name": {"type": "string"}, "width": {"type": "integer", "minimum": 400,
                                                                      "maximum": 4000}},
-               "required": ["name"]}, permission="compute_light", title="Guardar imagen")
+               "required": ["name"]}, permission="compute_light", title="Save image")
     def save_image(ctx, name, width=1600):
         import os
 

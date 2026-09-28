@@ -63,7 +63,7 @@ def register_in_leonardo(ctx, name, path):
 
 def register(reg):
     @reg.tool("list_objects", "List the molecular objects loaded in PyMOL with atom counts and chains.",
-              permission="read", title="Objetos en la sesión")
+              permission="read", title="Session objects")
     def list_objects(ctx):
         def run():
             cmd = _cmd()
@@ -78,7 +78,7 @@ def register(reg):
     @reg.tool("describe_object", "Chains, residue counts, ligands/cofactors/ions (resn, chain, resi) and waters "
               "of a loaded object. Use it to find the crystal ligand before docking or redocking.",
               {"properties": {"object": {"type": "string"}}, "required": ["object"]},
-              permission="read", title="Describir estructura")
+              permission="read", title="Describe structure")
     def describe_object(ctx, object):
         cmd = _cmd()
         if object not in cmd.get_names("objects"):
@@ -94,7 +94,7 @@ def register(reg):
                   "object_name": {"type": "string", "description": "Optional PyMOL object name."},
                   "remove_waters": {"type": "boolean"},
               }, "required": ["source", "identifier"]},
-              permission="compute_light", title="Descargar estructura", main_thread=False)
+              permission="compute_light", title="Fetch structure", main_thread=False)
     def fetch_structure(ctx, source, identifier, object_name="", remove_waters=False):
         from ... import structure_fetch_runtime as sf
 
@@ -128,10 +128,10 @@ def register(reg):
             summary = _object_summary(name)
             summary["scene"] = ctx.scene(f"{name}: {request.get('label', source)} {identifier}")
             summary["file"] = path
-            hets = ", ".join(f"{h['resn']} {h['chain']}{h['resi']}" for h in summary["hetero_groups"][:6]) or "ninguno"
-            summary["_card"] = (f"**{name}** cargado desde {request.get('label', source)}: "
-                                f"{len(summary['chains'])} cadena(s), {sum(summary['chains'].values())} residuos. "
-                                f"Grupos HET: {hets}.")
+            hets = ", ".join(f"{h['resn']} {h['chain']}{h['resi']}" for h in summary["hetero_groups"][:6]) or "none"
+            summary["_card"] = (f"**{name}** loaded from {request.get('label', source)}: "
+                                f"{len(summary['chains'])} chain(s), {sum(summary['chains'].values())} residues. "
+                                f"HET groups: {hets}.")
             if payload.get("metadata"):
                 summary["metadata"] = payload.get("metadata")
             return summary
@@ -140,7 +140,7 @@ def register(reg):
     @reg.tool("load_structure_file", "Load a local structure or ligand file (PDB, mmCIF, SDF, MOL2) into PyMOL.",
               {"properties": {"path": {"type": "string"}, "object_name": {"type": "string"}},
                "required": ["path"]},
-              permission="compute_light", title="Cargar archivo")
+              permission="compute_light", title="Load file")
     def load_structure_file(ctx, path, object_name=""):
         from .. import presentation
 
@@ -168,7 +168,7 @@ def register(reg):
     @reg.tool("delete_objects", "Delete PyMOL objects (irreversible).",
               {"properties": {"objects": {"type": "array", "items": {"type": "string"}, "minItems": 1}},
                "required": ["objects"]},
-              permission="destructive", title="Borrar objetos")
+              permission="destructive", title="Delete objects")
     def delete_objects(ctx, objects):
         cmd = _cmd()
         names = set(cmd.get_names("all"))
