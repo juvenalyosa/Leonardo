@@ -13,9 +13,9 @@ through two callables supplied by the host:
   ``job_status`` tool until it is done, keeping the UI free, and cancels it with
   ``job_cancel`` when the user stops.
 
-Phases: while planning only read-only tools plus ``propose_plan``/``ask_user`` are
-offered; after the user approves a plan every tool is offered and the approval policy
-decides which calls need a confirmation.
+Phases: every tool is always offered, so the model can plan with all of Leonardo; while
+planning only read-only tools run (the others answer "approve a plan first"); after the user
+approves a plan the approval policy decides which calls need a confirmation.
 """
 
 import json
@@ -40,9 +40,12 @@ QM/MM with MOPAC PM7 (single points, optimization, relaxed scans, transition sta
 
 How to work:
 - Reply in the user's language.
-- Every plan step must be done with the tools you have. Before proposing a plan, check that each \
-step maps to a tool; if part of the request cannot be done with them, say so plainly first and offer \
-what you can do instead. Never propose a step you cannot execute.
+- Every plan step must be done with the tools you have (all of them are listed, including the ones \
+that only run after the plan is approved). Before proposing a plan, check that each step maps to a \
+tool; if part of the request cannot be done with them, say so plainly first and offer what you can do \
+instead. Never propose a step you cannot execute.
+- Missing inputs are not a reason to refuse: if a structure is not loaded yet, plan to fetch it; if the \
+ligand is not prepared, plan to prepare it.
 - For anything that computes, loads or changes the scene, first look at the current state with \
 the read-only tools, then call propose_plan with short, concrete steps. Wait for approval; do not \
 start computing before the plan is approved.
@@ -147,11 +150,11 @@ class AgentSession:
         return self._cancel.is_set()
 
     def _tools_for_phase(self):
-        planning = self.phase == "planning"
-        session = [t for t in SESSION_TOOLS if (t is not STEP_TOOL) or not planning]
+        # the same full list in every phase: a model that cannot see a tool concludes the capability
+        # does not exist (and a stable list keeps the prompt cache warm); the phase gate is at call time
         if self.provider.name == "openai":
-            return self.registry.openai_tools(planning=planning, extra=[_as_openai(t) for t in session])
-        return self.registry.anthropic_tools(planning=planning, extra=[_as_anthropic(t) for t in session])
+            return self.registry.openai_tools(extra=[_as_openai(t) for t in SESSION_TOOLS])
+        return self.registry.anthropic_tools(extra=[_as_anthropic(t) for t in SESSION_TOOLS])
 
     def _apply_phase_tools(self):
         self.provider.set_tools(self._tools_for_phase())
