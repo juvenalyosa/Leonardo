@@ -1,7 +1,7 @@
 """
 Wires the assistant together inside Leonardo: tool registry + context, in-app MCP
 server/client, optional external MCP server, provider sessions, worker threads and the
-chat panel (docked in PyMOL's main window when possible).
+chat window (a separate window, so PyMOL's viewer keeps its size).
 """
 
 from pymol.Qt import QtCore, QtWidgets
@@ -21,6 +21,35 @@ CLAUDE_PRICES = {
     "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0), "claude-fable-5-1": (10.0, 50.0),
     "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0),
 }
+
+
+class _ChatWindow(QtWidgets.QWidget):
+    """Top-level window holding the chat panel; remembers its geometry."""
+
+    def __init__(self, panel):
+        super().__init__(None, QtCore.Qt.Window)
+        self.setWindowTitle("Leonardo AI")
+        self.setMinimumSize(380, 480)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(panel)
+
+    def _save_geometry(self):
+        QtCore.QSettings("Leonardo", "AIAssistant").setValue("geometry", self.saveGeometry())
+
+    def closeEvent(self, event):
+        self._save_geometry()
+        super().closeEvent(event)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if self.isVisible():
+            self._save_geometry()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.isVisible():
+            self._save_geometry()
 
 
 class AssistantController(QtCore.QObject):
@@ -54,31 +83,38 @@ class AssistantController(QtCore.QObject):
 
     # -- window ------------------------------------------------------------------ #
     def show(self):
+        """The chat is its own window (not docked), so PyMOL's viewer keeps its full size."""
         if self.dock is None:
-            host = None
-            try:
-                from pymol import gui
-
-                host = gui.get_qtwindow()
-            except Exception:
-                host = None
-            if isinstance(host, QtWidgets.QMainWindow):
-                self.dock = QtWidgets.QDockWidget("Leonardo AI", host)
-                self.dock.setObjectName("LeonardoAIAssistantDock")
-                self.dock.setWidget(self.panel)
-                self.dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
-                host.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock)
-            else:
-                self.dock = QtWidgets.QDialog()
-                self.dock.setWindowTitle("Leonardo AI")
-                lay = QtWidgets.QVBoxLayout(self.dock)
-                lay.setContentsMargins(0, 0, 0, 0)
-                lay.addWidget(self.panel)
-                self.dock.resize(460, 820)
+            self.dock = _ChatWindow(self.panel)
+            self._place_window()
         self.dock.show()
         self.dock.raise_()
+        self.dock.activateWindow()
         if not config.get_api_key(self.settings.get("provider", "anthropic")):
             QtCore.QTimer.singleShot(200, self.open_settings)
+
+    def _place_window(self):
+        """Last position/size if saved, else next to PyMOL's window (or at the right edge of the screen)."""
+        win = self.dock
+        saved = QtCore.QSettings("Leonardo", "AIAssistant").value("geometry")
+        if saved is not None and win.restoreGeometry(saved):
+            return
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        width = min(460, int(screen.width() * 0.35))
+        height = min(860, int(screen.height() * 0.9))
+        win.resize(width, height)
+        x = screen.right() - width - 12
+        try:
+            from pymol import gui
+
+            host = gui.get_qtwindow()
+            if host is not None:
+                right = host.frameGeometry().right()
+                if right + width + 12 <= screen.right():
+                    x = right + 8
+        except Exception:
+            pass
+        win.move(max(screen.left(), x), screen.top() + 40)
 
     # -- settings ------------------------------------------------------------------ #
     def _refresh_model_label(self):
