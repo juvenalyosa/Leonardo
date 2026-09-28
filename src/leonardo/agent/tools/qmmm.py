@@ -111,6 +111,10 @@ def register(reg):
             probe = dict(result.get("qmmm_probe") or {})
             if probe and not probe.get("ok", True):
                 raise ToolError(str(probe.get("error") or "QM/MM probe failed"))
+            scan = dict(probe.get("scan") or {})
+            if scan.get("rows"):
+                ctx.__dict__.setdefault("plots", {})["qmmm_scan"] = {"object": object, "rows": jsonable(scan["rows"]),
+                                                                    "barrier": scan.get("barrier_estimate_kj_mol")}
             out = dict(_summary(operation, probe or result), operation=operation, object=object,
                        warnings=list(result.get("warnings") or probe.get("warnings") or [])[:6],
                        job_dir=str(getattr(dlg, "_openmm_last_job_dir", "") or ""))

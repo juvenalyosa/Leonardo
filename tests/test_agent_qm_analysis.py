@@ -98,3 +98,32 @@ def test_real_mopac_water(tmp_path):
     assert res["homo_index"] == 4 and len(res["eigenvalues_ev"]) == 6
     assert len(res["freq_cm"]) == 3 and all(f > 1000 for f in res["freq_cm"])
     assert res["uv_states"] and abs(sum(res["esp_charges"])) < 0.01
+
+
+def test_show_plot_from_stored_results(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEONARDO_AI_NO_PLOT_WINDOWS", "1")
+    from leonardo.agent.registry import ToolRegistry
+    from leonardo.agent.tools import AgentContext, plots
+
+    class Ctx(AgentContext):
+        def workspace(self, sub=""):
+            return str(tmp_path)
+
+    reg = ToolRegistry()
+    plots.register(reg)
+    ctx = Ctx()
+    with pytest.raises(ToolError, match="run_abfe"):
+        reg.call("show_plot", {"kind": "abfe", "window": False}, ctx)
+    ctx.plots = {
+        "abfe": {"object": "cplx", "dg": None, "report": "",
+                 "replicas": [{"frames": [0, 1, 2], "distance": [2.5, 6.0, 12.0], "energy": [-200, -80, -5],
+                               "bound_cutoff": 4.5}]},
+        "occupancy": {"object": "t", "frames": 20, "table": [{"interaction": "A", "occupancy_pct": 20.0},
+                                                            {"interaction": "B", "occupancy_pct": 90.0}]},
+        "qmmm_scan": {"object": "e", "barrier": 55.0, "rows": [{"distance_ang": 1.2, "energy_rel_kj_mol": 0.0},
+                                                                {"distance_ang": 1.8, "energy_rel_kj_mol": 55.0}]},
+    }
+    for kind in ("abfe", "interaction_occupancy", "qmmm_scan"):
+        out = reg.call("show_plot", {"kind": kind, "window": False}, ctx)
+        assert out["_image"].endswith(".png") and (tmp_path / out["_image"].split("/")[-1]).stat().st_size > 5000
+    assert "no binding estimate" in reg.call("show_plot", {"kind": "abfe", "window": False}, ctx)["_card"]

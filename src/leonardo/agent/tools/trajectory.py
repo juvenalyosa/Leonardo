@@ -102,6 +102,7 @@ def register(reg):
         presentation.focus(object)
         top = sorted(rmsf, key=lambda r: -r["rmsf_A"])[:12]
         step = max(1, len(rmsd) // 50)
+        ctx.__dict__.setdefault("plots", {})["rmsd_rmsf"] = {"object": object, "rmsd": rmsd, "rmsf": rmsf}
         return {"object": object, "frames": n, "rmsd_A": [round(v, 2) for v in rmsd[::step]],
                 "rmsd_final_A": round(rmsd[-1], 2), "rmsd_max_A": round(max(rmsd), 2),
                 "rmsf_mean_A": round(sum(r["rmsf_A"] for r in rmsf) / len(rmsf), 2), "most_flexible": top,
@@ -134,6 +135,8 @@ def register(reg):
             labels = list(res.get("top_labels") or [])
             freqs = [round(float(f), 1) for f in list(res.get("top_freqs") or [])]
             table = [{"interaction": lbl, "occupancy_pct": f} for lbl, f in zip(labels, freqs)]
+            ctx.__dict__.setdefault("plots", {})["occupancy"] = {"object": object, "table": table,
+                                                               "frames": res.get("frames_analyzed")}
             return {"object": object, "frames_analyzed": res.get("frames_analyzed"), "top_interactions": table,
                     "_card": f"{res.get('frames_analyzed')} frames; most persistent: "
                              + ", ".join(f"{t['interaction']} {t['occupancy_pct']}%" for t in table[:4]) + "."}
@@ -163,6 +166,10 @@ def register(reg):
             if not vals:
                 return None
             return {"mean": round(sum(vals) / len(vals), 1), "min": round(min(vals), 1), "max": round(max(vals), 1)}
+        ctx.__dict__.setdefault("plots", {})["interaction_energy"] = {
+            "object": object, "frames": frames, "total": _as_list(res.get("total_energy_kj")),
+            "lj": _as_list(res.get("lj_energy_kj")), "coulomb": _as_list(res.get("coul_energy_kj")),
+            "min_distance": _as_list(res.get("min_dist_a"))}
         out = {"object": object, "frames": len(frames), "energy_mode": res.get("energy_mode"),
                "total_kj_mol": stats("total_energy_kj"), "lj_kj_mol": stats("lj_energy_kj"),
                "coulomb_kj_mol": stats("coul_energy_kj"), "min_distance_A": stats("min_dist_a")}
@@ -232,6 +239,11 @@ def register(reg):
             out.update({"energy_units": "kJ/mol", "object": object, "sim_ns": sim_ns, "replicas": len(replicas_out) or replicas,
                         "per_replica": [jsonable({k: r.get(k) for k in ("dg_pop_kj", "p_bound", "kd_app_m")})
                                         for r in replicas_out]})
+            ctx.__dict__.setdefault("plots", {})["abfe"] = {
+                "object": object, "report": out.get("report", ""), "dg": out.get("dg_selected"),
+                "replicas": [{"frames": _as_list(r.get("frames")), "distance": _as_list(r.get("distance_a")),
+                              "energy": _as_list(r.get("total_energy_kj")),
+                              "bound_cutoff": r.get("bound_cutoff_a")} for r in replicas_out]}
             traj = next((r.get("abfe_traj_object") for r in reversed(replicas_out) if r.get("abfe_traj_object")), "")
             if traj and traj in _cmd().get_names("objects"):
                 presentation.focus(traj, buffer=6.0)

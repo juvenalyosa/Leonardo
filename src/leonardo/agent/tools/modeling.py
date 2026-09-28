@@ -176,6 +176,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
                          for r in meta.get("score_records", []) if r.get("dope_score") is not None),
                         key=lambda r: r["dope"])
         summary = _object_summary(name)
+        ctx.__dict__.setdefault("plots", {})["dope"] = {"object": name, "scores": scores,
+                                                       "records": meta.get("score_records", [])}
         result = {
             "object": name, "best_model": best, "run_dir": run_root,
             "templates_used": meta.get("loaded_template_codes", list(codes)),

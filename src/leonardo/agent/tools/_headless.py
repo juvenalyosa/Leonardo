@@ -1,6 +1,7 @@
 """
 Run Leonardo's dialog handlers without blocking modals while the assistant works.
 
+Leonardo's plots (matplotlib) still open during assistant jobs, non-blocking.
 Leonardo's handlers end in QMessageBox.information/warning/critical, often from task
 callbacks that fire later. While an assistant job is active those calls are captured
 (and returned to the model as messages) instead of opening modal boxes; the docking
@@ -8,6 +9,7 @@ HETATM chooser is answered automatically (ions and cofactors kept). Outside assi
 jobs the originals run unchanged.
 """
 
+import os
 import threading
 
 _state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set(), "presets": {}}
@@ -93,9 +95,13 @@ def install():
         _originals["plt_show"] = plt.show
 
         def show(*args, **kwargs):
-            if _state["depth"] <= 0 or _state.get("plots_ok"):
+            if _state["depth"] <= 0:
                 return _originals["plt_show"](*args, **kwargs)
-            return None
+            if os.environ.get("LEONARDO_AI_NO_PLOT_WINDOWS"):
+                return None
+            # during assistant jobs Leonardo's plots open as usual, but never block the job
+            kwargs["block"] = False
+            return _originals["plt_show"](*args, **kwargs)
         plt.show = show
     except Exception:
         pass

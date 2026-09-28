@@ -86,10 +86,8 @@ def register(reg):
         if memory_gb:
             set_value(dlg, "spin_psi4_memory_gb", int(memory_gb))
         before = getattr(dlg, "_psi4_last_result", None)
-        figures_before = _figures()
 
         def collect(call):
-            _close_figures(figures_before)
             run = call.arg(0, "run_result") if call else None
             run = dict(run) if isinstance(run, dict) else {}
             res = getattr(dlg, "_psi4_last_result", None)
@@ -119,7 +117,7 @@ def register(reg):
                 out["scene"] = ctx.scene(f"Psi4 {operation}: {obj}")
             if operation in ("frequencies", "stationary", "ts") and out.get("freq_cm_real"):
                 try:
-                    png, peaks, _csv = _present_ir(dlg)
+                    png, peaks, _csv = _present_ir(dlg, interactive=False)   # Leonardo already opened its plot
                     out["ir_spectrum_image"] = png
                     out["ir_strongest_bands"] = peaks
                     out["_image"] = png
@@ -250,26 +248,6 @@ def _present_ir(dlg, fwhm_cm=18.0, interactive=True):
         with _headless.plots_allowed():
             dlg._psi4_plot_ir_spectrum(vib_data=vib, auto_animate=True, fwhm_cm=float(fwhm_cm))
     return png, _ir_summary(prep), os.path.join(jdir, "ir_spectrum.csv")
-
-
-def _figures():
-    try:
-        import matplotlib.pyplot as plt
-
-        return set(plt.get_fignums())
-    except Exception:
-        return set()
-
-
-def _close_figures(keep):
-    """Figures Leonardo drew while its windows were held back would pop up later all at once."""
-    try:
-        import matplotlib.pyplot as plt
-
-        for num in set(plt.get_fignums()) - set(keep):
-            plt.close(num)
-    except Exception:
-        pass
 
 
 def _focus_molecule(dlg, cmd):

@@ -135,3 +135,17 @@ def test_psi4_orbital_energies_from_output(tmp_path):
     assert e["gap_ev"] == round((0.0521 + 0.2675) * 27.211386, 3)
     names = set(build_registry(AgentContext()).names())
     assert {"show_ir_spectrum", "animate_vibration", "show_orbitals", "show_electrostatic_surface"} <= names
+
+
+def test_no_docking_grid_until_one_is_defined(app):
+    import code_v2
+    from pymol import cmd
+
+    cmd.reinitialize()
+    dlg = code_v2.ProtLigInteractDialog()
+    app.processEvents()
+    assert not [n for n in cmd.get_names("all") if "grid" in n.lower()]      # no stray dot at the origin
+    dlg.spin_cx.setValue(5.0)
+    app.processEvents()
+    assert "dock_grid_center" in cmd.get_names("objects")
+    dlg.close()

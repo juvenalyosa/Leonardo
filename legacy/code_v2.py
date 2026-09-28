@@ -34963,6 +34963,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         center = list(payload.get("center", (0.0, 0.0, 0.0)))
         size = list(payload.get("size", (18.0, 18.0, 18.0)))
+        try:
+            spins = [getattr(self, k) for k in ("spin_vs_cx", "spin_vs_cy", "spin_vs_cz",
+                                                "spin_vs_sx", "spin_vs_sy", "spin_vs_sz")]
+            if any(w.hasFocus() for w in spins):
+                self._vs_grid_user_defined = True
+        except Exception:
+            pass
+        # (0, 0, 0) is the untouched default: no grid to draw yet
+        if not (bool(getattr(self, "_vs_grid_user_defined", False)) or any(abs(float(c)) > 1e-6 for c in center)):
+            return
         self._show_docking_grid_box(center, size, zoom=False)
     def _set_vs_grid_visibility(self, visible):
         self._vs_grid_visible = bool(visible)
@@ -43073,8 +43083,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         center = [float(self.spin_cx.value()), float(self.spin_cy.value()), float(self.spin_cz.value())]
         size = [float(self.spin_sx.value()), float(self.spin_sy.value()), float(self.spin_sz.value())]
+        # The controls start at (0, 0, 0): that is "no grid yet", not a box at the origin. Draw only a
+        # grid set by a pocket, a redock, a project or the user (a stray cyan dot otherwise sits at the origin).
+        if not (bool(getattr(self, "_dock_grid_user_defined", False)) or any(abs(c) > 1e-6 for c in center)):
+            self._delete_docking_grid_objects()
+            return
         self._show_docking_grid_box(center, size, zoom=bool(zoom))
     def _on_docking_grid_controls_changed(self, *_args):
+        try:
+            spins = [getattr(self, k) for k in ("spin_cx", "spin_cy", "spin_cz", "spin_sx", "spin_sy", "spin_sz")]
+            if any(w.hasFocus() for w in spins):
+                self._dock_grid_user_defined = True      # typed by the user, even at the origin
+        except Exception:
+            pass
         self._show_current_docking_grid(zoom=False)
         self._update_docking_grid_summary_label(source="controls")
     def _convert_pdbqt_to_pdb_for_pymol(self, pdbqt_file, out_pdb):
