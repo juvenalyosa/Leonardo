@@ -11,7 +11,7 @@ from ..mcp_server import ExternalMcpServer, McpToolClient, build_server
 from ..orchestrator import SYSTEM_PROMPT, AgentSession
 from ..providers.base import ProviderError
 from ..registry import APPROVAL_POLICIES
-from ..tools import AgentContext, build_registry
+from ..tools import AgentContext, _headless, build_registry
 from .bridge import AgentWorker, MainThreadRunner, UiAdapter
 from .chat_panel import ChatPanel
 from .settings_dialog import AssistantSettingsDialog
@@ -141,6 +141,7 @@ class AssistantController(QtCore.QObject):
         if self.worker is not None and self.worker.isRunning():
             return
         self.session = None
+        _headless.reset()
         self.panel.clear()
         self.panel.set_usage({})
 
@@ -165,6 +166,11 @@ class AssistantController(QtCore.QObject):
         if self.session is not None:
             self.session.cancel()
         self.adapter.release()
+        # a job left running must not keep Leonardo's message boxes captured
+        QtCore.QTimer.singleShot(3000, lambda: _headless.reset() if not self._busy() else None)
+
+    def _busy(self):
+        return self.worker is not None and self.worker.isRunning()
 
     def _on_finished(self, outcome):
         self.panel.set_busy(False)
@@ -226,6 +232,7 @@ class AssistantController(QtCore.QObject):
 
     def shutdown(self):
         self.stop()
+        _headless.reset()
         if self.external is not None:
             self.external.stop()
         self.mcp_client.close()

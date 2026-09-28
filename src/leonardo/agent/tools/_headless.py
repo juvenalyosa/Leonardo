@@ -77,6 +77,14 @@ def end():
         _state["depth"] = max(0, _state["depth"] - 1)
 
 
+def reset():
+    """Leave assistant mode for good (stop / new chat / panel closed): message boxes show again."""
+    with _lock:
+        _state["depth"] = 0
+        _state["messages"].clear()
+        _state["keep_hetero"] = set()
+
+
 def take_messages():
     with _lock:
         out = list(_state["messages"])
