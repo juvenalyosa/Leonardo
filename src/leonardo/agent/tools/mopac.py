@@ -67,8 +67,12 @@ def _run(exe, workdir, stem, keywords, symbols, coords, opt=False, timeout=3600)
     aux_text = open(aux, errors="replace").read() if os.path.isfile(aux) else ""
     out_text = open(out, errors="replace").read() if os.path.isfile(out) else ""
     err = re.search(r'^\s*ERROR_MESSAGE="?([^"\n]*)', aux_text, re.M) or re.search(r'^\s*ERROR="?([^"\n]*)', aux_text, re.M)
-    if err or not aux_text:
-        detail = err.group(1).strip() if err else "no output (see the .out file)"
+    if err or not aux_text or "Error and normal termination" in out_text:
+        detail = err.group(1).strip() if err else ""
+        if not detail:
+            k = out_text.find("Error and normal termination")
+            lines = [ln.strip(" *") for ln in out_text[k:].splitlines()[1:6] if ln.strip(" *")] if k >= 0 else []
+            detail = "; ".join(lines) or "no output (see the .out file)"
         raise RuntimeError(f"MOPAC {keywords.split()[0]} failed: {detail}")
     return aux_text, out_text
 
@@ -147,7 +151,14 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
         res["heat_of_formation_kcal_mol"] = aux_scalar(aux, "HEAT_OF_FORMATION")
     res["coords"] = geom
     progress["text"] = "orbitals and ESP charges"
-    aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF ESP AUX(MOS=999,PRECISION=9)", symbols, geom)
+    try:
+        aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF ESP AUX(MOS=999,PRECISION=9)", symbols, geom)
+    except RuntimeError as exc:
+        if "ESP" not in str(exc):
+            raise
+        # MOPAC's ESP fit does not support d orbitals (e.g. Br, S, P in PM7): Mulliken-like charges instead
+        res["esp_note"] = "ESP fit unavailable with d orbitals; charges are MOPAC atomic charges"
+        aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF AUX(MOS=999,PRECISION=9)", symbols, geom)
     res.update(parse_scf(aux))
     res["esp_charges"] = aux_block(aux, "ELECTROSTATIC_POTENTIAL_CHARGES") or parse_esp_charges(out)
     res["mulliken_like_charges"] = aux_block(aux, "ATOM_CHARGES")

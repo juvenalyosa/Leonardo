@@ -127,3 +127,50 @@ def test_show_plot_from_stored_results(tmp_path, monkeypatch):
         out = reg.call("show_plot", {"kind": kind, "window": False}, ctx)
         assert out["_image"].endswith(".png") and (tmp_path / out["_image"].split("/")[-1]).stat().st_size > 5000
     assert "no binding estimate" in reg.call("show_plot", {"kind": "abfe", "window": False}, ctx)["_card"]
+
+
+def test_xyz_frames_and_cube_negation(tmp_path):
+    xyz = tmp_path / "path.xyz"
+    xyz.write_text("2\nE: -1.0\nH 0 0 0\nH 0.74 0 0\n2\nE: -0.9\nH 0 0 0\nH 0.9 0 0\n")
+    symbols, frames = qmviz.read_xyz_frames(str(xyz))
+    assert symbols == ["H", "H"] and frames.shape == (2, 2, 3) and frames[1, 1, 0] == 0.9
+    lo, h, n = qmviz.grid_for([[0, 0, 0]], 0.5, 2.0)
+    vals = np.linspace(-1, 1, int(np.prod(n)))
+    cube = qmviz.write_cube(str(tmp_path / "o.cube"), ["H"], [[0, 0, 0]], lo, h, n, vals)
+    qmviz.negate_cube(cube)
+    assert np.allclose(qmviz.read_cube_values(cube), -vals, atol=1e-4)
+
+
+def test_irc_direction_detected_from_the_reactant(tmp_path):
+    pymol = pytest.importorskip("pymol")
+    from leonardo.agent.tools import qmmm
+
+    cmd = pymol.cmd
+    cmd.reinitialize()
+    cmd.load_raw("3\nr\nH -1.07 0 0\nC 0 0 0\nN 1.16 0 0\n", "xyz", "hcn")
+    path = tmp_path / "irc.xyz"
+    frames = ["H 2.15 0 0\nC 0 0 0\nN 1.17 0 0", "H 0.5 1.0 0\nC 0 0 0\nN 1.18 0 0", "H -1.07 0 0\nC 0 0 0\nN 1.16 0 0"]
+    path.write_text("".join(f"3\nstep\n{f}\n" for f in frames))
+    assert qmmm._path_runs_backwards("hcn", str(path)) is True          # the file starts at HNC
+    path.write_text("".join(f"3\nstep\n{f}\n" for f in frames[::-1]))
+    assert qmmm._path_runs_backwards("hcn", str(path)) is False
+
+
+def test_reaction_tools_are_registered():
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    reg = build_registry(AgentContext())
+    specs = {s.name: s for s in reg.specs()}
+    assert "animate_reaction" in specs
+    ops = specs["run_psi4"].parameters["properties"]["operation"]["enum"]
+    assert {"ts_qst2", "ts_qst3", "irc", "ts"} <= set(ops)
+    qm_ops = specs["run_qmmm"].parameters["properties"]["operation"]["enum"]
+    assert {"mopac_ts_frequency", "mopac_irc", "mopac_qst2", "mopac_qst3", "mopac_reaction_path"} <= set(qm_ops)
+
+
+def test_psi4_irc_script_reads_optking_trajectory():
+    import code_v2
+
+    text = " ".join(str(c) for c in code_v2.ProtLigInteractDialog._psi4_make_script.__code__.co_consts
+                    if isinstance(c, str))
+    assert "_irc_traj_history" in text and "irc_traj*.xyz" in text

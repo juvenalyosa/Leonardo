@@ -346,3 +346,69 @@ def uv_png(energies_ev, strengths, path, title, sigma_ev=0.25, strength_label="O
 def job_file(job_dir, name):
     path = os.path.join(job_dir, name)
     return path if os.path.isfile(path) else ""
+
+
+def load_path(symbols, frames, name):
+    """A reaction path / trajectory as a multi-state object (one state per frame)."""
+    cmd = _cmd()
+    if name in cmd.get_names("objects"):
+        cmd.delete(name)
+    for k, xyz in enumerate(frames):
+        lines = [str(len(symbols)), name] + [f"{s} {x:.6f} {y:.6f} {z:.6f}" for s, (x, y, z) in zip(symbols, xyz)]
+        cmd.load_raw("\n".join(lines) + "\n", "xyz", name, state=k + 1)
+    cmd.show_as("sticks", name)
+    cmd.set("stick_radius", 0.16, name)
+    cmd.show("spheres", name)
+    cmd.set("sphere_scale", 0.22, name)
+    cmd.util.cbag(name)
+    return name
+
+
+def read_xyz_frames(path):
+    """Frames of a (multi-frame) XYZ file: symbols and [n_frames, n_atoms, 3] coordinates."""
+    lines = open(path).read().splitlines()
+    frames, symbols, i = [], [], 0
+    while i < len(lines):
+        if not lines[i].strip():
+            i += 1
+            continue
+        n = int(lines[i].split()[0])
+        block = lines[i + 2:i + 2 + n]
+        symbols = [ln.split()[0] for ln in block]
+        frames.append([[float(v) for v in ln.split()[1:4]] for ln in block])
+        i += 2 + n
+    return symbols, np.asarray(frames, dtype=float)
+
+
+def show_orbital_movie(cubes_by_state, name, isovalue=0.03, parent=""):
+    """One orbital along a path: a multi-state map (one cube per frame) with matching isosurfaces."""
+    cmd = _cmd()
+    cmap = f"{name}_map"
+    for o in (cmap, f"{name}_pos", f"{name}_neg"):
+        if o in cmd.get_names("all"):
+            cmd.delete(o)
+    for k, cube in enumerate(cubes_by_state):
+        cmd.load(cube, cmap, state=k + 1)
+    cmd.isosurface(f"{name}_pos", cmap, float(isovalue), state=0)
+    cmd.isosurface(f"{name}_neg", cmap, -float(isovalue), state=0)
+    cmd.color("blue", f"{name}_pos")
+    cmd.color("red", f"{name}_neg")
+    for o in (f"{name}_pos", f"{name}_neg"):
+        cmd.set("transparency", 0.3, o)
+    cmd.disable(cmap)
+    try:
+        cmd.group(parent or "Reaction.orbitals", f"{cmap} {name}_pos {name}_neg")
+    except Exception:
+        pass
+    return [f"{name}_pos", f"{name}_neg"]
+
+
+def negate_cube(path):
+    """Flip the sign of an orbital cube in place (keeps the phase continuous along a path)."""
+    with open(path) as fh:
+        lines = fh.read().splitlines()
+    natoms = abs(int(lines[2].split()[0]))
+    head, body = lines[:6 + natoms], lines[6 + natoms:]
+    flipped = [" ".join(f"{-float(v):13.5E}" for v in ln.split()) for ln in body]
+    with open(path, "w") as fh:
+        fh.write("\n".join(head + flipped) + "\n")

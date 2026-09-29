@@ -36,7 +36,10 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description=""):
             import traceback
 
             traceback.print_exc()
-            detail = "; ".join(errors) or f"{exc}"
+            detail = str(exc) or "; ".join(errors)          # the tool's own diagnosis first
+            extra = [e for e in errors if e and e not in detail]
+            if extra:
+                detail += " | Leonardo: " + " / ".join(extra[:2])
             if warnings:
                 detail += " | Leonardo warnings: " + " / ".join(warnings[:3])
             return {"done": True, "error": detail}

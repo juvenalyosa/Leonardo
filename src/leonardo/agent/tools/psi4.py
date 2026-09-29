@@ -33,13 +33,25 @@ def _check_dispersion(method):
 def register(reg):
     @reg.tool("run_psi4", "Quantum chemistry with Psi4 on a ligand, a whole small object or a selection: "
               "'energy' (single point), 'optimize', 'frequencies' (+ thermochemistry), 'stationary' (opt + freq), "
-              "'ts' (transition-state optimization + freq), 'irc' (from a TS), 'esp_fit' (RESP-like ESP charges "
+              "'ts' (transition-state optimization from a TS guess + freq), 'ts_qst2' (TS between a reactant and a "
+              "product, QST2-like), 'ts_qst3' (reactant + product + TS guess, QST3-like), 'irc' (reaction path "
+              "from a TS object), 'esp_fit' (RESP-like ESP charges "
               "written to a MOL2 and used for the ligand force field). DFT on drug-sized molecules takes minutes "
               "to hours: keep the basis small (def2-SVP) unless the user asks otherwise.",
               {"properties": {
                   "operation": {"type": "string", "enum": ["energy", "optimize", "frequencies", "stationary", "ts",
-                                                           "irc", "esp_fit"]},
-                  "object": {"type": "string"},
+                                                           "ts_qst2", "ts_qst3", "irc", "esp_fit"]},
+                  "object": {"type": "string", "description": "molecule (not needed for ts_qst2/ts_qst3)"},
+                  "reactant": {"type": "string", "description": "ts_qst2/3: reactant object/selection or file"},
+                  "product": {"type": "string", "description": "ts_qst2/3: product with the same atom order"},
+                  "ts_guess": {"type": "string", "description": "ts_qst3: TS guess object/selection or file"},
+                  "irc_direction": {"type": "string", "enum": ["BOTH", "FORWARD", "BACKWARD"],
+                                    "description": "irc: BOTH (default) gives the whole reactant-TS-product path"},
+                  "irc_points": {"type": "integer", "minimum": 3, "maximum": 200},
+                  "irc_step": {"type": "number", "minimum": 0.05, "maximum": 1.0,
+                               "description": "irc step (amu^1/2 bohr)"},
+                  "ts_weight": {"type": "number", "minimum": 0, "maximum": 1,
+                                "description": "QST2: where along reactant→product the TS guess starts"},
                   "region": {"type": "string", "enum": ["ligand", "whole", "custom"],
                              "description": "ligand = non-polymer atoms of the object (default)"},
                   "selection": {"type": "string", "description": "for region=custom"},
@@ -48,16 +60,37 @@ def register(reg):
                   "charge": {"type": "integer"}, "multiplicity": {"type": "integer", "minimum": 1},
                   "solvent": {"type": "string", "description": "PCM solvent name (e.g. water); empty = gas phase"},
                   "threads": {"type": "integer", "minimum": 1}, "memory_gb": {"type": "integer", "minimum": 1},
-              }, "required": ["operation", "object"]},
+              }, "required": ["operation"]},
               permission="compute_heavy", title="Quantum chemistry (Psi4)")
-    def run_psi4(ctx, operation, object, region="ligand", selection="", method="wb97x-d", basis="def2-SVP",
-                 charge=None, multiplicity=None, solvent="", threads=None, memory_gb=None):
+    def run_psi4(ctx, operation, object="", region="ligand", selection="", method="wb97x-d", basis="def2-SVP",
+                 charge=None, multiplicity=None, solvent="", threads=None, memory_gb=None, reactant="", product="",
+                 ts_guess="", ts_weight=None, irc_direction="BOTH", irc_points=None, irc_step=None):
         from pymol import cmd
 
         dlg = ctx.dlg
         _check_dispersion(method)
+        qst = operation in ("ts_qst2", "ts_qst3")
+        if qst:
+            if not reactant or not product:
+                raise ToolError(f"{operation} needs reactant and product (same atoms, same order)")
+            if operation == "ts_qst3" and not ts_guess:
+                raise ToolError("ts_qst3 needs a ts_guess")
+            set_value(dlg, "edit_psi4_qst_react", reactant)
+            set_value(dlg, "edit_psi4_qst_prod", product)
+            set_value(dlg, "edit_psi4_qst_ts", ts_guess or "")
+            if ts_weight is not None and hasattr(dlg, "spin_psi4_qst_ts_weight"):
+                dlg.spin_psi4_qst_ts_weight.setValue(float(ts_weight))
+            object = object or str(reactant).split()[0].strip("()")
+            if region == "ligand":
+                region = "whole"
         if object not in cmd.get_names("objects"):
             raise ToolError(f"no object named {object!r}")
+        if operation == "irc":
+            set_combo(dlg, "cmb_psi4_irc_direction", str(irc_direction).upper(), required=False)
+            if irc_points and hasattr(dlg, "spin_psi4_irc_points"):
+                dlg.spin_psi4_irc_points.setValue(int(irc_points))
+            if irc_step and hasattr(dlg, "spin_psi4_irc_step"):
+                dlg.spin_psi4_irc_step.setValue(float(irc_step))
         set_combo(dlg, "cmb_psi4_input_mode", "pymol")
         try:
             dlg._refresh_psi4_source_combo()
@@ -92,8 +125,17 @@ def register(reg):
             run = dict(run) if isinstance(run, dict) else {}
             res = getattr(dlg, "_psi4_last_result", None)
             if not run.get("success") or res is None or res is before:
-                err = (res or {}).get("error") if isinstance(res, dict) else None
-                raise ToolError(str(err or run.get("error") or "Psi4 failed (see Leonardo's log)"))
+                inner = run.get("result") if isinstance(run.get("result"), dict) else {}
+                err = inner.get("error") or ((res or {}).get("error") if isinstance(res, dict) else None)
+                hint = ""
+                if err and "converge geometry optimization" in str(err) and operation.startswith("ts"):
+                    hint = (" (TS searches are sensitive to the starting point: retry, give a better ts_guess, "
+                            "or locate the TS with MOPAC first: run_qmmm mopac_reaction_path)")
+                if err and "normalize vector" in str(err):
+                    hint = (" (the optimizer met a linear/degenerate geometry: give a bent TS guess, e.g. "
+                            "ts_qst3 with ts_guess, instead of a straight-line interpolation)")
+                raise ToolError(f"Psi4 {operation} failed: {err or run.get('write_error') or 'see the Psi4 log'}"
+                                + hint)
             out = {k: jsonable(res.get(k)) for k in _KEEP if res.get(k) not in (None, "", [], {})}
             # vibrations only (translations/rotations are ~0 cm-1); imaginary = modes with |ν| > 10i cm-1
             real = [float(v) for v in list(res.get("freq_cm_real") or [])]
@@ -115,7 +157,7 @@ def register(reg):
                 presentation.focus(obj, buffer=3.0)
                 out["object"] = obj
                 out["scene"] = ctx.scene(f"Psi4 {operation}: {obj}")
-            if operation in ("frequencies", "stationary", "ts") and out.get("freq_cm_real"):
+            if operation in ("frequencies", "stationary", "ts", "ts_qst2", "ts_qst3") and out.get("freq_cm_real"):
                 try:
                     png, peaks, _csv = _present_ir(dlg, interactive=False)   # Leonardo already opened its plot
                     out["ir_spectrum_image"] = png
@@ -123,6 +165,20 @@ def register(reg):
                     out["_image"] = png
                 except Exception:
                     pass
+            rel = [v for v in (res.get("irc_relative_energy_kcal_mol") or [])]
+            irc_note = ""
+            if operation == "irc" and len(rel) >= 3:
+                ts_i = int(res.get("irc_ts_frame_index", rel.index(max(rel))))
+                out.update({"irc_points": len(rel), "barrier_from_start_kcal_mol": round(rel[ts_i] - rel[0], 2),
+                            "barrier_from_end_kcal_mol": round(rel[ts_i] - rel[-1], 2),
+                            "reaction_energy_kcal_mol": round(rel[-1] - rel[0], 2),
+                            "ts_imaginary_cm1": res.get("irc_primary_imag_cm1")})
+                ctx.__dict__.setdefault("plots", {})["irc_profile"] = {
+                    "object": object, "program": "Psi4", "x": res.get("irc_coordinate_amu05_bohr") or
+                    list(range(len(rel))), "y_kcal": rel, "ts_index": ts_i}
+                irc_note = (f"; IRC {len(rel)} points: barriers {out['barrier_from_start_kcal_mol']} / "
+                            f"{out['barrier_from_end_kcal_mol']} kcal/mol from the two ends, ΔE "
+                            f"{out['reaction_energy_kcal_mol']} kcal/mol (animate_reaction shows it)")
             orb = _orbital_energies(out.get("job_dir", ""))
             if orb:
                 out.update({k: v for k, v in orb.items() if not k.startswith("_")})
@@ -135,8 +191,10 @@ def register(reg):
                                f"({min(out['freq_cm_real']):.0f}-{max(out['freq_cm_real']):.0f} cm⁻¹), "
                                + (f"{len(imag)} imaginary ({', '.join(f'{v:.0f}i' for v in imag[:3])})" if imag
                                   else "no imaginary frequency (a minimum)")
-                               if operation in ("frequencies", "stationary", "ts") and out.get("freq_cm_real") else "")
-                            + (f"; ESP charges → `{out.get('charged_mol2')}`" if operation == "esp_fit" else "") + ".")
+                               if operation in ("frequencies", "stationary", "ts", "ts_qst2", "ts_qst3")
+                            and out.get("freq_cm_real") else "")
+                            + (f"; ESP charges → `{out.get('charged_mol2')}`" if operation == "esp_fit" else "")
+                            + irc_note + ".")
             return out
 
         return start_finalize_job(ctx, "psi4", dlg._on_psi4_run, "_psi4_finalize_background_run", collect,

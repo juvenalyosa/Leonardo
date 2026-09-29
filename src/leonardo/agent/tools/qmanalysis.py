@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
@@ -29,6 +30,30 @@ psi4.set_memory(f"{args.get('memory_gb', 2)} GB")
 psi4.set_num_threads(int(args.get("threads", 4)))
 psi4.core.set_output_file(args.get("log", "leonardo_ai.out"), False)
 wfn = None
+if args["task"] == "path_orbitals":
+    import numpy as np
+    psi4.set_options({"basis": args["basis"], "scf_type": "df"})
+    prev, frames = {}, []
+    for k, geom in enumerate(args["frames"]):
+        mol = psi4.geometry(geom)
+        e, wfn = psi4.energy(args["method"], return_wfn=True, molecule=mol)
+        C = wfn.Ca().to_array()
+        flips = []
+        for idx in args["orbitals"]:
+            v = C[:, idx - 1]
+            flip = bool(idx in prev and float(np.dot(prev[idx], v)) < 0)
+            prev[idx] = -v if flip else v
+            flips.append(flip)
+        d = os.path.join(args["cube_dir"], f"frame_{k:03d}")
+        os.makedirs(d, exist_ok=True)
+        psi4.set_options({"cubeprop_tasks": ["ORBITALS"], "cubeprop_orbitals": list(args["orbitals"]),
+                          "cubeprop_filepath": d})
+        psi4.cubeprop(wfn)
+        frames.append({"energy_hartree": float(e), "dir": d, "flips": flips,
+                       "eps_ev": [float(wfn.epsilon_a().get(i - 1)) * 27.211386 for i in args["orbitals"]]})
+        psi4.core.clean()
+    json.dump({"frames": frames}, open("leonardo_ai_result.json", "w"))
+    sys.exit(0)
 if args.get("wfn") and os.path.isfile(args["wfn"]) and args["task"] == "orbitals":
     wfn = psi4.core.Wavefunction.from_file(args["wfn"])
 else:
@@ -514,3 +539,198 @@ def register(reg):
                 "recent_jobs": [os.path.basename(j) for j in jobs[:8]],
                 "_card": f"Loaded Psi4 job `{os.path.basename(target)}` ({result.get('operation')} "
                          f"{result.get('method')}/{result.get('basis')})."}
+
+    # -- reaction path animation with orbitals ----------------------------------------------------- #
+    @reg.tool("animate_reaction", "Animate a reaction path in the viewer (the last Psi4 IRC/QST/optimization "
+              "path, the last MOPAC IRC/reaction path, or any multi-state object such as a QM/MM scan) and, "
+              "optionally, how molecular orbitals change along it (HOMO, LUMO, HOMO-1...): one orbital "
+              "isosurface per frame, synchronized with the geometry and with continuous phase. Orbitals are "
+              "computed per frame with MOPAC (seconds) or Psi4 (minutes).",
+              {"properties": {
+                  "source": {"type": "string", "enum": ["psi4", "mopac", "object"]},
+                  "object": {"type": "string", "description": "for source=object: a multi-state object"},
+                  "orbitals": {"type": "array", "items": {"type": "string"},
+                               "description": "e.g. ['homo', 'lumo']; empty = geometry only"},
+                  "orbital_program": {"type": "string", "enum": ["mopac", "psi4"]},
+                  "method": {"type": "string", "description": "orbital_program=psi4: functional (default from the job)"},
+                  "basis": {"type": "string"},
+                  "charge": {"type": "integer"}, "multiplicity": {"type": "integer", "minimum": 1},
+                  "max_frames": {"type": "integer", "minimum": 3, "maximum": 60},
+                  "isovalue": {"type": "number", "minimum": 0.005, "maximum": 0.2},
+              }},
+              permission="compute_light", title="Reaction animation")
+    def animate_reaction(ctx, source=None, object="", orbitals=(), orbital_program="mopac", method="", basis="",
+                         charge=None, multiplicity=1, max_frames=24, isovalue=0.04):
+        from pymol import cmd
+
+        dlg = ctx.dlg
+        store = _store(ctx)
+        src = source or ("object" if object else ("mopac" if (store.get("path") or {}).get("source") == "mopac"
+                                                  and store.get("last") != "psi4" else "psi4"))
+        energies = None
+        lvl_method, lvl_basis = method or "b3lyp", basis or "def2-svp"
+        if src == "psi4":
+            result, jdir = P4._last_job(dlg)
+            hist = dlg._psi4_load_history_data(result=result, job_dir=jdir)
+            frames = np.asarray(hist.get("coords_ang", []), dtype=float)
+            symbols = [str(x) for x in hist.get("symbols", []) or []]
+            energies = np.asarray(hist.get("energy_hartree", []), dtype=float).reshape(-1)
+            if frames.ndim != 3 or frames.shape[0] < 2:
+                raise ToolError("the last Psi4 job has no path (run an IRC, QST or optimization)")
+            if charge is None:
+                _g, _s, _x = _psi4_geometry_block(jdir)
+                charge = int(_g.split()[0])
+            lvl_method = method or re.sub(r"-d3.*$|-d4.*$", "", str(result.get("method") or "b3lyp"))
+            lvl_basis = basis or str(result.get("basis") or "def2-svp")
+            label = f"Psi4 {result.get('operation', '')} path"
+        elif src == "mopac":
+            path = (store.get("path") or {}).get("xyz", "")
+            if not path or not os.path.isfile(path):
+                raise ToolError("no MOPAC reaction path: run run_qmmm with mopac_irc or mopac_reaction_path")
+            symbols, frames = qmviz.read_xyz_frames(path)
+            if (store.get("path") or {}).get("reverse"):
+                frames = frames[::-1]                      # reactant -> product
+            if charge is None:
+                charge = int(dlg.spin_qmmm_charge.value()) if hasattr(dlg, "spin_qmmm_charge") else 0
+            label = "MOPAC IRC path"
+        else:
+            if not object or object not in cmd.get_names("objects"):
+                raise ToolError("give object= (a multi-state object) for source=object")
+            n = cmd.count_states(object)
+            if n < 2:
+                raise ToolError(f"{object} has a single state")
+            model = cmd.get_model(object, 1)
+            symbols = [a.symbol.capitalize() if len(a.symbol) > 1 else a.symbol.upper() for a in model.atom]
+            frames = np.asarray([cmd.get_coords(object, k) for k in range(1, n + 1)], dtype=float)
+            if charge is None:
+                charge = int(round(sum(float(getattr(a, "formal_charge", 0) or 0) for a in model.atom)))
+            label = f"{object} path"
+        # at most max_frames frames, always keeping the highest-energy one (the TS region)
+        keep = np.unique(np.round(np.linspace(0, len(frames) - 1, min(len(frames), int(max_frames)))).astype(int))
+        if energies is not None and energies.size == len(frames):
+            keep = np.unique(np.append(keep, int(np.nanargmax(energies))))
+        frames = frames[keep]
+        energies = energies[keep] if energies is not None and energies.size >= len(keep) else None
+        name = "reaction_path"
+        qmviz.load_path(symbols, frames, name)
+        qmviz.frame(name)
+        base = {"source": src, "frames": len(frames), "object": name, "label": label}
+        if energies is not None:
+            rel = (energies - energies[0]) * 2625.4996
+            base["energy_kj_mol"] = [round(float(v), 2) for v in rel]
+            base["barrier_kj_mol"] = round(float(rel.max()), 2)
+            ctx.__dict__.setdefault("plots", {})["irc_profile"] = {
+                "object": name, "program": "Psi4", "x": list(range(1, len(rel) + 1)),
+                "y_kcal": [float(v) / 4.184 for v in rel], "ts_index": int(np.argmax(rel))}
+        if not orbitals:
+            cmd.mplay()
+            base["scene"] = ctx.scene(f"{label}: animation")
+            base["_card"] = (f"Reaction path animated ({len(frames)} frames, `{name}`)"
+                             + (f"; barrier ≈ {base['barrier_kj_mol']} kJ/mol" if "barrier_kj_mol" in base else "")
+                             + ". Ask for orbitals to see them change along the path.")
+            return base
+        n_el = sum(qmviz._Z.get(s, 0) for s in symbols) - int(charge)
+        if n_el % 2:
+            raise ToolError(f"{n_el} electrons: orbital movies need a closed-shell (even-electron) system")
+        wanted = qmviz.resolve_orbitals(orbitals, n_el // 2)
+        workdir = os.path.join(ctx.workspace("reaction"), time.strftime("path_%Y%m%d_%H%M%S"))
+        os.makedirs(workdir, exist_ok=True)
+
+        def display(cube_sets, energies_by_orbital):
+            shown = []
+            for i, ((lab, _idx), cubes) in enumerate(zip(wanted, cube_sets)):
+                surf = qmviz.show_orbital_movie(cubes, f"rxn_{lab.lower().replace('+', 'p').replace('-', 'm')}",
+                                                isovalue, parent="Reaction.orbitals")
+                if i:                       # one orbital at a time: overlapping lobes of the same colors confuse
+                    for o in surf:
+                        cmd.disable(o)
+                shown += surf
+            cmd.frame(1)
+            cmd.mplay()
+            out = dict(base, orbitals=[{"orbital": lab, "mo": idx, "energy_ev_along_path": energies_by_orbital[i]}
+                                       for i, (lab, idx) in enumerate(wanted)],
+                       orbital_level=("MOPAC PM7" if orbital_program == "mopac" else f"Psi4 {lvl_method}/{lvl_basis}"),
+                       surfaces=shown, scene=ctx.scene(f"{label}: orbitals along the path"))
+            others = [lab for lab, _ in wanted[1:]]
+            out["_card"] = (f"Reaction path with {', '.join(lab for lab, _ in wanted)} along {len(frames)} frames "
+                            f"({out['orbital_level']}); showing **{wanted[0][0]}**"
+                            + (f" ({', '.join(others)} ready in Reaction.orbitals)" if others else "")
+                            + "; play it with the PyMOL movie controls"
+                            + (f"; barrier ≈ {base['barrier_kj_mol']} kJ/mol" if "barrier_kj_mol" in base else "") + ".")
+            return out
+
+        if orbital_program == "mopac":
+            from .mopac import _run, mopac_executable, parse_scf
+
+            exe = mopac_executable()
+            if not exe:
+                raise ToolError("MOPAC is not installed")
+            state = {"result": None, "error": None}
+            progress = {"text": "starting"}
+
+            def work():
+                try:
+                    lo = frames.reshape(-1, 3).min(axis=0)
+                    hi = frames.reshape(-1, 3).max(axis=0)
+                    glo, h, ng = qmviz.grid_for(np.vstack([lo, hi]), 0.3, 5.0)
+                    cube_sets = [[] for _ in wanted]
+                    eps = [[] for _ in wanted]
+                    prev = {}
+                    spin = {1: "", 3: " TRIPLET UHF"}.get(int(multiplicity), "")
+                    for k, xyz in enumerate(frames):
+                        progress["text"] = f"orbitals: frame {k + 1}/{len(frames)}"
+                        aux, _out = _run(exe, workdir, f"f{k:03d}", f"PM7 CHARGE={int(charge)}{spin} 1SCF "
+                                         "AUX(MOS=999,PRECISION=9)", symbols, xyz)
+                        scf = parse_scf(aux)
+                        rows = []
+                        for i, (_lab, idx) in enumerate(wanted):
+                            c = np.array(scf["coefficients"][idx - 1], dtype=float)
+                            if idx in prev and float(np.dot(prev[idx], c)) < 0:
+                                c = -c
+                            prev[idx] = c
+                            rows.append(c)
+                            eps[i].append(round(scf["eigenvalues_ev"][idx - 1], 3))
+                        mos, _d = qmviz.sto_grid_values(scf["basis"], rows, xyz, glo, h, ng)
+                        for i, values in enumerate(mos):
+                            cube = os.path.join(workdir, f"orb{i}_f{k:03d}.cube")
+                            qmviz.write_cube(cube, symbols, xyz, glo, h, ng, values)
+                            cube_sets[i].append(cube)
+                    state["result"] = (cube_sets, eps)
+                except Exception as exc:
+                    state["error"] = str(exc)
+
+            thread = threading.Thread(target=work, daemon=True)
+            thread.start()
+
+            def poll():
+                if thread.is_alive():
+                    return {"done": False, "progress": progress["text"]}
+                if state["error"]:
+                    return {"done": True, "error": state["error"]}
+                return {"done": True, "result": display(*state["result"])}
+
+            return ctx.jobs.start("reaction", poll, description=f"orbitals along {label} (MOPAC)")
+
+        geoms = [f"{int(charge)} {int(multiplicity)}\n"
+                 + "\n".join(f"{s} {x:.6f} {y:.6f} {z:.6f}" for s, (x, y, z) in zip(symbols, xyz))
+                 + "\nsymmetry c1\nno_reorient\nno_com\n" for xyz in frames]
+        args = {"task": "path_orbitals", "frames": geoms, "orbitals": [idx for _l, idx in wanted],
+                "cube_dir": os.path.join(workdir, "cubes"), "method": lvl_method, "basis": lvl_basis,
+                "threads": 4, "memory_gb": 2}
+
+        def collect(out):
+            cube_sets = [[] for _ in wanted]
+            eps = [[] for _ in wanted]
+            for fr in out.get("frames", []):
+                for i, (_lab, idx) in enumerate(wanted):
+                    hits = glob.glob(os.path.join(fr["dir"], f"Psi_a_{idx}_*.cube"))
+                    if not hits:
+                        raise ToolError(f"Psi4 wrote no cube for MO {idx}")
+                    if fr["flips"][i]:
+                        qmviz.negate_cube(hits[0])
+                    cube_sets[i].append(hits[0])
+                    eps[i].append(round(fr["eps_ev"][i], 3))
+            return display(cube_sets, eps)
+
+        return _psi4_child_job(ctx, "reaction", workdir, args, collect,
+                               f"Psi4 orbitals along {label}: {len(frames)} single points")

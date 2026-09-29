@@ -59,7 +59,11 @@ the user is seeing in the PyMOL view.
 - Report numbers exactly as the tools return them, with units, and say what they mean and what \
 their limits are (for example docking scores are not binding free energies). Never invent \
 results; if a tool fails, say so and propose what to do.
-- Keep the scene readable: use the view tools to focus on what each step produced."""
+- Keep the scene readable: use the view tools to focus on what each step produced.
+- Reactions: a robust route is MOPAC first (run_qmmm mopac_reaction_path: reactant + product with the \
+same atom order -> TS -> IRC, seconds), then Psi4 to refine the TS (run_psi4 ts from the MOPAC TS \
+object) and follow it (run_psi4 irc, irc_direction BOTH); run_psi4 ts_qst2/ts_qst3 also exist. \
+animate_reaction plays the path, with orbitals along it when asked; show_plot irc_profile draws it."""
 
 PLAN_TOOL = {
     "name": "propose_plan",

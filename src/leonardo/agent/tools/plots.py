@@ -13,7 +13,7 @@ from ..registry import ToolError
 from . import _headless
 
 KINDS = ["minimization_energy", "md_energies", "rmsd", "rmsf", "interaction_occupancy", "interaction_energy",
-         "abfe", "dope", "virtual_screening", "lead_optimization", "psi4_energy_profile", "qmmm_scan",
+         "abfe", "dope", "virtual_screening", "lead_optimization", "psi4_energy_profile", "qmmm_scan", "irc_profile",
          "alphafold_plddt", "alphafold_pae"]
 
 
@@ -22,7 +22,7 @@ LABELS = {"minimization_energy": "Minimization energy", "md_energies": "MD energ
           "interaction_energy": "Protein-ligand interaction energy", "abfe": "ABFE-lite exit profiles",
           "dope": "MODELLER DOPE scores", "virtual_screening": "Virtual screening ranking",
           "lead_optimization": "Lead optimization ranking", "psi4_energy_profile": "Psi4 energy profile",
-          "qmmm_scan": "QM/MM reaction profile", "alphafold_plddt": "AlphaFold pLDDT",
+          "qmmm_scan": "QM/MM reaction profile", "irc_profile": "Reaction (IRC) energy profile", "alphafold_plddt": "AlphaFold pLDDT",
           "alphafold_pae": "AlphaFold PAE"}
 
 
@@ -78,7 +78,8 @@ def register(reg):
               "chat: minimization_energy, md_energies (potential/total energy and temperature), rmsd, rmsf, "
               "interaction_occupancy, interaction_energy, abfe (ligand distance and interaction energy along the "
               "exit replicas), dope (MODELLER model scores), virtual_screening, lead_optimization, "
-              "psi4_energy_profile (optimization/IRC), qmmm_scan (reaction energy profile), alphafold_plddt, "
+              "psi4_energy_profile (optimization/IRC), qmmm_scan (reaction energy profile), irc_profile (MOPAC or "
+              "Psi4 reaction path with the TS marked), alphafold_plddt, "
               "alphafold_pae. IR and UV spectra have their own tools.",
               {"properties": {"kind": {"type": "string", "enum": KINDS},
                               "window": {"type": "boolean", "description": "also open a plot window (default true)"}},
@@ -262,6 +263,25 @@ def register(reg):
             ax.grid(alpha=0.25)
             _finish(fig, path, window)
             note = f"barrier ≈ {d['barrier']:.1f} kJ/mol" if d.get("barrier") is not None else ""
+
+        elif kind == "irc_profile":
+            d = _data(ctx, "irc_profile", "run_qmmm (mopac_irc / mopac_reaction_path) or animate_reaction")
+            x = [v for v in (d.get("x") or [])]
+            y = [v for v in (d.get("y_kcal") or [])]
+            fig = _figure(window)
+            ax = fig.add_subplot(111)
+            ax.plot(x, y, marker="o", markersize=3, color="#6a3d9a")
+            ts = int(d.get("ts_index", 0))
+            if 0 <= ts < len(x) and y[ts] is not None:
+                ax.scatter([x[ts]], [y[ts]], color="#d62728", s=40, zorder=5)
+                ax.annotate("TS", (x[ts], y[ts]), textcoords="offset points", xytext=(0, 6), ha="center")
+            ax.set(xlabel="Reaction coordinate" + (" (amu$^{1/2}$ bohr)" if d.get("program") == "MOPAC" else " (frame)"),
+                   ylabel="Relative energy (kcal/mol)", title=f"{d.get('program', '')} reaction profile: {d['object']}")
+            ax.grid(alpha=0.25)
+            _finish(fig, path, window)
+            vals = [v for v in y if v is not None]
+            if vals and 0 <= ts < len(y) and y[ts] is not None and y[0] is not None:
+                note = f"barrier {y[ts] - y[0]:.1f} kcal/mol, ΔE {y[-1] - y[0]:.1f} kcal/mol"
 
         elif kind in ("alphafold_plddt", "alphafold_pae"):
             src = dlg._af_find_plot_file("plddt" if kind == "alphafold_plddt" else "pae")
