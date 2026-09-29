@@ -22,6 +22,7 @@ import json
 import threading
 import time
 
+from . import pipelines
 from .checks import post_checks
 from .providers.base import ProviderError, TextDelta, ThinkingDelta, ToolCall, TurnEnd
 from .registry import APPROVAL_POLICIES, ToolError, result_to_text
@@ -69,6 +70,14 @@ QM). Heavy steps show their estimate on the confirmation card.
 - Results can carry quality_warnings (e.g. a TS with two imaginary modes, a hot MD, a weak docking \
 score): report them plainly, explain what they mean and propose the fix; never present such a result as \
 reliable.
+- Pipelines: when the user describes a multi-step workflow meant to be repeated with other molecules \
+(fetch, prepare/parameterize, dock, MD, analyse...), or asks to save/reuse "this protocol", offer to save it \
+with save_pipeline after it has run (parameters = the molecule inputs to vary). To re-run one, call \
+list_pipelines/show_pipeline, then run_pipeline with the new values; keep the saved steps unless the user \
+asks to change them (update_pipeline).
+- Projects and the scene: "new/create project" -> new_project; "open project" -> open_project; "save" -> \
+save_project; "clean/clear the screen" -> clear_scene (keeps the project); "reset/start over" -> \
+reset_leonardo; project_status tells what is active. These are destructive: confirm what will be lost.
 - Reactions: a robust route is MOPAC first (run_qmmm mopac_reaction_path: reactant + product with the \
 same atom order -> TS -> IRC, seconds), then Psi4 to refine the TS (run_psi4 ts from the MOPAC TS \
 object) and follow it (run_psi4 irc, irc_direction BOTH); run_psi4 ts_qst2/ts_qst3 also exist. \
@@ -265,6 +274,8 @@ class AgentSession:
         return self._result(call, "The user rejected the plan. Stop and ask what they want instead.", stop=True)
 
     def _handle_leonardo_tool(self, call):
+        if call.name == "run_pipeline" and not getattr(self, "_in_pipeline", False):
+            return self._run_pipeline(call)
         spec = self.registry.get(call.name)
         if spec is None:
             return self._result(call, f"Unknown tool {call.name!r}.", is_error=True)
@@ -283,7 +294,7 @@ class AgentSession:
         estimate = self._estimate(spec.name, args)
         if estimate:
             card["estimate"] = estimate
-        if spec.permission in self.needs_confirmation:
+        if spec.permission in self.needs_confirmation and not getattr(self, "_in_pipeline", False):
             answer = self.ui.ask("confirm_tool", card)
             if not answer.get("approved", False):
                 self.ui.on_event("tool", dict(card, status="declined"))
@@ -296,12 +307,16 @@ class AgentSession:
             result = self.execute(spec.name, args)
             result = self._wait_if_pending(result)
         except ToolError as exc:
+            self._last_tool_result = (False, str(exc))
             self.ui.on_event("tool", dict(card, status="failed", error=str(exc)))
             return self._result(call, str(exc), is_error=True)
         except Exception as exc:
+            self._last_tool_result = (False, str(exc))
             self.ui.on_event("tool", dict(card, status="failed", error=str(exc)))
             return self._result(call, f"{spec.name} failed: {exc}", is_error=True)
         shown = {k: v for k, v in result.items() if not k.startswith("_")}
+        pipelines.record(spec.name, args, shown, spec.permission)
+        self._last_tool_result = (True, shown)
         warnings = post_checks(spec.name, args, result)
         if warnings:
             shown["quality_warnings"] = warnings
@@ -309,6 +324,62 @@ class AgentSession:
                                       card=str(result.get("_card", "") or ""),
                                       image=str(result.get("_image", "") or ""), warnings=warnings))
         return self._result(call, shown)
+
+    def _run_pipeline(self, call):
+        """Expand a saved pipeline into its tool calls and run them as normal steps (one approval)."""
+        spec = self.registry.get("run_pipeline")
+        if self.phase == "planning":
+            return self._result(call, "run_pipeline can only run after the user approves a plan; call "
+                                      "propose_plan first.", is_error=True)
+        try:
+            spec, args = self.registry.validate("run_pipeline", call.arguments)
+            pipe = pipelines.load(args["name"])
+            steps, values = pipelines.instantiate(pipe, dict(args.get("values") or {}))
+        except Exception as exc:
+            return self._result(call, f"run_pipeline: {exc}", is_error=True)
+        start = max(1, int(args.get("from_step", 1)))
+        card = {"tool": "run_pipeline", "title": f"Pipeline: {pipe['name']}", "permission": spec.permission,
+                "args": dict(values, steps=" → ".join(s["tool"] for s in steps[start - 1:]))}
+        if spec.permission in self.needs_confirmation:
+            answer = self.ui.ask("confirm_tool", card)
+            if not answer.get("approved", False):
+                self.ui.on_event("tool", dict(card, status="declined"))
+                return self._result(call, "The user declined the pipeline.", is_error=True)
+        self.ui.on_event("progress", {"text": f"pipeline {pipe['name']}: {len(steps) - start + 1} steps"})
+        results, report = {}, []
+        self._in_pipeline = True
+        try:
+            for n, step in enumerate(steps, start=1):
+                if n < start:
+                    continue
+                if self.cancelled():
+                    report.append({"step": n, "tool": step["tool"], "status": "cancelled"})
+                    break
+                try:
+                    step_args = pipelines.resolve_refs(step["args"], results)
+                except KeyError as exc:
+                    report.append({"step": n, "tool": step["tool"], "status": "failed", "error": str(exc)})
+                    break
+                self._last_tool_result = (False, "not run")
+                self._handle_leonardo_tool(ToolCall(id=f"{call.id}-{n}", name=step["tool"], arguments=step_args))
+                ok, payload = self._last_tool_result
+                if not ok:
+                    report.append({"step": n, "tool": step["tool"], "status": "failed", "error": str(payload)[:600]})
+                    break
+                results[n] = payload
+                brief = {k: payload.get(k) for k in ("object", "best_score_kcal_mol", "quality_warnings") if payload.get(k)}
+                report.append({"step": n, "tool": step["tool"], "status": "done", **brief})
+        finally:
+            self._in_pipeline = False
+        done = sum(1 for r in report if r["status"] == "done")
+        failed = [r for r in report if r["status"] != "done"]
+        summary = {"pipeline": pipe["name"], "values": values, "steps_done": done,
+                   "steps_total": len(steps) - start + 1, "report": report,
+                   "results": {str(k): v for k, v in results.items()}}
+        if failed:
+            summary["stopped_at"] = failed[0]
+            summary["resume"] = f"fix the cause, then run_pipeline with from_step={failed[0]['step']}"
+        return self._result(call, summary, is_error=bool(failed))
 
     def _estimate(self, name, args):
         """Wall-time estimate of a calculation on this computer ('' when not applicable/unavailable)."""

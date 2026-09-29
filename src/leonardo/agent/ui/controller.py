@@ -77,6 +77,7 @@ class AssistantController(QtCore.QObject):
         self.panel.stop_requested.connect(self.stop)
         self.panel.settings_requested.connect(self.open_settings)
         self.panel.new_chat_requested.connect(self.new_chat)
+        self.panel.pipelines_requested.connect(self.open_pipelines)
         self.panel.scene_requested.connect(lambda key: presentation.recall_scene(key))
         self._refresh_model_label()
         self._sync_external_server()
@@ -135,6 +136,15 @@ class AssistantController(QtCore.QObject):
             if changed_model and self.session is not None:
                 self.panel.add_notice("Model changed: the next request starts a new conversation.")
                 self.session = None
+
+    def open_pipelines(self):
+        """Pipeline library: the chosen pipeline and molecules become a request for the assistant."""
+        from .pipeline_dialog import ask_pipeline_run
+
+        text = ask_pipeline_run(self.panel)
+        if text and not self._busy():
+            self.panel.add_user(text)
+            self.send(text)
 
     def _sync_external_server(self):
         want = bool(self.settings.get("mcp_server_enabled"))

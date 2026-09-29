@@ -52,6 +52,7 @@ def build_registry(context):
         md,
         modeling,
         mopac,
+        pipeline_tools,
         pka,
         plots,
         pockets,
@@ -66,6 +67,6 @@ def build_registry(context):
     )
 
     for module in (structure, view, pockets, pka, ligands, docking, redocking, screening, md, trajectory,
-                   modeling, alphafold, bioseq, psi4, mopac, qmanalysis, qmmm, plots, estimates, extras):
+                   modeling, alphafold, bioseq, psi4, mopac, qmanalysis, qmmm, plots, estimates, extras, pipeline_tools):
         module.register(reg)
     return reg
