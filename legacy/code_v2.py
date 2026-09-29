@@ -37856,7 +37856,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         gen_controls = self._leadopt_read_generation_controls()
         max_analogs = int(gen_controls.get("max_analogs", 120) or 120)
         pool_hits = int(gen_controls.get("pool_hits", 30) or 30)
-        min_sim = float(gen_controls.get("min_sim", 0.35) or 0.35)
+        min_sim = gen_controls.get("min_sim", 0.35)
+        min_sim = 0.35 if min_sim is None else float(min_sim)          # 0.0 is a valid choice
         max_sim = float(gen_controls.get("max_sim", 0.95) or 0.95)
         pool_mols = self._leadopt_get_pool_molecules_from_vs(max_hits=int(pool_hits))
         analogs = self._leadopt_generate_analogs(
@@ -51959,11 +51960,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     def _pka_set_default_method(self, method):
         self._pka_default_method = str(method or "empirical")
         self._append_debug_log(f"Automatic protonation method set to: {self._pka_default_method}")
-    def _pka_selection_molecule(self):
-        """Small molecule from the PyMOL selection 'sele' with bond orders (CCD template, else obabel)."""
+    def _pka_selection_molecule(self, selection="sele"):
+        """Small molecule from a PyMOL selection ('sele' by default) with bond orders (CCD template, else obabel)."""
         if not HAS_RDKIT:
             raise RuntimeError("RDKit is required.")
-        sel = "sele"
+        sel = str(selection or "sele")
         try:
             n_atoms = int(cmd.count_atoms(f"({sel}) and not hydro"))
         except Exception:

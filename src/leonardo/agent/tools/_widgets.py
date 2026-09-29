@@ -38,6 +38,12 @@ def set_value(dlg, attr, value):
     if hasattr(w, "setChecked") and isinstance(value, bool):
         w.setChecked(value)
     elif hasattr(w, "setValue"):
+        # a spin box would clamp silently: the caller must hear that the value is out of Leonardo's range
+        lo, hi = (w.minimum(), w.maximum()) if hasattr(w, "minimum") else (None, None)
+        if lo is not None and not isinstance(value, bool) and not lo <= float(value) <= hi:
+            from ..registry import ToolError
+
+            raise ToolError(f"{value} is outside the allowed range {lo:g}-{hi:g} for this setting ({attr})")
         w.setValue(value)
     elif hasattr(w, "setPlainText"):
         w.setPlainText(str(value))

@@ -1,17 +1,17 @@
-"""Visual style of the assistant windows (dark, matching the viewer's studio look)."""
+"""Visual style of the assistant windows: white background, dark blue accents and grays."""
 
-ACCENT = "#4FB3FF"
-ACCENT_2 = "#8C7BFF"
-OK = "#3DDC97"
-WARN = "#FFB547"
-ERR = "#FF6B6B"
-BG = "#161A21"
-PANEL = "#1E232C"
-CARD = "#252B36"
-CARD_2 = "#2C3340"
-BORDER = "#343C4A"
-TEXT = "#E6EAF0"
-MUTED = "#8E98A8"
+ACCENT = "#1F3A6E"        # dark blue: primary actions, focus, links
+ACCENT_2 = "#3E5C99"      # lighter navy: plans
+OK = "#1F7A4D"
+WARN = "#A65F00"
+ERR = "#B42318"
+BG = "#FFFFFF"
+PANEL = "#F2F4F7"         # light gray: header and composer bars
+CARD = "#F7F8FA"
+CARD_2 = "#E6EAF0"
+BORDER = "#D0D5DD"
+TEXT = "#1D2939"
+MUTED = "#667085"
 
 PERMISSION_BADGE = {
     "read": ("Read", MUTED),
@@ -25,10 +25,10 @@ STYLESHEET = f"""
 QWidget {{ background: {BG}; color: {TEXT}; font-size: 13px; }}
 QLabel {{ background: transparent; }}
 QFrame#card {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 12px; }}
-QFrame#cardUser {{ background: #243449; border: 1px solid #2F4A6B; border-radius: 12px; }}
+QFrame#cardUser {{ background: #E8EEF8; border: 1px solid #B3C3E0; border-radius: 12px; }}
 QFrame#cardPlan {{ background: {CARD}; border: 1px solid {ACCENT_2}; border-radius: 12px; }}
 QFrame#cardAsk {{ background: {CARD}; border: 1px solid {WARN}; border-radius: 12px; }}
-QFrame#cardError {{ background: #3A2226; border: 1px solid {ERR}; border-radius: 12px; }}
+QFrame#cardError {{ background: #FDEDEC; border: 1px solid {ERR}; border-radius: 12px; }}
 QFrame#header {{ background: {PANEL}; border-bottom: 1px solid {BORDER}; }}
 QFrame#composer {{ background: {PANEL}; border-top: 1px solid {BORDER}; }}
 QLabel#title {{ font-size: 16px; font-weight: 600; }}
@@ -36,8 +36,8 @@ QLabel#muted {{ color: {MUTED}; }}
 QLabel#thinking {{ color: {MUTED}; font-style: italic; }}
 QLabel#pill {{ border-radius: 9px; padding: 2px 10px; font-size: 11px; font-weight: 600; }}
 QPlainTextEdit, QLineEdit, QComboBox, QSpinBox {{
-    background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px; color: {TEXT};
-    selection-background-color: {ACCENT};
+    background: {BG}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px; color: {TEXT};
+    selection-background-color: {ACCENT}; selection-color: #FFFFFF;
 }}
 QPlainTextEdit:focus, QLineEdit:focus, QComboBox:focus {{ border: 1px solid {ACCENT}; }}
 QPushButton {{
@@ -45,21 +45,32 @@ QPushButton {{
 }}
 QPushButton:hover {{ border-color: {ACCENT}; }}
 QPushButton:disabled {{ color: {MUTED}; }}
-QPushButton#primary {{ background: {ACCENT}; color: #0B1220; border: none; font-weight: 600; }}
-QPushButton#primary:hover {{ background: #6CC2FF; }}
+QPushButton#primary {{ background: {ACCENT}; color: #FFFFFF; border: none; font-weight: 600; }}
+QPushButton#primary:hover {{ background: #2B4C8C; }}
+QPushButton#primary:disabled {{ background: {CARD_2}; color: {MUTED}; }}
 QPushButton#danger {{ background: transparent; border: 1px solid {ERR}; color: {ERR}; }}
 QPushButton#ghost {{ background: transparent; border: none; color: {MUTED}; }}
 QPushButton#ghost:hover {{ color: {TEXT}; }}
 QScrollArea {{ border: none; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; }}
-QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 4px; min-height: 30px; }}
+QScrollBar::handle:vertical {{ background: #B8C0CC; border-radius: 4px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QGroupBox {{ border: 1px solid {BORDER}; border-radius: 10px; margin-top: 14px; padding-top: 10px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 6px; color: {MUTED}; }}
 QCheckBox {{ background: transparent; }}
-QToolTip {{ background: {CARD_2}; color: {TEXT}; border: 1px solid {BORDER}; }}
+QToolTip {{ background: {ACCENT}; color: #FFFFFF; border: none; }}
+QComboBox QAbstractItemView {{ background: {BG}; color: {TEXT}; selection-background-color: {ACCENT};
+    selection-color: #FFFFFF; }}
+QMenu {{ background: {BG}; color: {TEXT}; border: 1px solid {BORDER}; }}
+QMenu::item:selected {{ background: {ACCENT}; color: #FFFFFF; }}
 """
 
 
+def _rgba(color, alpha):
+    c = color.lstrip("#")
+    return f"rgba({int(c[0:2], 16)}, {int(c[2:4], 16)}, {int(c[4:6], 16)}, {alpha})"
+
+
 def pill_style(color):
-    return f"background: {color}22; color: {color}; border: 1px solid {color}66;"
+    # Qt reads 8-digit hex as #AARRGGBB, so translucency goes through rgba()
+    return f"background: {_rgba(color, 0.12)}; color: {color}; border: 1px solid {_rgba(color, 0.45)};"

@@ -48,9 +48,9 @@ def _molecule(ctx, smiles="", selection="", file=""):
 
         if cmd.count_atoms(f"({selection}) and not hydro") <= 0:
             raise ToolError(f"selection {selection!r} is empty")
-        cmd.select("sele", str(selection))
         try:
-            mol, _label = ctx.dlg._pka_selection_molecule()
+            # the tool's own selection: the user's 'sele' is left untouched
+            mol, _label = ctx.dlg._pka_selection_molecule(str(selection))
         except RuntimeError as exc:
             raise ToolError(str(exc)) from exc
         return mol

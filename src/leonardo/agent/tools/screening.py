@@ -204,7 +204,7 @@ def register(reg):
                   "seed_rank": {"type": "integer", "minimum": 1},
                   "seed_smiles": {"type": "string"}, "seed_name": {"type": "string"},
                   "receptor": {"type": "string"}, "pocket_rank": {"type": "integer", "minimum": 1},
-                  "max_analogs": {"type": "integer", "minimum": 1, "maximum": 500},
+                  "max_analogs": {"type": "integer", "minimum": 10, "maximum": 5000},
                   "min_similarity": {"type": "number", "minimum": 0, "maximum": 1},
                   "max_similarity": {"type": "number", "minimum": 0, "maximum": 1},
                   "exhaustiveness": {"type": "integer", "minimum": 1, "maximum": 64},

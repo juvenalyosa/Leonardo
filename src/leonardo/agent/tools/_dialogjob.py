@@ -14,7 +14,7 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description="", on_canc
     try:
         start()
     except Exception:
-        _headless.take_messages()
+        _headless.take_messages(token)
         _headless.end(token)
         raise
 
@@ -26,7 +26,7 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description="", on_canc
         if not is_done():
             return {"done": False, "progress": _progress(ctx)}
         finished["done"] = True
-        messages = _headless.take_messages()
+        messages = _headless.take_messages(token)
         _headless.end(token)
         errors = [m["text"] for m in messages if m["kind"] == "critical"]
         warnings = [m["text"][:600] for m in messages if m["kind"] == "warning"]
@@ -52,7 +52,7 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description="", on_canc
             on_cancel()
         if not finished["done"]:
             finished["done"] = True
-            _headless.take_messages()
+            _headless.take_messages(token)
             _headless.end(token)
 
     return ctx.jobs.start(kind, poll, cancel=cancel, description=description)

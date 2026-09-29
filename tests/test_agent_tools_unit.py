@@ -1,5 +1,6 @@
 """Unit checks of assistant tool helpers and the OpenMM implicit-solvent force field fix."""
 import code_v2
+import pytest
 
 from leonardo.agent.tools import _headless
 
@@ -65,3 +66,43 @@ def test_vs_library_keeps_compound_names(tmp_path):
     dlg._vs_library_sdf = str(path)
     entries, info = dlg._vs_load_sdf_library(str(path), 10)
     assert [e["name"] for e in entries] == ["benzamidine", "phenol"]
+
+
+def test_captured_messages_belong_to_their_own_job():
+    from leonardo.agent.tools import _headless
+
+    _headless.reset()
+    a = _headless.begin()
+    _headless._record({"kind": "critical", "title": "A", "text": "docking failed"})
+    b = _headless.begin()
+    _headless._record({"kind": "information", "title": "B", "text": "md done"})
+    assert [m["title"] for m in _headless.take_messages(b)] == ["B"]
+    assert [m["title"] for m in _headless.take_messages(a)] == ["A", "B"]
+    _headless.end(a)
+    _headless.reset()                           # a reset while b runs...
+    c = _headless.begin()
+    _headless.end(b)                            # ...then b's late end must not end c
+    assert _headless.active()
+    _headless.end(c)
+    assert not _headless.active()
+
+
+def test_out_of_range_values_are_reported_not_clamped():
+    pytest.importorskip("pymol")
+    from pymol.Qt import QtWidgets
+
+    from leonardo.agent.registry import ToolError
+    from leonardo.agent.tools._widgets import set_value
+    from leonardo.agent.ui.style import pill_style
+
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    class Dlg:
+        spin = QtWidgets.QSpinBox()
+
+    Dlg.spin.setRange(10, 5000)
+    with pytest.raises(ToolError):
+        set_value(Dlg, "spin", 5)
+    set_value(Dlg, "spin", 20)
+    assert Dlg.spin.value() == 20
+    assert "rgba(31, 58, 110, 0.12)" in pill_style("#1F3A6E")

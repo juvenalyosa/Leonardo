@@ -23,7 +23,7 @@ def register(reg):
                   "mutant_object": {"type": "string", "description": "also redock into this mutant receptor "
                                                                      "(e.g. from model_mutant) and compare"},
                   "ensemble_structures": {"type": "integer", "minimum": 0, "maximum": 200,
-                                          "description": "receptor ensemble: N binding-site conformations "
+                                          "description": "receptor ensemble: N (2-200) binding-site conformations "
                                                          "sampled by Monte Carlo from the best model (0 = rigid "
                                                          "single receptor)"},
                   "ensemble_temperature_K": {"type": "number", "minimum": 100, "maximum": 2000},
@@ -68,6 +68,8 @@ def register(reg):
             dlg.spin_redock_ph.setValue(float(ph))
             if hasattr(dlg, "cb_redock_use_mc_ensemble"):
                 dlg.cb_redock_use_mc_ensemble.setChecked(int(ensemble_structures) > 0)
+                if int(ensemble_structures) == 1:
+                    raise ToolError("an ensemble needs at least 2 structures (0 = rigid single receptor)")
                 if int(ensemble_structures) > 0:
                     dlg.spin_redock_mc_n.setValue(int(ensemble_structures))
                     dlg.spin_redock_mc_temp.setValue(float(ensemble_temperature_K))

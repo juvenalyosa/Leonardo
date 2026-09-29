@@ -12,7 +12,8 @@ jobs the originals run unchanged.
 import os
 import threading
 
-_state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set(), "presets": {}, "live": set()}
+_state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set(), "presets": {}, "live": set(),
+          "buckets": {}}
 _tokens = iter(range(1, 1 << 62))
 
 # Leonardo labels every non-water, non-ion hetero group "cofactor" (the crystal ligand
@@ -25,6 +26,15 @@ KNOWN_COFACTORS = frozenset({
 })
 
 
+def _record(message):
+    """A captured message goes to every running job's own list (and to the shared list)."""
+    with _lock:
+        for tok in _state["live"]:
+            _state["buckets"].setdefault(tok, []).append(message)
+        _state["messages"].append(message)
+        del _state["messages"][:-200]
+
+
 def set_keep_hetero(resns):
     _state["keep_hetero"] = {str(r).strip().upper() for r in (resns or []) if str(r).strip()}
 _lock = threading.Lock()
@@ -35,8 +45,7 @@ def _capture(kind):
     def handler(parent, title, text, *args, **kwargs):
         if _state["depth"] <= 0:
             return _originals[kind](parent, title, text, *args, **kwargs)
-        with _lock:
-            _state["messages"].append({"kind": kind, "title": str(title), "text": str(text)[:1500]})
+        _record({"kind": kind, "title": str(title), "text": str(text)[:1500]})
         from pymol.Qt import QtWidgets
 
         QMB = QtWidgets.QMessageBox
@@ -64,8 +73,7 @@ def install():
         presets = _state.get("presets") or {}
         chosen = presets.get(str(title), presets.get(str(label)))
         value = value if chosen is None else chosen
-        with _lock:
-            _state["messages"].append({"kind": "information", "title": str(title),
+        _record({"kind": "information", "title": str(title),
                                        "text": f"{label} -> {value}"})
         return float(value), True
     QID.getDouble = staticmethod(get_double)
@@ -81,8 +89,7 @@ def install():
     def box_exec(box, *args, **kwargs):
         if _state["depth"] <= 0:
             return _originals["box_exec"](box, *args, **kwargs)
-        with _lock:
-            _state["messages"].append({"kind": "information", "title": str(box.windowTitle()),
+        _record({"kind": "information", "title": str(box.windowTitle()),
                                        "text": (str(box.text()) + "\n" + str(box.informativeText())).strip()[:3000]})
         buttons = box.standardButtons()
         return QMB.Yes if buttons & QMB.Yes else QMB.Ok
@@ -142,8 +149,7 @@ def _prompt(kind):
                 value = args[1] if len(args) > 1 else kwargs.get("text", "")
             else:
                 value = args[0] if args else kwargs.get("value", 0)
-        with _lock:
-            _state["messages"].append({"kind": "information", "title": str(title), "text": f"{label} -> {value}"})
+        _record({"kind": "information", "title": str(title), "text": f"{label} -> {value}"})
         return (int(value) if kind == "getInt" else value), True
     return staticmethod(handler)
 
@@ -154,6 +160,7 @@ def begin():
     with _lock:
         tok = next(_tokens)
         _state["live"].add(tok)
+        _state["buckets"][tok] = []
         _state["depth"] = len(_state["live"])
     return tok
 
@@ -163,9 +170,10 @@ def end(token=None):
     with _lock:
         if token is None:
             if _state["live"]:
-                _state["live"].pop()
+                token = _state["live"].pop()
         else:
             _state["live"].discard(token)
+        _state["buckets"].pop(token, None)
         _state["depth"] = len(_state["live"])
         if not _state["live"]:
             # per-job settings end with the last job (run_docking's kept HETATM must not reach later runs)
@@ -180,14 +188,22 @@ def reset():
     """Leave assistant mode for good (stop / new chat / panel closed): message boxes show again."""
     with _lock:
         _state["live"].clear()
+        _state["buckets"].clear()
         _state["depth"] = 0
         _state["messages"].clear()
         _state["keep_hetero"] = set()
         _state["presets"] = {}
 
 
-def take_messages():
+def take_messages(token=None):
+    """Messages captured during the job ``token`` (only its own, even with other jobs running);
+    without a token, the shared list."""
     with _lock:
+        if token is not None:
+            out = list(_state["buckets"].get(token, []))
+            if token in _state["buckets"]:
+                _state["buckets"][token] = []
+            return out
         out = list(_state["messages"])
         _state["messages"].clear()
     return out
@@ -202,7 +218,7 @@ class quiet:
         return self
 
     def __exit__(self, *exc):
-        self.messages = take_messages()
+        self.messages = take_messages(self._token)
         end(self._token)
         return False
 
@@ -237,8 +253,7 @@ def auto_hetatm_selection(dlg):
                 cache[str(receptor_obj)] = [dlg._dock_hetatm_component_cache_key(c) for c in selected]
         except Exception:
             pass
-        with _lock:
-            _state["messages"].append({
+        _record({
                 "kind": "information", "title": "HETATM kept in receptor",
                 "text": "kept: " + (", ".join(f"{c.get('resn', '?')} {c.get('chain', '')}{c.get('resi', '')}"
                                                for c in selected) or "none")
