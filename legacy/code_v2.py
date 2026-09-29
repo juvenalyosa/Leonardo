@@ -18805,10 +18805,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             json.dump(args, fh)
         py = os.path.join(sys.prefix, "bin", "python")
         py = py if os.path.isfile(py) else sys.executable
-        proc = subprocess.Popen([py, os.path.abspath(mod.__file__), args_path], cwd=out_dir,
+        import queue
+        import threading
+        # -u: progress lines arrive as they are printed; a reader thread keeps the GUI loop from blocking
+        proc = subprocess.Popen([py, "-u", os.path.abspath(mod.__file__), args_path], cwd=out_dir,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        lines_q = queue.Queue()
+
+        def _reader():
+            for ln in proc.stdout:
+                lines_q.put(ln)
+
+        reader = threading.Thread(target=_reader, daemon=True)
+        reader.start()
         tail = []
-        for line in proc.stdout:
+        while True:
+            try:
+                line = lines_q.get(timeout=0.05)
+            except queue.Empty:
+                QtWidgets.QApplication.processEvents()
+                if proc.poll() is not None and not reader.is_alive() and lines_q.empty():
+                    break
+                continue
             tail = (tail + [line.rstrip()])[-20:]
             if line.startswith("PROGRESS") and progress_label is not None:
                 try:
@@ -18866,7 +18884,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         temp = float(self.spin_redock_mc_temp.value()) if hasattr(self, "spin_redock_mc_temp") else 300.0
         self._append_debug_log(f"Redocking MC ensemble ({label}): {n} structures, T={temp} K, {len(site)} site residues")
         res = self._redock_mc_sample(best_pdb, work, site, n, temp,
-                                     progress_label=getattr(self, "lbl_redock_status", None))
+                                     progress_label=getattr(self, "lbl_redock_summary", None))
         if not bool(res.get("ok", False)):
             out["note"] = f"{label}: Monte Carlo sampling failed ({str(res.get('error', ''))[:200]}); single receptor used."
             return out
@@ -30588,7 +30606,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines.append("        return None")
         lines.append("    rows = open(files[-1]).read().splitlines()")
         lines.append("    E, C, i = [], [], 0")
-        lines.append("    b2a = float(psi4.constants.bohr2angstroms)")
+        # optking writes the IRC points' x as they are, in bohr (like psi4's own history)
         lines.append("    while i < len(rows):")
         lines.append("        if not rows[i].strip():")
         lines.append("            i += 1")
@@ -30596,7 +30614,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines.append("        n = int(rows[i].split()[0])")
         lines.append("        tail = rows[i + 1].split('E:')")
         lines.append("        E.append(float(tail[1].split()[0]) if len(tail) > 1 else float('nan'))")
-        lines.append("        C.append([[float(v) / b2a for v in ln.split()[1:4]] for ln in rows[i + 2:i + 2 + n]])")
+        lines.append("        C.append([[float(v) for v in ln.split()[1:4]] for ln in rows[i + 2:i + 2 + n]])")
         lines.append("        i += 2 + n")
         lines.append("    try:")
         lines.append("        os.replace(files[-1], files[-1].replace('irc_traj', 'irc_branch_done'))")
@@ -35349,6 +35367,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             sup = Chem.SDMolSupplier(lib, removeHs=False, sanitize=False)
         except Exception:
             return [], {"loaded": 0, "skipped": 0, "total": 0, "reason": "invalid_sdf"}
+        # the drug-likeness filter runs while reading, so the limit counts compounds that pass it
+        rule = str(self.cmb_vs_druglike_filter.currentData() or "none") if hasattr(self, "cmb_vs_druglike_filter") else "none"
+        no_pains = bool(self.cb_vs_exclude_pains.isChecked()) if hasattr(self, "cb_vs_exclude_pains") else False
+        rejected = []
+        log = getattr(self, "_append_debug_log", lambda _m: None)
+        try:
+            try:
+                dl = self._modeler_import_module("druglike_runtime")
+            except Exception:
+                import druglike_runtime as dl
+        except Exception as e:
+            dl = None
+            log(f"VS drug-likeness filter skipped: {e}")
         for i, m in enumerate(sup):
             total += 1
             if len(out) >= lim:
@@ -35392,24 +35423,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     continue
             if not name:
                 name = f"Lig_{i+1}"
-            out.append(
-                {
-                    "index": int(i + 1),
-                    "name": str(name),
-                    "identifier": str(ident),
-                    "mol": mol,
-                }
-            )
-        rule = str(self.cmb_vs_druglike_filter.currentData() or "none") if hasattr(self, "cmb_vs_druglike_filter") else "none"
-        no_pains = bool(self.cb_vs_exclude_pains.isChecked()) if hasattr(self, "cb_vs_exclude_pains") else False
-        rejected = []
-        log = getattr(self, "_append_debug_log", lambda _m: None)
+            entry = {
+                "index": int(i + 1),
+                "name": str(name),
+                "identifier": str(ident),
+                "mol": mol,
+            }
+            if dl is not None:
+                try:
+                    kept, rej = dl.filter_entries([entry], rule=rule, exclude_pains=no_pains)
+                except Exception:
+                    kept, rej = [entry], []
+                rejected.extend(rej)
+                if not kept:
+                    continue
+            out.append(entry)
         try:
-            try:
-                dl = self._modeler_import_module("druglike_runtime")
-            except Exception:
-                import druglike_runtime as dl
-            out, rejected = dl.filter_entries(out, rule=rule, exclude_pains=no_pains)
             self._vs_library_props = {int(e["index"]): dict(e.get("druglike") or {}) for e in out + rejected}
             self._vs_filter_rejected = [{"index": e.get("index"), "name": e.get("name"),
                                          "reason": e.get("filter_reason", "")} for e in rejected]
@@ -35648,13 +35677,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(fallback_job, exist_ok=True)
         except Exception:
             pass
-        return self._prepare_ligand_for_docking(
-            lig_sdf,
-            fallback_job,
-            target_ph=float(target_ph_local),
-            smiles_hint="",
-            preserve_input_charges=False,
-        )
+        # library-scale preparation: the pKa default Psi4 becomes PM7 (minutes per molecule otherwise)
+        with self._pka_bulk_mode():
+            return self._prepare_ligand_for_docking(
+                lig_sdf,
+                fallback_job,
+                target_ph=float(target_ph_local),
+                smiles_hint="",
+                preserve_input_charges=False,
+            )
     def _vs_convert_pose_for_view_runtime(self, out_pose, pose_dir_local, stem_local):
         pose_view_local = str(out_pose)
         if str(out_pose).lower().endswith(".pdbqt"):
@@ -37567,13 +37598,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(fallback_job, exist_ok=True)
         except Exception:
             pass
-        return self._prepare_ligand_for_docking(
-            lig_sdf,
-            fallback_job,
-            target_ph=float(target_ph_local),
-            smiles_hint=str((item_local or {}).get("smiles", "") or ""),
-            preserve_input_charges=False,
-        )
+        # library-scale preparation: the pKa default Psi4 becomes PM7 (minutes per molecule otherwise)
+        with self._pka_bulk_mode():
+            return self._prepare_ligand_for_docking(
+                lig_sdf,
+                fallback_job,
+                target_ph=float(target_ph_local),
+                smiles_hint=str((item_local or {}).get("smiles", "") or ""),
+                preserve_input_charges=False,
+            )
     def _leadopt_convert_pose_for_view_runtime(self, out_pose, pose_dir_local, stem_local):
         pose_view_local = str(out_pose)
         if str(out_pose).lower().endswith(".pdbqt"):
@@ -47130,8 +47163,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 continue
         hw = self._hardware_profile()
-        hw_pick = str(((hw or {}).get("md_platform") or {}).get("name", "") or "")
-        if hw_pick in available and not os.environ.get("LEONARDO_OPENMM_PLATFORM"):
+        hw_md = (hw or {}).get("md_platform") or {}
+        hw_pick = str(hw_md.get("name", "") or "")
+        hw_bench = (((hw or {}).get("openmm_benchmark") or {}).get(hw_pick) or {})
+        user_override = os.environ.get("PROTLIGINTERACT_OPENMM_PLATFORM") or os.environ.get("LEONARDO_OPENMM_PLATFORM")
+        # only a GPU that really ran (and won) the benchmark overrides the usual plan; a CPU pick (also
+        # the result of a failed/timed-out GPU benchmark) keeps the plan and its per-OS safety order
+        if (hw_pick in available and bool(hw_md.get("is_gpu")) and hw_bench.get("steps_per_s")
+                and not user_override):
             # measured in a child process on this machine (a crashing GPU driver never reached PyMOL)
             threads = int(((hw or {}).get("threads") or {}).get("openmm_cpu") or 0)
             props = {"Precision": "mixed"} if hw_pick in ("CUDA", "OpenCL", "HIP", "Metal") else (
@@ -51862,7 +51901,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """Method used for automatic protonation everywhere ("empirical", "pm7" or "psi4").
         Library-scale work (virtual screening) never runs Psi4 (minutes per molecule): PM7 instead."""
         method = str(getattr(self, "_pka_default_method", "empirical") or "empirical")
+        bulk = bool(bulk) or bool(getattr(self.__dict__.get("_pka_bulk_local"), "active", 0))
         return "pm7" if (bulk and method == "psi4") else method
+    def _pka_bulk_mode(self):
+        """Context: protonation in this thread counts as library-scale (see _pka_method)."""
+        import contextlib
+        import threading
+        local = self.__dict__.setdefault("_pka_bulk_local", threading.local())
+
+        @contextlib.contextmanager
+        def _mode():
+            local.active = int(getattr(local, "active", 0)) + 1
+            try:
+                yield
+            finally:
+                local.active -= 1
+        return _mode()
     def _pka_backend_options(self, method):
         """Backend options for pka_runtime: the Psi4 executable Leonardo is configured with."""
         if str(method) != "psi4":

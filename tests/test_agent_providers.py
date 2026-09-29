@@ -169,3 +169,20 @@ def test_external_mcp_http_endpoint():
     assert set(names) == {"ping", "heavy"}
     assert not ok.isError and '"pong": 3' in ok.content[0].text
     assert denied.isError and "declined" in denied.content[0].text
+
+
+def test_unanswered_tool_calls_are_closed_before_the_next_message():
+    from types import SimpleNamespace
+
+    prov = AnthropicProvider("claude-sonnet-5", api_key="x", client=object())
+    prov.add_user_text("hi")
+    prov.messages.append({"role": "assistant", "content": [SimpleNamespace(type="tool_use", id="tu_1")]})
+    prov.add_user_text("again")
+    last = prov.messages[-1]["content"]
+    assert last[0]["tool_use_id"] == "tu_1" and last[0]["is_error"] and last[-1]["text"] == "again"
+
+    oai = OpenAIProvider("gpt-5", api_key="x", client=object())
+    oai._open_calls = ["call_1"]
+    oai.add_user_text("again")
+    assert oai.pending_input[0] == {"type": "function_call_output", "call_id": "call_1",
+                                    "output": "ERROR: not run (the turn was interrupted)"}

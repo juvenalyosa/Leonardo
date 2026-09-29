@@ -7,7 +7,9 @@ card per tool call (status, duration, result, "Show in viewer" to recall that st
 scene), confirmation and question cards, and a usage footer.
 """
 
+import html
 import json
+import re
 
 from pymol.Qt import QtCore, QtGui, QtWidgets
 
@@ -52,6 +54,14 @@ def _short_args(args, limit=160):
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]()#<>|!~])")
+
+
+def _md_escape(value):
+    """Tool values (SMILES, paths, selections) shown literally, not as Markdown/HTML."""
+    return _MD_SPECIAL.sub(r"\\\1", str(value))
+
+
 def _result_summary(result, limit=420):
     if not result:
         return ""
@@ -61,7 +71,7 @@ def _result_summary(result, limit=420):
             v = json.dumps(v, ensure_ascii=False)
             if len(v) > 90:
                 v = v[:90] + "…"
-        parts.append(f"**{k}**: {v}")
+        parts.append(f"**{_md_escape(k)}**: {_md_escape(v)}")
     text = "  \n".join(parts)
     return text if len(text) <= limit else text[:limit] + "…"
 
@@ -162,7 +172,8 @@ class ChatPanel(QtWidgets.QWidget):
         self._tool_cards = []
         self._step_labels = {}
         self._busy = False
-        self._pending = None          # (kind, handler) while the agent waits for an answer
+        self._pending = None          # (kind, handler, card token) while the agent waits for an answer
+        self._open_asks = []
 
     # -- helpers -------------------------------------------------------------- #
     def _add(self, widget):
@@ -183,6 +194,7 @@ class ChatPanel(QtWidgets.QWidget):
         self._busy = bool(busy)
         if not busy:
             self._pending = None      # the request ended: nothing is waiting for an answer any more
+            self._retire_open_asks()
         self.btn_stop.setVisible(bool(busy))
         self._sync_composer()
 
@@ -202,9 +214,27 @@ class ChatPanel(QtWidgets.QWidget):
         else:
             self.input.setPlaceholderText(self._default_placeholder)
 
-    def _set_pending(self, kind, handler):
-        self._pending = (kind, handler)
+    def _set_pending(self, kind, handler, token=None):
+        self._pending = (kind, handler, token)
+        if token is not None:
+            self._open_asks.append(token)
         self._sync_composer()
+
+    def _is_current(self, token):
+        """Only the card the agent is waiting on can answer (an old card must not answer a new question)."""
+        return self._pending is not None and self._pending[2] is token
+
+    def _retire_open_asks(self):
+        """The request ended (done, stopped or failed): unanswered cards become inert."""
+        for token in self._open_asks:
+            if not token.get("done"):
+                token["done"] = True
+                for w in token.get("widgets", ()):
+                    try:
+                        w.setEnabled(False)
+                    except RuntimeError:
+                        pass
+        self._open_asks = []
 
     def _clear_pending(self):
         self._pending = None
@@ -224,6 +254,7 @@ class ChatPanel(QtWidgets.QWidget):
         self._tool_cards = []
         self._step_labels = {}
         self._pending = None
+        self._retire_open_asks()
         self._sync_composer()
 
     def _send(self):
@@ -231,7 +262,7 @@ class ChatPanel(QtWidgets.QWidget):
         if not text:
             return
         if self._pending is not None:
-            _kind, handler = self._pending
+            _kind, handler, _token = self._pending
             self.input.clear()
             handler(text)
             return
@@ -340,8 +371,10 @@ class ChatPanel(QtWidgets.QWidget):
 
             answered = {"done": False}
 
+            answered["widgets"] = (b_ok, b_rev, b_no, feedback)
+
             def done(decision, text=None):
-                if answered["done"]:
+                if answered["done"] or not self._is_current(answered):
                     return
                 answered["done"] = True
                 for b in (b_ok, b_rev, b_no):
@@ -358,7 +391,7 @@ class ChatPanel(QtWidgets.QWidget):
             b_rev.clicked.connect(lambda: done("revise") if feedback.text().strip() else feedback.setFocus())
             b_no.clicked.connect(lambda: done("reject"))
             feedback.returnPressed.connect(b_rev.click)
-            self._set_pending("plan", lambda text: done("revise", text))
+            self._set_pending("plan", lambda text: done("revise", text), answered)
         self._add(card)
 
     def mark_step(self, step, status, summary=""):
@@ -417,7 +450,7 @@ class ChatPanel(QtWidgets.QWidget):
         if status == "done":
             result = dict(payload.get("result") or {})
             scene = str(result.get("scene", "") or "")
-            rest = {k: v for k, v in result.items() if k != "scene"}
+            rest = {k: v for k, v in result.items() if k not in ("scene", "quality_warnings")}
             if payload.get("card"):
                 body.setText(str(payload["card"]))
                 details.setText(_result_summary(rest, limit=1600))
@@ -437,7 +470,7 @@ class ChatPanel(QtWidgets.QWidget):
                 btn_scene.setVisible(True)
                 btn_scene.clicked.connect(lambda _=False, s=scene: self.scene_requested.emit(s))
         elif status == "failed":
-            body.setText(f"<span style='color:{ERR}'>{payload.get('error', '')}</span>")
+            body.setText(f"<span style='color:{ERR}'>{html.escape(str(payload.get('error', '')))}</span>")
             body.setTextFormat(QtCore.Qt.RichText)
         elif status == "declined":
             body.setText("Skipped by the user.")
@@ -487,10 +520,10 @@ class ChatPanel(QtWidgets.QWidget):
         row.addStretch(1)
         lay.addLayout(row)
 
-        answered = {"done": False}
+        answered = {"done": False, "widgets": (b_yes, b_no)}
 
         def done(ok, reason=""):
-            if answered["done"]:
+            if answered["done"] or not self._is_current(answered):
                 return
             answered["done"] = True
             b_yes.setEnabled(False)
@@ -501,7 +534,7 @@ class ChatPanel(QtWidgets.QWidget):
             self.answer_given.emit({"approved": bool(ok), "feedback": reason})
         b_yes.clicked.connect(lambda: done(True))
         b_no.clicked.connect(lambda: done(False))
-        self._set_pending("confirm", lambda text: done(False, text))
+        self._set_pending("confirm", lambda text: done(False, text), answered)
         self._add(card)
 
     def ask_question(self, payload):
@@ -515,7 +548,7 @@ class ChatPanel(QtWidgets.QWidget):
         answered = {"done": False}
 
         def done(text):
-            if answered["done"] or not str(text).strip():
+            if answered["done"] or not str(text).strip() or not self._is_current(answered):
                 return
             answered["done"] = True
             for b in buttons:
@@ -544,6 +577,7 @@ class ChatPanel(QtWidgets.QWidget):
         buttons.append(b_send)
         row.addWidget(b_send)
         lay.addLayout(row)
-        self._set_pending("question", done)
+        answered["widgets"] = tuple(buttons) + (free,)
+        self._set_pending("question", done, answered)
         self._add(card)
         QtCore.QTimer.singleShot(60, free.setFocus)

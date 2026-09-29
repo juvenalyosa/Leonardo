@@ -114,7 +114,10 @@ class PipelineDialog(QtWidgets.QDialog):
                 except ValueError:
                     out[name] = text
             else:
-                out[name] = text.strip()
+                try:                              # no saved type: numbers/lists/JSON as such, else text
+                    out[name] = json.loads(text) if default is None else text.strip()
+                except ValueError:
+                    out[name] = text.strip()
         return out
 
     def _run(self):

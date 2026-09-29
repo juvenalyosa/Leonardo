@@ -61,6 +61,14 @@ def register_in_leonardo(ctx, name, path):
             pass
 
 
+def _object_name(name):
+    """A PyMOL-safe object name (what cmd.load would turn the name into)."""
+    import re
+
+    safe = re.sub(r"[^A-Za-z0-9_.+-]", "_", str(name).strip()) or "obj"
+    return ("_" + safe) if safe[0] in "+-." else safe
+
+
 def register(reg):
     @reg.tool("list_objects", "List the molecular objects loaded in PyMOL with atom counts and chains.",
               permission="read", title="Session objects")
@@ -108,7 +116,8 @@ def register(reg):
         path = str(payload.get("path") or payload.get("output_path") or "")
         if not path or not os.path.isfile(path):
             raise ToolError(str(payload.get("error") or "download failed"))
-        name = object_name or os.path.splitext(os.path.basename(path))[0]
+        # PyMOL renames objects with spaces or symbols: use the name it will really have
+        name = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
 
         def load():
             from .. import presentation
@@ -151,7 +160,7 @@ def register(reg):
                                                      ".pdbqt", ".xyz"):
             raise ToolError("unsupported file type")
         cmd = _cmd()
-        name = object_name or os.path.splitext(os.path.basename(path))[0]
+        name = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
         cmd.load(path, name)
         presentation.apply_house_style()
         if cmd.count_atoms(f"({name}) and polymer"):

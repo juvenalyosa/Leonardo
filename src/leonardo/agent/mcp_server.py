@@ -16,6 +16,7 @@ thread-safe): the host passes ``run_on_main(fn) -> value``.
 import asyncio
 import json
 import threading
+import time
 
 from .registry import APPROVAL_POLICIES, ToolError, result_to_text
 
@@ -39,7 +40,9 @@ def build_server(registry, run_on_main, context=None, confirm=None, approval_pol
                 for s in registry.specs()]
 
     def _reply(payload, is_error):
-        text = result_to_text(payload)
+        # the full JSON: the in-app client parses it (cards, job status, pipeline links); the assistant
+        # shortens results for the model itself
+        text = result_to_text(payload, limit=2_000_000)
         return types.CallToolResult(content=[types.TextContent(type="text", text=text)], isError=bool(is_error))
 
     @server.call_tool(validate_input=False)      # the registry validates (and reports) arguments
@@ -157,8 +160,18 @@ class ExternalMcpServer:
         app = Starlette(routes=[Mount("/mcp", app=handle)], lifespan=lifespan)
         config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning")
         self._uvicorn = uvicorn.Server(config)
-        self._thread = threading.Thread(target=self._uvicorn.run, name="leonardo-mcp-http", daemon=True)
+        server = self._uvicorn
+        self._thread = threading.Thread(target=server.run, name="leonardo-mcp-http", daemon=True)
         self._thread.start()
+        # uvicorn ends the thread (sys.exit) when the port is taken: report that instead of "running"
+        deadline = time.time() + 10
+        while not server.started and self._thread.is_alive() and time.time() < deadline:
+            time.sleep(0.05)
+        if not server.started:
+            server.should_exit = True
+            self._uvicorn = None
+            raise RuntimeError(f"could not start the MCP server on 127.0.0.1:{self.port} "
+                               "(port in use? choose another in Settings)")
         return self.url
 
     def stop(self):

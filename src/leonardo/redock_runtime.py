@@ -2235,7 +2235,7 @@ def _redocking_submol(mol, atom_indices):
     return rw.GetMol()
 
 
-def compute_redocking_graph_rmsd(ref_mol, pose_mol, *, max_maps=4096):
+def compute_redocking_graph_rmsd(ref_mol, pose_mol, *, max_maps=1_000_000):
     """
     Symmetry-corrected heavy-atom RMSD without superposition, over every graph
     isomorphism between the two heavy-atom skeletons (see redocking_heavy_atom_skeleton).

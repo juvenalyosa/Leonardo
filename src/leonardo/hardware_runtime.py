@@ -179,31 +179,47 @@ def _load_cache():
         return {}
 
 
-def _save_cache(data):
+def _save_cache(data, keep_calibration=True):
+    """Atomic write; the calibration on disk (written by finished runs meanwhile) is merged in."""
     try:
         os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
         data["version"] = CACHE_VERSION
-        with open(CACHE_PATH, "w") as fh:
+        if keep_calibration:
+            data["calibration"] = dict(_load_cache().get("calibration") or {}, **(data.get("calibration") or {}))
+        tmp = f"{CACHE_PATH}.{os.getpid()}.tmp"
+        with open(tmp, "w") as fh:
             json.dump(data, fh, indent=1)
+        os.replace(tmp, CACHE_PATH)
     except Exception:
         pass
 
 
 def detect(benchmark=True, refresh=False):
     """Full hardware profile (cached). ``benchmark=False`` skips the OpenMM speed test if not cached."""
-    cache = {} if refresh else _load_cache()
+    stored = _load_cache()
+    cache = {} if refresh else stored
     names, version = openmm_platforms()
     same = cache.get("openmm_platforms") == names and cache.get("openmm_version") == version
-    prof = dict(cache) if same else {"calibration": cache.get("calibration", {})}
+    # measured speeds of real runs survive a refresh or a new OpenMM
+    prof = dict(cache) if same else {"calibration": stored.get("calibration", {})}
     prof.update({"cpu": detect_cpu(), "openmm_platforms": names, "openmm_version": version})
     if "gpus" not in prof or refresh:
         prof["gpus"] = detect_gpus()
-    if benchmark and ("openmm_benchmark" not in prof or refresh):
+    bench = prof.get("openmm_benchmark") or {}
+    # a GPU benchmark that failed (first-time CUDA JIT past the timeout, a busy driver) is retried on
+    # the next launches (up to 3 tries) instead of pinning MD to the CPU for good
+    failed_gpu = [n for n in GPU_PLATFORMS if n in names and (bench.get(n) or {}).get("error")]
+    retry = bool(failed_gpu) and int(prof.get("benchmark_attempts", 1) or 1) < 3
+    if benchmark and ("openmm_benchmark" not in prof or refresh or retry):
         prof["openmm_benchmark"] = benchmark_openmm(names)
         prof["benchmark_time"] = time.strftime("%Y-%m-%d %H:%M")
+        prof["benchmark_attempts"] = 1 if (refresh or "openmm_benchmark" not in cache) else \
+            int(prof.get("benchmark_attempts", 1) or 1) + 1
     prof["md_platform"] = pick_md_platform(prof)
     prof["threads"] = recommended_threads(prof)
-    _save_cache(prof)
+    # speeds recorded by runs that finished during the benchmark win over the copy loaded at the start
+    prof["calibration"] = dict(prof.get("calibration") or {}, **(_load_cache().get("calibration") or {}))
+    _save_cache(prof, keep_calibration=False)
     return prof
 
 
@@ -240,7 +256,9 @@ def record_md_speed(platform_name, solvent, n_atoms, ns_per_day):
     cal = prof.setdefault("calibration", {})
     kind = "GPU" if platform_name in GPU_PLATFORMS else "CPU"
     key = f"md:{kind}:{solvent}"
-    norm = float(ns_per_day) * (float(n_atoms) / REF_ATOMS)
+    # the same size scaling as estimate_md (GB ~N^1.3, PME ~N)
+    expo = 1.3 if solvent == "implicit" else 1.0
+    norm = float(ns_per_day) * (max(100.0, float(n_atoms)) / REF_ATOMS) ** expo
     prev = cal.get(key)
     cal[key] = round(norm if not prev else 0.5 * prev + 0.5 * norm, 3)
     _save_cache(prof)

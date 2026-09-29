@@ -1,5 +1,6 @@
 import math
 
+import pka_runtime as P
 import pytest
 from pka_runtime import (
     RT_LN10,
@@ -431,3 +432,44 @@ def test_coupling_is_thermodynamically_consistent():
     path_a = micro["00|0"] + micro["10|1"]
     path_b = micro["00|1"] + micro["01|0"]
     assert path_a == pytest.approx(path_b)
+
+
+def test_phosphate_second_pka_is_not_coupled_twice():
+    from rdkit import Chem
+
+    res = P.compute_pka(Chem.MolFromSmiles("CCOP(=O)(O)O"), method="empirical")
+    assert len(res["macro_pkas"]) == 2 and 5.5 < res["macro_pkas"][1] < 7.5
+    top = P.states_at_ph(res, 7.4)[0]
+    assert top["charge"] == -2
+
+
+class _FakeQM(P.EmpiricalBackend):
+    name = "fakeqm"
+    calibration_version = "t"
+    calls = 0
+
+    def evaluate(self, parent, enumerated, fixed, **kw):
+        type(self).calls += 1
+        return super().evaluate(parent, enumerated, fixed)
+
+
+class _FailingQM(_FakeQM):
+    def evaluate(self, *a, **kw):
+        raise P.PkaBackendError("mopac missing")
+
+
+def test_cache_respects_atom_order_ph_and_fallbacks(tmp_path, monkeypatch):
+    from rdkit import Chem
+
+    monkeypatch.setitem(P._BACKENDS, "fakeqm", _FakeQM)
+    monkeypatch.setitem(P._BACKENDS, "failqm", _FailingQM)
+    a = P.compute_pka(Chem.MolFromSmiles("NCC(=O)O"), method="fakeqm", cache_dir=str(tmp_path))
+    b = P.compute_pka(Chem.MolFromSmiles("OC(=O)CN"), method="fakeqm", cache_dir=str(tmp_path))
+    assert b["provenance"]["cache"] == "miss" and a["smiles"] == b["smiles"]
+    prot = P.protonate_molecule(Chem.MolFromSmiles("OC(=O)CN"), method="fakeqm", ph=7.4, cache_dir=str(tmp_path))
+    assert Chem.MolToSmiles(Chem.RemoveHs(prot[0])) == "[NH3+]CC(=O)[O-]"
+    c = P.compute_pka(Chem.MolFromSmiles("NCC(=O)O"), method="fakeqm", focus_ph=2.0, cache_dir=str(tmp_path))
+    assert c["provenance"]["cache"] == "miss"
+    P.compute_pka(Chem.MolFromSmiles("CCN"), method="failqm", cache_dir=str(tmp_path))
+    again = P.compute_pka(Chem.MolFromSmiles("CCN"), method="failqm", cache_dir=str(tmp_path))
+    assert again["provenance"]["cache"] == "miss"

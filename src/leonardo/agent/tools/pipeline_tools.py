@@ -110,13 +110,20 @@ def register(reg):
                 raise ToolError(f"no parameter {k!r}")
             pipe["parameters"][k]["default"] = v
         for k, literal in (add_parameter or {}).items():
-            pipe["steps"] = [dict(s, args=P._substitute(s["args"], [(literal, "{{" + k + "}}")])) for s in pipe["steps"]]
+            repl = [(literal, "{{" + k + "}}")]
+            if isinstance(literal, (int, float)) and not isinstance(literal, bool):
+                keys = P._number_keys(pipe["steps"], literal)
+                repl = [(literal, "{{" + k + "}}", {k} if k in keys else keys)]
+            pipe["steps"] = [dict(s, args=P._substitute(s["args"], repl)) for s in pipe["steps"]]
             pipe["parameters"][k] = {"default": literal, "description": ""}
         for n, changes in (set_step_args or {}).items():
             i = int(n) - 1
             if not 0 <= i < len(pipe["steps"]):
                 raise ToolError(f"no step {n}")
             pipe["steps"][i]["args"].update(dict(changes))
+        # {{step:N.key}} links of the existing steps follow them when steps are removed or inserted
+        for i, st in enumerate(pipe["steps"], start=1):
+            st["_orig"] = i
         for n in sorted({int(x) for x in remove_steps}, reverse=True):
             if 1 <= n <= len(pipe["steps"]):
                 pipe["steps"].pop(n - 1)
@@ -125,6 +132,15 @@ def register(reg):
             if ins["tool"] not in known:
                 raise ToolError(f"unknown tool {ins['tool']!r}")
             pipe["steps"].insert(int(ins["position"]) - 1, {"tool": ins["tool"], "args": dict(ins.get("args") or {})})
+        new_index = {st["_orig"]: i for i, st in enumerate(pipe["steps"], start=1) if "_orig" in st}
+        for i, st in enumerate(pipe["steps"], start=1):
+            if st.pop("_orig", None) is None:
+                continue                         # inserted steps are written with the final numbering
+            try:
+                st["args"] = P.renumber_refs(st["args"], new_index)
+            except KeyError as exc:
+                raise ToolError(f"step {i} ({st['tool']}) uses the result of removed step {exc.args[0]}; "
+                                "change its arguments too (set_step_args)") from None
         if description is not None:
             pipe["description"] = description
         if rename_to:
@@ -180,7 +196,7 @@ def register(reg):
         parent = os.path.abspath(os.path.expanduser(parent_folder or os.path.join(os.path.expanduser("~"),
                                                                                   "Leonardo_projects")))
         root = os.path.join(parent, P.slug(name))
-        if os.path.exists(os.path.join(root, "leonardo_project.json")) or (os.path.isdir(root) and os.listdir(root)):
+        if os.path.isdir(root) and os.listdir(root):
             raise ToolError(f"{root} already exists; choose another name or open_project")
         os.makedirs(root, exist_ok=True)
         with _headless.quiet():

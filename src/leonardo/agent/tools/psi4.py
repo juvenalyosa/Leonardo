@@ -175,9 +175,12 @@ def register(reg):
                             "barrier_from_end_kcal_mol": round(rel[ts_i] - rel[-1], 2),
                             "reaction_energy_kcal_mol": round(rel[-1] - rel[0], 2),
                             "ts_imaginary_cm1": res.get("irc_primary_imag_cm1")})
+                coord = res.get("irc_coordinate_amu05_bohr")
                 ctx.__dict__.setdefault("plots", {})["irc_profile"] = {
-                    "object": object, "program": "Psi4", "x": res.get("irc_coordinate_amu05_bohr") or
-                    list(range(len(rel))), "y_kcal": rel, "ts_index": ts_i}
+                    "object": object, "program": "Psi4", "x": coord or list(range(len(rel))),
+                    "x_label": "Reaction coordinate" + (" (amu$^{1/2}$ bohr)" if coord else " (frame)"),
+                    "y_kcal": rel, "ts_index": ts_i}
+                ctx.__dict__.setdefault("qm", {})["last_path"] = "psi4"
                 irc_note = (f"; IRC {len(rel)} points: barriers {out['barrier_from_start_kcal_mol']} / "
                             f"{out['barrier_from_end_kcal_mol']} kcal/mol from the two ends, ΔE "
                             f"{out['reaction_energy_kcal_mol']} kcal/mol (animate_reaction shows it)")
@@ -233,9 +236,11 @@ def _orbital_energies(job_dir):
         return {}
     block = text[k:k + 20000]
     v = block.find("Virtual:")
-    occ = [float(x) for x in re.findall(r"\d+A\s+(-?\d+\.\d+)", block[:v])]
+    # labels are <n><irrep>: 1A in C1, but 3A1, 1B2, 2Ag, 1Ap... with symmetry
+    lab = r"\d+[A-Za-z][A-Za-z0-9'\"]*\s+(-?\d+\.\d+)"
+    occ = [float(x) for x in re.findall(lab, block[:v])]
     end = block.find("Final Occupation", v)
-    vir = [float(x) for x in re.findall(r"\d+A\s+(-?\d+\.\d+)", block[v:end if end > 0 else None])]
+    vir = [float(x) for x in re.findall(lab, block[v:end if end > 0 else None])]
     if not occ or not vir:
         return {}
     homo, lumo = max(occ), min(vir)

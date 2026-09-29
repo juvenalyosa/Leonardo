@@ -48,6 +48,12 @@ class JobStore:
         return {"job_id": job_id, "status": "running", "elapsed_s": elapsed,
                 "progress": str(state.get("progress", "") or "")}
 
+    def poll_unfinished(self):
+        """Poll every job nobody is following (ends them when done); returns how many still run."""
+        with self._lock:
+            ids = [j for j, job in self._jobs.items() if job["final"] is None]
+        return sum(1 for j in ids if self.status(j).get("status") == "running")
+
     def cancel(self, job_id):
         with self._lock:
             job = self._jobs.get(str(job_id))

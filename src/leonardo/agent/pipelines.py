@@ -56,23 +56,49 @@ def slug(name):
     return s[:80] or "pipeline"
 
 
-def _substitute(value, replacements):
-    """Replace literal values by placeholders (longest first); exact matches for non-strings."""
+def _substitute(value, replacements, _key=None):
+    """Replace literal values by placeholders (longest first). Strings: an exact match of any length, and
+    whole-token occurrences inside longer text for literals of 3+ characters. Numbers: an exact match only
+    under the argument key the parameter came from (a replacement may be (literal, placeholder, key))."""
     if isinstance(value, dict):
-        return {k: _substitute(v, replacements) for k, v in value.items()}
+        return {k: _substitute(v, replacements, k) for k, v in value.items()}
     if isinstance(value, list):
-        return [_substitute(v, replacements) for v in value]
+        return [_substitute(v, replacements, _key) for v in value]
     if isinstance(value, str):
-        for literal, ph in replacements:
-            if isinstance(literal, str) and len(literal) >= 3:
-                if value == literal:
-                    return ph
+        for literal, ph, *_rest in replacements:
+            if not isinstance(literal, str):
+                continue
+            if value == literal:
+                return ph
+            if len(literal) >= 3:
                 value = re.sub(r"(?<![A-Za-z0-9_])" + re.escape(literal) + r"(?![A-Za-z0-9_])", ph, value)
         return value
-    for literal, ph in replacements:
-        if not isinstance(literal, str) and literal == value and not isinstance(value, bool):
+    if isinstance(value, bool):
+        return value
+    for literal, ph, *rest in replacements:
+        keys = rest[0] if rest else None
+        if (not isinstance(literal, (str, bool)) and literal == value
+                and (keys is None or _key in keys)):
             return ph
     return value
+
+
+def _number_keys(steps, literal):
+    """Argument keys where a numeric parameter value appears (only those are parameterized)."""
+    keys = set()
+
+    def walk(v, key):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(x, k)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, key)
+        elif not isinstance(v, (str, bool)) and v == literal:
+            keys.add(key)
+    for s in steps:
+        walk(s["args"], None)
+    return keys
 
 
 def suggest_parameters(steps):
@@ -115,8 +141,15 @@ def build_from_history(name, description="", parameters=None, first=1, last=None
         raise ValueError("no steps: nothing recorded in this session (or an empty range)")
     params = dict(parameters if parameters is not None else suggest_parameters(chosen))
     # parameter placeholders: longest literals first so '3PTB_prepared' is not split by '3PTB'
-    repl = sorted(((v, "{{" + k + "}}") for k, v in params.items() if isinstance(v, (str, int, float))),
-                  key=lambda x: -len(str(x[0])))
+    repl = sorted(((v, "{{" + k + "}}") for k, v in params.items() if isinstance(v, str)),
+                  key=lambda x: -len(x[0]))
+    # a number (7.4, 10) is only a parameter where the user's step used it under the parameter's own
+    # name (ph=7.4), or the one argument key it appears under; never every equal number in every step
+    for k, v in params.items():
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            keys = _number_keys(chosen, v)
+            keys = {k} if k in keys else keys if len(keys) == 1 else {k}
+            repl.append((v, "{{" + k + "}}", keys))
     out_steps, produced = [], []
     for i, s in enumerate(chosen, start=1):
         args = _substitute(copy.deepcopy(s["args"]), repl)
@@ -222,6 +255,22 @@ def resolve_refs(value, results):
             if got is None:
                 raise KeyError(f"step {i} did not produce '{key}'")
             return str(got)
+        return _REF.sub(rep, value)
+    return value
+
+
+def renumber_refs(value, new_index):
+    """{{step:N.key}} -> {{step:new_index[N].key}}; KeyError(N) for a step that no longer exists."""
+    if isinstance(value, dict):
+        return {k: renumber_refs(v, new_index) for k, v in value.items()}
+    if isinstance(value, list):
+        return [renumber_refs(v, new_index) for v in value]
+    if isinstance(value, str) and "{{step:" in value:
+        def rep(m):
+            n = int(m.group(1))
+            if n not in new_index:
+                raise KeyError(n)
+            return "{{step:%d.%s}}" % (new_index[n], m.group(2))
         return _REF.sub(rep, value)
     return value
 

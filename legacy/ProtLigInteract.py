@@ -45,6 +45,16 @@ def __init_plugin__(app=None):
         global _dialog
         if _dialog is not None:
             try:
+                # the AI assistant (worker thread, MCP server, chat window) must stop before its dialog goes
+                controller = getattr(_dialog, "_ai_controller", None)
+                if controller is not None:
+                    controller.shutdown()
+                    window = getattr(controller, "dock", None)
+                    if window is not None:
+                        window.close()
+            except Exception:
+                pass
+            try:
                 _dialog.close()
                 _dialog.deleteLater()
             except Exception:

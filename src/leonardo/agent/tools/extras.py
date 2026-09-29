@@ -86,18 +86,25 @@ def register(reg):
         center = dlg._dock_center_from_controls()
         if not rec or center is None:
             raise ToolError("set the receptor and the docking box first")
-        cands = dlg._collect_flexible_residue_candidates(rec, center, cutoff_a=float(within_A or 8.0), max_keep=320)
+        # explicit residues are looked for in a wider shell than the automatic pick
+        cutoff = float(within_A or (14.0 if residues else 8.0))
+        cands = dlg._collect_flexible_residue_candidates(rec, center, cutoff_a=cutoff, max_keep=320)
+        unmatched = []
         if residues:
             import re
 
             wanted = []
             for r in residues:
-                m = re.match(r"^\s*(?:([A-Za-z0-9]):)?\s*(?:[A-Za-z]{3})?\s*(-?\d+[A-Za-z]?)\s*$", str(r))
+                m = re.match(r"^\s*(?:([A-Za-z0-9]):)?\s*([A-Za-z]{3})?\s*(-?\d+[A-Za-z]?)\s*$", str(r))
                 if not m:
                     raise ToolError(f"cannot read residue {r!r}: use 'A:189', '189' or 'ASP189'")
-                wanted.append(((m.group(1) or "").upper(), m.group(2)))
-            pick = [c for c in cands if any((not ch or str(c.get("chain", "")).upper() == ch) and
-                                            str(c.get("resi")) == rs for ch, rs in wanted)]
+                wanted.append(((m.group(1) or "").upper(), (m.group(2) or "").upper(), m.group(3), str(r)))
+
+            def hit(c, ch, rn, rs):
+                return ((not ch or str(c.get("chain", "")).upper() == ch) and str(c.get("resi")) == rs
+                        and (not rn or str(c.get("resn", "")).upper() == rn))
+            pick = [c for c in cands if any(hit(c, ch, rn, rs) for ch, rn, rs, _t in wanted)]
+            unmatched = [t for ch, rn, rs, t in wanted if not any(hit(c, ch, rn, rs) for c in cands)]
         elif within_A:
             pick = [c for c in cands if float(c.get("min_dist", 99)) <= float(within_A)]
         else:
@@ -114,8 +121,14 @@ def register(reg):
         if residues and not pick:
             raise ToolError("none of those residues is near the box (flexible residues must line the site; "
                             "ALA/GLY/PRO are excluded)")
-        return {"flexible_residues": labels, "_card": (f"{len(pick)} flexible residue(s): " + ", ".join(labels[:8])
-                                                       if pick else "Flexible residues cleared (rigid receptor).")}
+        out = {"flexible_residues": labels, "_card": (f"{len(pick)} flexible residue(s): " + ", ".join(labels[:8])
+                                                      if pick else "Flexible residues cleared (rigid receptor).")}
+        if unmatched:
+            out["not_used"] = unmatched
+            out["note"] = (f"not used (not within {cutoff:.0f} Å of the box center, wrong residue name, or "
+                           "ALA/GLY/PRO): " + ", ".join(unmatched))
+            out["_card"] += f" Not used: {', '.join(unmatched)}."
+        return out
 
     # -- trajectories ----------------------------------------------------------------------------- #
     @reg.tool("load_trajectory", "Load an external MD trajectory (DCD, XTC, TRR, NetCDF, multi-model PDB) on its "
@@ -190,7 +203,7 @@ def register(reg):
         keys = ("occupancy_pct", "distance_mean", "distance_median", "distance_min", "distance_max", "n_present")
         out = {k: jsonable(p.get(k)) for k in keys}
         out.update({"interaction": f"{it.get('type')} {it.get('prot_res')} {it.get('prot_atom')}-{it.get('lig_atom')}",
-                    "frames": len(p.get("frames") or [])})
+                    "frames": int(p.get("n_frames") or len(p.get("frames", [])))})
         out["_card"] = (f"{out['interaction']}: present {out['occupancy_pct']}% of {out['frames']} frames, "
                         f"distance {out['distance_mean']} Å (min {out['distance_min']}, max {out['distance_max']}).")
         return out
@@ -205,9 +218,10 @@ def register(reg):
             raise ToolError("analyze the interactions of a complex first (analyze_interactions)")
         import matplotlib.pyplot as plt
 
+        before = set(plt.get_fignums())
         with _headless.quiet() as q, _headless.plots_allowed():
             dlg._on_show_2d_map()
-        if not plt.get_fignums():
+        if not set(plt.get_fignums()) - before:
             raise ToolError("; ".join(m["text"] for m in q.messages) or "no 2D map was drawn")
         path = os.path.join(ctx.workspace("plots"), time.strftime("interaction_map_%H%M%S.png"))
         plt.figure(plt.get_fignums()[-1]).savefig(path, dpi=110)
@@ -244,17 +258,27 @@ def register(reg):
                     os.path.expanduser("~"), "Leonardo_projects", time.strftime("project_%Y%m%d_%H%M%S"))))
                 os.makedirs(root, exist_ok=True)
                 dlg._project_activate(root, load_state=False, clear_scene=False)
-            dlg._project_save_state(silent=True)
+            saved = dlg._project_save_state(silent=True)
         root = str(dlg._project_root)
+        if saved is False:
+            raise ToolError(f"the project in {root} could not be saved (see Leonardo's log)")
         return {"project": root, "_card": f"Project saved in `{root}`."}
 
     @reg.tool("open_project", "Open a saved Leonardo project folder (replaces the current scene).",
               {"properties": {"folder": {"type": "string"}}, "required": ["folder"]},
               permission="destructive", title="Open project")
     def open_project(ctx, folder):
+        from leonardo.config import PROJECT_MASTER_FILE_NAME, PROJECT_STATE_FILE_NAME
+
         root = os.path.abspath(os.path.expanduser(folder))
+        if os.path.isfile(root) and os.path.basename(root) in (PROJECT_MASTER_FILE_NAME, PROJECT_STATE_FILE_NAME):
+            root = os.path.dirname(root)
         if not os.path.isdir(root):
             raise ToolError(f"no such folder: {root}")
+        # activating any folder clears the scene and creates project subfolders: check first
+        if not any(os.path.isfile(os.path.join(root, f)) for f in (PROJECT_MASTER_FILE_NAME, PROJECT_STATE_FILE_NAME)):
+            raise ToolError(f"{root} is not a Leonardo project (no {PROJECT_MASTER_FILE_NAME} or "
+                            f"{PROJECT_STATE_FILE_NAME}); nothing was changed")
         with _headless.quiet() as q:
             ok = ctx.dlg._project_activate(root, load_state=True, clear_scene=True)
         if not ok:
@@ -378,6 +402,7 @@ def register(reg):
             dlg.tbl_lo_hits.selectRow(int(rank) - 1)
         with _headless.quiet():
             if interactions:
+                dlg.interactions = []
                 dlg._on_leadopt_compute_interactions_selected()
             else:
                 dlg._prepare_leadopt_selected_complex()

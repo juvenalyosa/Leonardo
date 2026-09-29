@@ -137,7 +137,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         cas = []
         cmd.iterate(f"({name}) and polymer and name CA", "cas.append(resv)", space={"cas": cas})
         if labels and len(labels) == len(cas):
-            mapping = {resv: str(label) for resv, label in zip(cas, labels)}
+            # a label MODELLER's gap fill could not number stays as it is (never the text "None")
+            mapping = {resv: str(label) for resv, label in zip(cas, labels) if label not in (None, "", "None")}
             cmd.alter(name, "resi = mapping.get(resv, resi)", space={"mapping": mapping})
         elif cas and int(start_pos) != min(cas):
             cmd.alter(name, f"resv = resv + {int(start_pos) - min(cas)}")
@@ -467,7 +468,7 @@ def register(reg):
         extra = {"source": object, "chain": chain, "residues_filled": n_fill,
                  "gaps_before": entry.get("internal_gaps"),
                  "identity_to_reference": gap.get("identity"), "coverage": gap.get("coverage")}
-        return _start_modeller(ctx, name, seq, [code], labels=[str(x) for x in gap.get("residue_labels") or []],
+        return _start_modeller(ctx, name, seq, [code], labels=[None if x is None else str(x) for x in gap.get("residue_labels") or []],
                                start_pos=int(entry["start"]), num_models=num_models, seed=seed, staged={code: path},
                                align_to=object, extra=extra,
                                card=f"**{name}**: {n_fill} missing residue(s) of {object} chain {chain} built")

@@ -6,7 +6,7 @@ chat window (a separate window, so PyMOL's viewer keeps its size).
 
 from pymol.Qt import QtCore, QtWidgets
 
-from .. import config, presentation
+from .. import config, pipelines, presentation
 from ..mcp_server import ExternalMcpServer, McpToolClient, build_server
 from ..orchestrator import SYSTEM_PROMPT, AgentSession
 from ..providers.base import ProviderError
@@ -78,7 +78,7 @@ class AssistantController(QtCore.QObject):
         self.panel.settings_requested.connect(self.open_settings)
         self.panel.new_chat_requested.connect(self.new_chat)
         self.panel.pipelines_requested.connect(self.open_pipelines)
-        self.panel.scene_requested.connect(lambda key: presentation.recall_scene(key))
+        self.panel.scene_requested.connect(self._recall_scene)
         self._refresh_model_label()
         self._sync_external_server()
 
@@ -136,20 +136,32 @@ class AssistantController(QtCore.QObject):
             if changed_model and self.session is not None:
                 self.panel.add_notice("Model changed: the next request starts a new conversation.")
                 self.session = None
+            elif self.session is not None:
+                # approval policy / limits apply from now on, also to the conversation in progress
+                policy = self.settings.get("approval_policy", "heavy")
+                self.session.approval_policy = policy if policy in APPROVAL_POLICIES else "heavy"
+                self.session.needs_confirmation = APPROVAL_POLICIES[self.session.approval_policy]
+                self.session.max_tool_calls = int(self.settings.get("max_tool_calls", 60))
 
     def open_pipelines(self):
         """Pipeline library: the chosen pipeline and molecules become a request for the assistant."""
         from .pipeline_dialog import ask_pipeline_run
 
         text = ask_pipeline_run(self.panel)
-        if text and not self._busy():
-            self.panel.add_user(text)
-            self.send(text)
+        if not text:
+            return
+        if self._busy():
+            self.panel.add_notice("The assistant is busy: run the pipeline when the current request finishes.")
+            return
+        self.panel.add_user(text)
+        self.send(text)
 
     def _sync_external_server(self):
         want = bool(self.settings.get("mcp_server_enabled"))
         port = int(self.settings.get("mcp_server_port", 8765))
-        if self.external is not None and (not want or self.external.port != port):
+        policy = self.settings.get("approval_policy", "heavy")
+        if self.external is not None and (not want or self.external.port != port
+                                          or getattr(self, "_external_policy", policy) != policy):
             self.external.stop()
             self.external = None
         if want and self.external is None:
@@ -158,6 +170,7 @@ class AssistantController(QtCore.QObject):
                                       confirm=self._confirm_external,
                                       approval_policy=self.settings.get("approval_policy", "heavy"))
                 self.external = ExternalMcpServer(server, port=port)
+                self._external_policy = policy
                 url = self.external.start()
                 self.panel.add_notice(f"MCP server running at {url}")
             except Exception as exc:
@@ -188,6 +201,7 @@ class AssistantController(QtCore.QObject):
             return
         self.session = None
         _headless.reset()
+        pipelines.clear_history()          # save_pipeline records only this chat's steps
         self.panel.clear()
         self.panel.set_usage({})
 
@@ -203,22 +217,50 @@ class AssistantController(QtCore.QObject):
                 return
         self.panel.set_busy(True)
         self.panel.set_status("thinking")
+        self.adapter.reset()
         self.worker = AgentWorker(self.session, text)
         self.worker.finished_request.connect(self._on_finished)
         self.worker.failed.connect(self._on_failed)
         self.worker.start()
 
     def stop(self):
-        if self.session is not None:
-            self.session.cancel()
+        running = self.worker.session if self.worker is not None and self.worker.isRunning() else None
+        for session in {id(s): s for s in (running, self.session) if s is not None}.values():
+            session.cancel()
         self.adapter.release()
         # a job left running must not keep Leonardo's message boxes captured
         QtCore.QTimer.singleShot(3000, lambda: _headless.reset() if not self._busy() else None)
 
+    def _recall_scene(self, key):
+        try:
+            presentation.recall_scene(key)
+        except Exception:
+            self.panel.add_notice(f"The view {key} no longer exists (the scene was cleared or reset).")
+
     def _busy(self):
         return self.worker is not None and self.worker.isRunning()
 
+    def _watch_jobs(self):
+        """Jobs the model left running (it ended its turn) are polled here, so their end releases
+        Leonardo's message boxes (captured while an assistant job runs) without waiting for a new request."""
+        if getattr(self, "_job_timer", None) is None:
+            self._job_timer = QtCore.QTimer(self.panel)
+            self._job_timer.setInterval(2000)
+
+            def tick():
+                if self._busy():
+                    return
+                try:
+                    running = self.context.jobs.poll_unfinished()
+                except Exception:
+                    running = 0
+                if not running:
+                    self._job_timer.stop()
+            self._job_timer.timeout.connect(tick)
+        self._job_timer.start()
+
     def _on_finished(self, outcome):
+        self._watch_jobs()
         self.panel.set_busy(False)
         self.panel.end_text()
         if outcome == "cancelled":
@@ -278,6 +320,8 @@ class AssistantController(QtCore.QObject):
 
     def shutdown(self):
         self.stop()
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.wait(5000)          # never destroy a running QThread
         _headless.reset()
         if self.external is not None:
             self.external.stop()

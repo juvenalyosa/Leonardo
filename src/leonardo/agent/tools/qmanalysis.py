@@ -30,12 +30,29 @@ psi4.set_memory(f"{args.get('memory_gb', 2)} GB")
 psi4.set_num_threads(int(args.get("threads", 4)))
 psi4.core.set_output_file(args.get("log", "leonardo_ai.out"), False)
 wfn = None
+
+
+def _geom(text):
+    # psi4.geometry in C1 (energy-ordered orbitals) with the reference an open shell needs
+    lines = str(text).strip().splitlines()
+    try:
+        mult = int(lines[0].split()[1])
+    except (IndexError, ValueError):
+        mult = 1
+    m = str(args.get("method", "")).lower()
+    if mult > 1:
+        psi4.set_options({"reference": "uhf" if (m in ("hf", "scf") or m.startswith(("mp", "cc"))) else "uks"})
+    if "symmetry" not in str(text).lower():
+        text = str(text).rstrip() + "\nsymmetry c1\n"
+    return psi4.geometry(text)
+
+
 if args["task"] == "path_orbitals":
     import numpy as np
     psi4.set_options({"basis": args["basis"], "scf_type": "df"})
     prev, frames = {}, []
     for k, geom in enumerate(args["frames"]):
-        mol = psi4.geometry(geom)
+        mol = _geom(geom)
         e, wfn = psi4.energy(args["method"], return_wfn=True, molecule=mol)
         C = wfn.Ca().to_array()
         flips = []
@@ -57,7 +74,7 @@ if args["task"] == "path_orbitals":
 if args.get("wfn") and os.path.isfile(args["wfn"]) and args["task"] == "orbitals":
     wfn = psi4.core.Wavefunction.from_file(args["wfn"])
 else:
-    psi4.geometry(args["geometry"])
+    _geom(args["geometry"])
     psi4.set_options({"basis": args["basis"], "scf_type": "df", "save_jk": True})
     _e, wfn = psi4.energy(args["method"], return_wfn=True)
 out = {}
@@ -66,14 +83,14 @@ if args["task"] == "orbitals":
     psi4.set_options({"cubeprop_tasks": ["ORBITALS"], "cubeprop_orbitals": list(args["orbitals"]),
                       "cubeprop_filepath": args["cube_dir"]})
     psi4.cubeprop(wfn)
-    out["eps_a_eh"] = [float(x) for x in wfn.epsilon_a().to_array()]
+    out["eps_a_eh"] = sorted(float(x) for x in wfn.epsilon_a().to_array(dense=True))
     out["nalpha"] = int(wfn.nalpha())
 else:
     from psi4.driver.procrouting.response.scf_response import tdscf_excitations
     res = tdscf_excitations(wfn, states=int(args["states"]), triplets="none", tda=bool(args.get("tda")))
     out["states"] = [{"energy_ev": float(r["EXCITATION ENERGY"]) * 27.211386,
                       "f": float(r.get("OSCILLATOR STRENGTH (LEN)", 0.0) or 0.0),
-                      "symmetry": str(r.get("EXCITED STATE SYMMETRY", ""))} for r in res]
+                      "symmetry": str(r.get("SYMMETRY", r.get("EXCITED STATE SYMMETRY", "")))} for r in res]
 json.dump(out, open("leonardo_ai_result.json", "w"))
 """
 
@@ -126,6 +143,7 @@ def _psi4_child_job(ctx, kind, workdir, args, collect, description):
     def cancel():
         if proc.poll() is None:
             proc.kill()
+        log.close()
 
     return ctx.jobs.start(kind, poll, cancel=cancel, description=description)
 
@@ -307,8 +325,9 @@ def register(reg):
                                f"IR spectrum ({res['method']}, harmonic, unscaled)", fwhm=float(fwhm_cm),
                                intensity_label="Relative IR intensity (|T-dip|$^2$)")
             order = np.argsort(res["ir_relative"])[::-1][:6]
+            top = max(res["ir_relative"]) or 1.0                 # all zero for a homonuclear diatomic
             peaks = [{"frequency_cm1": round(res["freq_cm"][i], 1), "relative_intensity": round(
-                res["ir_relative"][i] / max(res["ir_relative"]), 3)} for i in order]
+                res["ir_relative"][i] / top, 3)} for i in order]
             return {"image": png, "strongest_bands": peaks, "_image": png,
                     "_card": "MOPAC IR spectrum: strongest bands "
                              + ", ".join(f"{p['frequency_cm1']:.0f} cm⁻¹" for p in peaks[:4]) + "."}
@@ -461,10 +480,16 @@ def register(reg):
             if not q:
                 raise ToolError("the MOPAC run has no charges")
             lo, h, ng = qmviz.grid_for(res["coords"], 0.3, 5.5)
-            occ = np.asarray(res["occupations"], dtype=float)
-            occ_idx = [i for i, o in enumerate(occ) if o > 0.1]
-            _m, dens = qmviz.sto_grid_values(res["basis"], [res["coefficients"][i] for i in occ_idx], res["coords"],
-                                             lo, h, ng, occupations=occ[occ_idx])
+            dens = None
+            sets = [(res["coefficients"], res["occupations"])]
+            if res.get("beta_coefficients") is not None:          # UHF: alpha + beta electrons
+                sets.append((res["beta_coefficients"], res.get("beta_occupations") or []))
+            for coefs, occ in sets:
+                occ = np.asarray(occ, dtype=float)
+                occ_idx = [i for i, o in enumerate(occ) if o > 0.1]
+                _m, part = qmviz.sto_grid_values(res["basis"], [coefs[i] for i in occ_idx], res["coords"],
+                                                 lo, h, ng, occupations=occ[occ_idx])
+                dens = part if dens is None else dens + part
             esp = qmviz.esp_from_charges(res["symbols"], res["coords"], q, lo, h, ng)
             dcube = qmviz.write_cube(os.path.join(res["workdir"], "density.cube"), res["symbols"], res["coords"],
                                      lo, h, ng, dens, "MOPAC valence density")
@@ -580,8 +605,9 @@ def register(reg):
 
         dlg = ctx.dlg
         store = _store(ctx)
-        src = source or ("object" if object else ("mopac" if (store.get("path") or {}).get("source") == "mopac"
-                                                  and store.get("last") != "psi4" else "psi4"))
+        # the most recent path (Psi4 IRC or MOPAC/QM-MM IRC), whichever ran last
+        src = source or ("object" if object else (store.get("last_path") or (
+            "mopac" if (store.get("path") or {}).get("source") == "mopac" and store.get("last") != "psi4" else "psi4")))
         energies = None
         lvl_method, lvl_basis = method or "b3lyp", basis or "def2-svp"
         if src == "psi4":
@@ -624,8 +650,9 @@ def register(reg):
         keep = np.unique(np.round(np.linspace(0, len(frames) - 1, min(len(frames), int(max_frames)))).astype(int))
         if energies is not None and energies.size == len(frames):
             keep = np.unique(np.append(keep, int(np.nanargmax(energies))))
+        n_all = len(frames)
         frames = frames[keep]
-        energies = energies[keep] if energies is not None and energies.size >= len(keep) else None
+        energies = energies[keep] if energies is not None and energies.size == n_all else None
         name = "reaction_path"
         qmviz.load_path(symbols, frames, name)
         qmviz.frame(name)
@@ -647,6 +674,7 @@ def register(reg):
         n_el = sum(qmviz._Z.get(s, 0) for s in symbols) - int(charge)
         if n_el % 2:
             raise ToolError(f"{n_el} electrons: orbital movies need a closed-shell (even-electron) system")
+        # all-electron count (Psi4); MOPAC's valence-only MOs are re-resolved from its first frame
         wanted = qmviz.resolve_orbitals(orbitals, n_el // 2)
         workdir = os.path.join(ctx.workspace("reaction"), time.strftime("path_%Y%m%d_%H%M%S"))
         os.makedirs(workdir, exist_ok=True)
@@ -675,7 +703,7 @@ def register(reg):
             return out
 
         if orbital_program == "mopac":
-            from .mopac import _run, mopac_executable, parse_scf
+            from .mopac import _mopac_cancel, _run, mopac_executable, parse_scf
 
             exe = mopac_executable()
             if not exe:
@@ -688,15 +716,24 @@ def register(reg):
                     lo = frames.reshape(-1, 3).min(axis=0)
                     hi = frames.reshape(-1, 3).max(axis=0)
                     glo, h, ng = qmviz.grid_for(np.vstack([lo, hi]), 0.3, 5.0)
-                    cube_sets = [[] for _ in wanted]
-                    eps = [[] for _ in wanted]
+                    cube_sets, eps = [], []
                     prev = {}
                     spin = {1: "", 3: " TRIPLET UHF"}.get(int(multiplicity), "")
                     for k, xyz in enumerate(frames):
+                        if progress.get("cancelled"):
+                            raise RuntimeError("cancelled")
                         progress["text"] = f"orbitals: frame {k + 1}/{len(frames)}"
                         aux, _out = _run(exe, workdir, f"f{k:03d}", f"PM7 CHARGE={int(charge)}{spin} 1SCF "
-                                         "AUX(MOS=999,PRECISION=9)", symbols, xyz)
+                                         "AUX(MOS=999,PRECISION=9)", symbols, xyz, ctl=progress)
                         scf = parse_scf(aux)
+                        if k == 0:
+                            # MOPAC orbitals are valence-only: HOMO/LUMO come from its own occupations
+                            wanted[:] = qmviz.resolve_orbitals(orbitals, scf["homo_index"])
+                            bad = [lab for lab, idx in wanted if not 1 <= idx <= len(scf["eigenvalues_ev"])]
+                            if bad:
+                                raise RuntimeError(f"{bad} outside the {len(scf['eigenvalues_ev'])} MOPAC orbitals")
+                            cube_sets = [[] for _ in wanted]
+                            eps = [[] for _ in wanted]
                         rows = []
                         for i, (_lab, idx) in enumerate(wanted):
                             c = np.array(scf["coefficients"][idx - 1], dtype=float)
@@ -724,7 +761,8 @@ def register(reg):
                     return {"done": True, "error": state["error"]}
                 return {"done": True, "result": display(*state["result"])}
 
-            return ctx.jobs.start("reaction", poll, description=f"orbitals along {label} (MOPAC)")
+            return ctx.jobs.start("reaction", poll, cancel=lambda: _mopac_cancel(progress),
+                                  description=f"orbitals along {label} (MOPAC)")
 
         geoms = [f"{int(charge)} {int(multiplicity)}\n"
                  + "\n".join(f"{s} {x:.6f} {y:.6f} {z:.6f}" for s, (x, y, z) in zip(symbols, xyz))

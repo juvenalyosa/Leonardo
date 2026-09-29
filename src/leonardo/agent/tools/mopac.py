@@ -57,11 +57,34 @@ def _geometry_lines(symbols, coords, opt=True):
     return "\n".join(f"{s:2s} {x:12.6f} {flag} {y:12.6f} {flag} {z:12.6f} {flag}" for s, (x, y, z) in zip(symbols, coords))
 
 
-def _run(exe, workdir, stem, keywords, symbols, coords, opt=False, timeout=3600):
+def _mopac_cancel(ctl):
+    """Cancel a MOPAC job: flag it and kill the running MOPAC process (see _run's ctl)."""
+    ctl["cancelled"] = True
+    proc = ctl.get("proc")
+    if proc is not None and proc.poll() is None:
+        proc.kill()
+
+
+def _run(exe, workdir, stem, keywords, symbols, coords, opt=False, timeout=3600, ctl=None):
+    """One MOPAC run. ``ctl`` (a dict shared with the job) lets a cancel kill the process."""
     path = os.path.join(workdir, f"{stem}.mop")
     with open(path, "w") as fh:
         fh.write(f"{keywords}\n{stem}\n\n{_geometry_lines(symbols, coords, opt)}\n\n")
-    subprocess.run([exe, os.path.basename(path)], cwd=workdir, capture_output=True, timeout=timeout)
+    ctl = ctl if ctl is not None else {}
+    if ctl.get("cancelled"):
+        raise RuntimeError("cancelled")
+    proc = subprocess.Popen([exe, os.path.basename(path)], cwd=workdir, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+    ctl["proc"] = proc
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError(f"MOPAC {keywords.split()[0]} timed out after {timeout} s") from None
+    finally:
+        ctl["proc"] = None
+    if ctl.get("cancelled"):
+        raise RuntimeError("cancelled")
     aux = os.path.join(workdir, f"{stem}.aux")
     out = os.path.join(workdir, f"{stem}.out")
     aux_text = open(aux, errors="replace").read() if os.path.isfile(aux) else ""
@@ -125,14 +148,24 @@ def parse_scf(aux):
     atoms = [int(v) - 1 for v in aux_block(aux, "AO_ATOMINDEX")]
     zetas = aux_block(aux, "AO_ZETA")
     pqn = [int(v) for v in aux_block(aux, "ATOM_PQN")]
-    evals = aux_block(aux, "EIGENVALUES")
-    vecs = aux_block(aux, "EIGENVECTORS")
-    occ = aux_block(aux, "MOLECULAR_ORBITAL_OCCUPANCIES")
+    # UHF (doublet/triplet) writes ALPHA_* and BETA_* blocks: the alpha set is shown, both make the density
+    prefix = "" if aux_block(aux, "EIGENVALUES") else "ALPHA_"
+    evals = aux_block(aux, prefix + "EIGENVALUES")
+    vecs = aux_block(aux, prefix + "EIGENVECTORS")
+    occ = aux_block(aux, prefix + "MOLECULAR_ORBITAL_OCCUPANCIES")
     if not (n_ao and evals and vecs and len(vecs) == n_ao * len(evals)):
         raise RuntimeError("MOPAC did not write the molecular orbitals")
     basis = list(zip(atoms, kinds, zetas, pqn))
-    return {"basis": basis, "eigenvalues_ev": evals, "coefficients": np.asarray(vecs).reshape(len(evals), n_ao),
-            "occupations": occ, "homo_index": int(sum(1 for o in occ if o > 0.5))}
+    res = {"basis": basis, "eigenvalues_ev": evals, "coefficients": np.asarray(vecs).reshape(len(evals), n_ao),
+           "occupations": occ, "homo_index": int(sum(1 for o in occ if o > 0.5)), "open_shell": bool(prefix)}
+    if prefix:
+        bvals = aux_block(aux, "BETA_EIGENVALUES")
+        bvecs = aux_block(aux, "BETA_EIGENVECTORS")
+        if bvals and len(bvecs) == n_ao * len(bvals):
+            res["beta_eigenvalues_ev"] = bvals
+            res["beta_coefficients"] = np.asarray(bvecs).reshape(len(bvals), n_ao)
+            res["beta_occupations"] = aux_block(aux, "BETA_MOLECULAR_ORBITAL_OCCUPANCIES")
+    return res
 
 
 def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, solvent_eps, optimize, frequencies,
@@ -144,7 +177,7 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
     geom = np.asarray(coords, dtype=float)
     if optimize:
         progress["text"] = "geometry optimization"
-        aux, _out = _run(exe, workdir, "opt", f"{base}{solv} PRECISE AUX(PRECISION=9)", symbols, geom, opt=True)
+        aux, _out = _run(exe, workdir, "opt", f"{base}{solv} PRECISE AUX(PRECISION=9)", symbols, geom, opt=True, ctl=progress)
         xyz = aux_block(aux, "ATOM_X_OPT")
         if len(xyz) == geom.size:
             geom = np.asarray(xyz).reshape(-1, 3)
@@ -152,13 +185,16 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
     res["coords"] = geom
     progress["text"] = "orbitals and ESP charges"
     try:
-        aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF ESP AUX(MOS=999,PRECISION=9)", symbols, geom)
+        if spin:                           # MOPAC: "ESP does not work with UHF"
+            raise RuntimeError("ESP fit not available for UHF")
+        aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF ESP AUX(MOS=999,PRECISION=9)", symbols, geom, ctl=progress)
     except RuntimeError as exc:
         if "ESP" not in str(exc):
             raise
         # MOPAC's ESP fit does not support d orbitals (e.g. Br, S, P in PM7): Mulliken-like charges instead
-        res["esp_note"] = "ESP fit unavailable with d orbitals; charges are MOPAC atomic charges"
-        aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF AUX(MOS=999,PRECISION=9)", symbols, geom)
+        res["esp_note"] = ("ESP fit unavailable for open-shell (UHF) runs" if spin else
+                           "ESP fit unavailable with d orbitals") + "; charges are MOPAC atomic charges"
+        aux, out = _run(exe, workdir, "scf", f"{base}{solv} 1SCF AUX(MOS=999,PRECISION=9)", symbols, geom, ctl=progress)
     res.update(parse_scf(aux))
     res["esp_charges"] = aux_block(aux, "ELECTROSTATIC_POTENTIAL_CHARGES") or parse_esp_charges(out)
     res["mulliken_like_charges"] = aux_block(aux, "ATOM_CHARGES")
@@ -167,7 +203,7 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
     res["dipole_debye"] = aux_scalar(aux, "DIPOLE")
     if frequencies:
         progress["text"] = "force constants and vibrations"
-        aux, _out = _run(exe, workdir, "force", f"{base}{solv} FORCE THERMO AUX(PRECISION=9)", symbols, geom)
+        aux, _out = _run(exe, workdir, "force", f"{base}{solv} FORCE THERMO AUX(PRECISION=9)", symbols, geom, ctl=progress)
         freqs = aux_block(aux, "VIB._FREQ")
         tdip = aux_block(aux, "VIB._T_DIP")
         modes = np.asarray(aux_block(aux, "NORMAL_MODES")).reshape(len(freqs), -1)
@@ -192,7 +228,7 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
         n_orb = len(res["eigenvalues_ev"])
         m_occ = min(n_occ, max(2, int(uv_states)))
         n_act = min(n_orb, m_occ + min(n_orb - n_occ, max(2, int(uv_states))))
-        _aux, out = _run(exe, workdir, "cis", f"{base} 1SCF CIS C.I.=({n_act},{m_occ}) MECI AUX", symbols, geom)
+        _aux, out = _run(exe, workdir, "cis", f"{base} 1SCF CIS C.I.=({n_act},{m_occ}) MECI AUX", symbols, geom, ctl=progress)
         res["uv_states"] = parse_cis(out)
         res["uv_active_space"] = f"C.I.=({n_act},{m_occ}) singles"
     return res
@@ -314,4 +350,5 @@ def register(reg):
             out["_card"] = "; ".join(parts) + "."
             return {"done": True, "result": out}
 
-        return ctx.jobs.start("mopac", poll, description=f"MOPAC {method} {selection}")
+        return ctx.jobs.start("mopac", poll, cancel=lambda: _mopac_cancel(progress),
+                              description=f"MOPAC {method} {selection}")

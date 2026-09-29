@@ -3,19 +3,19 @@
 from . import _headless
 
 
-def start_dialog_job(ctx, kind, start, is_done, collect, description=""):
+def start_dialog_job(ctx, kind, start, is_done, collect, description="", on_cancel=None):
     """
     start(): kicks off the dialog action (on the main thread);
     is_done() -> bool: the action finished (busy flag cleared, task gone, ...);
     collect() -> dict: result, or raises to report a failure.
     Captured message boxes are returned with the result (``messages``).
     """
-    _headless.begin()
+    token = _headless.begin()
     try:
         start()
     except Exception:
         _headless.take_messages()
-        _headless.end()
+        _headless.end(token)
         raise
 
     finished = {"done": False}
@@ -27,7 +27,7 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description=""):
             return {"done": False, "progress": _progress(ctx)}
         finished["done"] = True
         messages = _headless.take_messages()
-        _headless.end()
+        _headless.end(token)
         errors = [m["text"] for m in messages if m["kind"] == "critical"]
         warnings = [m["text"][:600] for m in messages if m["kind"] == "warning"]
         try:
@@ -48,10 +48,12 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description=""):
         return {"done": True, "result": result}
 
     def cancel():
+        if callable(on_cancel):
+            on_cancel()
         if not finished["done"]:
             finished["done"] = True
             _headless.take_messages()
-            _headless.end()
+            _headless.end(token)
 
     return ctx.jobs.start(kind, poll, cancel=cancel, description=description)
 
@@ -128,7 +130,8 @@ def start_finalize_job(ctx, kind, start, finalize_attr, collect, busy_button="",
         restore()
         return collect(captured.get("call"))
 
-    return start_dialog_job(ctx, kind, wrapped_start, is_done, wrapped_collect, description=description)
+    return start_dialog_job(ctx, kind, wrapped_start, is_done, wrapped_collect, description=description,
+                            on_cancel=restore)
 
 
 def start_deferred_job(ctx, kind, run, collect, description=""):
@@ -142,6 +145,9 @@ def start_deferred_job(ctx, kind, run, collect, description=""):
     outcome = {"done": False, "error": None}
 
     def fire():
+        if outcome.get("cancelled"):          # cancelled before the main loop got to it
+            outcome["done"] = True
+            return
         try:
             run()
         except Exception as exc:
@@ -153,4 +159,4 @@ def start_deferred_job(ctx, kind, run, collect, description=""):
         QtCore.QTimer.singleShot(0, fire)
 
     return start_dialog_job(ctx, kind, start, lambda: outcome["done"], lambda: collect(outcome),
-                            description=description)
+                            description=description, on_cancel=lambda: outcome.update(cancelled=True))

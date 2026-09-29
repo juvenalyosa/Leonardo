@@ -159,3 +159,85 @@ def test_pipeline_dialog_builds_the_request(tmp_path):
     dlg._run()
     assert "screen" in dlg.run_text and "phenol" in dlg.run_text
     assert app is not None
+
+
+def test_short_and_numeric_parameters_are_substituted_precisely():
+    pipe = P.build_from_history("p", steps=[
+        {"tool": "add_hydrogens", "args": {"object": "3PTB", "chain": "B", "resn": "ZN"}},
+        {"tool": "run_md", "args": {"object": "3PTB", "n": 10, "x": 10, "ph": 7.4}}],
+        parameters={"chain": "B", "zinc": "ZN", "n": 10, "ph": 7.4})
+    a1, a2 = pipe["steps"][0]["args"], pipe["steps"][1]["args"]
+    assert a1["chain"] == "{{chain}}" and a1["resn"] == "{{zinc}}"
+    assert a2["n"] == "{{n}}" and a2["x"] == 10 and a2["ph"] == "{{ph}}"
+
+
+def test_resume_from_step_reuses_the_earlier_results():
+    log = []
+    reg = _registry(log)
+    P.save(P.build_from_history("md", steps=[{"tool": "run_md", "args": {"object": "3PTB"}},
+                                             {"tool": "trajectory_rmsd_rmsf", "args": {"object": "{{step:1.object}}"}},
+                                             {"tool": "run_md", "args": {"object": "{{step:1.object}}"}}],
+                                parameters={"protein": "3PTB"}))
+    plan = {"goal": "g", "steps": [{"title": "t", "detail": "d"}]}
+    prov = ScriptedProvider([[("tool", "propose_plan", plan)],
+                             [("tool", "run_pipeline", {"name": "md"})],
+                             [("tool", "run_pipeline", {"name": "md", "from_step": 2})], ["ok"]])
+    sess = AgentSession(prov, reg, UI(), execute=lambda n, a: reg.call(n, a, None), approval_policy="heavy")
+    sess.send("go")
+    last = [r for kind, rs in prov.transcript if kind == "tool_results" for r in rs][-1]
+    assert not last["is_error"], last["content"]
+    assert log[-2:] == [("rmsd", "openmm_3PTB_1"), ("md", "openmm_3PTB_1")]
+
+
+def test_invalid_pipeline_step_reports_the_real_error():
+    log = []
+    reg = _registry(log)
+    P.save(P.build_from_history("bad", steps=[{"tool": "run_md", "args": {"object": 5}}], parameters={}))
+    plan = {"goal": "g", "steps": [{"title": "t", "detail": "d"}]}
+    prov = ScriptedProvider([[("tool", "propose_plan", plan)], [("tool", "run_pipeline", {"name": "bad"})], ["ok"]])
+    AgentSession(prov, reg, UI(), execute=lambda n, a: reg.call(n, a, None), approval_policy="heavy").send("go")
+    res = [r for kind, rs in prov.transcript if kind == "tool_results" for r in rs][-1]
+    assert res["is_error"] and "is not of type 'string'" in res["content"]
+
+
+def test_destructive_pipeline_steps_are_still_confirmed():
+    reg = _registry([])
+    P.save(P.build_from_history("wipe", steps=[{"tool": "delete_pipeline", "args": {"name": "x"}}], parameters={}))
+    plan = {"goal": "g", "steps": [{"title": "t", "detail": "d"}]}
+    ui = UI()
+    prov = ScriptedProvider([[("tool", "propose_plan", plan)], [("tool", "run_pipeline", {"name": "wipe"})], ["ok"]])
+    AgentSession(prov, reg, ui, execute=lambda n, a: reg.call(n, a, None), approval_policy="plan_only").send("go")
+    assert [k for k, _t in ui.asked].count("confirm_tool") == 1
+
+
+def test_each_request_starts_gated_with_a_fresh_budget():
+    log = []
+    reg = _registry(log)
+    plan = {"goal": "g", "steps": [{"title": "t", "detail": "d"}]}
+    prov = ScriptedProvider([[("tool", "propose_plan", plan)], [("tool", "fetch_structure", {"identifier": "A"})],
+                             ["ok"], [("tool", "fetch_structure", {"identifier": "B"})], ["ok"]])
+    sess = AgentSession(prov, reg, UI(), execute=lambda n, a: reg.call(n, a, None), max_tool_calls=1)
+    sess.send("first")
+    sess.send("second")
+    assert log == [("fetch", "A")]                                   # B needs a new plan
+    res = [r for kind, rs in prov.transcript if kind == "tool_results" for r in rs][-1]
+    assert "propose_plan" in res["content"] and "limit" not in res["content"]
+
+
+def test_bad_session_tool_arguments_do_not_escape():
+    reg = _registry([])
+    prov = ScriptedProvider([[("tool", "mark_step", {"step": "first"})], ["ok"]])
+    assert AgentSession(prov, reg, UI(), execute=lambda n, a: reg.call(n, a, None)).send("go") == "done"
+
+
+def test_update_pipeline_keeps_step_links():
+    reg = _registry([])
+    P.save(P.build_from_history("md", steps=[{"tool": "fetch_structure", "args": {"identifier": "3PTB"}},
+                                             {"tool": "run_md", "args": {"object": "{{step:1.object}}"}},
+                                             {"tool": "trajectory_rmsd_rmsf", "args": {"object": "{{step:2.object}}"}}],
+                                parameters={}))
+    out = reg.call("update_pipeline", {"name": "md", "insert_steps": [{"position": 1, "tool": "fetch_structure",
+                                                                         "args": {"identifier": "1ABC"}}]}, None)
+    assert out["steps"][3]["args"]["object"] == "{{step:3.object}}"
+    with pytest.raises(ToolError):
+        reg.call("update_pipeline", {"name": "md", "remove_steps": [3]}, None)

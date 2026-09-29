@@ -124,6 +124,7 @@ def _mopac_reaction_result(ctx, operation, object, res):
         ctx.__dict__.setdefault("plots", {})["irc_profile"] = {
             "object": object, "program": "MOPAC", "x": x, "y_kcal": e, "ts_index": ts_i}
     if res.get("irc_xyz"):
+        ctx.__dict__.setdefault("qm", {})["last_path"] = "mopac"        # animate_reaction's default
         ctx.__dict__.setdefault("qm", {})["path"] = {"source": "mopac", "xyz": res.get("irc_xyz"),
                                                     "reverse": reverse, "object": object}
     for o in objs:

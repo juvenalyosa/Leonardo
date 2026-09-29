@@ -86,14 +86,17 @@ def register(reg):
         coords = {}
         for state in range(1, n + 1):
             space = {"rows": []}
-            cmd.iterate_state(state, sel, "rows.append((chain, resi, resn, x, y, z))", space=space)
-            for ch, resi, resn, x, y, z in space["rows"]:
-                coords.setdefault((ch, resi, resn), []).append((x, y, z))
+            cmd.iterate_state(state, sel, "rows.append((chain, resi, resn, name, alt, x, y, z))", space=space)
+            for ch, resi, resn, aname, alt, x, y, z in space["rows"]:
+                coords.setdefault((ch, resi, resn), {}).setdefault((aname, alt), []).append((x, y, z))
         rmsf = []
-        for (ch, resi, resn), xyz in coords.items():
-            m = [sum(c[i] for c in xyz) / len(xyz) for i in range(3)]
-            val = math.sqrt(sum(sum((c[i] - m[i]) ** 2 for i in range(3)) for c in xyz) / len(xyz))
-            rmsf.append({"chain": ch, "resi": resi, "resn": resn, "rmsf_A": round(val, 2)})
+        # RMSF of each atom about its own mean position, averaged over the residue's selected atoms
+        for (ch, resi, resn), atoms in coords.items():
+            vals = []
+            for xyz in atoms.values():
+                m = [sum(c[i] for c in xyz) / len(xyz) for i in range(3)]
+                vals.append(math.sqrt(sum(sum((c[i] - m[i]) ** 2 for i in range(3)) for c in xyz) / len(xyz)))
+            rmsf.append({"chain": ch, "resi": resi, "resn": resn, "rmsf_A": round(sum(vals) / len(vals), 2)})
         cmd.alter(f"({object})", "b = 0.0")
         for r in rmsf:
             chain = f"chain {r['chain']}" if r["chain"] else "chain ''"

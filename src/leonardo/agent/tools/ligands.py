@@ -95,7 +95,11 @@ def register(reg):
                     "_card": f"**{len(hits)} PubChem hits** for “{query}”"
                              + (": " + "; ".join(f"CID {r['cid']} {r['title']}" for r in rows[:3]) if rows else ".")}
 
-        return start_dialog_job(ctx, "pubchem", dlg._on_search_pubchem_compounds,
+        def start():
+            dlg._pubchem_hits = []          # a failed search must not return the previous query's hits
+            dlg._on_search_pubchem_compounds()
+
+        return start_dialog_job(ctx, "pubchem", start,
                                 lambda: not bool(getattr(dlg, "_pubchem_search_busy", False)), collect,
                                 description=f"PubChem search {query}")
 
@@ -114,7 +118,8 @@ def register(reg):
         with _headless.quiet() as q:
             dlg._on_use_selected_pubchem_hit()
         path = str(getattr(dlg, "_docking_ligand_file", "") or "")
-        if not path or path == before:
+        # the file is named after the CID: re-using the active compound gives the same path
+        if not path or (path == before and f"cid{int(cid)}" not in os.path.basename(path).lower()):
             raise ToolError("; ".join(m["text"] for m in q.messages if m["kind"] in ("warning", "critical"))
                             or "the PubChem download did not produce a ligand file")
         _show_preview()
@@ -144,12 +149,23 @@ def register(reg):
         if net_charge is not None:
             set_value(dlg, "spin_net_charge", int(net_charge))
 
+        def _stamp():
+            path = str(getattr(dlg, "_parameterized_ligand_mol2", "") or "")
+            try:
+                return path, os.path.getmtime(path)
+            except OSError:
+                return path, None
+        before = _stamp()
+
         def collect(outcome):
             if outcome["error"]:
                 raise ToolError(outcome["error"])
             state = _ligand_state(dlg)
             if not state.get("charged_mol2"):
                 raise ToolError("antechamber did not produce a charged MOL2 (see Leonardo's message)")
+            if before[0] and _stamp() == before:
+                raise ToolError("antechamber did not produce new files (the previous parameterization is "
+                                "unchanged; see Leonardo's message)")
             return dict(state, _card=f"Ligand parameterized: {charge_method.upper()} charges, {atom_types.upper()} "
                                      f"types; OpenMM XML {'ready' if state.get('openmm_xml') else 'not built'}.")
 

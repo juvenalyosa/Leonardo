@@ -62,3 +62,27 @@ def test_request_end_clears_pending(panel):
     p.set_busy(False)
     _type_and_send(p, "new request")
     assert answers == []
+
+
+def test_old_card_cannot_answer_a_new_question(panel):
+    p, answers = panel
+    p.ask_question({"question": "Which chain?", "options": ["A", "B"]})
+    p.set_busy(False)                      # request stopped without an answer
+    p.set_busy(True)
+    p.ask_confirm({"tool": "run_md", "title": "MD", "args": {}, "permission": "compute_heavy"})
+    stale = [w for w in p.findChildren(QtWidgets.QPushButton) if w.text() == "A"][0]
+    assert not stale.isEnabled()
+    stale.click()
+    assert answers == [] and p._pending is not None and p._pending[0] == "confirm"
+
+
+def test_tool_values_and_errors_are_shown_literally(panel):
+    from leonardo.agent.ui.chat_panel import _md_escape, _result_summary
+
+    assert _md_escape("C[C@H](N)C(=O)O") == "C\\[C@H\\]\\(N\\)C\\(=O\\)O"
+    assert "<b>" not in _result_summary({"path": "/tmp/a*b*c.pdb", "x": "<b>bold</b>"})
+    p, _answers = panel
+    p.tool_event({"tool": "t", "title": "T", "status": "running", "args": {}, "permission": "read"})
+    p.tool_event({"tool": "t", "title": "T", "status": "failed", "error": "'<' not supported between 'a' and <int>"})
+    labels = [w.text() for w in p.findChildren(QtWidgets.QLabel)]
+    assert any("&lt;int&gt;" in t for t in labels)

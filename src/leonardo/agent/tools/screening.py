@@ -63,9 +63,16 @@ def _select_receptor(dlg, receptor):
         if receptor not in cmd.get_names("objects"):
             raise ToolError(f"no object named {receptor!r}")
         dlg.vs_structure_combo.setCurrentText(receptor)
+        if str(dlg.vs_structure_combo.currentText() or "") != receptor:
+            raise ToolError(f"{receptor!r} is not offered as a screening receptor (Leonardo lists protein "
+                            "objects only, not generated complexes/poses)")
     rec = str(dlg.vs_structure_combo.currentText() or "")
     if not rec:
         raise ToolError("no receptor: give receptor=<object>")
+    pocket_rec = str(getattr(dlg, "_fpocket_receptor_object", "") or "")
+    if pocket_rec and pocket_rec != rec:
+        raise ToolError(f"the pockets were found on {pocket_rec!r}, not on {rec!r}: run find_pockets on {rec!r} "
+                        "first (or screen against the same receptor)")
     return rec
 
 
@@ -168,6 +175,7 @@ def register(reg):
         dlg.tbl_vs_hits.selectRow(idx[0])
         with _headless.quiet() as q:
             if interactions:
+                dlg.interactions = []
                 dlg._on_vs_compute_interactions_selected_hit()
             else:
                 dlg._prepare_vs_selected_complex()
@@ -246,16 +254,19 @@ def register(reg):
             rows = list(getattr(dlg, "_leadopt_results", []) or [])
             if not rows:
                 raise ToolError("lead optimization produced no analogs (see Leonardo's message)")
-            ok = [r for r in rows if str(r.get("status", "ok")).lower() == "ok"]
-            ok.sort(key=lambda r: -(_finite(r.get("mpo")) or -1e9))
-            table = [{"name": r.get("name"), "smiles": r.get("smiles"), "mpo": _finite(r.get("mpo")),
-                      "affinity_kcal_mol": _finite(r.get("affinity")), "qed": _finite(r.get("qed")),
-                      "similarity": _finite(r.get("similarity", r.get("sim")))} for r in ok[:20]]
+            # Leonardo's own order (refined ΔG first when refinement ran): rank N here is the rank that
+            # show_lead_optimization_hit(rank=N) opens
+            ok = [(i, r) for i, r in enumerate(rows, start=1) if str(r.get("status", "ok")).lower() == "ok"]
+            table = [{"rank": int(r.get("rank") or i), "name": r.get("name"), "smiles": r.get("smiles"),
+                      "mpo": _finite(r.get("mpo")), "affinity_kcal_mol": _finite(r.get("affinity")),
+                      "qed": _finite(r.get("qed")),
+                      "similarity": _finite(r.get("sim_seed", r.get("similarity", r.get("sim"))))}
+                     for i, r in ok[:20]]
             return {"seed": str((dlg._leadopt_seed_hit or {}).get("name", "")), "analogs_scored": len(ok),
                     "ranking": table, "job_dir": str(getattr(dlg, "_leadopt_job_dir", "") or ""),
                     "scene": ctx.scene("lead optimization: best analog"),
-                    "_card": f"**{len(ok)} analogs** scored; best MPO "
-                             + ", ".join(f"{t['name']} {t['mpo']}" for t in table[:3]) + "."}
+                    "_card": f"**{len(ok)} analogs** scored; top "
+                             + ", ".join(f"#{t['rank']} {t['name']} (MPO {t['mpo']})" for t in table[:3]) + "."}
 
         return start_deferred_job(ctx, "leadopt", dlg._on_run_lead_optimization, collect,
                                   description="lead optimization")

@@ -186,6 +186,12 @@ class AgentSession:
     def send(self, text):
         """Run the conversation until the model stops calling tools (or the user stops it)."""
         self._cancel.clear()
+        # every request starts gated again: one approved plan does not open compute tools for the rest
+        # of the chat, and the tool-call budget is per request
+        self.tool_calls = 0
+        if self.phase != "planning":
+            self.phase = "planning"
+            self._apply_phase_tools()
         self.provider.add_user_text(text)
         while True:
             if self.cancelled():
@@ -235,6 +241,15 @@ class AgentSession:
         return {"id": call.id, "content": text, "is_error": bool(is_error), "_stop": bool(stop)}
 
     def _handle_call(self, call):
+        # every tool call must get a result, or the provider rejects the rest of the conversation
+        try:
+            return self._handle_call_inner(call)
+        except Exception as exc:
+            return self._result(call, f"{call.name} failed: {exc}", is_error=True)
+
+    def _handle_call_inner(self, call):
+        if self.cancelled():
+            return self._result(call, "Stopped by the user before this call ran.", is_error=True, stop=True)
         if call.name == "propose_plan":
             return self._handle_plan(call)
         if call.name == "ask_user":
@@ -246,7 +261,11 @@ class AgentSession:
             return self._result(call, f"User answer: {answer.get('text', '')}")
         if call.name == "mark_step":
             args = call.arguments if isinstance(call.arguments, dict) else {}
-            self.ui.on_event("step", {"step": int(args.get("step", 0) or 0), "status": str(args.get("status", "")),
+            try:
+                step = int(args.get("step", 0) or 0)
+            except (TypeError, ValueError):
+                return self._result(call, "mark_step needs the step number (integer).", is_error=True)
+            self.ui.on_event("step", {"step": step, "status": str(args.get("status", "")),
                                       "summary": str(args.get("summary", "") or "")})
             return self._result(call, "ok")
         return self._handle_leonardo_tool(call)
@@ -294,7 +313,9 @@ class AgentSession:
         estimate = self._estimate(spec.name, args)
         if estimate:
             card["estimate"] = estimate
-        if spec.permission in self.needs_confirmation and not getattr(self, "_in_pipeline", False):
+        in_pipe = getattr(self, "_in_pipeline", False)
+        # inside a pipeline the one approval covers the steps, except destructive ones (always asked)
+        if spec.permission in self.needs_confirmation and (not in_pipe or spec.permission == "destructive"):
             answer = self.ui.ask("confirm_tool", card)
             if not answer.get("approved", False):
                 self.ui.on_event("tool", dict(card, status="declined"))
@@ -334,19 +355,25 @@ class AgentSession:
         try:
             spec, args = self.registry.validate("run_pipeline", call.arguments)
             pipe = pipelines.load(args["name"])
+            pipe_name = str(pipe.get("name") or args["name"])
             steps, values = pipelines.instantiate(pipe, dict(args.get("values") or {}))
         except Exception as exc:
             return self._result(call, f"run_pipeline: {exc}", is_error=True)
         start = max(1, int(args.get("from_step", 1)))
-        card = {"tool": "run_pipeline", "title": f"Pipeline: {pipe['name']}", "permission": spec.permission,
+        if start > len(steps):
+            return self._result(call, f"run_pipeline: the pipeline has {len(steps)} step(s)", is_error=True)
+        # resuming: the earlier steps' results (objects they made) come from the last run of this pipeline
+        runs = self.__dict__.setdefault("_pipeline_runs", {})
+        results = {n: r for n, r in runs.get(pipe_name, {}).items() if n < start} if start > 1 else {}
+        card = {"tool": "run_pipeline", "title": f"Pipeline: {pipe_name}", "permission": spec.permission,
                 "args": dict(values, steps=" → ".join(s["tool"] for s in steps[start - 1:]))}
         if spec.permission in self.needs_confirmation:
             answer = self.ui.ask("confirm_tool", card)
             if not answer.get("approved", False):
                 self.ui.on_event("tool", dict(card, status="declined"))
                 return self._result(call, "The user declined the pipeline.", is_error=True)
-        self.ui.on_event("progress", {"text": f"pipeline {pipe['name']}: {len(steps) - start + 1} steps"})
-        results, report = {}, []
+        self.ui.on_event("tool", dict(card, status="running"))
+        report = []
         self._in_pipeline = True
         try:
             for n, step in enumerate(steps, start=1):
@@ -358,27 +385,37 @@ class AgentSession:
                 try:
                     step_args = pipelines.resolve_refs(step["args"], results)
                 except KeyError as exc:
-                    report.append({"step": n, "tool": step["tool"], "status": "failed", "error": str(exc)})
+                    hint = " (resume only after running the earlier steps in this chat)" if n > start else ""
+                    report.append({"step": n, "tool": step["tool"], "status": "failed",
+                                   "error": (exc.args[0] if exc.args else str(exc)) + hint})
                     break
-                self._last_tool_result = (False, "not run")
-                self._handle_leonardo_tool(ToolCall(id=f"{call.id}-{n}", name=step["tool"], arguments=step_args))
-                ok, payload = self._last_tool_result
-                if not ok:
-                    report.append({"step": n, "tool": step["tool"], "status": "failed", "error": str(payload)[:600]})
+                self._last_tool_result = None
+                res = self._handle_leonardo_tool(ToolCall(id=f"{call.id}-{n}", name=step["tool"], arguments=step_args))
+                ok, payload = self._last_tool_result or (False, None)
+                if not ok or res.get("is_error"):
+                    report.append({"step": n, "tool": step["tool"], "status": "failed",
+                                   "error": str(payload if payload is not None else res.get("content", ""))[:600]})
                     break
                 results[n] = payload
+                runs[pipe_name] = dict(results)
                 brief = {k: payload.get(k) for k in ("object", "best_score_kcal_mol", "quality_warnings") if payload.get(k)}
                 report.append({"step": n, "tool": step["tool"], "status": "done", **brief})
         finally:
             self._in_pipeline = False
         done = sum(1 for r in report if r["status"] == "done")
         failed = [r for r in report if r["status"] != "done"]
-        summary = {"pipeline": pipe["name"], "values": values, "steps_done": done,
+        summary = {"pipeline": pipe_name, "values": values, "steps_done": done,
                    "steps_total": len(steps) - start + 1, "report": report,
                    "results": {str(k): v for k, v in results.items()}}
         if failed:
             summary["stopped_at"] = failed[0]
             summary["resume"] = f"fix the cause, then run_pipeline with from_step={failed[0]['step']}"
+            self.ui.on_event("tool", dict(card, status="failed",
+                                          error=f"stopped at step {failed[0]['step']} ({failed[0]['tool']}): "
+                                                f"{failed[0].get('error', failed[0]['status'])}"))
+        else:
+            self.ui.on_event("tool", dict(card, status="done", result={"steps_done": done},
+                                          card=f"Pipeline **{pipe_name}**: {done} step(s) done."))
         return self._result(call, summary, is_error=bool(failed))
 
     def _estimate(self, name, args):
@@ -410,6 +447,8 @@ class AgentSession:
             status = str(state.get("status", ""))
             if status == "done":
                 return dict(state.get("result") or {}, job_id=job_id, elapsed_s=state.get("elapsed_s"))
+            if status not in ("running", "queued", "failed", "cancelled", "unknown"):
+                raise ToolError(f"{job_id}: unexpected job state {str(state)[:300]}")
             if status in ("failed", "cancelled", "unknown"):
                 raise ToolError(f"{job_id} {status}: {state.get('error', '')}")
             if state.get("progress"):

@@ -26,6 +26,18 @@ class AnthropicProvider(Provider):
             self.client = anthropic.Anthropic(api_key=api_key or None, max_retries=3)
 
     def add_user_text(self, text):
+        # an assistant turn whose tool calls never got results (cut reply, crash) would make the API
+        # reject every later request: answer them as errors in the same user message
+        last = self.messages[-1] if self.messages else None
+        open_ids = [getattr(b, "id", None) or (b.get("id") if isinstance(b, dict) else None)
+                    for b in (last["content"] if last and last["role"] == "assistant"
+                              and isinstance(last["content"], list) else [])
+                    if (getattr(b, "type", None) or (b.get("type") if isinstance(b, dict) else "")) == "tool_use"]
+        if open_ids:
+            self.messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": i, "content": "not run (the turn was interrupted)",
+                 "is_error": True} for i in open_ids] + [{"type": "text", "text": str(text)}]})
+            return
         self.messages.append({"role": "user", "content": str(text)})
 
     def add_tool_results(self, results):
@@ -90,6 +102,10 @@ class AnthropicProvider(Provider):
             yield TurnEnd("refusal", usage, str(getattr(details, "explanation", "") or "declined by the model"))
             return
         tool_uses = [b for b in response.content if getattr(b, "type", "") == "tool_use"]
+        if response.stop_reason == "model_context_window_exceeded":
+            yield TurnEnd("max_tokens", usage, "the conversation no longer fits in the model's context; "
+                                               "start a New chat")
+            return
         if response.stop_reason == "max_tokens" and tool_uses:
             # a truncated tool input must not run
             yield TurnEnd("max_tokens", usage, "the reply was cut before the tool call was complete")

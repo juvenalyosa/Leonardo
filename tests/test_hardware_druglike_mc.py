@@ -111,3 +111,30 @@ def test_cluster_selection_is_valid_pymol(tmp_path):
     assert cmd.count_atoms(idx["core_sel"]) == 3
     expr = sel["core_sel"]
     assert cmd.count_atoms(expr) == 3                   # both residues + the ligand, no "Malformed selection"
+
+
+def test_calibration_matches_estimate_scaling_and_survives_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(hw, "CACHE_PATH", str(tmp_path / "hw.json"))
+    hw.record_md_speed("CPU", "implicit", 30000, 20.0)
+    est = hw.estimate_md(30000, 1.0, "implicit", platform_name="CPU", prof=hw._load_cache())
+    assert abs(est["ns_per_day"] - 20.0) < 0.05
+    monkeypatch.setattr(hw, "benchmark_openmm", lambda names: {})
+    monkeypatch.setattr(hw, "detect_gpus", lambda: [])
+    hw.detect(benchmark=True, refresh=True)
+    assert "md:CPU:implicit" in hw._load_cache()["calibration"]
+
+
+def test_failed_gpu_benchmark_is_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr(hw, "CACHE_PATH", str(tmp_path / "hw.json"))
+    monkeypatch.setattr(hw, "openmm_platforms", lambda: (["CPU", "CUDA"], "8.4"))
+    monkeypatch.setattr(hw, "detect_gpus", lambda: [])
+    runs = []
+
+    def bench(names):
+        runs.append(1)
+        return {"CPU": {"steps_per_s": 1000}, "CUDA": {"error": "timed out"} if len(runs) == 1 else {"steps_per_s": 9000}}
+    monkeypatch.setattr(hw, "benchmark_openmm", bench)
+    assert hw.detect()["md_platform"]["name"] == "CPU"
+    assert hw.detect()["md_platform"]["name"] == "CUDA" and len(runs) == 2
+    hw.detect()
+    assert len(runs) == 2

@@ -54,8 +54,13 @@ def register(reg):
         dlg.dock_structure_combo.setCurrentText(object)
         dlg._docking_receptor_object = object
 
+        previous = getattr(dlg, "_fpocket_pockets", None)
+
         def collect():
-            pockets = list(getattr(dlg, "_fpocket_pockets", []) or [])
+            current = getattr(dlg, "_fpocket_pockets", None)
+            if previous and current is previous:
+                raise ToolError("fpocket did not finish (the previous pockets are unchanged)")
+            pockets = list(current or [])
             if not pockets:
                 raise ToolError("fpocket found no pockets")
             rows = [_pocket_row(p, i) for i, p in enumerate(pockets[: int(top)], start=1)]
@@ -92,6 +97,11 @@ def register(reg):
         if idx is None:
             raise ToolError("pocket not found; give pocket_id or rank from find_pockets")
         dlg.cmb_dock_pocket.setCurrentIndex(idx)
+        # setCurrentIndex on the current index emits nothing: apply the pocket's grid explicitly
+        try:
+            dlg._on_pocket_combo_changed(idx)
+        except Exception:
+            pass
         pocket = pockets[idx]
         try:
             dlg._set_single_pocket_surface_visible(pocket.get("id"), True, zoom=False)

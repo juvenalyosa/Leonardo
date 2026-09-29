@@ -217,22 +217,48 @@ class AssistantSettingsDialog(QtWidgets.QDialog):
         typed = self.key_edits[provider].text().strip()
         return typed or config.get_api_key(provider)
 
+    def _in_background(self, fn, done):
+        """Run a network call off the GUI thread; ``done(result, error)`` runs back on it."""
+        dlg = self
+
+        class _Call(QtCore.QThread):
+            finished_call = QtCore.Signal(object, object)
+
+            def run(self):
+                try:
+                    self.finished_call.emit(fn(), None)
+                except Exception as exc:
+                    self.finished_call.emit(None, exc)
+
+        worker = _Call(self)
+        calls = self.__dict__.setdefault("_bg_calls", set())
+        calls.add(worker)
+
+        def finish(result, error):
+            calls.discard(worker)
+            QtWidgets.QApplication.restoreOverrideCursor()
+            if dlg.isVisible():
+                done(result, error)
+        worker.finished_call.connect(finish)
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        worker.start()
+
     def _test_key(self, provider):
         key = self._key_for(provider)
         label = self.key_status[provider]
         if not key:
             label.setText("No key to test.")
             return
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        try:
-            models = self._list_models(provider, key)
-            label.setText(f"Key works: {len(models)} models available.")
-            label.setStyleSheet(f"color: {OK};")
-        except Exception as exc:
-            label.setText(f"Key test failed: {exc}")
-            label.setStyleSheet(f"color: {WARN};")
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        label.setText("Testing the key...")
+
+        def done(models, error):
+            if error is not None:
+                label.setText(f"Key test failed: {error}")
+                label.setStyleSheet(f"color: {WARN};")
+            else:
+                label.setText(f"Key works: {len(models)} models available.")
+                label.setStyleSheet(f"color: {OK};")
+        self._in_background(lambda: self._list_models(provider, key), done)
 
     @staticmethod
     def _list_models(provider, key):
@@ -250,18 +276,16 @@ class AssistantSettingsDialog(QtWidgets.QDialog):
         if not key:
             QtWidgets.QMessageBox.information(self, "Models", "Add an API key first.")
             return
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        try:
-            models = self._list_models(provider, key)
-        except Exception as exc:
-            QtWidgets.QApplication.restoreOverrideCursor()
-            QtWidgets.QMessageBox.warning(self, "Models", f"Could not list models: {exc}")
-            return
-        QtWidgets.QApplication.restoreOverrideCursor()
-        if provider == "anthropic":
-            pinned = [m for m, _ in config.ANTHROPIC_MODELS]
-            models = pinned + [m for m in models if m not in pinned]
-        self._fill_models(models)
+
+        def done(models, error):
+            if error is not None:
+                QtWidgets.QMessageBox.warning(self, "Models", f"Could not list models: {error}")
+                return
+            if provider == "anthropic":
+                pinned = [m for m, _ in config.ANTHROPIC_MODELS]
+                models = pinned + [m for m in models if m not in pinned]
+            self._fill_models(models)
+        self._in_background(lambda: self._list_models(provider, key), done)
 
     def _save(self):
         for provider, edit in self.key_edits.items():

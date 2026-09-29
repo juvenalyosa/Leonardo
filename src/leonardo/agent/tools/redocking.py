@@ -43,6 +43,10 @@ def register(reg):
             dlg._refresh_redocking_object_combos()
             dlg.cmb_redock_reference_obj.setCurrentText(object)
             dlg.cmb_redock_wt_obj.setCurrentText(object)
+            if (str(dlg.cmb_redock_reference_obj.currentText() or "") != object
+                    or str(dlg.cmb_redock_wt_obj.currentText() or "") != object):
+                raise ToolError(f"{object!r} is not offered for redocking (Leonardo lists protein objects "
+                                "only, not generated complexes, poses or redock_* objects)")
             if ligand_resn:
                 dlg.edit_redock_ref_chain.setText(str(ligand_chain))
                 dlg.edit_redock_ref_resi.setText(str(ligand_resi))
@@ -54,6 +58,8 @@ def register(reg):
                     raise ToolError(f"no object named {mutant_object!r}")
                 dlg.cb_redock_run_mutant.setChecked(True)
                 dlg.cmb_redock_mut_obj.setCurrentText(mutant_object)
+                if str(dlg.cmb_redock_mut_obj.currentText() or "") != mutant_object:
+                    raise ToolError(f"{mutant_object!r} is not offered as the mutant receptor")
             else:
                 dlg.cb_redock_run_mutant.setChecked(False)
             dlg.spin_redock_exhaust.setValue(int(exhaustiveness))

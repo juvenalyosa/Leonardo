@@ -18,6 +18,7 @@ class OpenAIProvider(Provider):
         self.max_output_tokens = int(max_output_tokens)
         self.pending_input = []          # items sent with the next request
         self.previous_response_id = None  # conversation state kept by the Responses API
+        self._open_calls = []             # function calls of the last response still waiting for output
         if client is not None:
             self.client = client
         else:
@@ -28,9 +29,14 @@ class OpenAIProvider(Provider):
             self.client = openai.OpenAI(api_key=api_key or None, max_retries=3)
 
     def add_user_text(self, text):
+        for call_id in self._open_calls:
+            self.pending_input.append({"type": "function_call_output", "call_id": call_id,
+                                       "output": "ERROR: not run (the turn was interrupted)"})
+        self._open_calls = []
         self.pending_input.append({"role": "user", "content": str(text)})
 
     def add_tool_results(self, results):
+        self._open_calls = []
         for r in results:
             out = str(r.get("content", ""))
             if r.get("is_error"):
@@ -55,6 +61,7 @@ class OpenAIProvider(Provider):
     def stream_turn(self, cancel=None):
         import openai
 
+        ended = None                      # a response.incomplete / response.failed event
         try:
             with self.client.responses.stream(**self._request_kwargs()) as stream:
                 for event in stream:
@@ -66,7 +73,15 @@ class OpenAIProvider(Provider):
                         yield TextDelta(event.delta)
                     elif etype == "response.reasoning_summary_text.delta":
                         yield ThinkingDelta(event.delta)
-                response = stream.get_final_response()
+                    elif etype in ("response.incomplete", "response.failed"):
+                        ended = event.response
+                try:
+                    response = stream.get_final_response()
+                except RuntimeError:
+                    # the SDK only returns completed responses; incomplete/failed ones are reported here
+                    if ended is None:
+                        raise ProviderError("OpenAI ended the reply without a result; retry.") from None
+                    response = ended
         except openai.AuthenticationError as exc:
             raise ProviderError("OpenAI rejected the API key (check it in AI Assistant settings).") from exc
         except openai.NotFoundError as exc:
@@ -78,6 +93,9 @@ class OpenAIProvider(Provider):
         except openai.APIConnectionError as exc:
             raise ProviderError("Cannot reach the OpenAI API (network).") from exc
 
+        if getattr(response, "status", "") == "failed":
+            err = getattr(response, "error", None)
+            raise ProviderError(f"OpenAI could not complete the reply: {getattr(err, 'message', '') or 'failed'}")
         self.pending_input = []
         self.previous_response_id = response.id
         usage_obj = getattr(response, "usage", None)
@@ -89,6 +107,7 @@ class OpenAIProvider(Provider):
         if refusals and not calls:
             yield TurnEnd("refusal", usage, str(getattr(refusals[0], "refusal", "") or "declined by the model"))
             return
+        self._open_calls = [item.call_id for item in calls]
         if getattr(response, "status", "") == "incomplete" and calls:
             yield TurnEnd("max_tokens", usage, "the reply was cut before the tool call was complete")
             return
@@ -98,6 +117,10 @@ class OpenAIProvider(Provider):
             except ValueError:
                 args = item.arguments          # the registry reports invalid JSON back to the model
             yield ToolCall(item.call_id, item.name, args)
+        if getattr(response, "status", "") == "incomplete":
+            reason = getattr(getattr(response, "incomplete_details", None), "reason", "") or "incomplete"
+            yield TurnEnd("max_tokens", usage, f"the reply was cut ({reason})")
+            return
         yield TurnEnd("tool_use" if calls else "end_turn", usage)
 
 

@@ -34,7 +34,7 @@ RT_LN10 = 1.3642  # kcal/mol at 298.15 K
 MAX_ENUMERATED_SITES = 4
 # Part of the result-cache key: bump whenever SITE_CLASSES, flags or microstate rules change,
 # otherwise results computed with the old rules are served from the cache.
-PKA_RUNTIME_VERSION = "3"
+PKA_RUNTIME_VERSION = "4"
 
 # --------------------------------------------------------------------------- #
 # Site classes
@@ -350,6 +350,9 @@ def find_ionizable_sites(mol):
                     "atom": idx, "class": f"dimorphite:{name}", "kind": kind,
                     "empirical_pka": float(pka), "empirical_sd": float(sd),
                     "qm_supported": False, "flags": ["empirical_only"],
+                    # Dimorphite's later pKa of one group (phosphate pKa2) is already the value
+                    # with the first site charged: no coupling term between them
+                    "group": f"dimorphite:{name}:{min(int(m) for m in match if int(m) < n_heavy)}",
                 })
     sites.sort(key=lambda s: s["atom"])
     return sites
@@ -468,6 +471,8 @@ def site_coupling_matrix(parent, sites, coupling="empirical"):
             d = dm[centers[i]][centers[j]]
             if d >= 1e6:            # disconnected (should not happen for one fragment)
                 continue
+            if sites[i].get("group") and sites[i].get("group") == sites[j].get("group"):
+                continue            # one group's sequential macroscopic pKa values (coupling built in)
             w[i][j] = w[j][i] = _pair_coupling(sites[i]["kind"], sites[j]["kind"], d, coupling)
     return w
 
@@ -926,7 +931,8 @@ class MopacBackend:
         # 3-4 units too high), benchmarks/pka/MULTISITE_VALIDATION.md.
         neutral = tuple(site["kind"] == "acid" for site in enumerated)
         states = [neutral] + [tuple((not b) if i == s_idx else b for i, b in enumerate(neutral)) for s_idx in range(n)]
-        mols = [build_state_molecule(parent, enumerated, st, fixed=fixed, add_hs=True) for st in states]
+        # fixed sites stay neutral here: their charge enters once, through the coupling term below
+        mols = [build_state_molecule(parent, enumerated, st, fixed=(), add_hs=True) for st in states]
         if callable(progress):
             progress(f"{self.label}: {len(states)} protonation state(s) x {self.n_conformers} conformer(s)")
         energies = dict(zip(states, self.state_energies(mols, progress=progress, cancel=cancel)))
@@ -1252,13 +1258,20 @@ def _backend(method, **kwargs):
 # --------------------------------------------------------------------------- #
 # Cache
 # --------------------------------------------------------------------------- #
-def _cache_key(parent, method, calibration_version):
+def _cache_key(parent, method, calibration_version, focus_ph=7.4, ph_range=(0.0, 14.0)):
     Chem = _chem()
     try:
         ident = Chem.MolToInchiKey(parent) or Chem.MolToSmiles(parent)
     except Exception:
         ident = Chem.MolToSmiles(parent)
-    raw = f"{ident}|{method}|{calibration_version}|{PKA_RUNTIME_VERSION}"
+    # the result stores atom indices: the same molecule with another atom order is another entry
+    order = ",".join(str(a.GetAtomicNum()) for a in parent.GetAtoms()) + ";" + ",".join(
+        f"{b.GetBeginAtomIdx()}-{b.GetEndAtomIdx()}" for b in parent.GetBonds())
+    order = hashlib.sha1(order.encode("utf-8")).hexdigest()[:16]
+    # which sites are enumerated (and the fixed ones' states) depends on the pH window
+    lo, hi = (float(x) for x in ph_range)
+    raw = (f"{ident}|{order}|{method}|{calibration_version}|{PKA_RUNTIME_VERSION}"
+           f"|{round(float(focus_ph), 2)}|{round(lo, 2)}-{round(hi, 2)}")
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -1309,7 +1322,7 @@ def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cac
     calibration_version = str(getattr(backend, "calibration_version", "none"))
     if backend.name == "empirical":
         cache_dir = None     # milliseconds per molecule: a disk cache would only write one file per ligand
-    key = _cache_key(parent, backend.name, calibration_version)
+    key = _cache_key(parent, backend.name, calibration_version, focus_ph, ph_range)
     cached = _cache_load(cache_dir, key)
     if cached is not None:
         cached.setdefault("provenance", {})["cache"] = "hit"
@@ -1376,7 +1389,8 @@ def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cac
         "provenance": {"method": method_used, "calibration_version": calibration_version,
                        "runtime_version": PKA_RUNTIME_VERSION, "cache": "miss"},
     }
-    _cache_store(cache_dir, key, result)
+    if method_used == backend.name:       # an empirical fallback must not answer later QM requests
+        _cache_store(cache_dir, key, result)
     return result
 
 

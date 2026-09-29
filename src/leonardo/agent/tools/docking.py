@@ -116,6 +116,7 @@ def register(reg):
                 label = f"{object} {ligand_resn}{ligand_resi}"
             else:
                 raise ToolError("give pose_rank or object (+ ligand residue)")
+            dlg.interactions = []          # a handler that returns early must not leave the last complex's
             dlg._on_calc_interactions()
             interactions = list(getattr(dlg, "interactions", []) or [])
             try:

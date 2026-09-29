@@ -275,7 +275,8 @@ def register(reg):
             if 0 <= ts < len(x) and y[ts] is not None:
                 ax.scatter([x[ts]], [y[ts]], color="#d62728", s=40, zorder=5)
                 ax.annotate("TS", (x[ts], y[ts]), textcoords="offset points", xytext=(0, 6), ha="center")
-            ax.set(xlabel="Reaction coordinate" + (" (amu$^{1/2}$ bohr)" if d.get("program") == "MOPAC" else " (frame)"),
+            ax.set(xlabel=d.get("x_label") or ("Reaction coordinate" + (" (amu$^{1/2}$ bohr)"
+                                                                         if d.get("program") == "MOPAC" else " (frame)")),
                    ylabel="Relative energy (kcal/mol)", title=f"{d.get('program', '')} reaction profile: {d['object']}")
             ax.grid(alpha=0.25)
             _finish(fig, path, window)

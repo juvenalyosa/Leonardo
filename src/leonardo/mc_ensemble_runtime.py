@@ -114,12 +114,14 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
     ff = app.ForceField("amber14-all.xml", "implicit/obc2.xml")
     system = ff.createSystem(top, nonbondedMethod=app.CutoffNonPeriodic, nonbondedCutoff=1.2 * unit.nanometer,
                              constraints=None)
-    wanted = {(str(c), str(r)) for c, r in (site_residues or [])}
+    # PyMOL gives a blank chain as '' and OpenMM as ' ': compare stripped
+    wanted = {(str(c).strip(), str(r).strip()) for c, r in (site_residues or [])}
     bonds = [(b.atom1.index, b.atom2.index) for b in top.bonds()]
     moves, movable = [], set()
     for res in top.residues():
-        key = (str(res.chain.id), str(res.id).strip() + str(getattr(res, "insertionCode", "") or "").strip())
-        if wanted and key not in wanted and (str(res.chain.id), str(res.id).strip()) not in wanted:
+        chain = str(res.chain.id).strip()
+        key = (chain, str(res.id).strip() + str(getattr(res, "insertionCode", "") or "").strip())
+        if wanted and key not in wanted and (chain, str(res.id).strip()) not in wanted:
             continue
         name = _RES_ALIAS.get(res.name, res.name)
         atoms = {a.name: a.index for a in res.atoms()}
@@ -204,7 +206,7 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
 
 def main(args_path):
     args = json.load(open(args_path))
-    res = sample_ensemble(**args)
+    res = sample_ensemble(**args, progress=lambda text: print(text, flush=True))
     with open(os.path.join(args["out_dir"], "mc_ensemble.json"), "w") as fh:
         json.dump(res, fh, indent=1)
     print("DONE", json.dumps({"ok": res["ok"], "n": len(res["structures"])}), flush=True)

@@ -49,11 +49,18 @@ class UiAdapter(QtCore.QObject):
         super().__init__(parent)
         self._answer = None
         self._answered = threading.Event()
+        self._cancelled = False
 
     def on_event(self, kind, payload):
         self.event.emit(str(kind), dict(payload or {}))
 
+    def reset(self):
+        """A new request starts: questions block again."""
+        self._cancelled = False
+
     def ask(self, kind, payload):
+        if self._cancelled:              # stopped: nothing may wait for the user any more
+            return {"cancelled": True, "decision": "reject", "approved": False}
         self._answer = None
         self._answered.clear()
         self.question.emit(str(kind), dict(payload or {}))
@@ -65,7 +72,8 @@ class UiAdapter(QtCore.QObject):
         self._answered.set()
 
     def release(self):
-        """Unblock a pending ask() (session cancelled / window closed)."""
+        """Unblock a pending ask() and any later one of this request (session cancelled / window closed)."""
+        self._cancelled = True
         if not self._answered.is_set():
             self._answer = {"cancelled": True, "decision": "reject", "approved": False}
             self._answered.set()

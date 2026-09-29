@@ -299,11 +299,18 @@ class PkaDialog(QtWidgets.QDialog):
             return P.compute_pka(mol, method=method, focus_ph=ph, cache_dir=self._cache_dir,
                                  cancel=lambda: self._cancel, backend_options=options)
 
+        def on_result(result):
+            # the site indices belong to the molecule of this run; another one may have been loaded since
+            if mol is not self._mol:
+                self.lbl_status.setText("The molecule changed while the pKa was computed; run it again.")
+                return
+            self._on_result(result)
+
         if callable(self._submit_task):
-            self._submit_task(job, self._on_result, self._on_error, lambda: self._set_busy(False))
+            self._submit_task(job, on_result, self._on_error, lambda: self._set_busy(False))
         else:    # synchronous fallback (tests, no thread pool)
             try:
-                self._on_result(job())
+                on_result(job())
             except Exception as exc:
                 self._on_error(str(exc))
             finally:

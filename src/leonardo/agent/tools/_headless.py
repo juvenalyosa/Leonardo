@@ -12,7 +12,8 @@ jobs the originals run unchanged.
 import os
 import threading
 
-_state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set(), "presets": {}}
+_state = {"depth": 0, "messages": [], "installed": False, "keep_hetero": set(), "presets": {}, "live": set()}
+_tokens = iter(range(1, 1 << 62))
 
 # Leonardo labels every non-water, non-ion hetero group "cofactor" (the crystal ligand
 # included); in the dialog the user unticks the ligand. Unattended, only ions and these
@@ -148,19 +149,37 @@ def _prompt(kind):
 
 
 def begin():
+    """Enter assistant mode for one job; returns its token for :func:`end`."""
     install()
     with _lock:
-        _state["depth"] += 1
+        tok = next(_tokens)
+        _state["live"].add(tok)
+        _state["depth"] = len(_state["live"])
+    return tok
 
 
-def end():
+def end(token=None):
+    """Leave assistant mode for the job ``token`` (a job reset() already ended changes nothing)."""
     with _lock:
-        _state["depth"] = max(0, _state["depth"] - 1)
+        if token is None:
+            if _state["live"]:
+                _state["live"].pop()
+        else:
+            _state["live"].discard(token)
+        _state["depth"] = len(_state["live"])
+        if not _state["live"]:
+            # per-job settings end with the last job (run_docking's kept HETATM must not reach later runs)
+            _state["keep_hetero"] = set()
+
+
+def active():
+    return _state["depth"] > 0
 
 
 def reset():
     """Leave assistant mode for good (stop / new chat / panel closed): message boxes show again."""
     with _lock:
+        _state["live"].clear()
         _state["depth"] = 0
         _state["messages"].clear()
         _state["keep_hetero"] = set()
@@ -178,13 +197,13 @@ class quiet:
     """Context manager for synchronous handlers: ``with quiet() as q: ...; q.messages``."""
 
     def __enter__(self):
-        begin()
+        self._token = begin()
         self.messages = []
         return self
 
     def __exit__(self, *exc):
         self.messages = take_messages()
-        end()
+        end(self._token)
         return False
 
 
@@ -195,22 +214,27 @@ def auto_hetatm_selection(dlg):
 
     original = dlg._prompt_dock_hetatm_selection
 
-    def prompt(receptor_obj, components, *args, **kwargs):
+    docking_flows = {"docking", "virtual_screening", "redocking", "lead_optimization"}
+
+    def prompt(receptor_obj, components, flow_label="docking", cache_dict=None, *args, **kwargs):
         if _state["depth"] <= 0:
-            return original(receptor_obj, components, *args, **kwargs)
+            return original(receptor_obj, components, flow_label, cache_dict, *args, **kwargs)
         comps = list(components or [])
         keep = set(KNOWN_COFACTORS) | set(_state.get("keep_hetero") or ())
+        docking = str(flow_label or "docking") in docking_flows
 
         def wanted(c):
             cat = str(c.get("category", "")).lower()
             resn = str(c.get("resn", "")).strip().upper()
+            if not docking:                 # MD / modeling: the dialog's own default (ligands kept)
+                return cat in ("ion", "cofactor")
             return cat == "ion" or (cat == "cofactor" and resn in keep)
         selected = [c for c in comps if wanted(c)]
         removed = [c for c in comps if not wanted(c) and str(c.get("category", "")).lower() != "water"]
         try:
-            cache = getattr(dlg, "_dock_hetatm_selection_cache", None)
+            cache = cache_dict if isinstance(cache_dict, dict) else getattr(dlg, "_dock_hetatm_selection_cache", None)
             if isinstance(cache, dict):
-                cache[receptor_obj] = [dlg._dock_hetatm_component_cache_key(c) for c in selected]
+                cache[str(receptor_obj)] = [dlg._dock_hetatm_component_cache_key(c) for c in selected]
         except Exception:
             pass
         with _lock:
