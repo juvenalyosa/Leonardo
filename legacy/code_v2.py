@@ -165,6 +165,9 @@ try:
     from .abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
     from .abfe_runtime import build_abfe_md_sample_payload as abfe_build_md_sample_payload
     from .abfe_runtime import build_abfe_local_resource_plan as abfe_build_local_resource_plan
+    from .abfe_runtime import build_abfe_memory_guard_decision as abfe_build_memory_guard_decision
+    from .abfe_runtime import build_abfe_funnel_axis_payload as abfe_build_funnel_axis_payload
+    from .abfe_runtime import build_abfe_pymol_state_budget as abfe_build_pymol_state_budget
     from .abfe_runtime import build_abfe_state_save_decision as abfe_build_state_save_decision
     from .abfe_runtime import build_abfe_live_update_decision as abfe_build_live_update_decision
     from .abfe_runtime import build_abfe_live_view_update_plan as abfe_build_live_view_update_plan
@@ -544,6 +547,9 @@ except Exception:
     from abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
     from abfe_runtime import build_abfe_md_sample_payload as abfe_build_md_sample_payload
     from abfe_runtime import build_abfe_local_resource_plan as abfe_build_local_resource_plan
+    from abfe_runtime import build_abfe_memory_guard_decision as abfe_build_memory_guard_decision
+    from abfe_runtime import build_abfe_funnel_axis_payload as abfe_build_funnel_axis_payload
+    from abfe_runtime import build_abfe_pymol_state_budget as abfe_build_pymol_state_budget
     from abfe_runtime import build_abfe_state_save_decision as abfe_build_state_save_decision
     from abfe_runtime import build_abfe_live_update_decision as abfe_build_live_update_decision
     from abfe_runtime import build_abfe_live_view_update_plan as abfe_build_live_view_update_plan
@@ -5967,6 +5973,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 lambda v: self._on_abfe_guide_tunnel_radius_changed(float(v), source="traj")
             )
             row_abfe_tunnel.addWidget(self.spin_abfe_guide_tunnel_radius, 0, 3)
+            row_abfe_tunnel.addWidget(QtWidgets.QLabel("Guide shape"), 1, 0)
+            self.cmb_abfe_guide_tunnel_shape = self._make_abfe_guide_tunnel_shape_combo("traj")
+            row_abfe_tunnel.addWidget(self.cmb_abfe_guide_tunnel_shape, 1, 1)
             row_abfe_tunnel.setColumnStretch(1, 1)
             row_abfe_tunnel.setColumnStretch(3, 1)
             vbox.addLayout(row_abfe_tunnel)
@@ -13460,6 +13469,93 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._save_settings()
         except Exception:
             pass
+    def _abfe_resource_probe(self):
+        """System memory, process RSS and thread count for the ABFE memory guard and log."""
+        out = {"available_mb": None, "total_mb": None, "swap_used_mb": None, "rss_mb": None,
+               "threads": None}
+        try:
+            import psutil
+
+            vm = psutil.virtual_memory()
+            out["available_mb"] = float(vm.available) / 1048576.0
+            out["total_mb"] = float(vm.total) / 1048576.0
+            try:
+                sw = psutil.swap_memory()
+                if float(sw.total) > 0.0:
+                    out["swap_used_mb"] = float(sw.used) / 1048576.0
+            except Exception:
+                pass
+            proc = psutil.Process()
+            out["rss_mb"] = float(proc.memory_info().rss) / 1048576.0
+            out["threads"] = int(proc.num_threads())
+        except Exception:
+            pass
+        return out
+    def _abfe_guide_tunnel_shape(self, source=None):
+        attr_pairs = [("cmb_abfe_guide_tunnel_shape", "traj"), ("cmb_pose_abfe_guide_tunnel_shape", "dock")]
+        if source == "dock":
+            attr_pairs = list(reversed(attr_pairs))
+        for attr, _src in attr_pairs:
+            cmb = getattr(self, attr, None)
+            if cmb is None:
+                continue
+            try:
+                val = str(cmb.currentData() or "").strip().lower()
+            except Exception:
+                continue
+            if val in ("funnel", "cylinder"):
+                return val
+        try:
+            val = str(getattr(self, "_settings", {}).get("abfe_guide_tunnel_shape", "funnel") or "").strip().lower()
+        except Exception:
+            val = "funnel"
+        return val if val in ("funnel", "cylinder") else "funnel"
+    def _set_abfe_guide_tunnel_shape(self, shape, source=None):
+        val = str(shape or "funnel").strip().lower()
+        if val not in ("funnel", "cylinder"):
+            val = "funnel"
+        for attr, src in (("cmb_abfe_guide_tunnel_shape", "traj"), ("cmb_pose_abfe_guide_tunnel_shape", "dock")):
+            cmb = getattr(self, attr, None)
+            if cmb is None or source == src:
+                continue
+            try:
+                idx = cmb.findData(val)
+                if idx >= 0:
+                    cmb.blockSignals(True)
+                    cmb.setCurrentIndex(idx)
+                    cmb.blockSignals(False)
+            except Exception:
+                pass
+        try:
+            if hasattr(self, "_settings"):
+                self._settings["abfe_guide_tunnel_shape"] = val
+        except Exception:
+            pass
+    def _on_abfe_guide_tunnel_shape_changed(self, shape, source=None):
+        self._set_abfe_guide_tunnel_shape(shape, source=source)
+        try:
+            if hasattr(self, "_settings"):
+                self._save_settings()
+        except Exception:
+            pass
+    def _make_abfe_guide_tunnel_shape_combo(self, source):
+        cmb = QtWidgets.QComboBox()
+        cmb.addItem("Funnel (re-entry)", "funnel")
+        cmb.addItem("Cylinder", "cylinder")
+        cmb.setToolTip(
+            "Funnel: cone wide at the pocket that narrows into the tunnel, capped outside the protein; "
+            "keeps the unbound ligand in front of the entrance so it can re-enter. Cylinder: constant radius."
+        )
+        try:
+            idx = cmb.findData(self._abfe_guide_tunnel_shape())
+            if idx >= 0:
+                cmb.setCurrentIndex(idx)
+        except Exception:
+            pass
+        cmb.currentIndexChanged.connect(
+            lambda _i: self._on_abfe_guide_tunnel_shape_changed(cmb.currentData(), source=source)
+        )
+        return cmb
     def _on_abfe_guide_tunnel_radius_changed(self, radius_a, source=None):
         self._set_abfe_guide_tunnel_radius_a(float(radius_a), source=source)
         try:
@@ -19397,6 +19493,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 lambda v: self._set_abfe_steering_cycles(int(v), source="dock")
             )
             row_pose_steer.addWidget(self.spin_pose_abfe_steering_cycles, 3, 1)
+            row_pose_steer.addWidget(QtWidgets.QLabel("Guide shape"), 3, 2)
+            self.cmb_pose_abfe_guide_tunnel_shape = self._make_abfe_guide_tunnel_shape_combo("dock")
+            row_pose_steer.addWidget(self.cmb_pose_abfe_guide_tunnel_shape, 3, 3)
             for _col in range(4):
                 row_pose_steer.setColumnStretch(_col, 1)
             dbox.addLayout(row_pose_steer)
@@ -46905,6 +47004,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         guide_tunnel_enabled=True,
         guide_tunnel_radius_a=3.5,
         guide_tunnel_k_kj_nm2=650.0,
+        guide_tunnel_shape="funnel",
         steering_cycles=3,
     ):
         """
@@ -47571,6 +47671,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             guide_tunnel_force = None
             guide_tunnel_active = False
             guide_tunnel_payload = {}
+            guide_axis_payload = {}
             if bool(enforce_unbound):
                 lig_anchor = np.asarray(local_lig_heavy if len(local_lig_heavy) else local_lig, dtype=int)
                 prot_anchor = np.asarray(local_prot_heavy if len(local_prot_heavy) else local_prot, dtype=int)
@@ -47612,6 +47713,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             "alignment": float(pull_diag.get("alignment", np.nan)),
                             "score": np.nan,
                         }]
+                    if bool(guide_tunnel_enabled):
+                        # The guide is fixed in space and locks the corridor, so its axis must be a
+                        # real way out to solvent. The first ranked corridor can run along the
+                        # surface; then the ligand never gets free and the cycle never closes.
+                        try:
+                            guide_axis_payload = abfe_build_funnel_axis_payload(
+                                coords_nm=np.asarray(local_coords0, dtype=float),
+                                protein_heavy_idx=list(local_prot_heavy if len(local_prot_heavy) else local_prot),
+                                ligand_heavy_idx=list(local_lig_heavy if len(local_lig_heavy) else local_lig),
+                            )
+                        except Exception as axis_e:
+                            guide_axis_payload = {"ok": False, "reason": str(axis_e)}
+                        if bool(guide_axis_payload.get("ok", False)):
+                            steering_corridors = [{
+                                "direction": np.asarray(guide_axis_payload["direction"], dtype=float),
+                                # same meaning as the corridor ranking: free path ahead (capped at 2.5 nm)
+                                "clearance_nm": (
+                                    2.5
+                                    if int(guide_axis_payload.get("blocked_atoms", 0) or 0) == 0
+                                    else float(guide_axis_payload.get("exit_depth_nm", np.nan))
+                                ),
+                                "collision_penalty": float(guide_axis_payload.get("blocked_atoms", 0)),
+                                "alignment": np.nan,
+                                "score": np.nan,
+                            }] + list(steering_corridors)
                     steering_dir_index = 0
                     pull_dir = np.asarray(steering_corridors[0]["direction"], dtype=float)
                     pull_clearance_nm = float(steering_corridors[0].get("clearance_nm", np.nan))
@@ -47619,6 +47745,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if np.isfinite(pull_clearance_nm):
                         # Keep steering target moderate to avoid violent/unphysical exits.
                         pull_distance_nm = max(pull_distance_nm, min(2.0, pull_clearance_nm + 1.0))
+                    if bool(guide_axis_payload.get("ok", False)):
+                        # pull past the last protein atom along the exit axis
+                        pull_distance_nm = max(
+                            pull_distance_nm, float(guide_axis_payload.get("exit_depth_nm", 0.0)) + 0.8
+                        )
                     pull_distance_a = float(pull_distance_nm * 10.0)
                     if np.isfinite(pull_clearance_nm):
                         if pull_clearance_nm < 0.45:
@@ -47748,18 +47879,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                 k_axial_kj_mol_nm2=float(max(900.0, 1.6 * float(guide_tunnel_k_kj_nm2))),
                                 pull_distance_a=float(max(pull_distance_a, 10.0 * pull_distance_nm * max(1.0, max_scale))),
                                 axial_margin_a=5.0,
+                                shape=str(guide_tunnel_shape or "funnel"),
+                                cone_length_a=(
+                                    float(10.0 * float(guide_axis_payload.get("exit_depth_nm", 0.6)))
+                                    if bool(guide_axis_payload.get("ok", False))
+                                    else 6.0
+                                ),
                             )
                             if bool(tunnel_plan.get("ok", False)):
-                                # Single-COM cylindrical wall: free inside the tunnel, harmonic only
-                                # after the ligand COM leaves the selected entrance corridor.
-                                tunnel_expr = (
-                                    "0.5*k_cyl*step(radial-r0)*(radial-r0)^2"
-                                    " + 0.5*k_axial*step(zmin-axisproj)*(zmin-axisproj)^2"
-                                    " + 0.5*k_axial*step(axisproj-zmax)*(axisproj-zmax)^2;"
-                                    "radial=sqrt(max(0.0, rx*rx+ry*ry+rz*rz-axisproj*axisproj));"
-                                    "axisproj=rx*ux+ry*uy+rz*uz;"
-                                    "rx=x1-ox; ry=y1-oy; rz=z1-oz"
-                                )
+                                # Single-COM wall (cylinder or funnel): free inside, harmonic only after
+                                # the ligand COM leaves the entrance corridor. Static parameters, one
+                                # force for the whole run: no per-cycle context or parameter churn.
+                                tunnel_expr = str(tunnel_plan.get("energy_expression", ""))
                                 guide_tunnel_force = OMM.CustomCentroidBondForce(1, tunnel_expr)
                                 guide_tunnel_force.addGlobalParameter(
                                     "k_cyl", float(tunnel_plan.get("k_radial_kj_mol_nm2", 650.0))
@@ -47770,6 +47901,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                 guide_tunnel_force.addGlobalParameter("r0", float(tunnel_plan.get("radius_nm", 0.35)))
                                 guide_tunnel_force.addGlobalParameter("zmin", float(tunnel_plan.get("zmin_nm", -0.25)))
                                 guide_tunnel_force.addGlobalParameter("zmax", float(tunnel_plan.get("zmax_nm", 2.4)))
+                                guide_tunnel_force.addGlobalParameter("tan_a", float(tunnel_plan.get("tan_alpha", 0.0)))
+                                guide_tunnel_force.addGlobalParameter("zcc", float(tunnel_plan.get("zcc_nm", 0.0)))
                                 origin_nm = np.asarray(tunnel_plan.get("origin_nm", tunnel_origin_nm), dtype=float)
                                 axis_u = np.asarray(tunnel_plan.get("direction", pull_dir), dtype=float)
                                 guide_tunnel_force.addGlobalParameter("ox", float(origin_nm[0]))
@@ -47797,7 +47930,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             f"pull={pull_distance_a:.2f} Å, k_input={pull_k_kj_nm2:.1f}, "
                             f"k_per_atom={pull_k_effective_kj_nm2:.1f} kJ/mol/nm², pull_atoms={n_pull_particles}, "
                             f"corridors={len(steering_corridors)}, "
-                            f"tunnel={'on' if guide_tunnel_active else 'off'}"
+                            f"tunnel={(str((guide_tunnel_payload or {}).get('shape', 'cylinder')) if guide_tunnel_active else 'off')}"
                         )
                     except Exception:
                         pass
@@ -48329,6 +48462,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return True
             lig_masses = np.asarray([max(1.0, masses[i]) for i in lig_heavy_idx], dtype=float)
             md_progress_canceled = False
+            memory_guard_abort = {}
+            memory_guard_last_t = 0.0
+            self._abfe_last_memory_guard = {}
             ui_event_stride = 1
             xyz_runtime_prev = np.asarray(local_coords0, dtype=float)
             for s in range(n_samples):
@@ -48340,6 +48476,43 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 if bool(progress_step.get("should_abort", False)):
                     md_progress_canceled = True
                     break
+                # Stop before macOS starts thrashing swap (that ends in a watchdog panic,
+                # not an exception). Checked on wall-clock time so it is cheap.
+                now_t = time.monotonic()
+                if (now_t - memory_guard_last_t) >= 5.0:
+                    memory_guard_last_t = now_t
+                    probe = self._abfe_resource_probe()
+                    guard = abfe_build_memory_guard_decision(
+                        available_mb=probe.get("available_mb"),
+                        total_mb=probe.get("total_mb"),
+                        swap_used_mb=probe.get("swap_used_mb"),
+                    )
+                    try:
+                        self._append_debug_log(
+                            f"ABFE resources: sample={s}/{n_samples} "
+                            f"phase={str((steering_adaptive_state or {}).get('phase', '-'))} "
+                            f"cycle={int((steering_adaptive_state or {}).get('cycles_completed', 0) or 0)} "
+                            f"avail_mb={probe.get('available_mb') or float('nan'):.0f} "
+                            f"rss_mb={probe.get('rss_mb') or float('nan'):.0f} "
+                            f"threads={probe.get('threads')}"
+                        )
+                    except Exception:
+                        pass
+                    if bool(guard.get("should_abort", False)):
+                        memory_guard_abort = dict(guard)
+                        self._abfe_last_memory_guard = dict(guard)
+                        md_progress_canceled = True
+                        msg = (
+                            "ABFE-lite stopped early to protect the computer: "
+                            + ", ".join(list(guard.get("reasons", []) or []))
+                            + f" (sample {s}/{n_samples}). Partial results are kept."
+                        )
+                        print(msg)
+                        try:
+                            self._append_debug_log(msg)
+                        except Exception:
+                            pass
+                        break
                 if bias_force is not None:
                     try:
                         lam_value_runtime = float(lam_schedule[s])
@@ -48778,7 +48951,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     timestamp_token=datetime.datetime.now().strftime("%H%M%S"),
                     existing_objects=list(existing_objects or []),
                     object_prefix="abfe_local_md_traj",
-                    max_states_view=1500,
+                    max_states_view=int(
+                        abfe_build_pymol_state_budget(
+                            n_atoms=int(max(len(local_model_indices or []), int(n_local))),
+                            requested_max_states=1500,
+                            budget_mb=384.0,
+                        ).get("max_states", 1500)
+                    ),
                     group_name="ABFE.LocalMD",
                 )
                 if bool(final_traj_plan.get("should_build", False)):
@@ -49187,6 +49366,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             if isinstance(result, dict):
                 result["steering_cycles_target"] = int((steering_adaptive_state or {}).get("cycles_target", 1) or 1)
+                result["memory_guard_abort"] = dict(memory_guard_abort or {})
                 result["steering_cycles_completed"] = int((steering_adaptive_state or {}).get("cycles_completed", 0) or 0)
             return result
         except Exception as e:
@@ -49266,6 +49446,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     self._append_debug_log(str(scene_restore_payload.get("debug_line", "")))
                 except Exception:
                     pass
+            # Each replica opens its own live figure; close it or the Qt/matplotlib
+            # windows (and their GPU-backed surfaces) pile up run after run.
+            try:
+                if HAS_MPL and bool((live_plot or {}).get("enabled", False)) and (live_plot or {}).get("fig") is not None:
+                    plt.close(live_plot["fig"])
+            except Exception:
+                pass
             teardown_plan = abfe_build_local_md_teardown_plan(
                 has_context=bool(context is not None),
                 has_integrator=bool(integrator is not None),
@@ -49769,6 +49956,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         guide_tunnel_enabled = bool(self._abfe_guide_tunnel_enabled(source=source))
         guide_tunnel_radius_a = float(self._abfe_guide_tunnel_radius_a(source=source))
         steering_cycles = int(self._abfe_steering_cycles(source=source))
+        guide_tunnel_shape = str(self._abfe_guide_tunnel_shape(source=source))
         try:
             replica_seed0 = int(getattr(self, "_settings", {}).get("abfe_replica_seed0", 20260311))
         except Exception:
@@ -49796,10 +49984,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 guide_tunnel_enabled=bool(guide_tunnel_enabled),
                 guide_tunnel_radius_a=float(guide_tunnel_radius_a),
                 guide_tunnel_k_kj_nm2=650.0,
+                guide_tunnel_shape=str(guide_tunnel_shape),
                 steering_cycles=int(steering_cycles),
             )
             if rep_data:
                 replica_results.append(rep_data)
+            if dict(getattr(self, "_abfe_last_memory_guard", {}) or {}).get("should_abort", False):
+                print("ABFE-lite: remaining replicas skipped after the memory guard stopped a run.")
+                break
         if replica_results:
             data = dict(replica_results[0] or {})
             if len(replica_results) > 1:
@@ -53867,6 +54059,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "abfe_policy_mode": "heuristic",
             "abfe_guide_tunnel_enabled": True,
             "abfe_guide_tunnel_radius_a": 3.5,
+            "abfe_guide_tunnel_shape": "funnel",
             "abfe_replica_count": 3,
             "abfe_replica_seed0": 20260311,
         }
@@ -53955,6 +54148,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._set_abfe_policy_mode(str(s.get("abfe_policy_mode", "heuristic")))
             self._set_abfe_guide_tunnel_enabled(bool(s.get("abfe_guide_tunnel_enabled", True)))
             self._set_abfe_guide_tunnel_radius_a(float(s.get("abfe_guide_tunnel_radius_a", 3.5)))
+            self._set_abfe_guide_tunnel_shape(str(s.get("abfe_guide_tunnel_shape", "funnel") or "funnel"))
             if hasattr(self, "show_angle_labels_cb"):
                 self.show_angle_labels_cb.blockSignals(True)
                 self.show_angle_labels_cb.setChecked(bool(s.get("show_angle_labels", False)))
