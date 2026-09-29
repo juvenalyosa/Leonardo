@@ -70,6 +70,8 @@ def _select_receptor(dlg, receptor):
 
 
 def register(reg):
+    register_druglike(reg)
+
     @reg.tool("run_virtual_screening", "Dock a library of compounds into a pocket with smina and rank them. The "
               "library is an SDF file or a list of SMILES (with optional names). Uses the pocket from "
               "find_pockets/select_pocket. About 10-60 s per compound.",
@@ -83,10 +85,15 @@ def register(reg):
                   "exhaustiveness": {"type": "integer", "minimum": 1, "maximum": 64},
                   "max_ligands": {"type": "integer", "minimum": 1, "maximum": 5000},
                   "ph": {"type": "number", "minimum": 0, "maximum": 14},
+                  "druglike_filter": {"type": "string", "enum": ["none", "lipinski", "lipinski_strict", "veber",
+                                                                 "lipinski_veber", "ghose", "egan", "lead_like"],
+                                      "description": "compounds failing the rule are not docked"},
+                  "exclude_pains": {"type": "boolean"},
               }},
               permission="compute_heavy", title="Virtual screening (smina)")
     def run_virtual_screening(ctx, library_sdf="", compounds=None, receptor="", pocket_rank=None,
-                              exhaustiveness=8, max_ligands=250, ph=7.4):
+                              exhaustiveness=8, max_ligands=250, ph=7.4, druglike_filter="none",
+                              exclude_pains=False):
         dlg = ctx.dlg
         if compounds:
             library_sdf, n = _write_smiles_library(ctx, compounds)
@@ -102,6 +109,12 @@ def register(reg):
         set_value(dlg, "spin_vs_exhaustiveness", int(exhaustiveness))
         set_value(dlg, "spin_vs_max_ligands", int(max_ligands))
         set_value(dlg, "spin_vs_ph", float(ph))
+        from ._widgets import set_combo
+
+        set_combo(dlg, "cmb_vs_druglike_filter", druglike_filter, required=False)
+        if hasattr(dlg, "cb_vs_exclude_pains"):
+            dlg.cb_vs_exclude_pains.setChecked(bool(exclude_pains))
+        dlg._vs_filter_rejected = []
         _headless.auto_hetatm_selection(dlg)
         dlg._vs_results = []
 
@@ -112,8 +125,14 @@ def register(reg):
             if not rows:
                 raise ToolError("the screen produced no results (see Leonardo's message)")
             ok = [r for r in rows if str(r.get("status")) == "ok"]
-            table = [{"rank": r.get("rank"), "name": r.get("name"), "affinity_kcal_mol": _finite(r.get("affinity")),
-                      "library_index": r.get("index")} for r in ok[:30]]
+            from ... import druglike_runtime as dl
+
+            props = dict(getattr(dlg, "_vs_library_props", {}) or {})
+            table = [dict({"rank": r.get("rank"), "name": r.get("name"),
+                           "affinity_kcal_mol": _finite(r.get("affinity")), "library_index": r.get("index")},
+                          **dl.summary_row(props.get(int(r.get("index") or 0), {})))
+                     for r in ok[:30]]
+            removed = list(getattr(dlg, "_vs_filter_rejected", []) or [])
             failed = [{"name": r.get("name"), "notes": str(r.get("notes", ""))[:120]}
                       for r in rows if str(r.get("status")) != "ok"][:10]
             if ok:
@@ -123,9 +142,12 @@ def register(reg):
                 except Exception:
                     pass
             return {"receptor": rec, "pocket_rank": rank, "screened": len(rows), "docked": len(ok),
+                    "druglike_filter": druglike_filter + (" + PAINS" if exclude_pains else ""),
+                    "removed_by_filter": removed[:30], "removed_count": len(removed),
                     "failed": failed, "ranking": table, "job_dir": str(getattr(dlg, "_vs_job_dir", "") or ""),
                     "scene": ctx.scene(f"virtual screening on {rec}: best hit {table[0]['name'] if table else ''}"),
-                    "_card": (f"**{len(ok)}/{len(rows)}** compounds docked; best "
+                    "_card": ((f"{len(removed)} compound(s) removed by the {druglike_filter} filter; " if removed else "")
+                              + f"**{len(ok)}/{len(rows)}** compounds docked; best "
                               + ", ".join(f"{t['name']} {t['affinity_kcal_mol']}" for t in table[:3])
                               + " kcal/mol (smina scores, not ΔG).")}
 
@@ -237,3 +259,63 @@ def register(reg):
 
         return start_deferred_job(ctx, "leadopt", dlg._on_run_lead_optimization, collect,
                                   description="lead optimization")
+
+
+def register_druglike(reg):
+    @reg.tool("druglikeness", "Drug-likeness and estimated ADME of molecules: MW, cLogP, HBD/HBA, TPSA, rotatable "
+              "bonds, QED; Lipinski Ro5, Veber, Ghose, Egan and lead-like rules; PAINS and Brenk alerts; ESOL "
+              "solubility, GI absorption and BBB permeation (BOILED-Egg approximation). Give SMILES, a PyMOL "
+              "selection or an SDF library. Estimates for ranking, not measured ADME.",
+              {"properties": {
+                  "smiles": {"type": "array", "items": {"type": "string"}},
+                  "selection": {"type": "string"}, "library_sdf": {"type": "string"},
+                  "rule": {"type": "string", "enum": ["none", "lipinski", "lipinski_strict", "veber",
+                                                     "lipinski_veber", "ghose", "egan", "lead_like"]},
+                  "exclude_pains": {"type": "boolean"},
+              }},
+              permission="read", title="Drug-likeness / ADME")
+    def druglikeness(ctx, smiles=(), selection="", library_sdf="", rule="lipinski", exclude_pains=True):
+        from rdkit import Chem
+
+        from ... import druglike_runtime as dl
+
+        mols = []
+        for i, smi in enumerate(smiles or []):
+            m = Chem.MolFromSmiles(str(smi))
+            if m is None:
+                raise ToolError(f"RDKit cannot parse {smi!r}")
+            mols.append((str(smi), m))
+        if selection:
+            from pymol import cmd
+
+            if cmd.count_atoms(selection) == 0:
+                raise ToolError(f"no atoms in {selection!r}")
+            m = Chem.MolFromMolBlock(cmd.get_str("mol", selection), removeHs=False)
+            if m is None:
+                raise ToolError("could not read the selection as a molecule")
+            mols.append((selection, m))
+        if library_sdf:
+            path = os.path.abspath(os.path.expanduser(library_sdf))
+            if not os.path.isfile(path):
+                raise ToolError(f"no such file: {path}")
+            for i, m in enumerate(Chem.SDMolSupplier(path)):
+                if m is not None:
+                    mols.append((m.GetProp("_Name") if m.HasProp("_Name") and m.GetProp("_Name") else f"cpd_{i + 1}", m))
+                if len(mols) >= 2000:
+                    break
+        if not mols:
+            raise ToolError("give smiles, a selection or a library_sdf")
+        rows = []
+        for name, m in mols:
+            p = dl.properties(m)
+            ok, reason = dl.passes(p, rule, exclude_pains)
+            rows.append(dict({"name": name, "passes": ok, "reason": reason}, **dl.summary_row(p),
+                             lipinski_violations=p["lipinski_violations"], pains_alerts=p["pains_alerts"],
+                             brenk_alerts=p["brenk_alerts"][:3], solubility_class=p["solubility_class"]))
+        n_ok = sum(r["passes"] for r in rows)
+        return {"rule": dl.FILTERS.get(rule, rule) + (" + no PAINS" if exclude_pains else ""),
+                "passing": n_ok, "total": len(rows), "compounds": rows[:60],
+                "_card": f"**{n_ok}/{len(rows)}** pass {dl.FILTERS.get(rule, rule)}"
+                         + (" without PAINS" if exclude_pains else "") + ". "
+                         + "; ".join(f"{r['name'][:24]}: MW {r['mw']}, cLogP {r['clogp']}, QED {r['qed']}"
+                                     + ("" if r["passes"] else f" ✗ {r['reason']}") for r in rows[:3])}

@@ -31,6 +31,8 @@ def _check_dispersion(method):
 
 
 def register(reg):
+    register_cluster(reg)
+
     @reg.tool("run_psi4", "Quantum chemistry with Psi4 on a ligand, a whole small object or a selection: "
               "'energy' (single point), 'optimize', 'frequencies' (+ thermochemistry), 'stationary' (opt + freq), "
               "'ts' (transition-state optimization from a TS guess + freq), 'ts_qst2' (TS between a reactant and a "
@@ -114,10 +116,10 @@ def register(reg):
         set_value(dlg, "cb_psi4_pcm", bool(solvent))
         if solvent:
             set_combo(dlg, "cmb_psi4_solvent", solvent)
-        if threads:
-            set_value(dlg, "spin_psi4_threads", int(threads))
-        if memory_gb:
-            set_value(dlg, "spin_psi4_memory_gb", int(memory_gb))
+        from .estimates import recommended
+
+        set_value(dlg, "spin_psi4_threads", int(threads or recommended(ctx, "psi4", 4)))
+        set_value(dlg, "spin_psi4_memory_gb", int(memory_gb or recommended(ctx, "psi4_memory_gb", 4)))
         before = getattr(dlg, "_psi4_last_result", None)
 
         def collect(call):
@@ -318,3 +320,154 @@ def _focus_molecule(dlg, cmd):
     if obj and obj in cmd.get_names("objects"):
         cmd.orient(obj)
         cmd.zoom(obj, 4.0, complete=1)
+
+
+# -- enzyme active-site cluster reactions (Psi4) ----------------------------------------------------- #
+def _cluster_atoms(dlg):
+    st = dict(getattr(dlg, "_psi4_cluster_state", {}) or {})
+    return list(st.get("atoms") or [])
+
+
+def _cluster_index(dlg, token):
+    """Cluster atom index from an int/'12' or a PyMOL single-atom selection (matched by chain/resi/name)."""
+    from pymol import cmd
+
+    atoms = _cluster_atoms(dlg)
+    t = str(token).strip()
+    if t.isdigit():
+        i = int(t)
+        if not any(int(a.get("index", -1)) == i for a in atoms):
+            raise ToolError(f"atom index {i} is not in the cluster (1..{len(atoms)})")
+        return i
+    got = []
+    cmd.iterate(t, "got.append((chain, resi, name))", space={"got": got})
+    if len(got) != 1:
+        raise ToolError(f"{t!r} must select exactly one atom (selected {len(got)})")
+    ch, resi, name = got[0]
+    hit = [a for a in atoms if str(a.get("resi")) == str(resi) and str(a.get("name")) == str(name)
+           and (not ch or str(a.get("chain", "")) == str(ch))]
+    if not hit:
+        raise ToolError(f"{t!r} is not inside the cluster; enlarge the cluster or pick another atom")
+    return int(hit[0]["index"])
+
+
+def register_cluster(reg):
+    @reg.tool("build_reaction_cluster", "Cut an enzyme active-site cluster for QM reaction modeling (Psi4): all "
+              "residues/ligand atoms within radius of a selection (e.g. the substrate and catalytic residues), "
+              "with H-link caps at protein cuts and frozen boundary atoms. Returns the cluster atoms with their "
+              "indices (needed for run_cluster_reaction).",
+              {"properties": {"object": {"type": "string"}, "center_selection": {"type": "string"},
+                              "radius_A": {"type": "number", "minimum": 2, "maximum": 10},
+                              "full_residues": {"type": "boolean"}, "keep_waters": {"type": "boolean"}},
+               "required": ["object", "center_selection"]},
+              permission="compute_light", title="Reaction cluster")
+    def build_reaction_cluster(ctx, object, center_selection, radius_A=4.0, full_residues=True, keep_waters=False):
+        from pymol import cmd
+
+        dlg = ctx.dlg
+        if object not in cmd.get_names("objects"):
+            raise ToolError(f"no object named {object!r}")
+        dlg._setup_psi4_cluster_dialog()
+        dlg._psi4_cluster_refresh_source_combo()
+        set_combo(dlg, "cmb_psi4_cluster_source", object)
+        set_combo(dlg, "cmb_psi4_cluster_build_mode", "around_selection")
+        set_value(dlg, "edit_psi4_cluster_selection", center_selection)
+        set_value(dlg, "spin_psi4_cluster_radius", float(radius_A))
+        set_value(dlg, "cb_psi4_cluster_autobyres", bool(full_residues))
+        set_value(dlg, "cb_psi4_cluster_include_waters", bool(keep_waters))
+        set_value(dlg, "cb_psi4_cluster_autocap", True)
+        with _headless.quiet() as q:
+            dlg._on_psi4_cluster_build_preview()
+        atoms = _cluster_atoms(dlg)
+        if not atoms:
+            raise ToolError("; ".join(m["text"] for m in q.messages) or "the cluster could not be built")
+        preview = str(getattr(dlg, "_psi4_cluster_preview_obj", "") or "")
+        if preview in cmd.get_names("objects"):
+            presentation.style_ligand(preview)
+            presentation.focus(preview, buffer=3.0)
+        heavy = [a for a in atoms if str(a.get("element", "")).upper() != "H"]
+        table = [{"index": a.get("index"), "element": a.get("element"), "name": a.get("name"),
+                  "residue": f"{a.get('resn')}{a.get('resi')}{a.get('chain', '')}"} for a in heavy][:250]
+        return {"object": preview, "atoms": len(atoms), "heavy_atom_table": table,
+                "scene": ctx.scene(f"reaction cluster around {center_selection}"),
+                "_card": f"Cluster of **{len(atoms)} atoms** around `{center_selection}` (radius {radius_A} Å), "
+                         f"capped at the protein cuts, shown as `{preview}`."}
+
+    @reg.tool("run_cluster_reaction", "Reaction path in the active-site cluster (from build_reaction_cluster) with "
+              "Psi4: the product is generated from the bonds that form and break, then optional pre-optimization, "
+              "QST2 (and QST3 refinement) transition state and IRC. Atoms as cluster indices or single-atom PyMOL "
+              "selections. Hours for large clusters with DFT: estimate first.",
+              {"properties": {
+                  "bonds_forming": {"type": "array", "items": {"type": "array", "items": {"type": "string"},
+                                                                "minItems": 2, "maxItems": 2}},
+                  "bonds_breaking": {"type": "array", "items": {"type": "array", "items": {"type": "string"},
+                                                                 "minItems": 2, "maxItems": 2}},
+                  "method": {"type": "string"}, "basis": {"type": "string"},
+                  "charge": {"type": "integer"}, "multiplicity": {"type": "integer", "minimum": 1},
+                  "preoptimize": {"type": "boolean"}, "classical_premin": {"type": "boolean"},
+                  "qst3_refine": {"type": "boolean"}, "irc": {"type": "boolean"},
+                  "freeze_backbone": {"type": "boolean"}, "threads": {"type": "integer", "minimum": 1},
+              }},
+              permission="compute_heavy", title="Cluster reaction (Psi4)")
+    def run_cluster_reaction(ctx, bonds_forming=(), bonds_breaking=(), method="b3lyp-d3bj", basis="def2-svp",
+                             charge=None, multiplicity=None, preoptimize=True, classical_premin=True,
+                             qst3_refine=True, irc=True, freeze_backbone=True, threads=None):
+        dlg = ctx.dlg
+        if not _cluster_atoms(dlg):
+            raise ToolError("build the cluster first (build_reaction_cluster)")
+        if not bonds_forming and not bonds_breaking:
+            raise ToolError("give the bonds that form and/or break")
+        _check_dispersion(method)
+
+        def pairs(items):
+            return ", ".join(f"{_cluster_index(dlg, a)}-{_cluster_index(dlg, b)}" for a, b in (items or []))
+        set_value(dlg, "edit_psi4_cluster_form", pairs(bonds_forming))
+        set_value(dlg, "edit_psi4_cluster_break", pairs(bonds_breaking))
+        with _headless.quiet() as q:
+            dlg._on_psi4_cluster_generate_product_guess()
+        if not str(dlg.edit_psi4_cluster_prod.text() or "").strip():
+            raise ToolError("; ".join(m["text"] for m in q.messages) or "could not build the product guess")
+        from .estimates import recommended
+
+        set_combo(dlg, "cmb_psi4_method", method)
+        set_combo(dlg, "cmb_psi4_basis", basis)
+        set_value(dlg, "spin_psi4_threads", int(threads or recommended(ctx, "psi4", 4)))
+        set_value(dlg, "cb_psi4_auto_spin", charge is None and multiplicity is None)
+        if charge is not None:
+            set_value(dlg, "spin_psi4_charge", int(charge))
+        if multiplicity is not None:
+            set_value(dlg, "spin_psi4_mult", int(multiplicity))
+        for attr, val in (("cb_psi4_cluster_preopt", preoptimize), ("cb_psi4_cluster_classical", classical_premin),
+                          ("cb_psi4_cluster_run_qst3", qst3_refine), ("cb_psi4_cluster_run_irc", irc),
+                          ("cb_psi4_cluster_freeze_backbone", freeze_backbone)):
+            set_value(dlg, attr, bool(val))
+        before = getattr(dlg, "_psi4_last_result", None)
+
+        def collect(call):
+            run = call.arg(0, "run_result") if call else None
+            run = dict(run) if isinstance(run, dict) else {}
+            res = getattr(dlg, "_psi4_last_result", None)
+            if not run.get("success") or not isinstance(res, dict) or res is before:
+                inner = run.get("result") if isinstance(run.get("result"), dict) else {}
+                raise ToolError(f"cluster reaction failed: {inner.get('error') or 'see the Psi4 log'}")
+            out = {k: jsonable(res.get(k)) for k in _KEEP if res.get(k) not in (None, "", [], {})}
+            rel = list(res.get("irc_relative_energy_kcal_mol") or [])
+            if rel:
+                ts_i = int(res.get("irc_ts_frame_index", rel.index(max(rel))))
+                out.update({"barrier_from_reactant_kcal_mol": round(rel[ts_i] - rel[0], 2),
+                            "reaction_energy_kcal_mol": round(rel[-1] - rel[0], 2)})
+                ctx.__dict__.setdefault("plots", {})["irc_profile"] = {
+                    "object": "cluster", "program": "Psi4", "x": res.get("irc_coordinate_amu05_bohr") or
+                    list(range(len(rel))), "y_kcal": rel, "ts_index": ts_i}
+            out["job_dir"] = str(getattr(dlg, "_psi4_last_job_dir", "") or "")
+            ctx.__dict__.setdefault("qm", {})["last"] = "psi4"
+            imag = [v for v in (res.get("freq_cm_imag") or []) if abs(float(v)) > 10]
+            out["_card"] = (f"Cluster reaction ({method}/{basis}): TS with {len(imag)} imaginary mode(s)"
+                            + (f"; barrier **{out['barrier_from_reactant_kcal_mol']} kcal/mol**, ΔE "
+                               f"{out['reaction_energy_kcal_mol']} kcal/mol" if rel else "")
+                            + ". animate_reaction shows the path.")
+            return out
+
+        return start_finalize_job(ctx, "psi4_cluster", dlg._on_psi4_cluster_run_workflow,
+                                  "_psi4_finalize_background_run", collect, busy_button="btn_psi4_cluster_run",
+                                  description=f"Psi4 cluster reaction {method}/{basis}")

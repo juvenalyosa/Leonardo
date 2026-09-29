@@ -31,18 +31,40 @@ def register(reg):
                   "solvent": {"type": "string", "enum": ["implicit", "explicit", "gas"]},
                   "temperature_K": {"type": "number", "minimum": 250, "maximum": 400},
                   "ph": {"type": "number", "minimum": 0, "maximum": 14},
+                  "force_field": {"type": "string", "enum": ["amber14", "amber99sbildn", "charmm36"]},
+                  "water_model": {"type": "string", "enum": ["tip3p", "spce", "tip4pew", "tip5p"],
+                                  "description": "explicit solvent only"},
+                  "ensemble": {"type": "string", "enum": ["npt", "nvt", "nve"],
+                               "description": "NPT needs explicit solvent (a box); implicit/gas run NVT"},
+                  "timestep_fs": {"type": "number", "minimum": 0.5, "maximum": 4.0},
+                  "keep_crystal_waters": {"type": "boolean"}, "keep_ions": {"type": "boolean"},
+                  "keep_cofactors": {"type": "boolean", "description": "crystal ligands/cofactors (parameterized)"},
                   "equilibration_ns": {"type": "number", "minimum": 0.001, "maximum": 10,
                                        "description": "Default: 20% of production (min 4 ps, max 40 ps); heating "
                                                       "10% (min 2 ps, max 10 ps)."},
               }, "required": ["object"]},
               permission="compute_heavy", title="Molecular dynamics (OpenMM)")
     def run_md(ctx, object, production_ns=0.1, solvent="implicit", temperature_K=300.0, ph=7.4,
-               equilibration_ns=None):
+               equilibration_ns=None, force_field=None, water_model=None, ensemble=None, timestep_fs=None,
+               keep_crystal_waters=None, keep_ions=None, keep_cofactors=None):
         from pymol import cmd
 
         dlg = ctx.dlg
         _select_openmm_object(dlg, object, solvent, ph)
         dlg.spin_openmm_temperature.setValue(float(temperature_K))
+        from ._widgets import set_combo
+
+        if force_field:
+            set_combo(dlg, "cmb_openmm_ff_family", force_field, required=False)
+        if water_model:
+            set_combo(dlg, "cmb_openmm_water_model", water_model, required=False)
+        set_combo(dlg, "cmb_openmm_ensemble", ensemble or ("npt" if solvent == "explicit" else "nvt"), required=False)
+        if timestep_fs:
+            dlg.spin_openmm_timestep_fs.setValue(float(timestep_fs))
+        for attr, val in (("cb_openmm_keep_waters", keep_crystal_waters), ("cb_openmm_keep_ions", keep_ions),
+                          ("cb_openmm_keep_cofactors", keep_cofactors)):
+            if val is not None and hasattr(dlg, attr):
+                getattr(dlg, attr).setChecked(bool(val))
         dt_fs = float(dlg.spin_openmm_timestep_fs.value())
         prod_steps = int(round(float(production_ns) * 1e6 / dt_fs))
         # heating/equilibration scale with the production run (Leonardo's own defaults, 10 + 40 ps,

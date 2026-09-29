@@ -22,8 +22,10 @@ import json
 import threading
 import time
 
+from .checks import post_checks
 from .providers.base import ProviderError, TextDelta, ThinkingDelta, ToolCall, TurnEnd
 from .registry import APPROVAL_POLICIES, ToolError, result_to_text
+from .tools.estimates import ESTIMATED_TOOLS
 
 SYSTEM_PROMPT = """You are Leonardo's scientific assistant, working inside PyMOL with the Leonardo \
 plugin for structure-based drug design and molecular simulation. You act only through the \
@@ -60,6 +62,13 @@ the user is seeing in the PyMOL view.
 their limits are (for example docking scores are not binding free energies). Never invent \
 results; if a tool fails, say so and propose what to do.
 - Keep the scene readable: use the view tools to focus on what each step produced.
+- Hardware: system_info tells what this computer has (CPU cores, GPU, the OpenMM platform MD uses, \
+programs installed); estimate_cost gives the expected time of a calculation. Before long MD, ABFE, \
+TDDFT or QM runs, estimate and tell the user (suggest a GPU for long MD, more cores or smaller models for \
+QM). Heavy steps show their estimate on the confirmation card.
+- Results can carry quality_warnings (e.g. a TS with two imaginary modes, a hot MD, a weak docking \
+score): report them plainly, explain what they mean and propose the fix; never present such a result as \
+reliable.
 - Reactions: a robust route is MOPAC first (run_qmmm mopac_reaction_path: reactant + product with the \
 same atom order -> TS -> IRC, seconds), then Psi4 to refine the TS (run_psi4 ts from the MOPAC TS \
 object) and follow it (run_psi4 irc, irc_direction BOTH); run_psi4 ts_qst2/ts_qst3 also exist. \
@@ -271,6 +280,9 @@ class AgentSession:
         except ToolError as exc:
             return self._result(call, str(exc), is_error=True)
         card = {"tool": spec.name, "title": spec.title, "args": args, "permission": spec.permission}
+        estimate = self._estimate(spec.name, args)
+        if estimate:
+            card["estimate"] = estimate
         if spec.permission in self.needs_confirmation:
             answer = self.ui.ask("confirm_tool", card)
             if not answer.get("approved", False):
@@ -290,10 +302,25 @@ class AgentSession:
             self.ui.on_event("tool", dict(card, status="failed", error=str(exc)))
             return self._result(call, f"{spec.name} failed: {exc}", is_error=True)
         shown = {k: v for k, v in result.items() if not k.startswith("_")}
+        warnings = post_checks(spec.name, args, result)
+        if warnings:
+            shown["quality_warnings"] = warnings
         self.ui.on_event("tool", dict(card, status="done", seconds=round(time.time() - started, 1), result=shown,
                                       card=str(result.get("_card", "") or ""),
-                                      image=str(result.get("_image", "") or "")))
+                                      image=str(result.get("_image", "") or ""), warnings=warnings))
         return self._result(call, shown)
+
+    def _estimate(self, name, args):
+        """Wall-time estimate of a calculation on this computer ('' when not applicable/unavailable)."""
+        if name not in ESTIMATED_TOOLS or self.registry.get("estimate_cost") is None:
+            return ""
+        try:
+            est = self.execute("estimate_cost", {"tool": name, "args": dict(args or {})})
+        except Exception:
+            return ""
+        if not isinstance(est, dict) or not est.get("text") or est.get("text") == "no estimate for this call":
+            return ""
+        return str(est["text"]) + (f" — {est['advice']}" if est.get("advice") else "")
 
     def _wait_if_pending(self, result):
         """Follow a long job started by a tool (job_status every poll_interval s); cancellable."""

@@ -10,7 +10,8 @@ from ._dialogjob import start_finalize_job
 from ._widgets import jsonable, set_combo, set_value
 
 _OPS = ["probe", "electrostatic", "optimization", "thermochemistry", "reaction_scan", "transition_state",
-        "mopac_ts_frequency", "mopac_irc", "mopac_qst2", "mopac_qst3", "mopac_reaction_path"]
+        "mopac_ts_frequency", "mopac_irc", "mopac_qst2", "mopac_qst3", "mopac_reaction_path",
+        "md_periodic", "md_coupled", "redock_rescore"]
 _MOPAC_DIRECT = {"mopac_ts_frequency", "mopac_irc", "mopac_qst2", "mopac_qst3", "mopac_reaction_path"}
 
 
@@ -56,6 +57,39 @@ def _path_runs_backwards(reactant, xyz_path):
         return rmsd(frames[-1]) < rmsd(frames[0])
     except Exception:
         return False
+
+
+def _qmmm_md_result(ctx, dlg, operation, object, res):
+    """QM/MM dynamics (probe series along the MD) or QM/MM rescoring of docking poses."""
+    from pymol import cmd
+
+    out = {"operation": operation, "object": object, "job_dir": str(getattr(dlg, "_openmm_last_job_dir", "") or ""),
+           "warnings": list(res.get("warnings") or [])[:6], "notes": list(res.get("notes") or [])[:6]}
+    if operation == "redock_rescore":
+        rows = jsonable(list(res.get("rows") or [])[:30])
+        out.update({"poses": rows, "best_state": jsonable(res.get("best_state")), "csv": res.get("csv_path")})
+        out["_card"] = f"QM/MM rescoring of {len(rows)} pose(s); best: {out['best_state']}."
+        return out
+    series = list(res.get("qmmm_probe_series") or [])
+    import math
+
+    elec = [float(r["energy_qmmm_elec_kj_mol"]) for r in series if isinstance(r, dict)
+            and r.get("energy_qmmm_elec_kj_mol") is not None and math.isfinite(float(r["energy_qmmm_elec_kj_mol"]))]
+    out.update({"probes": len(series), "series": jsonable(series[:60]), "trajectory": res.get("dcd_path"),
+                "platform": res.get("platform_used")})
+    if elec:
+        out["qmmm_elec_kj_mol"] = {"mean": round(sum(elec) / len(elec), 1), "min": round(min(elec), 1),
+                                   "max": round(max(elec), 1)}
+    obj = str(getattr(dlg, "_openmm_last_output_object", "") or "")
+    if obj and obj in cmd.get_names("objects"):
+        out["md_object"] = obj
+        presentation.focus(obj, buffer=2.0)
+    out["scene"] = ctx.scene(f"QM/MM {operation} of {object}")
+    e = out.get("qmmm_elec_kj_mol")
+    out["_card"] = (f"QM/MM **{operation}** of {object}: {len(series)} QM/MM evaluations along the MD"
+                    + (f"; QM-MM electrostatics {e['mean']} kJ/mol (range {e['min']} to {e['max']})" if e else "")
+                    + ".")
+    return out
 
 
 def _mopac_reaction_result(ctx, operation, object, res):
@@ -119,8 +153,10 @@ def register(reg):
               "mopac_ts_frequency (TS refinement + frequency check), mopac_irc (TS + intrinsic reaction "
               "coordinate), mopac_qst2 (TS between reactant=object and product_object), mopac_qst3 (plus "
               "ts_guess_object), mopac_reaction_path (reactant + product -> TS -> IRC). Products and guesses need "
-              "the same atoms in the same order. Single points take seconds to minutes; scans and TS searches take "
-              "tens of minutes to hours.",
+              "the same atoms in the same order. QM/MM dynamics: md_periodic (classical MD with QM/MM probes every "
+              "md_interval_steps), md_coupled (QM forces applied during MD; slow); redock_rescore (QM/MM "
+              "re-scoring of the docking poses). Single points take seconds to minutes; scans, TS searches and "
+              "QM/MM dynamics take tens of minutes to hours.",
               {"properties": {
                   "object": {"type": "string"},
                   "operation": {"type": "string", "enum": _OPS},
@@ -142,12 +178,18 @@ def register(reg):
                   "ts_guess_object": {"type": "string", "description": "mopac_qst3 (required), ts_frequency, irc"},
                   "irc_direction": {"type": "string", "enum": ["both", "forward", "reverse"]},
                   "irc_max_points": {"type": "integer", "minimum": 5, "maximum": 200},
+                  "md_production_steps": {"type": "integer", "minimum": 100},
+                  "md_interval_steps": {"type": "integer", "minimum": 1,
+                                        "description": "md_periodic: QM probe every N steps; md_coupled: QM "
+                                                       "force update interval"},
+                  "rescore_max_poses": {"type": "integer", "minimum": 1, "maximum": 200},
               }, "required": ["object", "operation"]},
               permission="compute_heavy", title="QM/MM (MOPAC PM7)")
     def run_qmmm(ctx, object, operation, region_mode="auto_ligand_pocket", qm_selection="", qm_resnames="",
                  qm_cutoff_A=None, max_qm_atoms=None, qm_charge=0, qm_multiplicity=1, solvent="implicit",
                  scan_atom_a="", scan_atom_b="", scan_start_A=1.2, scan_end_A=2.8, scan_points=9, timeout_s=None,
-                 product_object="", ts_guess_object="", irc_direction="both", irc_max_points=25):
+                 product_object="", ts_guess_object="", irc_direction="both", irc_max_points=25,
+                 md_production_steps=None, md_interval_steps=None, rescore_max_poses=None):
         from pymol import cmd
 
         dlg = ctx.dlg
@@ -197,6 +239,15 @@ def register(reg):
             dlg._qmmm_set_operation_params("reaction_scan", {
                 "sel_a": scan_atom_a, "sel_b": scan_atom_b, "start_ang": float(scan_start_A),
                 "end_ang": float(scan_end_A), "n_points": int(scan_points)})
+        if operation in ("md_periodic", "md_coupled", "redock_rescore"):
+            params = dict(dlg._qmmm_operation_defaults(operation))
+            if md_production_steps:
+                params["prod_steps"] = int(md_production_steps)
+            if md_interval_steps:
+                params["interval_steps" if operation == "md_periodic" else "force_update_interval"] = int(md_interval_steps)
+            if rescore_max_poses:
+                params["max_states"] = int(rescore_max_poses)
+            dlg._qmmm_set_operation_params(operation, params)
         try:
             dlg._on_qmmm_operation_changed()
         except Exception:
@@ -209,6 +260,8 @@ def register(reg):
                 raise ToolError("QM/MM did not finish (see Leonardo's message)")
             if direct:
                 return _mopac_reaction_result(ctx, operation, object, result)
+            if operation in ("md_periodic", "md_coupled", "redock_rescore"):
+                return _qmmm_md_result(ctx, dlg, operation, object, result)
             if not result.get("ok", True):
                 raise ToolError(str(result.get("error") or "QM/MM failed"))
             probe = dict(result.get("qmmm_probe") or {})

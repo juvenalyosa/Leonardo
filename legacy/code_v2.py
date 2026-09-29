@@ -1319,6 +1319,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._setup_project_ui()
         self._setup_debug_panel()
         self._setup_ai_assistant_ui()
+        try:
+            self._update_hardware_label()
+            self._apply_hardware_defaults()
+            if not os.environ.get("LEONARDO_NO_HARDWARE_DETECTION"):
+                QtCore.QTimer.singleShot(1500, self._start_hardware_detection)
+        except Exception as e:
+            print(f"Hardware detection setup warning: {e}")
         self._setup_launcher_hub()
         self._setup_interaction_workspace_popup()
         self._setup_main_open_box()
@@ -2512,6 +2519,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "cb_redock_align_to_ref",
             "cb_redock_site_qc",
             "cb_redock_use_modeler_ensemble",
+            "cb_redock_use_mc_ensemble",
+            "spin_redock_mc_n",
+            "spin_redock_mc_temp",
+            "spin_redock_mc_radius",
             "cb_redock_flexible",
             "cb_redock_show_wt_traj",
             "cb_redock_show_mut_traj",
@@ -3116,6 +3127,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for c in range(ncols):
                 grid.setColumnStretch(c, 1)
             hub_layout.addLayout(grid)
+            self.lbl_compute_hardware = QtWidgets.QLabel("Compute: detecting CPU/GPU...")
+            self.lbl_compute_hardware.setObjectName("pliLauncherDesc")
+            self.lbl_compute_hardware.setWordWrap(True)
+            hub_layout.addWidget(self.lbl_compute_hardware)
             insert_idx = 2 if self.verticalLayout.count() >= 2 else self.verticalLayout.count()
             self.verticalLayout.insertWidget(insert_idx, hub)
         except Exception as e:
@@ -12335,6 +12350,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         removed = list(res.get("removed_residues", []) or [])
         notes = list(res.get("notes", []) or [])
         platform_used = str(res.get("platform_used", "") or "")
+        self._record_openmm_speed(platform_used, str(res.get("mode", "") or ""), final_pdb, csv_path)
         status_text = (
             f"OpenMM done | object={launch.get('object_name','')} | solvent={res.get('mode','')} | "
             f"ensemble={str(res.get('ensemble','')).upper()} | FF={ff_lbl}"
@@ -12367,6 +12383,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not bool(payload.get("ok", False)):
             QtWidgets.QMessageBox.warning(self, "OpenMM", str(payload.get("error", "OpenMM setup failed.")))
             return
+        if not bool(minimize_only):
+            minutes, est_text, advice = self._estimate_openmm_run(payload)
+            if est_text:
+                self._append_debug_log(f"OpenMM estimate: {est_text}" + (f" | {advice}" if advice else ""))
+            if minutes > 30:
+                ans = QtWidgets.QMessageBox.question(
+                    self,
+                    "Long MD run",
+                    f"Estimated time: {est_text}."
+                    + (f"\n\n{advice}." if advice else "")
+                    + "\n\nRun it now?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.Yes,
+                )
+                if ans != QtWidgets.QMessageBox.Yes:
+                    return
         if bool(minimize_only):
             self._openmm_min_live_object = str(payload.get("result_object", "openmm_min") or "openmm_min")
             self._openmm_min_live_last_update = 0.0
@@ -18757,7 +18789,111 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         arr = np.round(arr, 3)
         digest = hashlib.sha1(arr.tobytes()).hexdigest()
         return f"{int(arr.shape[0])}:{digest}"
+    def _redock_mc_sample(self, pdb_in, out_dir, site_residues, n_structures, temperature_k, seed=1,
+                          progress_label=None):
+        """Run the Monte Carlo side-chain sampler in a child process (the GUI keeps refreshing)."""
+        import subprocess
+        mod = self._modeler_import_module("mc_ensemble_runtime")
+        hw = self._hardware_profile() or {}
+        platform = str((hw.get("md_platform") or {}).get("name") or "CPU")
+        os.makedirs(out_dir, exist_ok=True)
+        args = {"pdb_in": str(pdb_in), "out_dir": str(out_dir), "n_structures": int(n_structures),
+                "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform}
+        args_path = os.path.join(out_dir, "mc_args.json")
+        with open(args_path, "w") as fh:
+            json.dump(args, fh)
+        py = os.path.join(sys.prefix, "bin", "python")
+        py = py if os.path.isfile(py) else sys.executable
+        proc = subprocess.Popen([py, os.path.abspath(mod.__file__), args_path], cwd=out_dir,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        tail = []
+        for line in proc.stdout:
+            tail = (tail + [line.rstrip()])[-20:]
+            if line.startswith("PROGRESS") and progress_label is not None:
+                try:
+                    progress_label.setText(f"Monte Carlo ensemble: {line.split(' ', 1)[1].strip()}")
+                except Exception:
+                    pass
+            QtWidgets.QApplication.processEvents()
+        proc.wait()
+        res_path = os.path.join(out_dir, "mc_ensemble.json")
+        if proc.returncode != 0 or not os.path.isfile(res_path):
+            return {"ok": False, "error": "\n".join(tail[-6:]) or f"exit {proc.returncode}"}
+        return json.load(open(res_path))
+    def _redock_collect_mc_ensemble_systems(self, system_label, receptor_obj):
+        """
+        Receptor ensemble for redocking: the best model only (MODELLER best-DOPE model when the object
+        comes from a MODELLER run) plus N binding-site conformations sampled by Monte Carlo.
+        """
+        label = str(system_label or "System").strip() or "System"
+        source_obj = str(receptor_obj or "").strip()
+        out = {"ok": True, "used": False, "systems": [(label, source_obj, source_obj, f"{label}_model_001")],
+               "created_objects": [], "note": "", "model_count": 1, "run_id": ""}
+        if not source_obj:
+            return dict(out, ok=False, systems=[], model_count=0, note="Empty receptor object.")
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        work = os.path.join(self._dock_workspace_dir(), "redocking_mc_ensembles", f"{label.lower()}_{ts}")
+        os.makedirs(work, exist_ok=True)
+        best_pdb = ""
+        run_info = self._modeler_lookup_run_by_output(source_obj)
+        if isinstance(run_info, dict):
+            bp = str(run_info.get("best_model_path", "") or "")
+            if bp and os.path.isfile(bp):
+                best_pdb = bp
+        if not best_pdb:
+            best_pdb = os.path.join(work, "best_model.pdb")
+            cmd.save(best_pdb, f"({source_obj}) and polymer", state=1)
+        # binding site: residues around the reference ligand (same numbering in WT/mutant models)
+        ref_obj = str(self.cmb_redock_reference_obj.currentText() or "").strip() if hasattr(self, "cmb_redock_reference_obj") else ""
+        lig_sel = ""
+        try:
+            ch, ri, rn = (self.edit_redock_ref_chain.text().strip(), self.edit_redock_ref_resi.text().strip(),
+                          self.edit_redock_ref_resn.text().strip())
+            if ref_obj and rn:
+                lig_sel = self._pymol_residue_selection(ref_obj, ch, ri, rn)
+        except Exception:
+            lig_sel = ""
+        if not lig_sel or cmd.count_atoms(lig_sel) == 0:
+            out["note"] = f"{label}: Monte Carlo ensemble needs the reference ligand to define the site; single receptor used."
+            return out
+        radius = float(self.spin_redock_mc_radius.value()) if hasattr(self, "spin_redock_mc_radius") else 6.0
+        space = {"site": set()}
+        cmd.iterate(f"byres (({ref_obj}) and polymer and not hydro within {radius} of ({lig_sel}))",
+                    "site.add((chain, resi))", space=space)
+        site = sorted(space["site"])
+        n = int(self.spin_redock_mc_n.value()) if hasattr(self, "spin_redock_mc_n") else 10
+        temp = float(self.spin_redock_mc_temp.value()) if hasattr(self, "spin_redock_mc_temp") else 300.0
+        self._append_debug_log(f"Redocking MC ensemble ({label}): {n} structures, T={temp} K, {len(site)} site residues")
+        res = self._redock_mc_sample(best_pdb, work, site, n, temp,
+                                     progress_label=getattr(self, "lbl_redock_status", None))
+        if not bool(res.get("ok", False)):
+            out["note"] = f"{label}: Monte Carlo sampling failed ({str(res.get('error', ''))[:200]}); single receptor used."
+            return out
+        systems, created = [], []
+        members = [{"path": best_pdb, "relative_energy_kj_mol": 0.0, "site_rmsd_to_start_A": 0.0}] + list(res.get("structures") or [])
+        for k, m in enumerate(members, start=1):
+            obj = self._dock_safe_obj_name(f"redock_{label.lower()}_mc_{k:03d}_{ts}")
+            try:
+                cmd.load(m["path"], obj)
+                cmd.hide("everything", obj)
+                cmd.show("cartoon", f"({obj}) and polymer")
+                cmd.group(f"Redocking.Ensemble.{label}", obj)
+                created.append(obj)
+                systems.append((label, obj, source_obj, f"{label}_mc_{k:03d}"))
+            except Exception as e:
+                self._append_debug_log(f"MC ensemble load warning ({m.get('path')}): {e}")
+        if not systems:
+            return out
+        self._redock_last_mc_ensemble = dict(res, label=label, members=members, objects=created)
+        out.update({"used": True, "systems": systems, "created_objects": created, "model_count": len(systems),
+                    "run_id": os.path.basename(work),
+                    "note": (f"{label}: Monte Carlo ensemble active ({len(systems)} structures: best model + "
+                             f"{len(systems) - 1} sampled at {temp:.0f} K, acceptance {res.get('acceptance')}, "
+                             f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A).")})
+        return out
     def _redock_collect_modeler_ensemble_systems(self, system_label, receptor_obj):
+        """Deprecated: MODELLER multi-model ensembles (use _redock_collect_mc_ensemble_systems)."""
         label = str(system_label or "System").strip() or "System"
         source_obj = str(receptor_obj or "").strip()
         out = {
@@ -19655,15 +19791,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_align.addStretch(1)
             qc_layout.addLayout(row_align)
             row_ensemble = QtWidgets.QHBoxLayout()
-            self.cb_redock_use_modeler_ensemble = QtWidgets.QCheckBox(
-                "Sample MODELLER ensembles (all generated WT/mutant models)"
-            )
+            # Deprecated: MODELLER multi-model ensembles (models differ by modeling noise, not by the
+            # binding-site flexibility redocking needs). Kept hidden so old projects still load.
+            self.cb_redock_use_modeler_ensemble = QtWidgets.QCheckBox("Sample MODELLER ensembles (deprecated)")
             self.cb_redock_use_modeler_ensemble.setChecked(False)
-            self.cb_redock_use_modeler_ensemble.setToolTip(
-                "If the selected WT/mutant objects come from MODELLER runs, redocking uses all generated models "
-                "as receptor ensemble members and aggregates statistics/classification across the ensemble."
+            self.cb_redock_use_modeler_ensemble.setVisible(False)
+            self.cb_redock_use_mc_ensemble = QtWidgets.QCheckBox("Receptor ensemble by Monte Carlo sampling")
+            self.cb_redock_use_mc_ensemble.setChecked(False)
+            self.cb_redock_use_mc_ensemble.setToolTip(
+                "From the best receptor model only (for MODELLER objects the best-DOPE model), sample the "
+                "binding-site side chains by Monte Carlo with minimization (chi-angle moves, Amber14/GB-OBC2, "
+                "Metropolis at T; backbone and the rest of the protein fixed) and redock into every sampled "
+                "structure. Replaces the deprecated MODELLER multi-model ensembles."
             )
-            row_ensemble.addWidget(self.cb_redock_use_modeler_ensemble)
+            row_ensemble.addWidget(self.cb_redock_use_mc_ensemble)
+            row_ensemble.addWidget(QtWidgets.QLabel("Structures"))
+            self.spin_redock_mc_n = QtWidgets.QSpinBox()
+            self.spin_redock_mc_n.setRange(2, 200)
+            self.spin_redock_mc_n.setValue(10)
+            self.spin_redock_mc_n.setToolTip("How many receptor conformations to sample")
+            row_ensemble.addWidget(self.spin_redock_mc_n)
+            row_ensemble.addWidget(QtWidgets.QLabel("T (K)"))
+            self.spin_redock_mc_temp = QtWidgets.QDoubleSpinBox()
+            self.spin_redock_mc_temp.setRange(100.0, 2000.0)
+            self.spin_redock_mc_temp.setValue(300.0)
+            self.spin_redock_mc_temp.setToolTip("Metropolis temperature: higher = more diverse, higher-energy states")
+            row_ensemble.addWidget(self.spin_redock_mc_temp)
+            row_ensemble.addWidget(QtWidgets.QLabel("Site radius (A)"))
+            self.spin_redock_mc_radius = QtWidgets.QDoubleSpinBox()
+            self.spin_redock_mc_radius.setRange(3.0, 15.0)
+            self.spin_redock_mc_radius.setValue(6.0)
+            self.spin_redock_mc_radius.setToolTip("Residues within this distance of the reference ligand move")
+            row_ensemble.addWidget(self.spin_redock_mc_radius)
             row_ensemble.addStretch(1)
             qc_layout.addLayout(row_ensemble)
             row_site_qc = QtWidgets.QHBoxLayout()
@@ -22917,12 +23076,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             systems=list(systems or []),
             params=dict(params or {}),
             use_modeler_ensemble=bool(
-                getattr(self, "cb_redock_use_modeler_ensemble", None)
-                and self.cb_redock_use_modeler_ensemble.isChecked()
+                getattr(self, "cb_redock_use_mc_ensemble", None)
+                and self.cb_redock_use_mc_ensemble.isChecked()
             ),
             align_to_ref=bool(getattr(self, "cb_redock_align_to_ref", None) and self.cb_redock_align_to_ref.isChecked()),
             ref_obj=str(ref_obj or ""),
-            collect_modeler_ensemble_fn=self._redock_collect_modeler_ensemble_systems,
+            collect_modeler_ensemble_fn=self._redock_collect_mc_ensemble_systems,
             align_receptor_to_reference_fn=self._redock_align_receptor_to_reference,
             align_rmsd_max_a=float(align_rmsd_max),
             site_qc_enabled=bool(getattr(self, "cb_redock_site_qc", None) and self.cb_redock_site_qc.isChecked()),
@@ -31764,6 +31923,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             if fb:
                 self._psi4_append_log("Psi4 note: region selection returned 0 atoms; auto-fallback to whole object.")
+        try:
+            _syms = [str(a.get("element") or a.get("symbol") or a.get("elem") or "C") if isinstance(a, dict)
+                     else str(a[0]) for a in atoms]
+            _op = str(self.cmb_psi4_operation.currentData() or "energy")
+            _est = self._hardware_mod().estimate_psi4(
+                _syms, _op, str(self.cmb_psi4_method.currentText()), str(self.cmb_psi4_basis.currentText()),
+                threads=int(self.spin_psi4_threads.value()), prof=self._hardware_profile())
+            self._psi4_append_log(f"Psi4 estimate: {_est.get('text')}")
+            if float(_est.get("minutes", 0)) > 60 and len(atoms) <= 350:
+                ans = QtWidgets.QMessageBox.question(
+                    self,
+                    "Long QM calculation",
+                    f"Estimated time: {_est.get('text')}.\n\n{_est.get('advice') or ''}\n\nRun it now?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.Yes,
+                )
+                if ans != QtWidgets.QMessageBox.Yes:
+                    return
+        except Exception:
+            pass
         if len(atoms) > 350:
             ans = QtWidgets.QMessageBox.question(
                 self,
@@ -34580,6 +34759,23 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_params.addWidget(self.cb_vs_show_grid)
             row_params.addStretch(1)
             run_box.addLayout(row_params)
+            row_filter = QtWidgets.QHBoxLayout()
+            row_filter.addWidget(QtWidgets.QLabel("Drug-likeness pre-filter"))
+            self.cmb_vs_druglike_filter = QtWidgets.QComboBox()
+            for key, label in (("none", "None"), ("lipinski", "Lipinski Ro5 (<= 1 violation)"),
+                               ("lipinski_strict", "Lipinski Ro5 (no violation)"), ("veber", "Veber"),
+                               ("lipinski_veber", "Lipinski + Veber"), ("ghose", "Ghose"), ("egan", "Egan"),
+                               ("lead_like", "Lead-like")):
+                self.cmb_vs_druglike_filter.addItem(label, key)
+            self.cmb_vs_druglike_filter.setToolTip(
+                "Compounds failing the rule are not docked (Lipinski: MW<=500, cLogP<=5, HBD<=5, HBA<=10; "
+                "Veber: rotatable bonds<=10, TPSA<=140). Properties and estimated ADME are kept for every hit.")
+            row_filter.addWidget(self.cmb_vs_druglike_filter)
+            self.cb_vs_exclude_pains = QtWidgets.QCheckBox("Exclude PAINS")
+            self.cb_vs_exclude_pains.setToolTip("Skip compounds with PAINS substructure alerts (assay interference)")
+            row_filter.addWidget(self.cb_vs_exclude_pains)
+            row_filter.addStretch(1)
+            run_box.addLayout(row_filter)
             row_run = QtWidgets.QHBoxLayout()
             self.btn_vs_run = QtWidgets.QPushButton("Run Virtual Screening")
             self.btn_vs_run.clicked.connect(self._on_run_virtual_screening)
@@ -35204,12 +35400,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "mol": mol,
                 }
             )
+        rule = str(self.cmb_vs_druglike_filter.currentData() or "none") if hasattr(self, "cmb_vs_druglike_filter") else "none"
+        no_pains = bool(self.cb_vs_exclude_pains.isChecked()) if hasattr(self, "cb_vs_exclude_pains") else False
+        rejected = []
+        log = getattr(self, "_append_debug_log", lambda _m: None)
+        try:
+            try:
+                dl = self._modeler_import_module("druglike_runtime")
+            except Exception:
+                import druglike_runtime as dl
+            out, rejected = dl.filter_entries(out, rule=rule, exclude_pains=no_pains)
+            self._vs_library_props = {int(e["index"]): dict(e.get("druglike") or {}) for e in out + rejected}
+            self._vs_filter_rejected = [{"index": e.get("index"), "name": e.get("name"),
+                                         "reason": e.get("filter_reason", "")} for e in rejected]
+            if rejected:
+                log(f"VS drug-likeness filter '{rule}'{' + PAINS' if no_pains else ''}: "
+                    f"{len(rejected)} compound(s) removed before docking")
+        except Exception as e:
+            log(f"VS drug-likeness filter skipped: {e}")
         return out, {
             "loaded": int(len(out)),
             "skipped": int(skipped),
             "total": int(total),
             "limit": int(lim),
             "truncated": bool(truncated),
+            "filtered": int(len(rejected)),
+            "filter": rule + (" + PAINS" if no_pains else ""),
             "reason": "ok",
         }
     def _populate_vs_table(self):
@@ -46780,6 +46996,120 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             elif el in ("CL", "BR", "I", "F"):
                 q = -0.05
         return float(np.clip(q, -1.2, 1.2))
+    def _hardware_mod(self):
+        return self._modeler_import_module("hardware_runtime")
+    def _hardware_profile(self):
+        """Cached hardware profile (fast; the benchmark runs once, in the background)."""
+        prof = getattr(self, "_hw_profile", None)
+        if isinstance(prof, dict) and prof:
+            return prof
+        try:
+            prof = dict(self._hardware_mod()._load_cache() or {})
+        except Exception:
+            prof = {}
+        if prof:
+            self._hw_profile = prof
+        return prof
+    def _start_hardware_detection(self, refresh=False):
+        """Detect CPU/GPU and benchmark OpenMM platforms in a worker thread (child processes)."""
+        import threading
+        state = {"done": False, "profile": None}
+        def work():
+            try:
+                state["profile"] = self._hardware_mod().detect(benchmark=True, refresh=bool(refresh))
+            except Exception as e:
+                state["profile"] = {"error": str(e)}
+            state["done"] = True
+        threading.Thread(target=work, daemon=True).start()
+        def poll():
+            if not state["done"]:
+                QtCore.QTimer.singleShot(500, poll)
+                return
+            prof = state["profile"] or {}
+            if prof and not prof.get("error"):
+                self._hw_profile = prof
+            self._update_hardware_label()
+        QtCore.QTimer.singleShot(500, poll)
+    def _apply_hardware_defaults(self):
+        """Psi4 threads/memory from the machine (performance cores, half the RAM) unless the user changed them."""
+        prof = self._hardware_profile()
+        thr = (prof or {}).get("threads") or {}
+        for attr, key in (("spin_psi4_threads", "psi4"), ("spin_psi4_memory_gb", "psi4_memory_gb")):
+            w = getattr(self, attr, None)
+            if w is None or not thr.get(key):
+                continue
+            try:
+                if not bool(getattr(self, f"_{attr}_user_set", False)):
+                    w.setValue(int(thr[key]))
+            except Exception:
+                pass
+    def _estimate_openmm_run(self, payload):
+        """(minutes, text, advice) for an OpenMM payload, from the hardware profile and past runs."""
+        try:
+            hw = self._hardware_mod()
+            obj = str(payload.get("object_name", "") or "")
+            n_atoms = int(cmd.count_atoms(f"({obj}) and not solvent")) if obj else 0
+            mode = str(payload.get("mode", "implicit") or "implicit")
+            if mode == "explicit":
+                n_atoms = int(n_atoms * 8)            # rough solvated box
+            elif cmd.count_atoms(f"({obj}) and not elem H") == cmd.count_atoms(f"({obj})"):
+                n_atoms = int(n_atoms * 2)            # hydrogens will be added
+            dt_fs = float(payload.get("timestep_fs", 2.0) or 2.0)
+            steps = sum(int(payload.get(k, 0) or 0) for k in ("heat_steps", "equil_steps", "prod_steps"))
+            ns = steps * dt_fs * 1e-6
+            platform, _props, picked = self._auto_pick_openmm_platform()
+            est = hw.estimate_md(n_atoms, ns, mode, platform_name=picked, prof=self._hardware_profile())
+            return float(est.get("minutes", 0.0)), str(est.get("text", "")), str(est.get("advice", "") or "")
+        except Exception:
+            return 0.0, "", ""
+    def _record_openmm_speed(self, platform_used, mode, final_pdb, csv_path):
+        """Measured ns/day of a finished MD -> calibration of future estimates on this machine."""
+        try:
+            if not (csv_path and os.path.isfile(csv_path) and final_pdb and os.path.isfile(final_pdb)):
+                return
+            speeds = []
+            with open(csv_path) as fh:
+                head = fh.readline().strip('#\n').split(",")
+                col = [i for i, h in enumerate(head) if "Speed" in h]
+                for line in fh:
+                    parts = line.strip().split(",")
+                    if col and len(parts) > col[0]:
+                        try:
+                            v = float(parts[col[0]])
+                        except Exception:
+                            continue
+                        if v > 0:
+                            speeds.append(v)
+            if len(speeds) < 3:
+                return
+            with open(final_pdb) as fh:
+                n_atoms = sum(1 for ln in fh if ln.startswith(("ATOM", "HETATM")))
+            speed = float(np.median(speeds[len(speeds) // 3:]))
+            self._hardware_mod().record_md_speed(platform_used, mode or "implicit", n_atoms, speed)
+            self._hw_profile = None                         # reload with the new calibration
+        except Exception as e:
+            self._append_debug_log(f"MD speed calibration skipped: {e}")
+    def _update_hardware_label(self):
+        lbl = getattr(self, "lbl_compute_hardware", None)
+        prof = self._hardware_profile()
+        if lbl is None:
+            return
+        if not prof:
+            lbl.setText("Compute: hardware not detected yet")
+            return
+        cpu = prof.get("cpu") or {}
+        md = prof.get("md_platform") or {}
+        thr = prof.get("threads") or {}
+        gpu = ", ".join(g.get("name", "") for g in prof.get("gpus") or []) or "no GPU"
+        lbl.setText(
+            f"Compute: {cpu.get('brand', 'CPU')} · {cpu.get('physical_cores')} cores · {gpu} · "
+            f"MD on {md.get('name', 'CPU')}" + (f" ({md.get('speedup_vs_cpu')}x CPU)" if md.get("is_gpu") else "")
+            + f" · QM {thr.get('psi4', 1)} threads"
+        )
+        try:
+            lbl.setToolTip(self._hardware_mod().summary(prof))
+        except Exception:
+            pass
     def _auto_pick_openmm_platform(self):
         """
         Auto-select a usable OpenMM platform.
@@ -46799,6 +47129,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 available[str(p.getName())] = p
             except Exception:
                 continue
+        hw = self._hardware_profile()
+        hw_pick = str(((hw or {}).get("md_platform") or {}).get("name", "") or "")
+        if hw_pick in available and not os.environ.get("LEONARDO_OPENMM_PLATFORM"):
+            # measured in a child process on this machine (a crashing GPU driver never reached PyMOL)
+            threads = int(((hw or {}).get("threads") or {}).get("openmm_cpu") or 0)
+            props = {"Precision": "mixed"} if hw_pick in ("CUDA", "OpenCL", "HIP", "Metal") else (
+                {"Threads": str(threads)} if hw_pick == "CPU" and threads else {})
+            return available[hw_pick], props, hw_pick
         pick_plan = abfe_build_openmm_platform_selection_plan(list(available.keys()))
         picked = str(pick_plan.get("picked_platform_name", "") or "").strip()
         if picked and picked in available:

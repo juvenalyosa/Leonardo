@@ -180,6 +180,18 @@ def _psi4_surface_limits(dlg):
         return None
 
 
+def _threads(ctx):
+    from .estimates import recommended
+
+    return recommended(ctx, "psi4", 4)
+
+
+def _memory(ctx):
+    from .estimates import recommended
+
+    return max(2, min(8, recommended(ctx, "psi4_memory_gb", 2)))
+
+
 def register(reg):
     # -- orbitals ------------------------------------------------------------------------------- #
     @reg.tool("show_orbitals", "Show molecular orbitals of the last Psi4 or MOPAC calculation as isosurfaces "
@@ -258,7 +270,7 @@ def register(reg):
         args = {"task": "orbitals", "orbitals": sorted(set(missing)), "cube_dir": os.path.join(jdir, "orbitals"),
                 "wfn": wfn if os.path.isfile(wfn) else "", "geometry": geometry,
                 "method": str(result.get("method") or "b3lyp"), "basis": str(result.get("basis") or "def2-svp"),
-                "threads": 4, "memory_gb": 2}
+                "threads": _threads(ctx), "memory_gb": _memory(ctx)}
 
         def collect(out):
             eps = [v * qmviz.HARTREE_EV for v in out.get("eps_a_eh", [])]
@@ -362,7 +374,10 @@ def register(reg):
               }},
               permission="compute_heavy", title="UV-vis spectrum (TDDFT)")
     def run_uv_spectrum(ctx, selection="", charge=None, multiplicity=None, method="", basis="", states=10,
-                        tda=False, threads=4):
+                        tda=False, threads=None):
+        from .estimates import recommended
+
+        threads = int(threads or recommended(ctx, "psi4", 4))
         dlg = ctx.dlg
         if selection:
             from .mopac import _molecule_from_selection
@@ -716,7 +731,7 @@ def register(reg):
                  + "\nsymmetry c1\nno_reorient\nno_com\n" for xyz in frames]
         args = {"task": "path_orbitals", "frames": geoms, "orbitals": [idx for _l, idx in wanted],
                 "cube_dir": os.path.join(workdir, "cubes"), "method": lvl_method, "basis": lvl_basis,
-                "threads": 4, "memory_gb": 2}
+                "threads": _threads(ctx), "memory_gb": _memory(ctx)}
 
         def collect(out):
             cube_sets = [[] for _ in wanted]

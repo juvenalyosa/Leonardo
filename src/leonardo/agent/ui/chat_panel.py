@@ -379,7 +379,8 @@ class ChatPanel(QtWidgets.QWidget):
             badge, color = PERMISSION_BADGE.get(payload.get("permission", "read"), ("", MUTED))
             head.addWidget(_pill(badge, color))
             lay.addLayout(head)
-            args_lab = _label(_short_args(payload.get("args")), "muted")
+            args_lab = _label(_short_args(payload.get("args"))
+                              + (f"\n⏱ {payload['estimate']}" if payload.get("estimate") else ""), "muted")
             lay.addWidget(args_lab)
             body = _label("", rich=True)
             lay.addWidget(body)
@@ -418,6 +419,12 @@ class ChatPanel(QtWidgets.QWidget):
             else:
                 body.setText(_result_summary(rest))
             timing.setText(f"{payload.get('seconds', 0)} s")
+            if payload.get("warnings"):
+                warn = _label("⚠ " + "\n⚠ ".join(str(w) for w in payload["warnings"]), rich=False)
+                warn.setStyleSheet(f"color: {WARN};")
+                layout = body.parentWidget().layout() if body.parentWidget() is not None else None
+                if layout is not None:
+                    layout.insertWidget(layout.indexOf(body) + 1, warn)
             if payload.get("image"):
                 self._add_image(body, str(payload["image"]))
             if scene:
@@ -461,6 +468,10 @@ class ChatPanel(QtWidgets.QWidget):
         head.addWidget(_pill(badge, color))
         lay.addLayout(head)
         lay.addWidget(_label(_short_args(payload.get("args"), 400), "muted"))
+        if payload.get("estimate"):
+            est = _label(f"⏱ Estimated: {payload['estimate']}", rich=False)
+            est.setStyleSheet(f"color: {WARN};")
+            lay.addWidget(est)
         row = QtWidgets.QHBoxLayout()
         b_yes = QtWidgets.QPushButton("Run")
         b_yes.setObjectName("primary")
