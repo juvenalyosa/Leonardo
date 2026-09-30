@@ -61,6 +61,32 @@ def _use_object(dlg, obj, ligand=None):
     return cmd.count_states(obj)
 
 
+_POLICY_ALIASES = {"heuristic": "heuristic", "probe": "heuristic", "probe_control": "heuristic",
+                   "probe+control": "heuristic", "bandit": "bandit", "safe_rl": "bandit"}
+
+
+def _set_abfe_policy(dlg, policy):
+    """The ABFE steering-policy combo (Probe + Control / Bandit); without the combo, Leonardo's setter."""
+    mode = _POLICY_ALIASES.get(str(policy or "").strip().lower())
+    if mode is None:
+        raise ToolError(f"steering_policy must be one of {sorted(set(_POLICY_ALIASES.values()))}")
+    if getattr(dlg, "cmb_abfe_policy_mode", None) is not None:
+        set_combo(dlg, "cmb_abfe_policy_mode", mode)
+    elif hasattr(dlg, "_set_abfe_policy_mode"):
+        dlg._set_abfe_policy_mode(mode)
+    return mode
+
+
+def _abfe_policy_used(dlg, replicas_out=()):
+    used = [str(r.get("policy_mode")) for r in replicas_out or () if r.get("policy_mode")]
+    if used:
+        return used[-1]
+    try:
+        return str(dlg._abfe_policy_mode(source="traj") or "heuristic")
+    except Exception:
+        return ""
+
+
 _LIGAND = {"type": "object", "properties": {"chain": {"type": "string"}, "resi": {"type": "string"},
                                             "resn": {"type": "string"}},
            "description": "ligand residue; auto-detected when omitted"}
@@ -194,11 +220,18 @@ def register(reg):
                   "replicas": {"type": "integer", "minimum": 1, "maximum": 12},
                   "steering": {"type": "string", "enum": ["pull_hold", "pull_hold_return"]},
                   "tunnel_radius_A": {"type": "number", "minimum": 1.0, "maximum": 10.0},
+                  "steering_policy": {"type": "string", "enum": ["heuristic", "bandit"],
+                                      "description": "adaptive steering controller: 'heuristic' = Leonardo's "
+                                                     "'Probe + Control' (default), 'bandit' = experimental bandit "
+                                                     "policy; omitted = keep the current GUI choice"},
               }, "required": ["object"]},
               permission="compute_heavy", title="ABFE-lite (guided exit)")
-    def run_abfe(ctx, object, ligand=None, sim_ns=3.0, replicas=3, steering="pull_hold_return", tunnel_radius_A=3.5):
+    def run_abfe(ctx, object, ligand=None, sim_ns=3.0, replicas=3, steering="pull_hold_return", tunnel_radius_A=3.5,
+                 steering_policy=None):
         dlg = ctx.dlg
         _use_object(dlg, object, ligand)
+        if steering_policy:
+            _set_abfe_policy(dlg, steering_policy)
         xml = str(getattr(dlg, "_parameterized_ligand_xml", "") or "")
         if xml and hasattr(dlg, "edit_abfe_ligand_xml") and not dlg.edit_abfe_ligand_xml.text().strip():
             dlg.edit_abfe_ligand_xml.setText(xml)
@@ -213,6 +246,8 @@ def register(reg):
         def md(*args, **kwargs):
             out = original_md(*args, **kwargs)
             if isinstance(out, dict):
+                if "policy_mode" not in out and kwargs.get("policy_mode"):
+                    out = dict(out, policy_mode=kwargs.get("policy_mode"))
                 replicas_out.append(out)
             return out
 
@@ -240,7 +275,9 @@ def register(reg):
             if report.get("message_text"):
                 out["report"] = str(report["message_text"])[:3000]
             out.update({"energy_units": "kJ/mol", "object": object, "sim_ns": sim_ns, "replicas": len(replicas_out) or replicas,
-                        "per_replica": [jsonable({k: r.get(k) for k in ("dg_pop_kj", "p_bound", "kd_app_m")})
+                        "steering_policy": _abfe_policy_used(dlg, replicas_out),
+                        "per_replica": [jsonable({k: r.get(k) for k in ("dg_pop_kj", "p_bound", "kd_app_m",
+                                                                        "policy_mode")})
                                         for r in replicas_out]})
             ctx.__dict__.setdefault("plots", {})["abfe"] = {
                 "object": object, "report": out.get("report", ""), "dg": out.get("dg_selected"),

@@ -38,6 +38,7 @@ py-modules = [
   "calibrate_abfe_group_compact",
   "code_v2",
   "compare_abfe_vs_docking",
+  "component_library_runtime",
   "config",
   "dock_runtime",
   "druglike_runtime",
@@ -47,8 +48,11 @@ py-modules = [
   "interaction_typing_runtime",
   "leadopt_runtime",
   "ligand_canvas_runtime",
+  "ligand_sketcher_runtime",
   "ligand_vib_refine_runtime",
+  "materials_runtime",
   "mc_ensemble_runtime",
+  "membrane_runtime",
   "md_prepare_and_run_3ptb",
   "md_prepare_and_run_3ptb_bound",
   "modeler_runtime",
@@ -83,7 +87,7 @@ py-modules = [
 "share/leonardo/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19" = ["assets/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19/*.js"]
 
 [tool.setuptools.package-data]
-leonardo = ["abfe_deploy_models.json", "pka_calibration.json"]
+leonardo = ["abfe_deploy_models.json", "pka_calibration.json", "component_library.json"]
 
 [tool.black]
 line-length = 120

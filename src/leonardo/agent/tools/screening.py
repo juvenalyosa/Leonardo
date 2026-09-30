@@ -76,6 +76,21 @@ def _select_receptor(dlg, receptor):
     return rec
 
 
+_KEEP_HETERO = {"type": "array", "items": {"type": "string"},
+                "description": "Residue names of receptor hetero groups to keep besides ions and known cofactors "
+                               "(answers Leonardo's HETATM chooser; other ligands are removed)."}
+
+
+def _set_keep_hetero(dlg, receptor, keep_hetero):
+    """Answer the HETATM chooser for this run (as run_docking): only call right before the job starts."""
+    _headless.auto_hetatm_selection(dlg)
+    try:
+        dlg._dock_hetatm_selection_cache.pop(str(receptor or ""), None)
+    except Exception:
+        pass
+    _headless.set_keep_hetero(keep_hetero or [])
+
+
 def register(reg):
     register_druglike(reg)
 
@@ -96,11 +111,12 @@ def register(reg):
                                                                  "lipinski_veber", "ghose", "egan", "lead_like"],
                                       "description": "compounds failing the rule are not docked"},
                   "exclude_pains": {"type": "boolean"},
+                  "keep_hetero": _KEEP_HETERO,
               }},
               permission="compute_heavy", title="Virtual screening (smina)")
     def run_virtual_screening(ctx, library_sdf="", compounds=None, receptor="", pocket_rank=None,
                               exhaustiveness=8, max_ligands=250, ph=7.4, druglike_filter="none",
-                              exclude_pains=False):
+                              exclude_pains=False, keep_hetero=None):
         dlg = ctx.dlg
         if compounds:
             library_sdf, n = _write_smiles_library(ctx, compounds)
@@ -122,8 +138,8 @@ def register(reg):
         if hasattr(dlg, "cb_vs_exclude_pains"):
             dlg.cb_vs_exclude_pains.setChecked(bool(exclude_pains))
         dlg._vs_filter_rejected = []
-        _headless.auto_hetatm_selection(dlg)
         dlg._vs_results = []
+        _set_keep_hetero(dlg, rec, keep_hetero)
 
         def collect(outcome):
             if outcome["error"]:
@@ -149,6 +165,7 @@ def register(reg):
                 except Exception:
                     pass
             return {"receptor": rec, "pocket_rank": rank, "screened": len(rows), "docked": len(ok),
+                    "kept_hetero": sorted({str(r).strip().upper() for r in keep_hetero or [] if str(r).strip()}),
                     "druglike_filter": druglike_filter + (" + PAINS" if exclude_pains else ""),
                     "removed_by_filter": removed[:30], "removed_count": len(removed),
                     "failed": failed, "ranking": table, "job_dir": str(getattr(dlg, "_vs_job_dir", "") or ""),
@@ -209,11 +226,12 @@ def register(reg):
                   "max_similarity": {"type": "number", "minimum": 0, "maximum": 1},
                   "exhaustiveness": {"type": "integer", "minimum": 1, "maximum": 64},
                   "exclude_pains": {"type": "boolean"},
+                  "keep_hetero": _KEEP_HETERO,
               }},
               permission="compute_heavy", title="Lead optimization")
     def run_lead_optimization(ctx, seed_rank=None, seed_smiles="", seed_name="seed", receptor="", pocket_rank=None,
                               max_analogs=None, min_similarity=None, max_similarity=None, exhaustiveness=None,
-                              exclude_pains=True):
+                              exclude_pains=True, keep_hetero=None):
         dlg = ctx.dlg
         if not hasattr(dlg, "_leadopt_dialog"):
             dlg._setup_lead_optimization_ui()          # builds the controls without showing the window
@@ -238,15 +256,15 @@ def register(reg):
             dlg._on_leadopt_use_selected_vs_hit(silent=True)
         else:
             raise ToolError("give seed_rank (a screening hit) or seed_smiles")
-        _select_receptor(dlg, receptor)
+        rec = _select_receptor(dlg, receptor)
         _select_pocket(dlg, pocket_rank)
         for attr, val in (("spin_lo_max_analogs", max_analogs), ("spin_lo_min_sim", min_similarity),
                           ("spin_lo_max_sim", max_similarity), ("spin_lo_exhaustiveness", exhaustiveness)):
             if val is not None:
                 set_value(dlg, attr, val)
         set_value(dlg, "cb_lo_block_pains", bool(exclude_pains))
-        _headless.auto_hetatm_selection(dlg)
         dlg._leadopt_results = []
+        _set_keep_hetero(dlg, rec, keep_hetero)
 
         def collect(outcome):
             if outcome["error"]:

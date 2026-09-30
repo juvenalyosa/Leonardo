@@ -20,6 +20,46 @@ def _ca_rmsd(obj):
         return None
 
 
+def _component_guard(ctx, object, family, allow_incomplete=False):
+    """
+    Leonardo drops residues it cannot parameterize before MD. Refuse when that would remove a
+    metal, cofactor or modified residue (unless the model explicitly accepts it).
+    """
+    fam = str(family or "").strip().lower()
+    if allow_incomplete or fam not in ("amber14", "charmm36"):
+        return None
+    try:
+        from openmm import app, unit
+
+        from ...component_library_runtime import resolve_components
+        from .components import _save_object
+
+        pdb = app.PDBFile(_save_object(ctx, object, sub="md_checks"))
+        plan = resolve_components(pdb.topology, [tuple(p.value_in_unit(unit.nanometer)) for p in pdb.positions],
+                                  family=fam)
+    except ToolError:
+        raise
+    except Exception:
+        return None
+    bad = sorted({f"{r['resn']} ({r['source']})" for r in plan["components"]
+                  if r["source"] in ("metal", "unmatched", "modified_residue", "covalent", "covalent_metal")})
+    if bad:
+        rec = plan.get("recommended_family")
+        raise ToolError(f"{', '.join(bad)} would be removed before MD in {fam} (no parameters). "
+                        + (f"Use force_field='{rec}', which covers them, " if rec and rec != fam else "Fix them first ")
+                        + "or pass allow_incomplete=true only if the user accepts simulating without them.")
+    return plan
+
+
+def _current_family(dlg, requested=None):
+    if requested:
+        return requested
+    try:
+        return str(dlg.cmb_openmm_ff_family.currentData() or "")
+    except Exception:
+        return ""
+
+
 def register(reg):
     @reg.tool("run_md", "Short classical MD of a protein or protein-ligand complex with OpenMM (minimization, "
               "heating, equilibration and production). Ligands/cofactors in the object are parameterized "
@@ -38,18 +78,24 @@ def register(reg):
                                "description": "NPT needs explicit solvent (a box); implicit/gas run NVT"},
                   "timestep_fs": {"type": "number", "minimum": 0.5, "maximum": 4.0},
                   "keep_crystal_waters": {"type": "boolean"}, "keep_ions": {"type": "boolean"},
-                  "keep_cofactors": {"type": "boolean", "description": "crystal ligands/cofactors (parameterized)"},
+                  "keep_cofactors": {"type": "boolean", "description": "crystal ligands/cofactors (parameterized). "
+                                     "Setting any keep_* replaces a component choice made with "
+                                     "configure_md_components; omit them to keep that choice."},
                   "equilibration_ns": {"type": "number", "minimum": 0.001, "maximum": 10,
                                        "description": "Default: 20% of production (min 4 ps, max 40 ps); heating "
                                                       "10% (min 2 ps, max 10 ps)."},
+                  "allow_incomplete": {"type": "boolean", "description": "run even if metals/cofactors/modified "
+                                       "residues without parameters would be removed (only with the user's OK)"},
               }, "required": ["object"]},
               permission="compute_heavy", title="Molecular dynamics (OpenMM)")
     def run_md(ctx, object, production_ns=0.1, solvent="implicit", temperature_K=300.0, ph=7.4,
                equilibration_ns=None, force_field=None, water_model=None, ensemble=None, timestep_fs=None,
-               keep_crystal_waters=None, keep_ions=None, keep_cofactors=None):
+               keep_crystal_waters=None, keep_ions=None, keep_cofactors=None, allow_incomplete=False):
         from pymol import cmd
 
         dlg = ctx.dlg
+        if keep_cofactors is not False:
+            _component_guard(ctx, object, _current_family(dlg, force_field), allow_incomplete)
         _select_openmm_object(dlg, object, solvent, ph)
         dlg.spin_openmm_temperature.setValue(float(temperature_K))
         from ._widgets import set_combo
@@ -61,8 +107,14 @@ def register(reg):
         set_combo(dlg, "cmb_openmm_ensemble", ensemble or ("npt" if solvent == "explicit" else "nvt"), required=False)
         if timestep_fs:
             dlg.spin_openmm_timestep_fs.setValue(float(timestep_fs))
-        for attr, val in (("cb_openmm_keep_waters", keep_crystal_waters), ("cb_openmm_keep_ions", keep_ions),
-                          ("cb_openmm_keep_cofactors", keep_cofactors)):
+        keeps = (("cb_openmm_keep_waters", keep_crystal_waters), ("cb_openmm_keep_ions", keep_ions),
+                 ("cb_openmm_keep_cofactors", keep_cofactors))
+        if any(val is not None for _attr, val in keeps):
+            # an explicit component choice (configure_md_components) would override the switches
+            cache = getattr(dlg, "_openmm_hetatm_selection_cache", None)
+            if isinstance(cache, dict):
+                cache.pop(object, None)
+        for attr, val in keeps:
             if val is not None and hasattr(dlg, attr):
                 getattr(dlg, attr).setChecked(bool(val))
         dt_fs = float(dlg.spin_openmm_timestep_fs.value())
@@ -89,7 +141,9 @@ def register(reg):
                                   "production": round(float(production_ns) * 1000.0, 1)},
                     "force_field": res.get("ff_used_label"), "platform": res.get("platform_used"),
                     "trajectory": res.get("dcd_path"), "energies_csv": res.get("csv_path"),
-                    "job_dir": res.get("job_dir"), "notes": list(res.get("notes", []) or [])[:6]}
+                    "job_dir": res.get("job_dir"), "notes": list(res.get("notes", []) or [])[:8],
+                    "removed_residues": list(res.get("removed_residues", []) or []),
+                    "component_plan": res.get("component_plan")}
             if out_obj and out_obj in cmd.get_names("objects"):
                 presentation.style_protein(out_obj)
                 het = f"({out_obj}) and not polymer and not resn HOH+WAT+NA+CL+K"
@@ -119,10 +173,12 @@ def register(reg):
                   "solvent": {"type": "string", "enum": ["implicit", "explicit", "gas"]},
                   "max_iterations": {"type": "integer", "minimum": 1, "maximum": 200000},
                   "ph": {"type": "number", "minimum": 0, "maximum": 14},
+                  "allow_incomplete": {"type": "boolean"},
               }, "required": ["object"]},
               permission="compute_light", title="Energy minimization (OpenMM)")
-    def minimize_structure(ctx, object, solvent="implicit", max_iterations=2000, ph=7.4):
+    def minimize_structure(ctx, object, solvent="implicit", max_iterations=2000, ph=7.4, allow_incomplete=False):
         dlg = ctx.dlg
+        _component_guard(ctx, object, _current_family(dlg), allow_incomplete)
         _select_openmm_object(dlg, object, solvent, ph)
         for spin in ("spin_openmm_minonly_iters", "spin_openmm_min_steps"):
             if hasattr(dlg, spin):
@@ -134,7 +190,9 @@ def register(reg):
             out_obj = str(getattr(dlg, "_openmm_last_output_object", "") or "")
             info = {"object": out_obj, "input": object, "solvent": solvent, "force_field": res.get("ff_used_label"),
                     "platform": res.get("platform_used"), "minimized_pdb": res.get("final_pdb") or res.get("pdb_path"),
-                    "job_dir": res.get("job_dir"), "notes": list(res.get("notes", []) or [])[:6]}
+                    "job_dir": res.get("job_dir"), "notes": list(res.get("notes", []) or [])[:8],
+                    "removed_residues": list(res.get("removed_residues", []) or []),
+                    "component_plan": res.get("component_plan")}
             profile = [p for p in (res.get("min_energy_profile") or []) if isinstance(p, (list, tuple)) and len(p) >= 2]
             if profile:
                 info["energy_kJ_mol"] = {"start": round(float(profile[0][1]), 1), "end": round(float(profile[-1][1]), 1)}

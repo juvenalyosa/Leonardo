@@ -42,11 +42,21 @@ try:
     from .alphafold_runtime import af_alphafold3_required_path_status
     from .alphafold_runtime import af_build_alphafold3_docker_command
     from .alphafold_runtime import af_build_alphafold3_input_json
+    from .alphafold_runtime import af_build_alphafold_server_json
+    from .alphafold_runtime import af_colabfold_query
+    from .alphafold_runtime import af_fasta_text
+    from .alphafold_runtime import af_sanitize_af3_chain_id
+    from .alphafold_runtime import af_split_protein_chains
     from .alphafold_runtime import af_build_colabfold_colab_cell
     from .alphafold_runtime import af_build_colabfold_command
     from .alphafold_runtime import af_build_colabfold_job_notebook
     from .alphafold_runtime import af_build_colabfold_job_script
     from .alphafold_runtime import af_collect_existing_dirs
+    from .alphafold_runtime import GPU_REQUIRED_TITLE
+    from .alphafold_runtime import af_detect_local_gpu
+    from .alphafold_runtime import af_extract_result_zips
+    from .alphafold_runtime import af_safe_extract_zip
+    from .alphafold_runtime import af_gpu_requirement_message
     from .alphafold_runtime import af_engine_profile
     from .alphafold_runtime import af_extract_plddt_pae_from_json
     from .alphafold_runtime import af_find_best_model_recursive
@@ -279,7 +289,7 @@ try:
     from .trajectory_interaction_runtime import trajectory_normalize_step
     from .trajectory_interaction_runtime import trajectory_pick_matching_interaction
     from .trajectory_interaction_runtime import trajectory_run_interaction_analysis
-    from .ligand_canvas_runtime import Ligand2DInteractiveCanvas
+    from .ligand_sketcher_runtime import LigandSketcherWidget
     from .openmm_qmmm_runtime import classify_openmm_component_ff_class
     from .openmm_qmmm_runtime import dedupe_openmm_forcefield_xml_paths
     from .openmm_qmmm_runtime import default_openmm_xml_selected_keys
@@ -296,6 +306,14 @@ try:
     from .openmm_qmmm_runtime import rewrite_pdb_component_identity
     from .openmm_qmmm_runtime import sanitize_pdb_conect_for_standalone_components
     from .openmm_qmmm_runtime import split_openmm_parameterization_targets
+    from .component_library_runtime import prepare_modeller as component_prepare_modeller
+    from .component_library_runtime import resolve_components as component_resolve_components
+    from .component_library_runtime import forcefield_family_base_files
+    from .component_library_runtime import restore_names as component_restore_names
+    from .component_library_runtime import coordination_variants as component_coordination_variants
+    from .component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
+    from .component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from .openmm_qmmm_runtime import read_openmm_forcefield_residue_names
     from .openmm_dynamics_runtime import apply_openmm_cv_preset
     from .openmm_dynamics_runtime import build_openmm_capability_report
     from .openmm_dynamics_runtime import normalize_openmm_cv_definition
@@ -423,11 +441,21 @@ except Exception:
     from alphafold_runtime import af_alphafold3_required_path_status
     from alphafold_runtime import af_build_alphafold3_docker_command
     from alphafold_runtime import af_build_alphafold3_input_json
+    from alphafold_runtime import af_build_alphafold_server_json
+    from alphafold_runtime import af_colabfold_query
+    from alphafold_runtime import af_fasta_text
+    from alphafold_runtime import af_sanitize_af3_chain_id
+    from alphafold_runtime import af_split_protein_chains
     from alphafold_runtime import af_build_colabfold_colab_cell
     from alphafold_runtime import af_build_colabfold_command
     from alphafold_runtime import af_build_colabfold_job_notebook
     from alphafold_runtime import af_build_colabfold_job_script
     from alphafold_runtime import af_collect_existing_dirs
+    from alphafold_runtime import GPU_REQUIRED_TITLE
+    from alphafold_runtime import af_detect_local_gpu
+    from alphafold_runtime import af_extract_result_zips
+    from alphafold_runtime import af_safe_extract_zip
+    from alphafold_runtime import af_gpu_requirement_message
     from alphafold_runtime import af_engine_profile
     from alphafold_runtime import af_extract_plddt_pae_from_json
     from alphafold_runtime import af_find_best_model_recursive
@@ -660,7 +688,7 @@ except Exception:
     from trajectory_interaction_runtime import trajectory_normalize_step
     from trajectory_interaction_runtime import trajectory_pick_matching_interaction
     from trajectory_interaction_runtime import trajectory_run_interaction_analysis
-    from ligand_canvas_runtime import Ligand2DInteractiveCanvas
+    from ligand_sketcher_runtime import LigandSketcherWidget
     from openmm_qmmm_runtime import classify_openmm_component_ff_class
     from openmm_qmmm_runtime import dedupe_openmm_forcefield_xml_paths
     from openmm_qmmm_runtime import default_openmm_xml_selected_keys
@@ -677,6 +705,14 @@ except Exception:
     from openmm_qmmm_runtime import rewrite_pdb_component_identity
     from openmm_qmmm_runtime import sanitize_pdb_conect_for_standalone_components
     from openmm_qmmm_runtime import split_openmm_parameterization_targets
+    from component_library_runtime import prepare_modeller as component_prepare_modeller
+    from component_library_runtime import resolve_components as component_resolve_components
+    from component_library_runtime import forcefield_family_base_files
+    from component_library_runtime import restore_names as component_restore_names
+    from component_library_runtime import coordination_variants as component_coordination_variants
+    from component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
+    from component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from openmm_qmmm_runtime import read_openmm_forcefield_residue_names
     from openmm_dynamics_runtime import apply_openmm_cv_preset
     from openmm_dynamics_runtime import build_openmm_capability_report
     from openmm_dynamics_runtime import normalize_openmm_cv_definition
@@ -1125,6 +1161,10 @@ def ring_plane_offset(center_a, normal_a, center_b):
     perp = float(np.dot(v, n))
     lateral = v - perp * n
     return float(np.linalg.norm(lateral))
+OPENMM_PEPTIDE_CAPS = frozenset({"ACE", "NME", "NMA", "NH2", "NHE"})
+OPENMM_PEPTIDE_CAPS_SEL = "+".join(sorted(OPENMM_PEPTIDE_CAPS))
+
+
 class ProtLigInteractDialog(QtWidgets.QDialog):
     """Main dialog for the Protein-Ligand Interaction Visualizer plugin."""
     def __init__(self, parent=None):
@@ -9968,7 +10008,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         notes = []
         tmp_paths = []
         try:
-            polymer_sel = f"{rec_sel} and polymer"
+            # peptide caps (ACE/NME...) belong to their chain, not to the components exported after it
+            polymer_sel = f"{rec_sel} and (polymer or resn {OPENMM_PEPTIDE_CAPS_SEL})"
             try:
                 polymer_count = int(cmd.count_atoms(polymer_sel))
             except Exception:
@@ -9983,6 +10024,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 with open(tmp_poly, "r", encoding="utf-8", errors="ignore") as fh:
                     polymer_lines = [ln.rstrip("\n") for ln in fh]
             for idx, comp in enumerate(list(include_components or []), start=1):
+                if str((comp or {}).get("resn", "") or "").strip().upper() in OPENMM_PEPTIDE_CAPS:
+                    continue
                 csel = self._dock_hetatm_component_selection(rec, comp)
                 if not csel:
                     continue
@@ -10335,7 +10378,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return True
         if r in {"DA3", "DA5", "DC3", "DC5", "DG3", "DG5", "DT3", "DT5", "A3", "A5", "C3", "C5", "G3", "G5", "U3", "U5"}:
             return True
-        if r in {"ACE", "NME", "NH2", "NHE"}:
+        if r in {"ACE", "NME", "NMA", "NH2", "NHE"}:
             return True
         return False
     def _openmm_parse_missing_residue_names(self, err_text):
@@ -10366,6 +10409,68 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if "<system" in head:
             return "system"
         return ""
+    def _openmm_apply_component_library(self, modeller, ff_family, lig_xml_paths=(), out=None, qm_placeholders=False):
+        """
+        Give cofactors, ions and other components their curated templates (CHARMM36 heme, NAD,
+        ATP, lipids; Amber ions, lipid21, GLYCAM) so they are parameterized instead of dropped.
+        Residues covered by a ligand ForceField XML keep that parameterization. Returns extra
+        ForceField files the components need.
+        """
+        fam = {"amber14": "amber14", "charmm36": "charmm36"}.get(str(ff_family or "").strip().lower())
+        notes = out["notes"] if isinstance(out, dict) else []
+        if fam is None or OMM_UNIT is None:
+            return []
+        try:
+            own = set()
+            for xp in list(lig_xml_paths or []):
+                try:
+                    own.update(str(n).upper() for n in read_openmm_forcefield_residue_names(xp))
+                except Exception:
+                    pass
+            pos_nm = [tuple(p.value_in_unit(OMM_UNIT.nanometer)) for p in modeller.positions]
+            plan = component_resolve_components(modeller.topology, pos_nm, family=fam)
+            plan["components"] = [r for r in plan["components"] if str(r.get("resn", "")).upper() not in own]
+            renames = {}
+            files = component_prepare_modeller(modeller, plan, fam, renames=renames)
+            if isinstance(out, dict):
+                # template names are only needed while hydrogens are added; outputs keep PDB names
+                out["_component_renames"] = renames
+            if qm_placeholders:
+                # QM/MM: components without MM parameters (heme c, metal clusters...) go to the QM region
+                # with placeholder templates instead of being dropped
+                qm_files, qm_variants, qm_keys, qm_info = component_install_qm_placeholders(modeller, plan)
+                files = list(files) + [f for f in qm_files if f not in files]
+                if isinstance(out, dict):
+                    out["_component_variants"] = dict(qm_variants)
+                    out["_qm_forced_keys"] = [{"chain": c, "resi": r, "resn": n} for c, r, n in qm_keys]
+                    out["qm_placeholder_components"] = qm_info
+                for row in qm_info:
+                    notes.append(
+                        f"QM/MM: {row['resn']} has no MM parameters; it is placed in the QM region "
+                        f"({row['qm_atoms']} atoms, organic formal charge {row['organic_formal_charge']:+d}"
+                        + ("; add the metal oxidation state to the QM charge" if row.get("has_metal") else "")
+                        + ")."
+                    )
+            used = sorted({f"{r['resn']}->{r['template']}" for r in plan["components"] if r.get("source") == "library"})
+            if used:
+                notes.append("Component library templates: " + ", ".join(used))
+            for w in list(plan.get("warnings", []) or [])[:6]:
+                notes.append("Component library: " + str(w))
+            if isinstance(out, dict):
+                out["component_plan"] = {k: plan[k] for k in ("family", "recommended_family", "counts", "warnings")}
+            base = set(forcefield_family_base_files(fam))
+            if not (set(files) & base):
+                # a component needs a different protein force-field file (e.g. phosphoresidues:
+                # openmmforcefields ff14SB + phosaa14SB instead of OpenMM's amber14-all)
+                notes.append("Component library: protein force field switched to " + ", ".join(
+                    os.path.basename(f) for f in files) + " for the modified residues.")
+                if isinstance(out, dict):
+                    out["_component_base_override"] = list(files)
+                return []
+            return [f for f in files if f not in base]
+        except Exception as e:
+            notes.append(f"Component library unavailable ({e}); non-standard residues follow the previous route.")
+            return []
     def _openmm_create_system_with_autodrop(self, forcefield, modeller, create_kwargs, max_rounds=12):
         removed = []
         if forcefield is None or modeller is None:
@@ -11334,6 +11439,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 water_model=water_model,
                 include_waters=include_waters,
             )
+            library_files = self._openmm_apply_component_library(
+                modeller, ff_family, lig_xml_paths, out, qm_placeholders=bool(qmmm_probe_cfg))
+            forced_keys = out.pop("_qm_forced_keys", None)
+            if forced_keys and qmmm_probe_cfg:
+                qmmm_probe_cfg["force_qm_residue_keys"] = list(qmmm_probe_cfg.get("force_qm_residue_keys", []) or []) + forced_keys
+                # the probe/coupling code reads data["qmmm_probe"]
+                probe_data = dict(data.get("qmmm_probe", {}) or {})
+                probe_data["force_qm_residue_keys"] = list(qmmm_probe_cfg["force_qm_residue_keys"])
+                data["qmmm_probe"] = probe_data
+            override = out.pop("_component_base_override", None)
+            if override:
+                attempts = [
+                    (lbl + " (phosaa)", list(override) + [x for x in files if str(x).startswith("implicit/")])
+                    for lbl, files in attempts
+                    if "amber14-all.xml" in list(files)
+                ] or attempts
+            if library_files:
+                # the component files belong to the requested family only (Amber ions/water on top of
+                # CHARMM36 in a fallback attempt would redefine templates)
+                fam_base = set(forcefield_family_base_files(str(ff_family or "").strip().lower()))
+                attempts = [
+                    (lbl, list(files) + [x for x in library_files if x not in list(files)])
+                    if (fam_base & set(files)) else (lbl, list(files))
+                    for lbl, files in attempts
+                ]
             lig_ff_xmls = []
             for lx in list(lig_xml_paths or []):
                 kind = self._openmm_xml_kind(lx)
@@ -11418,9 +11548,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     f"Input protein has no hydrogens; OpenMM preparation will add them at pH {float(data.get('ph', 7.4)):.2f} before minimization/MD."
                 )
             try:
-                modeller.addHydrogens(ff, pH=float(data.get("ph", 7.4)))
+                h_variants, h_variant_notes = component_coordination_variants(
+                    modeller.topology, [tuple(p.value_in_unit(OMM_UNIT.nanometer)) for p in modeller.positions])
+            except Exception:
+                h_variants, h_variant_notes = None, []
+            for idx, variant in (out.pop("_component_variants", {}) or {}).items():
+                if h_variants is not None and 0 <= int(idx) < len(h_variants):
+                    h_variants[int(idx)] = variant
+            try:
+                modeller.addHydrogens(ff, pH=float(data.get("ph", 7.4)), variants=h_variants)
             except Exception:
                 modeller.addHydrogens(pH=float(data.get("ph", 7.4)))
+            component_restore_names(modeller.topology, out.pop("_component_renames", {}) or {})
+            if h_variant_notes:
+                out["notes"].append("Metal-site protonation: " + ", ".join(h_variant_notes[:12]))
             try:
                 total_atoms_after_h = int(sum(1 for _a in modeller.topology.atoms()))
             except Exception:
@@ -11464,10 +11605,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 modeller,
                 create_kwargs,
             )
+            if removed_residues:
+                rec = str((out.get("component_plan") or {}).get("recommended_family", "") or "")
+                hint = f" {rec} has templates for more of them;" if rec and rec != ff_family else ""
+                out["notes"].insert(
+                    0,
+                    "WARNING: removed residue(s) without force-field template, the simulated system is incomplete: "
+                    + ", ".join(removed_residues[:12])
+                    + f".{hint} parameterize them or pick another force field.",
+                )
             if not ok_sys or system is None:
                 out["error"] = f"System creation failed: {err_sys}"
                 out["removed_residues"] = list(removed_residues or [])
                 return out
+            if bool(data.get("metal_restraints", True)):
+                try:
+                    metal_rows = component_add_coordination_restraints(
+                        system, modeller.topology,
+                        [tuple(p.value_in_unit(OMM_UNIT.nanometer)) for p in modeller.positions])
+                except Exception as e_metal:
+                    metal_rows = []
+                    out["notes"].append(f"Metal-site restraints skipped: {e_metal}")
+                if metal_rows:
+                    out["metal_restraints"] = list(metal_rows)
+                    out["notes"].append(
+                        f"Metal sites kept with {len(metal_rows)} flat-bottom distance restraint(s) (no bonded "
+                        "metal model): " + "; ".join(metal_rows[:6]))
             if qmmm_force_coupled:
                 plan = self._openmm_build_qmmm_coupling_plan(modeller.topology, qmmm_probe_cfg)
                 if not bool(plan.get("ok", False)):
@@ -23470,6 +23633,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             subtitle.setStyleSheet("color: #4b5563;")
             vbox.addWidget(subtitle)
 
+            class _WrappedWarningLabel(QtWidgets.QLabel):
+                # Qt gives word-wrapped labels less height than heightForWidth() in tight
+                # layouts, clipping the last line; keep the minimum height in sync with the width.
+                def resizeEvent(self, event):
+                    super().resizeEvent(event)
+                    needed = self.heightForWidth(self.width()) if self.text() else 0
+                    if needed > 0 and self.minimumHeight() != needed:
+                        self.setMinimumHeight(needed)
+
+            # Shown on every tab when the selected engine needs a GPU this computer lacks.
+            self.lbl_af_gpu_warning = _WrappedWarningLabel("")
+            self.lbl_af_gpu_warning.setWordWrap(True)
+            self.lbl_af_gpu_warning.setTextFormat(QtCore.Qt.RichText)
+            self.lbl_af_gpu_warning.setStyleSheet(
+                "background: #fff4e5; color: #7a3e00; border: 1px solid #f0b060; "
+                "border-radius: 6px; padding: 8px 10px;"
+            )
+            self.lbl_af_gpu_warning.setVisible(False)
+            vbox.addWidget(self.lbl_af_gpu_warning)
+
             tabs = QtWidgets.QTabWidget(self._af_dialog)
             vbox.addWidget(tabs, 1)
 
@@ -23813,6 +23996,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print(f"AlphaFold UI Setup Error: {e}")
     def _show_alphafold_dialog(self):
         try:
+            self._af_gpu_info(refresh=True)
             self._refresh_af_source_combo()
             self._on_af_engine_changed()
             self._on_af_exec_mode_changed()
@@ -23856,7 +24040,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             raw = str(self.cmb_af_chain.currentData() or "").strip()
             if raw and raw.upper() not in {"MAIN", "SYNTHETIC_MAIN"}:
-                chain_id = re.sub(r"[^A-Za-z0-9]+", "", raw)[:4] or "A"
+                chain_id = af_sanitize_af3_chain_id(raw, 0)
         except Exception:
             chain_id = "A"
         return chain_id
@@ -23877,31 +24061,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         gpu_reason = "GPU not requested"
         if gpu_required:
             # Official AF3 Docker execution expects NVIDIA GPU access through Docker.
-            gpu_ok = False
-            gpu_reason = "no NVIDIA GPU detected"
-            nvsmi = shutil.which("nvidia-smi")
-            if nvsmi:
-                try:
-                    pr = subprocess.run(
-                        [str(nvsmi), "-L"],
-                        capture_output=True,
-                        text=True,
-                        timeout=6,
-                        check=False,
-                    )
-                    txt = (str(pr.stdout or "") + "\n" + str(pr.stderr or "")).strip()
-                    if (pr.returncode == 0) and ("GPU" in txt.upper()):
-                        gpu_ok = True
-                        gpu_reason = "nvidia-smi"
-                except Exception:
-                    pass
-            if not gpu_ok:
-                try:
-                    if os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version"):
-                        gpu_ok = True
-                        gpu_reason = "nvidia-device"
-                except Exception:
-                    pass
+            gpu_ok, gpu_reason = self._af_local_gpu_available(deep=bool(deep_probe))
         ready = bool(docker_path) and model_ok and db_ok and bool(gpu_ok)
         missing = []
         if not docker_path:
@@ -23952,6 +24112,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_af_plot_msa.setEnabled(engine == AF_ENGINE_COLABFOLD)
         except Exception:
             pass
+        self._af_update_gpu_warning()
         try:
             self._on_af_exec_mode_changed()
         except Exception:
@@ -23984,10 +24145,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         af3_output_dir = os.path.join(job_dir, "af3_output")
         os.makedirs(af3_input_dir, exist_ok=True)
         os.makedirs(af3_output_dir, exist_ok=True)
+        chains = af_split_protein_chains(str(bundle.get("seq") or ""))
         payload = af_build_alphafold3_input_json(
             job_name=str(bundle.get("job_name") or "af_job"),
-            protein_sequences=[str(bundle.get("seq") or "")],
-            chain_ids=[self._af_current_af3_chain_id()],
+            protein_sequences=chains,
+            # a single chain keeps the chain the user picked; a complex gets A, B, C, ...
+            chain_ids=[self._af_current_af3_chain_id()] if len(chains) == 1 else None,
             model_seeds=[self._af_af3_seed()],
         )
         json_path = os.path.join(af3_input_dir, "fold_input.json")
@@ -24088,58 +24251,59 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return str(self.cmb_af_exec_mode.currentData() or "auto")
         except Exception:
             return "auto"
+    def _af_gpu_info(self, refresh=False):
+        # nvidia-smi can take seconds; probe once per dialog opening, not on every UI refresh
+        info = getattr(self, "_af_gpu_info_cache", None)
+        if refresh or not isinstance(info, dict):
+            try:
+                info = dict(af_detect_local_gpu() or {})
+            except Exception:
+                info = {"available": False, "reason": "GPU detection failed", "apple_silicon": False}
+            self._af_gpu_info_cache = info
+        return dict(info)
     def _af_local_gpu_available(self, deep=False):
         """
-        Detect whether local ColabFold GPU execution is likely available.
-        Heuristic priority: nvidia-smi/device nodes, optional deep JAX probe.
+        Detect whether local ColabFold GPU execution is available: an NVIDIA/CUDA GPU.
+        Apple (Metal) GPUs and CPU-only JAX do not count.
         """
-        # Fast NVIDIA probe
-        nvsmi = shutil.which("nvidia-smi")
-        if nvsmi:
-            try:
-                pr = subprocess.run(
-                    [str(nvsmi), "-L"],
-                    capture_output=True,
-                    text=True,
-                    timeout=6,
-                    check=False,
-                )
-                txt = (str(pr.stdout or "") + "\\n" + str(pr.stderr or "")).strip()
-                if (pr.returncode == 0) and ("GPU" in txt.upper()):
-                    return True, "nvidia-smi"
-            except Exception:
-                pass
+        info = self._af_gpu_info(refresh=bool(deep))
+        return bool(info.get("available")), str(info.get("reason") or "no local GPU detected")
+    def _af_ask_gpu_fallback(self, gpu_msg):
+        """Return "colab", "local" or "cancel" for a local run requested without a detected GPU."""
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle(GPU_REQUIRED_TITLE)
+        box.setText(f"<b>{GPU_REQUIRED_TITLE}</b>")
+        box.setInformativeText(
+            f"{gpu_msg}\n\nIf this computer does have an NVIDIA GPU that was not detected, "
+            "you can still run locally."
+        )
+        btn_colab = box.addButton("Prepare for Google Colab", QtWidgets.QMessageBox.AcceptRole)
+        btn_local = box.addButton("Run locally anyway", QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(btn_colab)
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked is btn_colab:
+            return "colab"
+        if clicked is btn_local:
+            return "local"
+        return "cancel"
+    def _af_update_gpu_warning(self):
+        lbl = getattr(self, "lbl_af_gpu_warning", None)
+        if lbl is None:
+            return ""
+        msg = ""
         try:
-            if os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version"):
-                return True, "nvidia-device"
+            msg = af_gpu_requirement_message(self._af_current_engine(), self._af_gpu_info())
+        except Exception:
+            msg = ""
+        try:
+            lbl.setText(f"<b>&#9888; {GPU_REQUIRED_TITLE}.</b> {msg}" if msg else "")
+            lbl.setVisible(bool(msg))
         except Exception:
             pass
-        if deep:
-            # Deep probe using JAX (if installed in current PyMOL Python env).
-            try:
-                probe_cmd = [
-                    str(sys.executable),
-                    "-c",
-                    (
-                        "import jax; "
-                        "plats=sorted(set([str(getattr(d,'platform','')).lower() for d in jax.devices()])); "
-                        "print(','.join(plats))"
-                    ),
-                ]
-                pr = subprocess.run(
-                    probe_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-                if pr.returncode == 0:
-                    plats = [x.strip().lower() for x in str(pr.stdout or "").strip().split(",") if x.strip()]
-                    if any(x in {"gpu", "cuda", "rocm", "metal"} for x in plats):
-                        return True, f"jax:{'/'.join(plats)}"
-            except Exception:
-                pass
-        return False, "no local GPU detected"
+        return msg
     def _af_resolve_exec_mode(self, deep_probe=False):
         mode = self._af_current_exec_mode()
         if mode != "auto":
@@ -24356,10 +24520,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         job_name = af_sanitize_job_name(job_name)
         if self._af_is_af3_engine():
             try:
+                chains = af_split_protein_chains(seq)
                 payload = af_build_alphafold3_input_json(
                     job_name=job_name,
-                    protein_sequences=[seq],
-                    chain_ids=[self._af_current_af3_chain_id()],
+                    protein_sequences=chains,
+                    chain_ids=[self._af_current_af3_chain_id()] if len(chains) == 1 else None,
                     model_seeds=[self._af_af3_seed()],
                 )
                 txt = json.dumps(payload, indent=2)
@@ -24367,7 +24532,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "AlphaFold 3", f"Could not build AF3 JSON: {e}")
                 return
         else:
-            txt = f">{job_name}\n{seq}\n"
+            txt = af_fasta_text(job_name, seq)
         try:
             cb = QtWidgets.QApplication.clipboard()
             if cb is not None:
@@ -24440,16 +24605,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
     def _af_clean_sequence(self, text):
-        lines = []
-        for raw in str(text or "").splitlines():
-            ln = str(raw).strip()
-            if not ln:
-                continue
-            if ln.startswith(">"):
-                continue
-            lines.append(ln)
-        seq = re.sub(r"[^A-Za-z]", "", "".join(lines)).upper()
-        return seq
+        # Chains stay separated by ':' (ColabFold complex syntax); several FASTA records are
+        # several chains, not one concatenated sequence.
+        return af_colabfold_query(text)
     def _refresh_af_source_combo(self):
         if not hasattr(self, "af_source_combo"):
             return
@@ -24620,6 +24778,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(sync_root, exist_ok=True)
         except Exception:
             pass
+        # the Leonardo Colab cell downloads a ZIP; unpack it so its models can be found
+        for unpacked in af_extract_result_zips(sync_root):
+            self._af_append_log(f"Unpacked result ZIP: {unpacked}")
         best = self._af_find_best_model_recursive(sync_root, token=token, prefer_relaxed=self._af_relax_requested())
         if not best:
             if not silent:
@@ -24687,9 +24848,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             dst = os.path.join(out_root, f"import_colab_{ts}")
             try:
-                os.makedirs(dst, exist_ok=True)
-                with zipfile.ZipFile(fpath, "r") as zf:
-                    zf.extractall(dst)
+                af_safe_extract_zip(fpath, dst)
                 best = self._af_find_best_model_recursive(dst, token=str(getattr(self, "_af_pending_job_name", "") or ""), prefer_relaxed=self._af_relax_requested())
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "AlphaFold", f"Failed to import ZIP: {e}")
@@ -25068,7 +25227,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not seq:
             QtWidgets.QMessageBox.warning(self, "AlphaFold", "Sequence is empty.")
             return None
-        invalid = sorted(set([c for c in seq if c not in set("ACDEFGHIKLMNPQRSTVWYBXZJUO")]))
+        invalid = sorted(set([c for c in seq if c not in set("ACDEFGHIKLMNPQRSTVWYBXZJUO:")]))
         if invalid:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -25152,7 +25311,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         fasta = os.path.join(job_dir, f"{job_name}.fasta")
         try:
             with open(fasta, "w", encoding="utf-8") as fh:
-                fh.write(f">{job_name}\n{seq}\n")
+                # ColabFold: one record, chains joined by ':'; AlphaFold 3: one record per chain
+                fh.write(af_fasta_text(job_name, seq, per_chain=engine in {AF_ENGINE_AF3_LOCAL, AF_ENGINE_AF3_SERVER}))
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "AlphaFold", f"Failed to write FASTA: {e}")
             return None
@@ -25255,15 +25415,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     server_url = ""
                 if not server_url:
                     server_url = AF3_SERVER_URL
+                server_json = os.path.join(bundle["job_dir"], "af3_input", "alphafold_server_input.json")
+                try:
+                    af_write_json(
+                        af_build_alphafold_server_json(
+                            bundle["job_name"],
+                            af_split_protein_chains(str(bundle.get("seq") or "")),
+                            model_seeds=[self._af_af3_seed()],
+                        ),
+                        server_json,
+                    )
+                    bundle["af3_server_json"] = server_json
+                except Exception as e:
+                    server_json = f"(not written: {e})"
                 info_txt = os.path.join(bundle["job_dir"], "AF3_HANDOFF_INSTRUCTIONS.txt")
                 try:
                     with open(info_txt, "w", encoding="utf-8") as fh:
                         fh.write(
                             "AlphaFold 3 handoff workflow\n"
                             f"Job: {bundle['job_name']}\n"
-                            f"AF3 JSON: {json_path}\n"
+                            f"AlphaFold Server upload file: {server_json}\n"
+                            f"AF3 Docker/cluster input: {json_path}\n"
                             f"Suggested output folder: {bundle.get('af3_output_dir')}\n"
                             f"AlphaFold Server: {server_url}\n\n"
+                            "AlphaFold Server: use 'Upload JSON' with alphafold_server_input.json (the Server\n"
+                            "format; fold_input.json is the AlphaFold 3 Docker format and is rejected there).\n"
+                            "The Server accepts only its own list of CCD ligands, not SMILES.\n\n"
                             "Local Docker command template:\n"
                             f"{docker_cmd_txt}\n\n"
                             "Notes:\n"
@@ -25277,6 +25454,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._af_append_log("Prepared AlphaFold 3 handoff")
                 self._af_append_log(f"job_dir: {bundle['job_dir']}")
                 self._af_append_log(f"json: {json_path}")
+                self._af_append_log(f"server_json: {server_json}")
                 self._af_append_log(f"instructions: {info_txt}")
                 self._af_append_log("docker_command: " + docker_cmd_txt)
                 if missing:
@@ -25291,7 +25469,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     self,
                     "AlphaFold 3",
                     "AlphaFold 3 input prepared.\n\n"
-                    f"JSON: {json_path}\n"
+                    f"AlphaFold Server upload: {server_json}\n"
+                    f"AF3 Docker/cluster JSON: {json_path}\n"
                     f"Instructions: {info_txt}\n\n"
                     "Run AF3 on AlphaFold Server or an AF3-capable Colab/remote/local runtime, then import the CIF/PDB/ZIP result.",
                 )
@@ -25350,6 +25529,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
             return
+        if mode == "local":
+            has_gpu, _gpu_reason = self._af_local_gpu_available(deep=True)
+            if not has_gpu:
+                gpu_msg = af_gpu_requirement_message(engine, self._af_gpu_info())
+                self._af_update_gpu_warning()
+                self._af_append_log(f"{GPU_REQUIRED_TITLE}: {gpu_msg}")
+                choice = self._af_ask_gpu_fallback(gpu_msg)
+                if choice == "cancel":
+                    self.lbl_af_status.setText(f"{GPU_REQUIRED_TITLE}: local run cancelled (no NVIDIA GPU).")
+                    return
+                if choice == "colab":
+                    mode = "colab_remote"
+                else:
+                    # detection can miss a real GPU (nvidia-smi not on PATH, WSL2, containers)
+                    self._af_append_log("Running locally without a detected NVIDIA GPU at the user's request.")
         if mode == "colab_remote":
             sync_root = self._af_sync_root_dir()
             try:
@@ -32088,246 +32282,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         return
     def _setup_ligand_editor_ui(self):
         try:
-            self._ligand_editor_dialog = QtWidgets.QDialog(self)
-            self._ligand_editor_dialog.setWindowTitle("Ligand Editor (2D -> 3D)")
-            self._ligand_editor_dialog.resize(1100, 880)
-            self._ligand_editor_dialog.setMinimumSize(940, 720)
-            self._fit_dialog_to_screen(self._ligand_editor_dialog, preferred_w=1100, preferred_h=880, min_w=900, min_h=700)
-            vbox = QtWidgets.QVBoxLayout(self._ligand_editor_dialog)
-            intro = QtWidgets.QLabel(
-                "Preferred workflow: edit directly in the built-in 2D mouse canvas below, then build 3D and "
-                "apply the ligand. External editors remain optional fallback tools."
-            )
-            intro.setWordWrap(True)
-            vbox.addWidget(intro)
-            row_src = QtWidgets.QHBoxLayout()
-            self.btn_liged_load_active = QtWidgets.QPushButton("Load Active Ligand")
-            self.btn_liged_load_active.clicked.connect(self._on_ligand_editor_load_active)
-            row_src.addWidget(self.btn_liged_load_active)
-            self.btn_liged_load_file = QtWidgets.QPushButton("Load From File...")
-            self.btn_liged_load_file.clicked.connect(self._on_ligand_editor_pick_file)
-            row_src.addWidget(self.btn_liged_load_file)
-            self.btn_liged_apply_smiles = QtWidgets.QPushButton("Apply SMILES")
-            self.btn_liged_apply_smiles.clicked.connect(self._on_ligand_editor_apply_smiles)
-            self.btn_liged_apply_smiles.setVisible(False)
-            row_src.addWidget(self.btn_liged_apply_smiles)
-            self.btn_liged_undo = QtWidgets.QPushButton("Undo")
-            self.btn_liged_undo.clicked.connect(self._on_liged_undo)
-            self.btn_liged_undo.setVisible(False)
-            row_src.addWidget(self.btn_liged_undo)
-            row_src.addStretch(1)
-            vbox.addLayout(row_src)
-            self.w_liged_smiles = QtWidgets.QWidget()
-            row_smiles = QtWidgets.QHBoxLayout(self.w_liged_smiles)
-            row_smiles.setContentsMargins(0, 0, 0, 0)
-            row_smiles.addWidget(QtWidgets.QLabel("SMILES (advanced)"))
-            self.edit_liged_smiles = QtWidgets.QLineEdit()
-            self.edit_liged_smiles.setPlaceholderText("Optional manual SMILES edit")
-            self.edit_liged_smiles.returnPressed.connect(self._on_ligand_editor_apply_smiles)
-            row_smiles.addWidget(self.edit_liged_smiles, 1)
-            self.w_liged_smiles.setVisible(False)
-            vbox.addWidget(self.w_liged_smiles)
-            row_draw = QtWidgets.QHBoxLayout()
-            self.btn_liged_open_drawer = QtWidgets.QPushButton("Open Web Drawer (Optional)")
-            self.btn_liged_open_drawer.clicked.connect(self._on_liged_open_drawer)
-            row_draw.addWidget(self.btn_liged_open_drawer)
-            self.cmb_liged_drawer_tool = QtWidgets.QComboBox()
-            self.cmb_liged_drawer_tool.addItem("Ketcher (Web)", "ketcher")
-            self.cmb_liged_drawer_tool.addItem("JSME Local", "local_jsme")
-            self.cmb_liged_drawer_tool.addItem("JSME (Web)", "jsme")
-            row_draw.addWidget(self.cmb_liged_drawer_tool)
-            self.btn_liged_import_file_quick = QtWidgets.QPushButton("Import Drawing File...")
-            self.btn_liged_import_file_quick.clicked.connect(self._on_liged_import_drawing_file)
-            row_draw.addWidget(self.btn_liged_import_file_quick)
-            self.btn_liged_use_drawing_quick = QtWidgets.QPushButton("Use Clipboard Drawing (Auto 3D)")
-            self.btn_liged_use_drawing_quick.clicked.connect(self._on_liged_use_drawing_quick)
-            row_draw.addWidget(self.btn_liged_use_drawing_quick)
-            self.btn_liged_copy_smiles = QtWidgets.QPushButton("Copy SMILES")
-            self.btn_liged_copy_smiles.clicked.connect(self._on_liged_copy_smiles_clipboard)
-            self.btn_liged_copy_smiles.setVisible(False)
-            row_draw.addWidget(self.btn_liged_copy_smiles)
-            self.btn_liged_import_clip = QtWidgets.QPushButton("Apply Drawing From Clipboard")
-            self.btn_liged_import_clip.clicked.connect(self._on_liged_import_smiles_clipboard)
-            self.btn_liged_import_clip.setVisible(False)
-            row_draw.addWidget(self.btn_liged_import_clip)
-            row_draw.addStretch(1)
-            vbox.addLayout(row_draw)
-            row_mouse = QtWidgets.QHBoxLayout()
-            row_mouse.addWidget(QtWidgets.QLabel("Mouse Mode"))
-            self.cmb_liged_mouse_mode = QtWidgets.QComboBox()
-            self.cmb_liged_mouse_mode.addItem("Select / Move", "select")
-            self.cmb_liged_mouse_mode.addItem("Add Atom", "attach_atom")
-            self.cmb_liged_mouse_mode.addItem("Replace Atom", "replace_atom")
-            self.cmb_liged_mouse_mode.addItem("Delete Atom", "delete_atom")
-            self.cmb_liged_mouse_mode.addItem("Add Bond", "add_bond")
-            self.cmb_liged_mouse_mode.addItem("Set Bond", "set_bond")
-            self.cmb_liged_mouse_mode.addItem("Delete Bond", "delete_bond")
-            self.cmb_liged_mouse_mode.addItem("Attach Fragment", "attach_fragment")
-            self.cmb_liged_mouse_mode.currentIndexChanged.connect(self._on_liged_mouse_mode_changed)
-            row_mouse.addWidget(self.cmb_liged_mouse_mode)
-            self.lbl_liged_mouse_hint = QtWidgets.QLabel(
-                "Click Atom A. Shift-click sets Atom B. Drag atoms in Select / Move mode."
-            )
-            self.lbl_liged_mouse_hint.setWordWrap(True)
-            row_mouse.addWidget(self.lbl_liged_mouse_hint, 1)
-            self.btn_liged_open_tools = QtWidgets.QPushButton("Pop-out Tools...")
-            self.btn_liged_open_tools.clicked.connect(self._show_liged_tool_popup)
-            row_mouse.addWidget(self.btn_liged_open_tools)
-            vbox.addLayout(row_mouse)
-            atom_box = QtWidgets.QGroupBox("Atom Palette")
-            self.grp_liged_atom_palette = atom_box
-            atom_layout = QtWidgets.QVBoxLayout(atom_box)
-            row_atom_palette = QtWidgets.QHBoxLayout()
-            self._liged_atom_palette_buttons = {}
-            for sym in self._liged_atom_palette_symbols():
-                btn = QtWidgets.QToolButton()
-                btn.setText(sym)
-                btn.setCheckable(True)
-                btn.clicked.connect(lambda _checked=False, atom_symbol=sym: self._on_liged_choose_element(atom_symbol))
-                row_atom_palette.addWidget(btn)
-                self._liged_atom_palette_buttons[str(sym).strip().upper()] = btn
-            btn_periodic = QtWidgets.QPushButton("Periodic Table...")
-            btn_periodic.clicked.connect(self._on_liged_open_periodic_table)
-            row_atom_palette.addWidget(btn_periodic)
-            row_atom_palette.addStretch(1)
-            atom_layout.addLayout(row_atom_palette)
-            self.lbl_liged_selected_element = QtWidgets.QLabel("Selected atom: C")
-            self.lbl_liged_selected_element.setWordWrap(True)
-            atom_layout.addWidget(self.lbl_liged_selected_element)
-            atom_box.setVisible(False)
-            vbox.addWidget(atom_box)
-            frag_box = QtWidgets.QGroupBox("Quick Organic Groups")
-            self.grp_liged_quick_groups = frag_box
-            frag_layout = QtWidgets.QHBoxLayout(frag_box)
-            self._liged_quick_fragment_buttons = []
-            for short_label, full_label, smi in self._liged_quick_fragment_specs():
-                btn = QtWidgets.QToolButton()
-                btn.setText(short_label)
-                btn.setToolTip(full_label)
-                btn.clicked.connect(
-                    lambda _checked=False, frag_smiles=smi, frag_label=full_label: self._on_liged_pick_quick_fragment(
-                        frag_smiles,
-                        frag_label,
-                    )
-                )
-            frag_layout.addWidget(btn)
-            self._liged_quick_fragment_buttons.append(btn)
-            frag_layout.addStretch(1)
-            frag_box.setVisible(False)
-            vbox.addWidget(frag_box)
-            row_mode = QtWidgets.QHBoxLayout()
-            self.cb_liged_show_advanced = QtWidgets.QCheckBox("Show advanced manual tools")
-            self.cb_liged_show_advanced.setChecked(False)
-            self.cb_liged_show_advanced.toggled.connect(self._on_liged_toggle_advanced)
-            row_mode.addWidget(self.cb_liged_show_advanced)
-            row_mode.addStretch(1)
-            vbox.addLayout(row_mode)
-            row_opts = QtWidgets.QHBoxLayout()
-            self.btn_liged_addh = QtWidgets.QPushButton("Refresh Hydrogens")
-            self.btn_liged_addh.clicked.connect(self._on_ligand_editor_add_hydrogens)
-            row_opts.addWidget(self.btn_liged_addh)
-            self.cb_liged_addh_3d = QtWidgets.QCheckBox("Include hydrogens in 3D")
-            self.cb_liged_addh_3d.setChecked(True)
-            row_opts.addWidget(self.cb_liged_addh_3d)
-            self.cb_liged_mmff = QtWidgets.QCheckBox("MMFF/UFF relax 3D")
-            self.cb_liged_mmff.setChecked(True)
-            row_opts.addWidget(self.cb_liged_mmff)
-            self.cb_liged_show_idx = QtWidgets.QCheckBox("Show atom indices")
-            self.cb_liged_show_idx.setChecked(True)
-            self.cb_liged_show_idx.toggled.connect(self._on_liged_refresh_depiction)
-            row_opts.addWidget(self.cb_liged_show_idx)
-            row_opts.addStretch(1)
-            vbox.addLayout(row_opts)
-            edit_box = QtWidgets.QGroupBox("2D Graph Edit Tools")
-            self.grp_liged_advanced = edit_box
-            edit_layout = QtWidgets.QVBoxLayout(edit_box)
-            row_edit_top = QtWidgets.QHBoxLayout()
-            row_edit_top.addWidget(QtWidgets.QLabel("Atom A"))
-            self.spin_liged_atom_a = QtWidgets.QSpinBox()
-            self.spin_liged_atom_a.setRange(0, 999)
-            row_edit_top.addWidget(self.spin_liged_atom_a)
-            row_edit_top.addWidget(QtWidgets.QLabel("Atom B"))
-            self.spin_liged_atom_b = QtWidgets.QSpinBox()
-            self.spin_liged_atom_b.setRange(0, 999)
-            row_edit_top.addWidget(self.spin_liged_atom_b)
-            self.spin_liged_atom_a.valueChanged.connect(lambda _v: self._liged_refresh_canvas_selection())
-            self.spin_liged_atom_b.valueChanged.connect(lambda _v: self._liged_refresh_canvas_selection())
-            row_edit_top.addWidget(QtWidgets.QLabel("Element"))
-            self.cmb_liged_element = QtWidgets.QComboBox()
-            self.cmb_liged_element.setEditable(True)
-            for el in ("C", "N", "O", "S", "P", "F", "Cl", "Br", "I", "H", "B", "Si"):
-                self.cmb_liged_element.addItem(el)
-            self.cmb_liged_element.setCurrentText("C")
-            self.cmb_liged_element.currentTextChanged.connect(lambda _txt: self._liged_refresh_mouse_guidance())
-            row_edit_top.addWidget(self.cmb_liged_element)
-            row_edit_top.addWidget(QtWidgets.QLabel("Bond"))
-            self.cmb_liged_bond = QtWidgets.QComboBox()
-            self.cmb_liged_bond.addItem("Single", "single")
-            self.cmb_liged_bond.addItem("Double", "double")
-            self.cmb_liged_bond.addItem("Triple", "triple")
-            self.cmb_liged_bond.addItem("Aromatic", "aromatic")
-            self.cmb_liged_bond.currentIndexChanged.connect(lambda _idx: self._liged_refresh_mouse_guidance())
-            row_edit_top.addWidget(self.cmb_liged_bond)
-            row_edit_top.addStretch(1)
-            edit_layout.addLayout(row_edit_top)
-            row_edit_btn = QtWidgets.QHBoxLayout()
-            self.btn_liged_attach_atom = QtWidgets.QPushButton("Attach Atom to A")
-            self.btn_liged_attach_atom.clicked.connect(self._on_liged_attach_atom)
-            row_edit_btn.addWidget(self.btn_liged_attach_atom)
-            self.btn_liged_replace_atom = QtWidgets.QPushButton("Replace Atom A")
-            self.btn_liged_replace_atom.clicked.connect(self._on_liged_replace_atom)
-            row_edit_btn.addWidget(self.btn_liged_replace_atom)
-            self.btn_liged_add_bond = QtWidgets.QPushButton("Add Bond A-B")
-            self.btn_liged_add_bond.clicked.connect(self._on_liged_add_bond)
-            row_edit_btn.addWidget(self.btn_liged_add_bond)
-            self.btn_liged_set_bond = QtWidgets.QPushButton("Set Bond A-B")
-            self.btn_liged_set_bond.clicked.connect(self._on_liged_set_bond)
-            row_edit_btn.addWidget(self.btn_liged_set_bond)
-            self.btn_liged_del_bond = QtWidgets.QPushButton("Delete Bond A-B")
-            self.btn_liged_del_bond.clicked.connect(self._on_liged_delete_bond)
-            row_edit_btn.addWidget(self.btn_liged_del_bond)
-            self.btn_liged_del_atom = QtWidgets.QPushButton("Delete Atom A")
-            self.btn_liged_del_atom.clicked.connect(self._on_liged_delete_atom)
-            row_edit_btn.addWidget(self.btn_liged_del_atom)
-            edit_layout.addLayout(row_edit_btn)
-            row_frag = QtWidgets.QHBoxLayout()
-            row_frag.addWidget(QtWidgets.QLabel("Fragments"))
-            self.cmb_liged_fragment = QtWidgets.QComboBox()
-            for label, smi in self._ligand_editor_fragment_library():
-                self.cmb_liged_fragment.addItem(label, smi)
-            self.cmb_liged_fragment.currentIndexChanged.connect(lambda _idx: self._liged_refresh_mouse_guidance())
-            row_frag.addWidget(self.cmb_liged_fragment, 1)
-            self.btn_liged_attach_fragment = QtWidgets.QPushButton("Attach to Atom A")
-            self.btn_liged_attach_fragment.clicked.connect(self._on_liged_attach_fragment)
-            row_frag.addWidget(self.btn_liged_attach_fragment)
-            edit_layout.addLayout(row_frag)
-            edit_box.setVisible(False)
-            vbox.addWidget(edit_box)
-            self.liged_canvas_2d = Ligand2DInteractiveCanvas(Chem, AllChem, self._ligand_editor_dialog)
-            self.liged_canvas_2d.on_atom_click = self._on_liged_canvas_atom_click
-            self.liged_canvas_2d.on_bond_click = self._on_liged_canvas_bond_click
-            self.liged_canvas_2d.on_atom_extend = self._on_liged_canvas_atom_extend
-            self.liged_canvas_2d.on_hydrogen_click = self._on_liged_canvas_hydrogen_click
-            self.liged_canvas_2d.on_empty_click = self._on_liged_canvas_empty_click
-            self.liged_canvas_2d.on_atom_drag = self._on_liged_canvas_atom_drag
-            vbox.addWidget(self.liged_canvas_2d, 1)
+            dlg = QtWidgets.QDialog(self)
+            self._ligand_editor_dialog = dlg
+            dlg.setWindowTitle("Ligand Editor")
+            dlg.resize(1220, 800)
+            dlg.setMinimumSize(900, 600)
+            self._fit_dialog_to_screen(dlg, preferred_w=1220, preferred_h=800, min_w=880, min_h=580)
+            vbox = QtWidgets.QVBoxLayout(dlg)
+            vbox.setContentsMargins(0, 0, 0, 0)
+            sketcher = LigandSketcherWidget(dlg)
+            self.liged_sketcher = sketcher
+            sketcher.on_molecule_changed = self._on_liged_sketcher_changed
+            sketcher.on_build_3d = self._on_ligand_editor_generate_3d_apply
+            sketcher.on_import_active = self._on_ligand_editor_load_active
+            sketcher.on_import_file = self._on_liged_import_drawing_file
+            sketcher.on_paste_clipboard = self._on_liged_import_smiles_clipboard
+            sketcher.on_open_web_drawer = self._on_liged_open_web_drawer_tool
+            sketcher.on_protonate = self._on_ligand_editor_add_hydrogens
+            vbox.addWidget(sketcher, 1)
+            # The 3D build and protonation handlers read these option widgets.
+            self.cb_liged_addh_3d = sketcher.cb_include_h
+            self.cb_liged_mmff = sketcher.cb_relax
+            # Hidden SMILES field kept for the clipboard/web-drawer import path.
+            self.edit_liged_smiles = QtWidgets.QLineEdit(dlg)
+            self.edit_liged_smiles.setVisible(False)
             self.lbl_liged_2d = None
-            self.lbl_liged_status = QtWidgets.QLabel("Status: load active ligand or file.")
-            self.lbl_liged_status.setWordWrap(True)
-            vbox.addWidget(self.lbl_liged_status)
-            row_run = QtWidgets.QHBoxLayout()
-            self.btn_liged_generate3d = QtWidgets.QPushButton("3) Build 3D and Use Ligand")
-            self.btn_liged_generate3d.clicked.connect(self._on_ligand_editor_generate_3d_apply)
-            row_run.addWidget(self.btn_liged_generate3d)
-            row_run.addStretch(1)
-            vbox.addLayout(row_run)
-            close_row = QtWidgets.QHBoxLayout()
-            close_row.addStretch(1)
-            btn_close = QtWidgets.QPushButton("Close")
-            btn_close.clicked.connect(self._ligand_editor_dialog.close)
-            close_row.addWidget(btn_close)
-            vbox.addLayout(close_row)
-            self._on_liged_mouse_mode_changed()
+            sketcher.show_status("Draw a ligand, type a SMILES, or use Import to load one.", "info")
             # Keep a hidden compatibility button; ligand entrypoint is now the
             # main "Ligand Source & Prep" launcher.
             self.btn_open_ligand_editor = QtWidgets.QPushButton("Ligand Editor...")
@@ -32338,6 +32318,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_open_ligand_editor.setVisible(False)
         except Exception as e:
             print(f"Ligand Editor UI Setup Error: {e}")
+    def _on_liged_sketcher_changed(self, mol):
+        self._ligand_editor_mol = None if mol is None else Chem.Mol(mol)
+    def _on_liged_open_web_drawer_tool(self, tool_key):
+        self._liged_drawer_tool_choice = str(tool_key or "ketcher")
+        self._on_liged_open_drawer()
     def _show_ligand_editor_dialog(self):
         if not HAS_RDKIT:
             QtWidgets.QMessageBox.warning(self, "Ligand Editor", "RDKit is required for ligand editing.")
@@ -32365,7 +32350,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._ligand_editor_load_from_file(active, announce=False)
         except Exception:
             pass
-    def _ligand_editor_set_status(self, text):
+    def _ligand_editor_set_status(self, text, kind=None):
+        sketcher = getattr(self, "liged_sketcher", None)
+        if sketcher is not None:
+            if kind is None:
+                low = str(text or "").lower()
+                kind = "error" if ("fail" in low or "error" in low or "not found" in low) else "info"
+            try:
+                sketcher.show_status(str(text), kind)
+            except Exception:
+                pass
+            return
         try:
             if hasattr(self, "lbl_liged_status"):
                 self.lbl_liged_status.setText(str(text))
@@ -32432,6 +32427,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return False
         if mol is None:
             return False
+        sketcher = getattr(self, "liged_sketcher", None)
+        if sketcher is not None:
+            try:
+                sketcher.set_molecule(mol)
+                return True
+            except Exception:
+                return False
         show_idx = bool(self.cb_liged_show_idx.isChecked()) if hasattr(self, "cb_liged_show_idx") else True
         try:
             if hasattr(self, "liged_canvas_2d") and self.liged_canvas_2d is not None:
@@ -32537,10 +32539,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         src = f"source={source_label} | " if source_label else ""
-        self._ligand_editor_set_status(
-            f"Status: {src}atoms={int(work.GetNumAtoms())}, heavy={int(work.GetNumHeavyAtoms())}, "
-            f"2D={'ok' if ok_draw else 'failed'}"
-        )
+        if getattr(self, "liged_sketcher", None) is not None:
+            label = f" from {source_label}" if source_label else ""
+            self._ligand_editor_set_status(
+                f"Loaded{label}: {int(work.GetNumHeavyAtoms())} heavy atoms.",
+                "ok" if ok_draw else "error",
+            )
+        else:
+            self._ligand_editor_set_status(
+                f"Status: {src}atoms={int(work.GetNumAtoms())}, heavy={int(work.GetNumHeavyAtoms())}, "
+                f"2D={'ok' if ok_draw else 'failed'}"
+            )
         return True
     def _ligand_editor_get_current_mol(self):
         if not HAS_RDKIT:
@@ -33442,6 +33451,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     return q
         return ""
     def _liged_current_drawer_tool(self):
+        choice = str(getattr(self, "_liged_drawer_tool_choice", "") or "").strip().lower()
+        if choice in ("local_jsme", "ketcher", "jsme"):
+            return choice
         try:
             if hasattr(self, "cmb_liged_drawer_tool"):
                 key = str(self.cmb_liged_drawer_tool.currentData() or "").strip().lower()
@@ -33801,7 +33813,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "Fallback workflow:\n"
                     "1) Draw/edit molecule in browser drawer\n"
                     "2) Copy SMILES in the drawer\n"
-                    "3) Back in plugin click '2) Use Drawing (Auto 3D)'"
+                    "3) Back in the Ligand Editor choose Import > Paste SMILES from clipboard"
                 )
                 if err:
                     msg += "\n\nTechnical details: " + str(err)[:300]
@@ -34519,6 +34531,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             use_ph = self._current_small_molecule_target_ph()
             work, prep = self._prepare_small_molecule_working_mol(mol, include_h=include_h, target_ph=use_ph if include_h else None)
             needs_embed, _why = self._ligand_geometry_is_bad(work)
+            if int(work.GetNumConformers()) > 0 and int(work.GetNumAtoms()) >= 3:
+                zs = [abs(float(work.GetConformer().GetAtomPosition(i).z)) for i in range(int(work.GetNumAtoms()))]
+                if max(zs) < 1e-3:
+                    needs_embed = True  # 2D sketch coordinates are not a 3D geometry
             if needs_embed or int(work.GetNumConformers()) <= 0:
                 p = AllChem.ETKDGv3()
                 p.randomSeed = 20260223
@@ -34561,12 +34577,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 f"H={int(summary.get('explicit_hydrogens', 0) or 0)}, "
                 f"repair={'yes' if bool(prep.get('used_repair', False)) else 'no'}"
             )
-            QtWidgets.QMessageBox.information(
-                self,
-                "Ligand Editor",
-                "Edited ligand was rebuilt in 3D and applied as active ligand source.\n\n"
-                f"File: {out_sdf}",
-            )
+            if getattr(self, "liged_sketcher", None) is not None:
+                self._ligand_editor_set_status(
+                    f"3D ligand built and set as the active ligand "
+                    f"(charge {int(summary.get('formal_charge', 0) or 0):+d}, "
+                    f"{int(work.GetNumAtoms())} atoms): {os.path.basename(out_sdf)}",
+                    "ok",
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Ligand Editor",
+                    "Edited ligand was rebuilt in 3D and applied as active ligand source.\n\n"
+                    f"File: {out_sdf}",
+                )
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Ligand Editor", f"3D generation failed: {e}")
     def _setup_virtual_screening_ui(self):

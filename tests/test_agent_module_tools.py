@@ -22,6 +22,15 @@ MODULE_TOOLS = {
     "psi4": {"run_psi4"},
     "qmmm": {"run_qmmm"},
     "md": {"run_md", "minimize_structure"},
+    "md_advanced": {"run_enhanced_sampling", "list_md_components", "configure_md_components"},
+    "ligand_editor": {"open_ligand_editor", "ligand_sketch_state", "edit_ligand_sketch", "build_ligand_from_sketch"},
+    "diagnostics": {"read_diagnostics_log", "list_tasks", "readiness_report", "export_figure",
+                    "refine_ligand_vibrational_ff"},
+    "redocking": {"run_redocking", "generate_mc_ensemble", "show_redock_pose", "export_redocking_csv"},
+    "alphafold_af3": {"prepare_af3_input"},
+    "components": {"resolve_components", "build_validated_system", "plan_qm_region"},
+    "membrane": {"build_membrane_system", "equilibrate_membrane_system"},
+    "materials": {"build_material", "build_protein_surface_system", "cut_qm_cluster"},
 }
 
 

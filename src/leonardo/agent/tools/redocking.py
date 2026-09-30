@@ -1,12 +1,222 @@
 """Redocking of a crystal ligand (pose recovery check)."""
 
+import contextlib
+import csv
+import math
+import os
+import time
+
 from .. import presentation
 from ..registry import ToolError
 from . import _headless
 
+_KEEP_HETERO = {"type": "array", "items": {"type": "string"},
+                "description": "Residue names of receptor hetero groups to keep besides ions and known cofactors "
+                               "(answers Leonardo's HETATM chooser; the crystal ligand is always removed)."}
+_XYZ = {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}
+
+
+def _num(x, nd=3):
+    try:
+        v = float(x)
+        return round(v, nd) if math.isfinite(v) else None
+    except Exception:
+        return None
+
+
+def _apply_grid_box(dlg, receptor, padding=None, size=None):
+    """The GUI's grid controls: padding spin box and the "Adjust grid box" manual size delta
+    (stored per crystal-ligand reference, relative to the auto box)."""
+    if padding is not None:
+        from ._widgets import set_value
+
+        set_value(dlg, "spin_redock_padding", float(padding))
+    fields = dlg._redock_get_reference_fields()
+    if size is not None:
+        payload = dict(dlg._redock_reference_grid_payload(receptor, fields) or {})
+        base = [float(v) for v in list(payload.get("base_size") or [])[:3]]
+        if not payload.get("ok") or len(base) < 3:
+            raise ToolError("cannot build the redocking grid box from the crystal ligand "
+                            f"({payload.get('reason', 'no reference ligand')})")
+        dlg._redock_store_grid_size_delta(receptor, fields, [float(size[i]) - base[i] for i in range(3)])
+    try:
+        dlg._update_redock_grid_box_label()
+    except Exception:
+        pass
+
+
+def _grid_box_info(dlg, receptor, center_override=None):
+    payload = dict(dlg._redock_reference_grid_payload(receptor, dlg._redock_get_reference_fields()) or {})
+    if not payload.get("ok"):
+        return {}
+    center = center_override if center_override is not None else payload.get("center")
+    return {"center_A": [_num(v) for v in list(center)[:3]],
+            "size_A": [_num(v) for v in payload.get("size") or []],
+            "auto_size_A": [_num(v) for v in payload.get("base_size") or []],
+            "manual_size_delta_A": [_num(v) for v in payload.get("size_delta") or []],
+            "center_source": "manual" if center_override is not None else "crystal ligand"}
+
+
+@contextlib.contextmanager
+def _center_override(dlg, center):
+    """Leonardo centers the redocking box on the crystal ligand (no GUI control for the center):
+    a manual center replaces it for this run only."""
+    if center is None:
+        yield
+        return
+    import numpy as np
+
+    original = dlg._redock_grid_from_reference
+    own = dlg.__dict__.get("_redock_grid_from_reference")
+
+    def grid(receptor_obj, ref_fields):
+        c, size, nref = original(receptor_obj, ref_fields)
+        if c is None:
+            return c, size, nref
+        return np.asarray([float(v) for v in center], dtype=float), size, nref
+    dlg._redock_grid_from_reference = grid
+    try:
+        yield
+    finally:
+        if own is None:
+            dlg.__dict__.pop("_redock_grid_from_reference", None)
+        else:
+            dlg._redock_grid_from_reference = own
+
+
+def _pose_rows(dlg):
+    """Leonardo's results table: the top-scored pose of each system (WT / mutant) and ensemble member."""
+    return [dict(r or {}) for r in list(getattr(dlg, "_redock_results", []) or []) if isinstance(r, dict)]
+
+
+def _member(r):
+    return str(r.get("system_member", "") or "").strip() or f"{r.get('system', '')}_model_001"
+
+
+def _score_key(r):
+    a, m = _num(r.get("affinity")), _num(r.get("mode"))
+    return (a if a is not None else float("inf"), m if m is not None else float("inf"))
+
+
+def _ranked_poses(dlg):
+    """Every redocked pose that has a pose object (all modes of every repeat), ranked by score within
+    its (system, member); rank 1 is the table row Leonardo shows. Each item keeps the raw row and
+    the table row index of its (system, member)."""
+    table = _pose_rows(dlg)
+    table_idx = {(str(r.get("system", "")), _member(r)): i for i, r in enumerate(table)}
+    raw = [dict(r) for r in list(getattr(dlg, "_redock_raw_results", []) or [])
+           if isinstance(r, dict) and str(r.get("pose_object", "") or "")]
+    groups = {}
+    for r in raw:
+        groups.setdefault((str(r.get("system", "")), _member(r)), []).append(r)
+    out = []
+    for i, trow in enumerate(table):
+        key = (str(trow.get("system", "")), _member(trow))
+        rest = sorted(groups.get(key, []), key=_score_key)
+        top = dict(trow)
+        # the table row is rank 1; the other rows of the group follow (the same pose is not listed twice)
+        same = [r for r in rest if (r.get("pose_object"), r.get("state"), r.get("mode")) ==
+                (top.get("pose_object"), top.get("state"), top.get("mode"))]
+        if same:
+            rest.remove(same[0])
+        for rank, r in enumerate([top] + rest, start=1):
+            out.append({"system": key[0], "member": key[1], "rank": rank, "row": r, "table_index": table_idx[key]})
+    return out
+
+
+def _pose_summary(item):
+    r = item["row"]
+    return {"system": item["system"], "member": item["member"], "rank": item["rank"], "mode": r.get("mode"),
+            "repeat": r.get("repeat"), "score_kcal_mol": _num(r.get("affinity")), "rmsd_A": _num(r.get("rmsd_ref")),
+            "pose_object": str(r.get("pose_object", "") or ""), "state": r.get("state")}
+
+
+def _pick_pose(items, rank, system="", member=""):
+    """(item, system label) for a per-system/member rank; system "" = WT (else the first), "mutant" =
+    the first non-WT system; member "" = the best-scoring member of the system."""
+    systems = []
+    for it in items:
+        if it["system"] not in systems:
+            systems.append(it["system"])
+    if not systems:
+        raise ToolError("no redocking poses: run run_redocking first")
+    want = str(system or "").strip()
+    if not want:
+        label = "WT" if "WT" in systems else systems[0]
+    elif want.lower() in ("mut", "mutant") and not any(s.lower() == want.lower() for s in systems):
+        others = [s for s in systems if s != "WT"]
+        if not others:
+            raise ToolError(f"no mutant redocking results; systems: {systems}")
+        label = others[0]
+    else:
+        match = [s for s in systems if s.lower() == want.lower()] or [s for s in systems if want.lower() in s.lower()]
+        if not match:
+            raise ToolError(f"no redocking system {system!r}; choose one of {systems}")
+        label = match[0]
+    cands = [it for it in items if it["system"] == label]
+    members = []
+    for it in cands:
+        if it["member"] not in members:
+            members.append(it["member"])
+    if member:
+        pick = [m for m in members if m.lower() == str(member).strip().lower()]
+        if not pick:
+            raise ToolError(f"no ensemble member {member!r} in {label}; members: {members}")
+    else:
+        pick = [min((it for it in cands if it["rank"] == 1), key=lambda it: _score_key(it["row"]))["member"]]
+    cands = [it for it in cands if it["member"] == pick[0]]
+    hit = [it for it in cands if it["rank"] == int(rank)]
+    if not hit:
+        raise ToolError(f"{label} {pick[0]} has ranks 1..{max(it['rank'] for it in cands)}")
+    return hit[0], label
+
+
+@contextlib.contextmanager
+def _as_selected_row(dlg, item):
+    """Leonardo's pose handlers act on the selected results-table row. Rank 1 is that row; another
+    mode of the same system/member is shown to the handlers as the selected row for this call only
+    (same receptor frame, that pose's object and state)."""
+    table = dlg.tbl_redock_results
+    table.selectRow(int(item["table_index"]))          # the table's selection handler previews it
+    if item["rank"] == 1:
+        yield
+        return
+    rows = _pose_rows(dlg)
+    trow = rows[int(item["table_index"])]
+    row = dict(item["row"], rank=item["rank"], system_member=item["member"],
+               system_display=trow.get("system_display", item["system"]), traj_state=trow.get("traj_state", 1))
+
+    class _OneRow:
+        def currentRow(self):
+            return 0
+
+    saved = dlg._redock_results
+    dlg._redock_results = [row]
+    dlg.tbl_redock_results = _OneRow()
+    try:
+        yield
+    finally:
+        dlg.tbl_redock_results = table
+        dlg._redock_results = saved
+
+
+@contextlib.contextmanager
+def _save_dialog_answer(path):
+    """Answer QFileDialog.getSaveFileName with ``path`` (Leonardo's export handlers ask for a file)."""
+    from pymol.Qt import QtWidgets
+
+    QFD = QtWidgets.QFileDialog
+    original = QFD.__dict__.get("getSaveFileName", QFD.getSaveFileName)
+    QFD.getSaveFileName = staticmethod(lambda *a, **k: (str(path), "CSV (*.csv)"))
+    try:
+        yield
+    finally:
+        QFD.getSaveFileName = original
+
 
 def register(reg):
     register_mc(reg)
+    register_poses(reg)
 
     @reg.tool("run_redocking", "Redock the crystal ligand of a complex into its own receptor and measure pose "
               "recovery: symmetry-corrected heavy-atom RMSD of the top-scored pose to the crystal pose (success "
@@ -28,18 +238,35 @@ def register(reg):
                                                          "single receptor)"},
                   "ensemble_temperature_K": {"type": "number", "minimum": 100, "maximum": 2000},
                   "ensemble_site_radius_A": {"type": "number", "minimum": 3, "maximum": 15},
+                  "keep_hetero": _KEEP_HETERO,
+                  "grid_size_A": dict(_XYZ, description="manual box edges x,y,z in A (2-120), as the GUI's "
+                                                       "'Adjust grid box'; default: auto from the crystal ligand "
+                                                       "plus padding (a size set earlier for the same ligand stays)"),
+                  "grid_padding_A": {"type": "number", "minimum": 2, "maximum": 20,
+                                     "description": "padding added on each side of the crystal ligand (auto box)"},
+                  "grid_center_A": dict(_XYZ, description="manual box center x,y,z in A; default: centre of the "
+                                                         "crystal ligand (Leonardo's GUI has no center control)"),
               }, "required": ["object"]},
               permission="compute_heavy", title="Redocking")
     def run_redocking(ctx, object, ligand_chain="", ligand_resi="", ligand_resn="", exhaustiveness=16, repeats=3,
                       seed=1001, ph=7.4, mutant_object="", ensemble_structures=0, ensemble_temperature_K=300.0,
-                      ensemble_site_radius_A=6.0):
+                      ensemble_site_radius_A=6.0, keep_hetero=None, grid_size_A=None, grid_padding_A=None,
+                      grid_center_A=None):
         from pymol import cmd
 
         dlg = ctx.dlg
         if object not in cmd.get_names("objects"):
             raise ToolError(f"no object named {object!r}")
+        if grid_size_A is not None and not all(2.0 <= float(v) <= 120.0 for v in grid_size_A):
+            raise ToolError("grid_size_A edges must be 2-120 A")
         _headless.auto_hetatm_selection(dlg)
-        with _headless.quiet() as q:
+        for rec in (object, mutant_object):
+            try:
+                dlg._dock_hetatm_selection_cache.pop(rec, None)
+            except Exception:
+                pass
+        _headless.set_keep_hetero(keep_hetero or [])
+        with _headless.quiet() as q, _center_override(dlg, grid_center_A):
             dlg._refresh_redocking_object_combos()
             dlg.cmb_redock_reference_obj.setCurrentText(object)
             dlg.cmb_redock_wt_obj.setCurrentText(object)
@@ -74,8 +301,12 @@ def register(reg):
                     dlg.spin_redock_mc_n.setValue(int(ensemble_structures))
                     dlg.spin_redock_mc_temp.setValue(float(ensemble_temperature_K))
                     dlg.spin_redock_mc_radius.setValue(float(ensemble_site_radius_A))
+            _apply_grid_box(dlg, object, grid_padding_A, grid_size_A)
+            grid_box = _grid_box_info(dlg, object, grid_center_A)
             dlg._redock_last_mc_ensemble = {}
             dlg._redock_last_runs = {}
+            dlg._redock_results = []
+            dlg._redock_raw_results = []
             dlg._on_run_redocking_workflow()
         run = dict((getattr(dlg, "_redock_last_runs", {}) or {}).get("WT", {}) or {})
         if not run.get("ok"):
@@ -123,8 +354,19 @@ def register(reg):
                                     for m in ens.get("members") or []]}
             card += (f" Receptor ensemble: best model + {ensemble['structures'] - 1} Monte Carlo conformations "
                      f"({ens.get('temperature_k'):.0f} K).")
+        ranked = _ranked_poses(dlg)
+        poses = [dict(_pose_summary(it), poses_available=sum(1 for o in ranked if (o["system"], o["member"])
+                                                             == (it["system"], it["member"])))
+                 for it in ranked if it["rank"] == 1]
+        summary_csv = str(getattr(dlg, "_redock_last_summary_csv", "") or "")
         return {
             "_card": card,
+            "grid_box": grid_box,
+            "kept_hetero": sorted({str(r).strip().upper() for r in keep_hetero or [] if str(r).strip()}),
+            "poses": poses[:40],
+            "poses_note": "top pose of each system/member; show_redock_pose(system, member, rank) loads rank 1.."
+                          "poses_available; export_redocking_csv writes all of them",
+            "comparison_csv": summary_csv if summary_csv and os.path.isfile(summary_csv) else "",
             "receptor_ensemble": ensemble,
             "mutant_comparison": comparison,
             "object": object, "crystal_ligand": {"chain": ligand[0], "resi": ligand[1], "resn": ligand[2]},
@@ -232,3 +474,111 @@ def register_mc(reg):
                 proc.kill()
 
         return ctx.jobs.start("mc_ensemble", poll, cancel=cancel, description=f"Monte Carlo ensemble of {object}")
+
+
+def register_poses(reg):
+    @reg.tool("show_redock_pose", "Load one redocking pose (any rank, not only the top one) of the WT or mutant "
+              "receptor (and ensemble member, if an ensemble was used) in the viewer next to the crystal ligand, "
+              "as Leonardo's 'Load selected pose'; optionally build the pose complex and compute its "
+              "protein-ligand interactions. Ranks come from run_redocking's 'poses'.",
+              {"properties": {
+                  "rank": {"type": "integer", "minimum": 1, "description": "rank within the system (1 = best)"},
+                  "system": {"type": "string", "description": "'WT' (default), 'mutant' or a system label from "
+                                                              "run_redocking's poses"},
+                  "member": {"type": "string", "description": "ensemble member tag (e.g. WT_model_002)"},
+                  "interactions": {"type": "boolean", "description": "also compute the pose's interactions"},
+              }, "required": ["rank"]},
+              permission="compute_light", title="Redocking pose")
+    def show_redock_pose(ctx, rank, system="", member="", interactions=False):
+        from collections import Counter
+
+        from pymol import cmd
+
+        dlg = ctx.dlg
+        item, label = _pick_pose(_ranked_poses(dlg), rank, system, member)
+        table = getattr(dlg, "tbl_redock_results", None)
+        if table is None or table.rowCount() <= item["table_index"]:
+            raise ToolError("the redocking results table is not filled; run run_redocking first")
+        with _headless.quiet() as q, _as_selected_row(dlg, item):
+            if interactions:
+                dlg.interactions = []
+                dlg._on_redock_compute_interactions_for_selected()
+            else:
+                dlg._on_redock_load_selected_pose(silent=False)
+        problems = [m["text"] for m in q.messages if m["kind"] in ("warning", "critical")]
+        known = set(cmd.get_names("objects"))
+        shown = "redock_selected_complex" if interactions else "redock_selected_pose_preview"
+        if shown not in known:
+            shown = next((o for o in ("redock_selected_pose_preview", str(item["row"].get("pose_object", "")))
+                          if o and o in known), "")
+        if problems and not shown:
+            raise ToolError("; ".join(problems))
+        out = dict(_pose_summary(item), shown_object=shown)
+        if interactions:
+            inter = list(getattr(dlg, "interactions", []) or [])
+            if not inter:
+                raise ToolError("; ".join(problems) or "no interactions found for this pose")
+            counts = Counter(str(i.get("type", "")) for i in inter)
+            out["interactions_total"] = len(inter)
+            out["interactions_by_type"] = dict(counts)
+            out["closest"] = [{"type": i.get("type"), "residue": i.get("prot_res"),
+                               "distance_A": _num(i.get("distance"), 2)}
+                              for i in sorted(inter, key=lambda i: float(i.get("distance", 99) or 99))[:10]]
+        if problems:
+            out["leonardo_warnings"] = [p[:300] for p in problems[:3]]
+        out["scene"] = ctx.scene(f"redocking {label} pose #{rank}")
+        out["_card"] = (f"{label} redocking pose **#{rank}** [{out['member']}, mode {out['mode']}]"
+                        + f": score {out['score_kcal_mol']} kcal/mol, RMSD to crystal {out['rmsd_A']} Å"
+                        + (f"; {out['interactions_total']} interactions ("
+                           + ", ".join(f"{n} {t}" for t, n in counts.most_common()) + ")" if interactions else "")
+                        + ".")
+        return out
+
+    @reg.tool("export_redocking_csv", "Write the last redocking results to CSV: every ranked pose (system, "
+              "member, mode, score, RMSD to the crystal pose) and, when a mutant was redocked, Leonardo's "
+              "WT-vs-mutant comparison table (its 'Export comparison CSV'). Files go to the Leonardo workspace "
+              "unless a path is given.",
+              {"properties": {"path": {"type": "string", "description": "comparison CSV path (the pose table is "
+                                                                        "written next to it, *_poses.csv)"}}},
+              permission="compute_light", title="Export redocking CSV")
+    def export_redocking_csv(ctx, path=""):
+        dlg = ctx.dlg
+        rows = _ranked_poses(dlg)
+        runs = dict(getattr(dlg, "_redock_last_runs", {}) or {})
+        if not rows and not runs:
+            raise ToolError("no redocking results: run run_redocking first")
+        if path:
+            base = os.path.abspath(os.path.expanduser(str(path)))
+            if not base.lower().endswith(".csv"):
+                base += ".csv"
+        else:
+            base = os.path.join(ctx.workspace("redocking"), time.strftime("redocking_comparison_%Y%m%d_%H%M%S.csv"))
+        os.makedirs(os.path.dirname(base), exist_ok=True)
+        out = {}
+        if rows:
+            poses_csv = base[:-4] + "_poses.csv"
+            fields = ["system", "member", "rank", "mode", "repeat", "score_kcal_mol", "rmsd_A", "pose_object",
+                      "state"]
+            with open(poses_csv, "w", newline="") as fh:
+                w = csv.DictWriter(fh, fieldnames=fields)
+                w.writeheader()
+                for r in rows:
+                    w.writerow(_pose_summary(r))
+            out["poses_csv"] = poses_csv
+            out["poses"] = len(rows)
+        comparison = [r for r in list(getattr(dlg, "_redock_last_comparison_rows", []) or []) if r]
+        if comparison or len(runs) > 1:
+            with _headless.quiet() as q, _save_dialog_answer(base):
+                dlg._on_redock_export_comparison_csv()
+            saved = str(getattr(dlg, "_redock_last_summary_csv", "") or "")
+            if saved and os.path.isfile(saved) and os.path.abspath(saved) == os.path.abspath(base):
+                out["comparison_csv"] = saved
+                out["comparison_rows"] = len(list(getattr(dlg, "_redock_last_comparison_rows", []) or []))
+            else:
+                out["comparison_note"] = "; ".join(m["text"][:300] for m in q.messages) or "comparison not written"
+        else:
+            out["comparison_note"] = "WT-only redocking: no WT-vs-mutant comparison table"
+        if not out.get("poses_csv") and not out.get("comparison_csv"):
+            raise ToolError(out.get("comparison_note") or "nothing to export")
+        out["_card"] = "Redocking CSV: " + ", ".join(f"`{out[k]}`" for k in ("comparison_csv", "poses_csv") if k in out)
+        return out

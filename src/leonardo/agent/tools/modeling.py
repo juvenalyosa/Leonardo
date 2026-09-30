@@ -95,12 +95,15 @@ def _ca_table(sel):
 
 
 def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(), labels=None, start_pos=1,
-                    num_models=5, seed=1, staged=None, align_to="", extra=None, card=""):
+                    num_models=5, seed=1, staged=None, align_to="", extra=None, card="", run_root=None,
+                    post_load=None):
     """
     Run genmodels.buildm in a child process as a job and load the best model as ``name``.
     ``staged``: {template_code: pdb path} copied where buildm looks before downloading from RCSB.
     ``labels``: residue label per residue of the final sequence (numbering of the source structure);
     otherwise the model is numbered from ``start_pos``. ``align_to``: object the model is superposed on.
+    ``run_root``: run folder made beforehand (e.g. holding a fetched template); ``post_load(name)`` runs on the
+    loaded best model and returns (changed: bool, result fields: dict).
     """
     import shutil
 
@@ -111,7 +114,7 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
     except Exception:
         nproc = min(4, os.cpu_count() or 1)
     nproc = max(1, min(nproc, int(num_models)))
-    run_root = os.path.join(ctx.workspace("modeling"), time.strftime(f"{name}_%Y%m%d_%H%M%S"))
+    run_root = run_root or os.path.join(ctx.workspace("modeling"), time.strftime(f"{name}_%Y%m%d_%H%M%S"))
     os.makedirs(os.path.join(run_root, "modeling_job"), exist_ok=True)
     for code, path in dict(staged or {}).items():
         shutil.copy(path, os.path.join(run_root, "modeling_job", f"{code[:4].lower()}.pdb"))
@@ -166,7 +169,14 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         fit = None
         if align_to and align_to in cmd.get_names("objects"):
             fit = cmd.super(f"({name}) and name CA", f"({align_to}) and polymer and name CA")
-        if renumber(cmd) or fit is not None:
+        renumbered = renumber(cmd)
+        changed, post = False, {}
+        if callable(post_load):
+            try:
+                changed, post = post_load(name)
+            except Exception as exc:
+                post = {"components_warning": f"template components not added: {type(exc).__name__}: {exc}"}
+        if renumbered or fit is not None or changed:
             best = os.path.join(run_root, f"{name}.pdb")
             cmd.save(best, name)
         register_in_leonardo(ctx, name, best)
@@ -194,6 +204,11 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         if fit is not None:
             result["rmsd_to_source_A"] = round(float(fit[0]), 2)
         result.update(extra or {})
+        result.update(post or {})
+        if post.get("components_added"):
+            result["_card"] += f" Kept from the template: {', '.join(post['components_added'][:8])}."
+        elif post.get("components_warning"):
+            result["_card"] += f" {post['components_warning']}"
         return {"done": True, "result": result}
 
     def cancel():
@@ -201,6 +216,73 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
             proc.kill()
 
     return ctx.jobs.start("modeling", poll, cancel=cancel, description=f"MODELLER {name} from {', '.join(codes)}")
+
+
+_COMPONENT_CATEGORIES = ("cofactor", "ion", "water")
+
+
+def _component_label(comp):
+    return f"{comp.get('resn', '?')} {comp.get('chain', '') or '-'}:{comp.get('resi', '?')} ({comp.get('category', '')})"
+
+
+def select_template_components(components, residues=None, categories=None):
+    """
+    Template non-protein components to carry into the model, as Leonardo's component chooser would:
+    by residue name (``residues``, e.g. ['HEM', 'ZN'] — overrides the categories) or by category
+    (default: cofactors and ions, the chooser's default; Leonardo calls every non-ion, non-water hetero group
+    a cofactor, bound ligands included). Raises ToolError when a requested residue is not in the template.
+    """
+    comps = [dict(c) for c in components or []]
+    if residues:
+        want = {str(r).strip().upper() for r in residues if str(r).strip()}
+        chosen = [c for c in comps if str(c.get("resn", "")).strip().upper() in want]
+        missing = sorted(want - {str(c.get("resn", "")).strip().upper() for c in chosen})
+        if missing:
+            avail = sorted({str(c.get("resn", "")).upper() for c in comps})
+            raise ToolError(f"not in the template chain: {missing}; available: {avail or 'none'}")
+        return chosen
+    cats = {str(c).lower() for c in (categories or ("cofactor", "ion"))}
+    return [c for c in comps if str(c.get("category", "")).lower() in cats]
+
+
+def _prepare_template_components(ctx, codes, source, residues, categories, run_root):
+    """Fetch the component-source template into the run folder, choose its components (the GUI's
+    'Select Components...' dialog, answered from the arguments) and return (source code, selection, post_load)."""
+    dlg = ctx.dlg
+    code = codes[0]
+    if source:
+        raw = re.sub(r"[^A-Za-z0-9]", "", str(source))
+        match = [c for c in codes if c.lower() == raw.lower()] or [c for c in codes if c[:4] == raw[:4].lower()]
+        if not match:
+            raise ToolError(f"component_source_template {source!r} is not one of the templates {codes}")
+        code = match[0]
+    scan = dict(dlg._modeler_collect_hetatm_source_components(code, run_root) or {})
+    if not scan.get("ok"):
+        raise ToolError(f"cannot read the non-protein components of template {code}: "
+                        f"{scan.get('reason') or 'template download failed'}")
+    available = list(scan.get("components") or [])
+    if not available:
+        raise ToolError(f"template {code} has no ligands, ions or waters on chain {code[4:]} "
+                        "(only the template's own chain is transferred)")
+    selected = select_template_components(available, residues, categories)
+    if not selected:
+        raise ToolError(f"none of the template {code} components match; available: "
+                        + ", ".join(_component_label(c) for c in available[:30]))
+
+    def post_load(name):
+        merge = dict(dlg._modeler_merge_hetatm_from_template(name, code, run_root,
+                                                             selected_components=selected) or {})
+        if not merge.get("ok"):
+            return False, {"components_warning": f"template components not added ({merge.get('reason')})",
+                           "component_source_template": code}
+        n_het = _cmd().count_atoms(f"({name}) and not polymer")
+        return True, {"component_source_template": code,
+                      "components_added": [_component_label(c) for c in selected][:60],
+                      "components_available": len(available), "nonpolymer_atoms": int(n_het),
+                      "components_alignment": {"method": merge.get("align_method"),
+                                               "rmsd_A": None if merge.get("align_rmsd") is None
+                                               else round(float(merge["align_rmsd"]), 2)}}
+    return code, selected, post_load
 
 
 def register(reg):
@@ -259,7 +341,8 @@ def register(reg):
     @reg.tool("build_homology_model", "Build comparative (homology) models of a sequence with MODELLER from one "
               "or more PDB templates (codes from search_templates, e.g. ['1m17A', '2gs2A']). Runs in the "
               "background (about 1-10 min). The best model by DOPE is loaded in the viewer; all models and "
-              "their DOPE scores are returned.",
+              "their DOPE scores are returned. include_components=true carries ligands / cofactors / ions "
+              "(and waters on request) of one template chain into the model, superposed on it.",
               {"properties": {
                   "sequence": {"type": "string"},
                   "templates": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 10},
@@ -268,9 +351,24 @@ def register(reg):
                                                                   "(e.g. 712 for a UniProt range 712-980)"},
                   "num_models": {"type": "integer", "minimum": 1, "maximum": 50},
                   "seed": {"type": "integer", "minimum": 0, "description": "0 = random"},
+                  "include_components": {"type": "boolean", "description": "carry non-protein components of a "
+                                         "template (ligands, cofactors, ions, waters) into the model"},
+                  "component_residues": {"type": "array", "items": {"type": "string"}, "maxItems": 50,
+                                         "description": "residue names to keep, e.g. ['HEM', 'ZN', 'HOH']; "
+                                                        "default: every cofactor/ligand and ion, no waters"},
+                  "component_categories": {"type": "array", "items": {"type": "string",
+                                                                      "enum": list(_COMPONENT_CATEGORIES)},
+                                           "description": "used when component_residues is not given; "
+                                                          "default ['cofactor', 'ion'] (bound ligands count as "
+                                                          "cofactor)"},
+                  "component_source_template": {"type": "string", "description": "which template gives the "
+                                                "components (default: the first); only its own chain's "
+                                                "components are transferred"},
               }, "required": ["sequence", "templates", "name"]},
               permission="compute_heavy", title="Homology model (MODELLER)")
-    def build_homology_model(ctx, sequence, templates, name, start_pos=1, num_models=5, seed=1):
+    def build_homology_model(ctx, sequence, templates, name, start_pos=1, num_models=5, seed=1,
+                             include_components=False, component_residues=None, component_categories=None,
+                             component_source_template=""):
         seq = _clean_sequence(sequence)
         codes = []
         for t in templates:
@@ -281,7 +379,17 @@ def register(reg):
         name = re.sub(r"[^A-Za-z0-9_]", "_", str(name)) or "model"
         if name in _cmd().get_names("objects"):
             raise ToolError(f"an object named {name!r} already exists; choose another name")
-        return _start_modeller(ctx, name, seq, codes, start_pos=start_pos, num_models=num_models, seed=seed)
+        if not include_components:
+            if component_residues or component_categories or component_source_template:
+                raise ToolError("component options need include_components=true")
+            return _start_modeller(ctx, name, seq, codes, start_pos=start_pos, num_models=num_models, seed=seed)
+        run_root = os.path.join(ctx.workspace("modeling"), time.strftime(f"{name}_%Y%m%d_%H%M%S"))
+        os.makedirs(os.path.join(run_root, "modeling_job"), exist_ok=True)
+        code, selected, post_load = _prepare_template_components(ctx, codes, component_source_template,
+                                                                 component_residues, component_categories, run_root)
+        extra = {"components_requested": [_component_label(c) for c in selected][:60]}
+        return _start_modeller(ctx, name, seq, codes, start_pos=start_pos, num_models=num_models, seed=seed,
+                               run_root=run_root, post_load=post_load, extra=extra)
 
     @reg.tool("align_structures", "Superpose one structure on another and compare them residue by residue: "
               "global RMSD and the Cα displacement of every matched residue after the fit. Optionally colors "

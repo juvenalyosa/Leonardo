@@ -48,6 +48,18 @@ class JobStore:
         return {"job_id": job_id, "status": "running", "elapsed_s": elapsed,
                 "progress": str(state.get("progress", "") or "")}
 
+    def list(self):
+        """Every job with its kind, description and last known state (does not poll)."""
+        with self._lock:
+            items = list(self._jobs.items())
+        out = []
+        for job_id, job in items:
+            final = job["final"] or {}
+            out.append({"job_id": job_id, "kind": job["kind"], "description": job["description"],
+                        "status": final.get("status", "running"),
+                        "elapsed_s": round(time.time() - job["started"], 1)})
+        return out
+
     def poll_unfinished(self):
         """Poll every job nobody is following (ends them when done); returns how many still run."""
         with self._lock:

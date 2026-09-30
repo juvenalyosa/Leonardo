@@ -84,6 +84,8 @@ _NA3 = {
 _WATER = {"HOH", "WAT", "SOL", "TIP3", "TIP3P", "SPC", "SPCE"}
 _IONS = {"NA", "K", "CL", "CA", "MG", "ZN", "FE", "MN", "CU", "CO", "NI"}
 _OPENMM_STANDARD_SMALL_MOLECULE_RESN = {
+    # peptide caps: part of the protein force fields, never ligands to parameterize
+    "ACE", "NME", "NMA", "NH2", "NHE",
     "HEM", "HEC", "HEA", "HEB", "HEO", "HEV",
     "NAD", "NAI", "NDP", "NAP", "NADH", "NADP",
     "FAD", "FMN", "COA", "SAM", "SAH", "PLP", "THF", "MTH",
@@ -1740,6 +1742,39 @@ def build_mopac_keywords_for_operation(operation, base_keywords=""):
     return qmmm_mopac_keywords_for_operation(operation=operation, base_keywords=base_keywords)
 
 
+def _hydrogens_bonded_to(atom_rows, qm_set, n_atoms, max_bond_ang=1.25):
+    """Indices of H atoms (not in qm_set) whose nearest heavy atom within max_bond_ang is in qm_set."""
+    rows = []
+    for row in list(atom_rows or []):
+        try:
+            idx = int(row.get("index"))
+        except Exception:
+            continue
+        xyz = row.get("xyz")
+        if xyz is None and all(k in row for k in ("x", "y", "z")):
+            xyz = (row["x"], row["y"], row["z"])
+        if xyz is None or idx < 0 or idx >= n_atoms:
+            continue
+        el = str(row.get("element", "") or "").strip().upper()
+        rows.append((idx, el, np.asarray(xyz, dtype=float).reshape(3)))
+    if not rows:
+        return []
+    heavy = [(i, p) for i, el, p in rows if el != "H"]
+    if not heavy:
+        return []
+    hidx = np.array([i for i, _p in heavy])
+    hxyz = np.array([p for _i, p in heavy])
+    out = []
+    for i, el, p in rows:
+        if el != "H" or i in qm_set:
+            continue
+        d = np.linalg.norm(hxyz - p, axis=1)
+        j = int(np.argmin(d))
+        if float(d[j]) <= max_bond_ang and int(hidx[j]) in qm_set:
+            out.append(int(i))
+    return out
+
+
 def resolve_qmmm_regions(atom_rows, n_atoms, config=None):
     """
     Resolve QM/MM atom indices from explicit settings or an automatic hetero-ligand rule.
@@ -1859,6 +1894,15 @@ def resolve_qmmm_regions(atom_rows, n_atoms, config=None):
         before = len(set(qm_idx))
         qm_idx = sorted(set(int(i) for i in list(qm_idx) + list(forced_qm)))
         info["forced_qm_atom_count"] = int(max(0, len(set(qm_idx)) - before))
+    if bool(cfg.get("include_bonded_hydrogens", True)):
+        # selections made on a crystal structure (no H) name heavy atoms only: their hydrogens must be
+        # QM too, otherwise MOPAC sees radicals and the H stay MM behind 1-A "link atoms"
+        added = _hydrogens_bonded_to(atom_rows, set(qm_idx), n)
+        if added:
+            qm_idx = sorted(set(qm_idx) | set(added))
+            info["bonded_hydrogens_added"] = int(len(added))
+    if info.get("selection_hint"):
+        info["selection_hint"] = re.sub(r"\(n=\d+\)", f"(n={len(set(qm_idx))})", str(info["selection_hint"]))
     if explicit_mm:
         mm_idx = list(explicit_mm)
         info["mm_mode"] = "explicit_mm_indices"

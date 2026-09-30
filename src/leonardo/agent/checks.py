@@ -25,7 +25,12 @@ def _md(args, r):
         w.append(f"Cα RMSD reaches {rmsd['max_A']} Å: large drift or unfolding; check the input structure, "
                  "missing residues and the equilibration")
     notes = " ".join(map(str, r.get("notes") or [])).lower()
-    if "removed" in notes and "residue" in notes:
+    removed = list(r.get("removed_residues") or [])
+    if removed:
+        w.append("residues without force-field parameters were REMOVED before MD: " + ", ".join(map(str, removed[:8]))
+                 + " — the simulation lacks them; if they are cofactors/metals (heme, NAD, Zn...), rebuild with the "
+                 "family resolve_components recommends")
+    elif "removed" in notes and "residue" in notes:
         w.append("some residues were removed before MD (unsupported by the force field): check they are not "
                  "important ligands/cofactors")
     return w
