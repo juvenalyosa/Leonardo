@@ -42,11 +42,21 @@ try:
     from .alphafold_runtime import af_alphafold3_required_path_status
     from .alphafold_runtime import af_build_alphafold3_docker_command
     from .alphafold_runtime import af_build_alphafold3_input_json
+    from .alphafold_runtime import af_build_alphafold_server_json
+    from .alphafold_runtime import af_colabfold_query
+    from .alphafold_runtime import af_fasta_text
+    from .alphafold_runtime import af_sanitize_af3_chain_id
+    from .alphafold_runtime import af_split_protein_chains
     from .alphafold_runtime import af_build_colabfold_colab_cell
     from .alphafold_runtime import af_build_colabfold_command
     from .alphafold_runtime import af_build_colabfold_job_notebook
     from .alphafold_runtime import af_build_colabfold_job_script
     from .alphafold_runtime import af_collect_existing_dirs
+    from .alphafold_runtime import GPU_REQUIRED_TITLE
+    from .alphafold_runtime import af_detect_local_gpu
+    from .alphafold_runtime import af_extract_result_zips
+    from .alphafold_runtime import af_safe_extract_zip
+    from .alphafold_runtime import af_gpu_requirement_message
     from .alphafold_runtime import af_engine_profile
     from .alphafold_runtime import af_extract_plddt_pae_from_json
     from .alphafold_runtime import af_find_best_model_recursive
@@ -279,7 +289,7 @@ try:
     from .trajectory_interaction_runtime import trajectory_normalize_step
     from .trajectory_interaction_runtime import trajectory_pick_matching_interaction
     from .trajectory_interaction_runtime import trajectory_run_interaction_analysis
-    from .ligand_canvas_runtime import Ligand2DInteractiveCanvas
+    from .ligand_sketcher_runtime import LigandSketcherWidget
     from .openmm_qmmm_runtime import classify_openmm_component_ff_class
     from .openmm_qmmm_runtime import dedupe_openmm_forcefield_xml_paths
     from .openmm_qmmm_runtime import default_openmm_xml_selected_keys
@@ -296,6 +306,14 @@ try:
     from .openmm_qmmm_runtime import rewrite_pdb_component_identity
     from .openmm_qmmm_runtime import sanitize_pdb_conect_for_standalone_components
     from .openmm_qmmm_runtime import split_openmm_parameterization_targets
+    from .component_library_runtime import prepare_modeller as component_prepare_modeller
+    from .component_library_runtime import resolve_components as component_resolve_components
+    from .component_library_runtime import forcefield_family_base_files
+    from .component_library_runtime import restore_names as component_restore_names
+    from .component_library_runtime import coordination_variants as component_coordination_variants
+    from .component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
+    from .component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from .openmm_qmmm_runtime import read_openmm_forcefield_residue_names
     from .openmm_dynamics_runtime import apply_openmm_cv_preset
     from .openmm_dynamics_runtime import build_openmm_capability_report
     from .openmm_dynamics_runtime import normalize_openmm_cv_definition
@@ -308,6 +326,7 @@ try:
     from .openmm_dynamics_runtime import validate_openmm_cv_definitions
     from .small_molecule_runtime import build_small_molecule_prep_qc
     from .small_molecule_runtime import prepare_small_molecule_working_mol
+    from .pka_runtime import protonate_molecule as pka_protonate_molecule
     from .small_molecule_runtime import summarize_small_molecule_state
     from .modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
     from .modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
@@ -330,6 +349,7 @@ try:
     from .dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
     from .dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
     from .dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
+    from .dock_runtime import pdb_atom_element as dock_pdb_atom_element
     from .dock_runtime import smina_supports_native_flexres as dock_smina_supports_native_flexres
     from .leadopt_runtime import pass_filters as leadopt_pass_filters
     from .leadopt_runtime import rank_leadopt_results
@@ -366,6 +386,7 @@ try:
     from .redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
     from .redock_runtime import build_redocking_table_rows as redock_build_table_rows
     from .redock_runtime import pick_best_pose_row as redock_pick_best_pose_row
+    from .redock_runtime import pick_top_scored_pose_row as redock_pick_top_scored_pose_row
     from .redock_runtime import prepare_redocking_base_runtime as redock_prepare_base_runtime
     from .redock_runtime import prepare_redocking_ligand_override_runtime as redock_prepare_ligand_override_runtime
     from .redock_runtime import prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan
@@ -420,11 +441,21 @@ except Exception:
     from alphafold_runtime import af_alphafold3_required_path_status
     from alphafold_runtime import af_build_alphafold3_docker_command
     from alphafold_runtime import af_build_alphafold3_input_json
+    from alphafold_runtime import af_build_alphafold_server_json
+    from alphafold_runtime import af_colabfold_query
+    from alphafold_runtime import af_fasta_text
+    from alphafold_runtime import af_sanitize_af3_chain_id
+    from alphafold_runtime import af_split_protein_chains
     from alphafold_runtime import af_build_colabfold_colab_cell
     from alphafold_runtime import af_build_colabfold_command
     from alphafold_runtime import af_build_colabfold_job_notebook
     from alphafold_runtime import af_build_colabfold_job_script
     from alphafold_runtime import af_collect_existing_dirs
+    from alphafold_runtime import GPU_REQUIRED_TITLE
+    from alphafold_runtime import af_detect_local_gpu
+    from alphafold_runtime import af_extract_result_zips
+    from alphafold_runtime import af_safe_extract_zip
+    from alphafold_runtime import af_gpu_requirement_message
     from alphafold_runtime import af_engine_profile
     from alphafold_runtime import af_extract_plddt_pae_from_json
     from alphafold_runtime import af_find_best_model_recursive
@@ -657,7 +688,7 @@ except Exception:
     from trajectory_interaction_runtime import trajectory_normalize_step
     from trajectory_interaction_runtime import trajectory_pick_matching_interaction
     from trajectory_interaction_runtime import trajectory_run_interaction_analysis
-    from ligand_canvas_runtime import Ligand2DInteractiveCanvas
+    from ligand_sketcher_runtime import LigandSketcherWidget
     from openmm_qmmm_runtime import classify_openmm_component_ff_class
     from openmm_qmmm_runtime import dedupe_openmm_forcefield_xml_paths
     from openmm_qmmm_runtime import default_openmm_xml_selected_keys
@@ -674,6 +705,14 @@ except Exception:
     from openmm_qmmm_runtime import rewrite_pdb_component_identity
     from openmm_qmmm_runtime import sanitize_pdb_conect_for_standalone_components
     from openmm_qmmm_runtime import split_openmm_parameterization_targets
+    from component_library_runtime import prepare_modeller as component_prepare_modeller
+    from component_library_runtime import resolve_components as component_resolve_components
+    from component_library_runtime import forcefield_family_base_files
+    from component_library_runtime import restore_names as component_restore_names
+    from component_library_runtime import coordination_variants as component_coordination_variants
+    from component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
+    from component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from openmm_qmmm_runtime import read_openmm_forcefield_residue_names
     from openmm_dynamics_runtime import apply_openmm_cv_preset
     from openmm_dynamics_runtime import build_openmm_capability_report
     from openmm_dynamics_runtime import normalize_openmm_cv_definition
@@ -686,6 +725,7 @@ except Exception:
     from openmm_dynamics_runtime import validate_openmm_cv_definitions
     from small_molecule_runtime import build_small_molecule_prep_qc
     from small_molecule_runtime import prepare_small_molecule_working_mol
+    from pka_runtime import protonate_molecule as pka_protonate_molecule
     from small_molecule_runtime import summarize_small_molecule_state
     from modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
     from modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
@@ -708,6 +748,7 @@ except Exception:
     from dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
     from dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
     from dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
+    from dock_runtime import pdb_atom_element as dock_pdb_atom_element
     from dock_runtime import smina_supports_native_flexres as dock_smina_supports_native_flexres
     from leadopt_runtime import pass_filters as leadopt_pass_filters
     from leadopt_runtime import rank_leadopt_results
@@ -744,6 +785,7 @@ except Exception:
     from redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
     from redock_runtime import build_redocking_table_rows as redock_build_table_rows
     from redock_runtime import pick_best_pose_row as redock_pick_best_pose_row
+    from redock_runtime import pick_top_scored_pose_row as redock_pick_top_scored_pose_row
     from redock_runtime import prepare_redocking_base_runtime as redock_prepare_base_runtime
     from redock_runtime import prepare_redocking_ligand_override_runtime as redock_prepare_ligand_override_runtime
     from redock_runtime import prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan
@@ -816,9 +858,13 @@ except ImportError:
         PLUGIN_VERSION, PLUGIN_BUILD, SUITE_NAME, PROJECT_MASTER_FILE_NAME,
         PROJECT_STATE_FILE_NAME, SUITE_TAGLINE, SUITE_AUTHOR_LINE, resource_string,
     )
+try:
+    from .ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
+except ImportError:
+    from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
 # Literal aliases are retained for legacy packaging/version inspections.
-PLUGIN_VERSION = "0.2.0a5"
-PLUGIN_BUILD = "2026-07-08-r5"
+PLUGIN_VERSION = "0.2.0a6"
+PLUGIN_BUILD = "2026-10-01-r1"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
@@ -1119,6 +1165,10 @@ def ring_plane_offset(center_a, normal_a, center_b):
     perp = float(np.dot(v, n))
     lateral = v - perp * n
     return float(np.linalg.norm(lateral))
+OPENMM_PEPTIDE_CAPS = frozenset({"ACE", "NME", "NMA", "NH2", "NHE"})
+OPENMM_PEPTIDE_CAPS_SEL = "+".join(sorted(OPENMM_PEPTIDE_CAPS))
+
+
 class ProtLigInteractDialog(QtWidgets.QDialog):
     """Main dialog for the Protein-Ligand Interaction Visualizer plugin."""
     def __init__(self, parent=None):
@@ -1312,6 +1362,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._setup_display_settings_popup()
         self._setup_project_ui()
         self._setup_debug_panel()
+        self._setup_ai_assistant_ui()
+        try:
+            self._update_hardware_label()
+            self._apply_hardware_defaults()
+            if not os.environ.get("LEONARDO_NO_HARDWARE_DETECTION"):
+                QtCore.QTimer.singleShot(1500, self._start_hardware_detection)
+        except Exception as e:
+            print(f"Hardware detection setup warning: {e}")
         self._setup_launcher_hub()
         self._setup_interaction_workspace_popup()
         self._setup_main_open_box()
@@ -1320,11 +1378,50 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._apply_window_defaults()
         self._apply_ui_layout_polish()
         self._install_ui_polish_event_filter()
-    def _apply_window_defaults(self):
-        """Use a comfortable initial size while still allowing docked-window scrolling."""
+    def _setup_ai_assistant_ui(self):
+        """Launcher button of the AI assistant (natural-language control of Leonardo's tools)."""
+        self._ai_controller = None
+        self.btn_open_ai_assistant = QtWidgets.QPushButton("AI Assistant...")
+        self.btn_open_ai_assistant.setToolTip(
+            "Ask in natural language (Claude or OpenAI): the assistant proposes a plan with Leonardo's tools, "
+            "waits for your approval and shows every step in the viewer"
+        )
+        self.btn_open_ai_assistant.clicked.connect(self._show_ai_assistant)
+        if hasattr(self, "verticalLayout"):
+            self.verticalLayout.addWidget(self.btn_open_ai_assistant)
+        else:
+            self.layout().addWidget(self.btn_open_ai_assistant)
+    def _show_ai_assistant(self):
+        """Open (or bring back) the AI assistant panel, docked in PyMOL's main window."""
         try:
-            self.resize(1120, 900)
-            self.setMinimumSize(860, 620)
+            if self._ai_controller is None:
+                try:
+                    from .agent.tools import _headless
+                    from .agent.ui.controller import AssistantController
+                except ImportError:
+                    from leonardo.agent.tools import _headless
+                    from leonardo.agent.ui.controller import AssistantController
+                _headless.install()
+                self._ai_controller = AssistantController(self)
+            self._ai_controller.show()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "AI Assistant", f"Could not open the AI assistant: {e}")
+    def _apply_window_defaults(self):
+        """Apply screen-aware defaults to the main Leonardo window."""
+        try:
+            geometry = self._screen_available_geometry(self)
+            plan = build_responsive_window_plan(
+                geometry.width(),
+                geometry.height(),
+                preferred_width=1120,
+                preferred_height=900,
+                minimum_width=720,
+                minimum_height=520,
+                margin=32,
+            )
+            self.setMinimumSize(plan["minimum_width"], plan["minimum_height"])
+            self.setMaximumSize(plan["maximum_width"], plan["maximum_height"])
+            self.resize(plan["width"], plan["height"])
         except Exception:
             pass
 
@@ -1339,12 +1436,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """
         return (
             "/* LEONARDO_NEUTRAL_POLISH_V2 */"
-            "QDialog { background-color: #F4F5F7; color: #20242A; font-size: 12px; }"
-            "QWidget { color: #20242A; }"
+            "QDialog { background-color: #F3F5F6; color: #1F2A30; font-size: 12px; }"
+            "QWidget { color: #1F2A30; }"
             "QScrollArea { border: none; background: transparent; }"
+            "QWidget#pliResponsiveDialogContent { background-color: #F3F5F6; }"
+            "QFrame#pliDialogHeader {"
+            "  background-color: #13212A;"
+            "  border: 1px solid #22343F;"
+            "  border-left: 4px solid #C2A15A;"
+            "  border-radius: 7px;"
+            "}"
+            "QLabel#pliDialogKicker {"
+            "  color: #8FB3BC; font-size: 9px; font-weight: 700; letter-spacing: 1px;"
+            "}"
+            "QLabel#pliDialogTitle { color: #FFFFFF; font-size: 17px; font-weight: 700; }"
+            "QLabel#pliDialogSubtitle { color: #C7D2D7; font-size: 10px; }"
+            "QLabel#pliDialogMark {"
+            "  color: #D2B56F; font-size: 11px; font-weight: 700;"
+            "  border: 1px solid #52636C; border-radius: 10px; padding: 4px 8px;"
+            "}"
             "QGroupBox {"
             "  background-color: #FFFFFF;"
-            "  border: 1px solid #D5D8DC;"
+            "  border: 1px solid #D6DEE2;"
             "  border-radius: 6px;"
             "  margin-top: 30px;"
             "  padding: 22px 12px 12px 12px;"
@@ -1357,7 +1470,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  top: 8px;"
             "  padding: 2px 8px;"
             "  background-color: #FFFFFF;"
-            "  color: #30343A;"
+            "  color: #315D66;"
             "  font-weight: 700;"
             "  letter-spacing: 0px;"
             "}"
@@ -1373,23 +1486,23 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  font-weight: 500;"
             "  min-height: 30px;"
             "}"
-            "QPushButton:hover { background-color: #F2F3F5; border-color: #AEB4BB; color: #15181C; }"
+            "QPushButton:hover { background-color: #EDF3F4; border-color: #7899A1; color: #15242A; }"
             "QPushButton:pressed { background-color: #E5E7EA; padding-top: 7px; }"
             "QPushButton:disabled { background-color: #F0F1F3; color: #9BA1A8; border-color: #D8DCE0; }"
             "QPushButton#calc_btn, QPushButton#btn_open_interaction_workspace,"
             "QPushButton#pliModelerPrimaryButton {"
-            "  background-color: #3B3F45;"
-            "  border: 1px solid #2C3035;"
+            "  background-color: #315D66;"
+            "  border: 1px solid #274A52;"
             "  color: #FFFFFF;"
             "  font-weight: 700;"
             "}"
             "QPushButton#calc_btn:hover, QPushButton#btn_open_interaction_workspace:hover,"
-            "QPushButton#pliModelerPrimaryButton:hover { background-color: #4A4F56; }"
+            "QPushButton#pliModelerPrimaryButton:hover { background-color: #3D6F79; }"
             "QPushButton#pliLauncherButton, QPushButton#pliModelerStepButton,"
             "QPushButton#pliModelerActionButton {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #D1D5DA;"
-            "  border-left: 3px solid #9AA1A9;"
+            "  border-left: 3px solid #C2A15A;"
             "  border-radius: 5px;"
             "  color: #262A30;"
             "  text-align: left;"
@@ -1397,7 +1510,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "QPushButton#pliLauncherButton:hover, QPushButton#pliModelerStepButton:hover,"
             "QPushButton#pliModelerActionButton:hover {"
             "  background-color: #F4F5F7;"
-            "  border-left-color: #626A73;"
+            "  border-left-color: #315D66;"
             "}"
             "QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {"
             "  background-color: #FFFFFF;"
@@ -1405,16 +1518,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  border-radius: 5px;"
             "  color: #20242A;"
             "  min-height: 28px;"
-            "  selection-background-color: #DDE1E5;"
+            "  selection-background-color: #DCE9EC;"
             "  selection-color: #101214;"
             "}"
             "QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus,"
-            "QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #7E858E; background-color: #FFFFFF; }"
+            "QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #557F88; background-color: #FFFFFF; }"
             "QLineEdit:read-only { background-color: #F1F2F4; color: #646B74; }"
             "QComboBox QAbstractItemView {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #C8CCD1;"
-            "  selection-background-color: #E1E4E8;"
+            "  selection-background-color: #DCE9EC;"
             "  selection-color: #20242A;"
             "}"
             "QTableWidget {"
@@ -1423,7 +1536,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  border-radius: 5px;"
             "  gridline-color: #ECEEF0;"
             "  alternate-background-color: #F7F8F9;"
-            "  selection-background-color: #E1E4E8;"
+            "  selection-background-color: #DCE9EC;"
             "  selection-color: #20242A;"
             "}"
             "QHeaderView::section {"
@@ -1445,10 +1558,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  padding: 8px 14px;"
             "  margin-right: 2px;"
             "}"
-            "QTabBar::tab:selected { background-color: #FFFFFF; color: #20242A; font-weight: 700; }"
-            "QTabBar::tab:hover:!selected { background-color: #F4F5F7; color: #30343A; }"
+            "QTabBar::tab:selected { background-color: #FFFFFF; color: #315D66; font-weight: 700; }"
+            "QTabBar::tab:hover:!selected { background-color: #EDF3F4; color: #315D66; }"
             "QCheckBox { color: #30343A; spacing: 12px; padding: 2px 6px 2px 2px; min-height: 28px; }"
             "QCheckBox::indicator { width: 16px; height: 16px; margin-left: 2px; margin-right: 8px; }"
+            "QCheckBox::indicator:checked { background-color: #315D66; border: 1px solid #274A52; }"
             "QSlider::groove:horizontal { background-color: #DDE1E5; height: 5px; border-radius: 2px; }"
             "QSlider::sub-page:horizontal { background-color: #7E858E; border-radius: 2px; }"
             "QSlider::handle:horizontal {"
@@ -1463,6 +1577,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background-color: #AEB4BB; border-radius: 4px; }"
             "QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background-color: #808891; }"
             "QSplitter::handle { background-color: #D1D5DA; }"
+            "QProgressBar {"
+            "  background-color: #E7E9EC; border: 1px solid #D1D5DA; border-radius: 5px;"
+            "  color: #30343A; text-align: center; min-height: 18px;"
+            "}"
+            "QProgressBar::chunk { background-color: #557F88; border-radius: 4px; }"
             "QToolTip {"
             "  background-color: #30343A;"
             "  color: #FFFFFF;"
@@ -1519,19 +1638,333 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     def eventFilter(self, obj, event):
         try:
             etype = event.type() if event is not None else None
-            if etype in (QtCore.QEvent.Show, QtCore.QEvent.Polish, QtCore.QEvent.LayoutRequest):
+            if etype in (QtCore.QEvent.Show, QtCore.QEvent.Polish):
                 if isinstance(obj, QtWidgets.QDialog) and self._is_leonardo_qt_widget(obj):
                     if not bool(getattr(self, "_ui_polish_event_filter_busy", False)):
                         self._ui_polish_event_filter_busy = True
                         try:
-                            self._apply_widget_layout_polish(obj)
+                            if isinstance(obj, QtWidgets.QMessageBox):
+                                self._stabilize_message_box_layout(obj)
+                                if etype == QtCore.QEvent.Show:
+                                    QtCore.QTimer.singleShot(
+                                        0, lambda target=obj: self._stabilize_message_box_layout(target)
+                                    )
+                            else:
+                                if etype == QtCore.QEvent.Show and obj is not self:
+                                    self._ensure_dialog_header(obj)
+                                    self._ensure_dialog_scroll_area(obj)
+                                self._apply_widget_layout_polish(obj)
+                                if etype == QtCore.QEvent.Show and obj is not self:
+                                    self._fit_dialog_to_screen(obj)
+                                    QtCore.QTimer.singleShot(
+                                        0, lambda target=obj: self._stabilize_dialog_text_layout(target)
+                                    )
                         finally:
                             self._ui_polish_event_filter_busy = False
+            elif etype == QtCore.QEvent.Resize:
+                if obj is self:
+                    QtCore.QTimer.singleShot(0, self._reflow_launcher_grid)
+                elif isinstance(obj, QtWidgets.QDialog) and self._is_leonardo_qt_widget(obj):
+                    QtCore.QTimer.singleShot(0, lambda target=obj: self._stabilize_dialog_text_layout(target))
         except Exception:
             pass
         try:
             return super().eventFilter(obj, event)
         except Exception:
+            return False
+
+    def _stabilize_message_box_layout(self, box):
+        """Keep Leonardo message boxes readable and expose long diagnostics in a scrollable detail view."""
+        if box is None or not isinstance(box, QtWidgets.QMessageBox):
+            return
+        try:
+            self._append_neutral_dialog_stylesheet(box)
+        except Exception:
+            pass
+        try:
+            full_text = str(box.text() or "").strip()
+            informative = str(box.informativeText() or "").strip()
+            complete_text = "\n\n".join(part for part in (full_text, informative) if part)
+            already_prepared = bool(box.property("leonardoReadableMessage"))
+            is_long = len(complete_text) > 700 or complete_text.count("\n") > 10
+            if is_long and not already_prepared:
+                if not str(box.detailedText() or "").strip():
+                    box.setDetailedText(complete_text)
+                preview = complete_text[:640].rstrip()
+                if len(complete_text) > 640:
+                    cut = max(preview.rfind("\n"), preview.rfind(" "))
+                    if cut >= 420:
+                        preview = preview[:cut].rstrip()
+                    preview += "\n\n… El mensaje completo está disponible en Mostrar detalles."
+                box.setText(preview)
+                box.setInformativeText("")
+            box.setProperty("leonardoReadableMessage", True)
+        except Exception:
+            pass
+        try:
+            geometry = self._screen_available_geometry(box)
+            maximum_width = max(420, int(geometry.width()) - 96)
+            maximum_height = max(260, int(geometry.height()) - 96)
+            text_length = len(str(box.text() or "")) + len(str(box.informativeText() or ""))
+            target_width = min(maximum_width, 700 if text_length > 180 else 560)
+            layout = box.layout()
+            if layout is not None:
+                layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+                spacer = getattr(box, "_leonardo_message_width_spacer", None)
+                spacer_width = max(360, int(target_width) - 48)
+                if spacer is None:
+                    spacer = QtWidgets.QSpacerItem(
+                        spacer_width,
+                        0,
+                        QtWidgets.QSizePolicy.Minimum,
+                        QtWidgets.QSizePolicy.Expanding,
+                    )
+                    layout.addItem(spacer, layout.rowCount(), 0, 1, max(1, layout.columnCount()))
+                    box._leonardo_message_width_spacer = spacer
+                else:
+                    spacer.changeSize(
+                        spacer_width,
+                        0,
+                        QtWidgets.QSizePolicy.Minimum,
+                        QtWidgets.QSizePolicy.Expanding,
+                    )
+                layout.invalidate()
+            # QMessageBox fixes its own size while polishing.  Release those
+            # constraints before applying Leonardo's readable dimensions.
+            box.setMaximumSize(maximum_width, maximum_height)
+            box.setMinimumSize(0, 0)
+            box.setMinimumWidth(min(target_width, maximum_width))
+            for label in box.findChildren(QtWidgets.QLabel):
+                if str(label.objectName() or "") in ("qt_msgboxex_icon_label", "qt_msgbox_icon_label"):
+                    continue
+                label.setWordWrap(True)
+                label.setMinimumWidth(max(280, target_width - 150))
+                label.setMaximumWidth(max(300, target_width - 110))
+                label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+                label.setTextInteractionFlags(
+                    label.textInteractionFlags()
+                    | QtCore.Qt.TextSelectableByMouse
+                    | QtCore.Qt.LinksAccessibleByMouse
+                )
+            for editor in box.findChildren(QtWidgets.QTextEdit):
+                editor.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
+                editor.setMinimumHeight(180)
+            for button in box.findChildren(QtWidgets.QPushButton):
+                button.setMaximumWidth(190)
+                button.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+            box.adjustSize()
+            target_height = min(maximum_height, max(180, int(box.sizeHint().height())))
+            box.resize(min(target_width, maximum_width), target_height)
+            box.setSizeGripEnabled(True)
+        except Exception:
+            pass
+
+    def _stabilize_dialog_text_layout(self, root):
+        """Give wrapped labels enough height and elide only controls that cannot wrap."""
+        if root is None:
+            return
+        try:
+            af_log = root.findChild(QtWidgets.QPlainTextEdit, "afRunLog")
+            if af_log is not None:
+                af_log.setMinimumHeight(140 if int(root.height()) < 640 else 180)
+            for object_name in ("bioseqLocalSequence", "bioseqToolSequence"):
+                sequence_editor = root.findChild(QtWidgets.QPlainTextEdit, object_name)
+                if sequence_editor is not None:
+                    sequence_editor.setMinimumHeight(110 if int(root.height()) < 640 else 150)
+            for object_name in ("bioseqQuestionsTable", "bioseqQuestionsPopupTable"):
+                question_table = root.findChild(QtWidgets.QTableWidget, object_name)
+                if question_table is not None:
+                    question_table.resizeRowsToContents()
+        except Exception:
+            pass
+        try:
+            for label in root.findChildren(QtWidgets.QLabel):
+                text = str(label.text() or "").strip()
+                if not text:
+                    continue
+                object_name = str(label.objectName() or "")
+                if object_name == "pliDialogTitle":
+                    label.setMinimumHeight(max(22, int(label.sizeHint().height())))
+                    continue
+                if object_name in ("pliDialogKicker", "pliDialogSubtitle"):
+                    label.setMinimumHeight(max(14, int(label.sizeHint().height())))
+                    continue
+                if len(text) < 28 and "\n" not in text:
+                    continue
+                label.setWordWrap(True)
+                label.setMinimumWidth(0)
+                label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Minimum)
+                width = max(80, int(label.width()) - 4)
+                bounds = label.fontMetrics().boundingRect(
+                    0,
+                    0,
+                    width,
+                    2000,
+                    QtCore.Qt.TextWordWrap | QtCore.Qt.AlignLeft,
+                    text,
+                )
+                required = max(int(label.fontMetrics().height()) + 4, int(bounds.height()) + 6)
+                label.setMinimumHeight(min(180, required))
+                if required > 180 and not str(label.toolTip() or "").strip():
+                    label.setToolTip(text)
+        except Exception:
+            pass
+        try:
+            text_controls = root.findChildren(QtWidgets.QPushButton)
+            text_controls += root.findChildren(QtWidgets.QCheckBox)
+            text_controls += root.findChildren(QtWidgets.QRadioButton)
+            for control in text_controls:
+                current = str(control.text() or "").strip()
+                stored = str(control.property("leonardoFullText") or "").strip()
+                shown = str(control.property("leonardoShownText") or "").strip()
+                # the stored full text is only valid while the label is still the one set here; Leonardo
+                # relabels buttons at runtime (e.g. AlphaFold engine, QM/MM run), and that new text wins
+                if stored and current in (shown, stored):
+                    full_text = stored
+                else:
+                    full_text = current
+                    if stored and str(control.toolTip() or "").strip() == stored:
+                        control.setToolTip("")
+                if not full_text:
+                    continue
+                control.setProperty("leonardoFullText", full_text)
+                available = max(24, int(control.width()) - 24)
+                if control.fontMetrics().horizontalAdvance(full_text) <= available:
+                    if current != full_text:
+                        control.setText(full_text)
+                    control.setProperty("leonardoShownText", full_text)
+                    continue
+                elided = control.fontMetrics().elidedText(full_text, QtCore.Qt.ElideRight, available)
+                if elided and elided != full_text:
+                    control.setText(elided)
+                    control.setProperty("leonardoShownText", elided)
+                    if not str(control.toolTip() or "").strip():
+                        control.setToolTip(full_text)
+        except Exception:
+            pass
+
+    def _ensure_dialog_header(self, dlg):
+        """Add a compact branded header and purpose line to a tool dialog."""
+        if dlg is None or bool(getattr(dlg, "_leonardo_header_added", False)):
+            return False
+        try:
+            if type(dlg) is not QtWidgets.QDialog:
+                return False
+            layout = dlg.layout()
+            if layout is None or not isinstance(layout, QtWidgets.QVBoxLayout):
+                dlg._leonardo_header_added = True
+                return False
+            identity = dialog_identity(dlg.windowTitle())
+            header = QtWidgets.QFrame(dlg)
+            header.setObjectName("pliDialogHeader")
+            header.setMinimumHeight(72)
+            header.setMaximumHeight(86)
+            header.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            row = QtWidgets.QHBoxLayout(header)
+            row.setContentsMargins(16, 10, 14, 10)
+            row.setSpacing(12)
+            titles = QtWidgets.QVBoxLayout()
+            titles.setContentsMargins(0, 0, 0, 0)
+            titles.setSpacing(2)
+            kicker = QtWidgets.QLabel(identity["category"], header)
+            kicker.setObjectName("pliDialogKicker")
+            title = QtWidgets.QLabel(identity["title"], header)
+            title.setObjectName("pliDialogTitle")
+            title.setWordWrap(True)
+            titles.addWidget(kicker)
+            titles.addWidget(title)
+            row.addLayout(titles, 1)
+            mark = QtWidgets.QLabel("L", header)
+            mark.setObjectName("pliDialogMark")
+            mark.setAlignment(QtCore.Qt.AlignCenter)
+            mark.setToolTip("Leonardo molecular modeling suite")
+            row.addWidget(mark, 0, QtCore.Qt.AlignVCenter)
+            header.setToolTip(identity["subtitle"])
+            layout.insertWidget(0, header)
+            dlg._leonardo_header_added = True
+            dlg._leonardo_dialog_header = header
+            return True
+        except Exception:
+            try:
+                dlg._leonardo_header_added = True
+            except Exception:
+                pass
+            return False
+
+    def _ensure_dialog_scroll_area(self, dlg):
+        """Wrap oversized vertical dialog content without changing large-screen layouts."""
+        if dlg is None or bool(getattr(dlg, "_leonardo_scroll_checked", False)):
+            return False
+        try:
+            if type(dlg) is not QtWidgets.QDialog:
+                return False
+            layout = dlg.layout()
+            if layout is None or not isinstance(layout, QtWidgets.QVBoxLayout):
+                dlg._leonardo_scroll_checked = True
+                return False
+            for idx in range(layout.count()):
+                item = layout.itemAt(idx)
+                if item is not None and isinstance(item.widget(), QtWidgets.QScrollArea):
+                    dlg._leonardo_scroll_checked = True
+                    return False
+            g = self._screen_available_geometry(dlg)
+            plan = build_responsive_window_plan(
+                g.width(),
+                g.height(),
+                preferred_width=int(getattr(dlg, "_leonardo_preferred_width", 0) or dlg.width() or 1080),
+                preferred_height=int(getattr(dlg, "_leonardo_preferred_height", 0) or dlg.height() or 820),
+                minimum_width=int(getattr(dlg, "_leonardo_minimum_width", 0) or 560),
+                minimum_height=int(getattr(dlg, "_leonardo_minimum_height", 0) or 360),
+                margin=48,
+            )
+            hint = layout.sizeHint()
+            needs_scroll = bool(
+                plan["compact"]
+                and (int(hint.width()) > int(plan["width"] - 20) or int(hint.height()) > int(plan["height"] - 20))
+            )
+            if not needs_scroll:
+                return False
+
+            content = QtWidgets.QWidget(dlg)
+            content.setObjectName("pliResponsiveDialogContent")
+            content_layout = QtWidgets.QVBoxLayout(content)
+            content_layout.setContentsMargins(4, 4, 4, 4)
+            content_layout.setSpacing(10)
+            pinned_widgets = []
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                child_layout = item.layout()
+                spacer = item.spacerItem()
+                if widget is not None:
+                    if str(widget.objectName() or "") == "pliDialogHeader":
+                        pinned_widgets.append(widget)
+                    else:
+                        content_layout.addWidget(widget)
+                elif child_layout is not None:
+                    content_layout.addLayout(child_layout)
+                elif spacer is not None:
+                    content_layout.addItem(spacer)
+
+            scroll = QtWidgets.QScrollArea(dlg)
+            scroll.setObjectName("pliResponsiveDialogScroll")
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            scroll.setWidget(content)
+            content.setMinimumHeight(max(0, int(hint.height())))
+            for widget in pinned_widgets:
+                layout.addWidget(widget)
+            layout.addWidget(scroll, 1)
+            dlg._leonardo_scroll_checked = True
+            dlg._leonardo_responsive_scroll = scroll
+            return True
+        except Exception:
+            try:
+                dlg._leonardo_scroll_checked = True
+            except Exception:
+                pass
             return False
 
     def _compact_ui_text(self, text, widget_kind="button"):
@@ -1573,6 +2006,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Distribution (All Interactions)": "All Distributions",
             "Open Prepared Notebook File": "Open Notebook",
             "Official Notebook Fallback": "Official Fallback",
+            "Set Sequence & Start...": "Set Sequence...",
+            "Analyze Sequence/Gaps": "Analyze Sequence",
+            "Use Modeler Sequence": "Use Modeler",
+            "Use Observed Chain Sequence": "Use Observed",
+            "Fetch Full Sequence from RCSB": "Fetch from RCSB",
+            "Check MODELLER Prerequisites": "Check Prerequisites",
+            "Use Last Model as Docking Receptor": "Use as Docking Receptor",
+            "Open Cluster Enzymatic Reaction Pipeline...": "Cluster Reaction...",
+            "Rebuild Amber/XML (keep charges)": "Rebuild Amber/XML",
+            "Show HOMO/LUMO Orbitals": "HOMO/LUMO",
         }
         if key in mapping:
             return mapping[key]
@@ -1672,6 +2115,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         self._append_neutral_dialog_stylesheet(root)
         try:
+            compact = bool(int(root.width()) < 760 or int(root.height()) < 560)
+        except Exception:
+            compact = self._is_compact_screen(root)
+        try:
             if isinstance(root, QtWidgets.QDialog):
                 root.setSizeGripEnabled(True)
         except Exception:
@@ -1679,6 +2126,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             top_layout = root.layout()
             if top_layout is not None:
+                top_layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
                 self._polish_layout_tree(top_layout, top_level=True)
         except Exception:
             pass
@@ -1686,7 +2134,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for scroll in root.findChildren(QtWidgets.QScrollArea):
                 scroll.setWidgetResizable(True)
                 scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-                scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+                if bool(scroll.property("leonardoVerticalOnly")):
+                    scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+                else:
+                    scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
                 scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         except Exception:
             pass
@@ -1694,8 +2145,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for box in root.findChildren(QtWidgets.QGroupBox):
                 lay = box.layout()
                 if lay is not None:
-                    lay.setContentsMargins(12, 28, 12, 12)
-                    lay.setSpacing(max(8, int(lay.spacing() if lay.spacing() >= 0 else 8)))
+                    side = 9 if compact else 12
+                    lay.setContentsMargins(side, 25 if compact else 28, side, side)
+                    lay.setSpacing(max(7 if compact else 8, int(lay.spacing() if lay.spacing() >= 0 else 8)))
         except Exception:
             pass
         try:
@@ -1703,7 +2155,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 text = str(label.text() or "")
                 if len(text) > 18 or "\n" in text:
                     label.setWordWrap(True)
-                    label.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.MinimumExpanding)
+                    label.setMinimumWidth(0)
+                    label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
                 label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         except Exception:
             pass
@@ -1711,13 +2164,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for button in root.findChildren(QtWidgets.QPushButton):
                 button.setMinimumHeight(34)
                 original = str(button.text() or "")
-                compact = self._compact_ui_text(original, widget_kind="button")
-                if compact != original:
+                short_text = self._compact_ui_text(original, widget_kind="button")
+                if short_text != original:
+                    button.setProperty("leonardoFullText", original)
                     if not str(button.toolTip() or "").strip():
                         button.setToolTip(original)
-                    button.setText(compact)
+                    button.setText(short_text)
+                    button.setProperty("leonardoShownText", short_text)
                 text = str(button.text() or "")
-                if len(text) > 16:
+                if compact:
+                    button.setMinimumWidth(0)
+                    button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+                elif len(text) > 16:
                     button.setMinimumWidth(min(190, max(124, 7 * len(text))))
                     button.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
                 else:
@@ -1727,11 +2185,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             for cb in root.findChildren(QtWidgets.QCheckBox):
                 original = str(cb.text() or "")
-                compact = self._compact_ui_text(original, widget_kind="checkbox")
-                if compact != original:
+                short_text = self._compact_ui_text(original, widget_kind="checkbox")
+                if short_text != original:
+                    cb.setProperty("leonardoFullText", original)
                     if not str(cb.toolTip() or "").strip():
                         cb.setToolTip(original)
-                    cb.setText(compact)
+                    cb.setText(short_text)
+                    cb.setProperty("leonardoShownText", short_text)
                 cb.setMinimumHeight(28)
                 cb.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         except Exception:
@@ -1741,15 +2201,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 for field in root.findChildren(cls):
                     field.setMinimumHeight(30)
                     if isinstance(field, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-                        field.setMinimumWidth(max(82, int(field.minimumWidth() or 0)))
+                        field.setMinimumWidth(64 if compact else max(82, int(field.minimumWidth() or 0)))
                     elif isinstance(field, QtWidgets.QComboBox):
-                        field.setMinimumWidth(max(128, int(field.minimumWidth() or 0)))
+                        field.setMinimumWidth(72 if compact else max(128, int(field.minimumWidth() or 0)))
         except Exception:
             pass
         try:
             for table in root.findChildren(QtWidgets.QTableWidget):
                 table.setAlternatingRowColors(True)
-                table.setMinimumHeight(max(180, int(table.minimumHeight() or 0)))
+                table.setMinimumHeight(140 if compact else max(180, int(table.minimumHeight() or 0)))
                 hh = table.horizontalHeader()
                 if hh is not None:
                     hh.setStretchLastSection(True)
@@ -2123,10 +2583,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._update_main_workspace_summary()
         except Exception as e:
             print(f"Open molecules box setup warning: {e}")
-    def _screen_available_geometry(self):
+    def _screen_available_geometry(self, widget=None):
         """Return available screen geometry for responsive popup sizing."""
+        target = widget if widget is not None else self
         try:
-            wh = self.windowHandle()
+            wh = target.windowHandle()
         except Exception:
             wh = None
         screen = None
@@ -2148,8 +2609,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
         return QtCore.QRect(0, 0, 1366, 820)
-    def _is_compact_screen(self):
-        g = self._screen_available_geometry()
+    def _is_compact_screen(self, widget=None):
+        g = self._screen_available_geometry(widget)
         return bool(g.width() <= 1366 or g.height() <= 820)
     def _fit_dialog_to_screen(self, dlg, preferred_w=None, preferred_h=None, min_w=560, min_h=360, margin=72):
         """
@@ -2158,26 +2619,39 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if dlg is None:
             return
         try:
-            g = self._screen_available_geometry()
-            avail_w = max(480, int(g.width()) - int(margin))
-            avail_h = max(320, int(g.height()) - int(margin))
+            g = self._screen_available_geometry(dlg)
             if preferred_w is None:
-                try:
-                    preferred_w = int(dlg.width())
-                except Exception:
-                    preferred_w = avail_w
+                preferred_w = int(getattr(dlg, "_leonardo_preferred_width", 0) or dlg.width() or 1080)
+            else:
+                dlg._leonardo_preferred_width = int(preferred_w)
             if preferred_h is None:
-                try:
-                    preferred_h = int(dlg.height())
-                except Exception:
-                    preferred_h = avail_h
-            w = min(int(avail_w), max(int(min_w), int(preferred_w)))
-            h = min(int(avail_h), max(int(min_h), int(preferred_h)))
-            eff_min_w = min(int(min_w), int(w))
-            eff_min_h = min(int(min_h), int(h))
-            dlg.setMinimumSize(eff_min_w, eff_min_h)
-            dlg.setMaximumSize(int(avail_w), int(avail_h))
-            dlg.resize(int(w), int(h))
+                preferred_h = int(getattr(dlg, "_leonardo_preferred_height", 0) or dlg.height() or 820)
+            else:
+                dlg._leonardo_preferred_height = int(preferred_h)
+            stored_min_w = int(getattr(dlg, "_leonardo_minimum_width", 0) or min_w)
+            stored_min_h = int(getattr(dlg, "_leonardo_minimum_height", 0) or min_h)
+            if min_w != 560:
+                stored_min_w = int(min_w)
+                dlg._leonardo_minimum_width = stored_min_w
+            if min_h != 360:
+                stored_min_h = int(min_h)
+                dlg._leonardo_minimum_height = stored_min_h
+            plan = build_responsive_window_plan(
+                g.width(),
+                g.height(),
+                preferred_width=preferred_w,
+                preferred_height=preferred_h,
+                minimum_width=stored_min_w,
+                minimum_height=stored_min_h,
+                margin=margin,
+            )
+            dlg.setMinimumSize(plan["minimum_width"], plan["minimum_height"])
+            dlg.setMaximumSize(plan["maximum_width"], plan["maximum_height"])
+            dlg.resize(plan["width"], plan["height"])
+            dlg.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+            x = int(g.x()) + max(0, (int(g.width()) - int(plan["width"])) // 2)
+            y = int(g.y()) + max(0, (int(g.height()) - int(plan["height"])) // 2)
+            dlg.move(x, y)
             self._apply_widget_layout_polish(dlg)
         except Exception:
             pass
@@ -2477,6 +2951,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "cb_redock_align_to_ref",
             "cb_redock_site_qc",
             "cb_redock_use_modeler_ensemble",
+            "cb_redock_use_mc_ensemble",
+            "spin_redock_mc_n",
+            "spin_redock_mc_temp",
+            "spin_redock_mc_radius",
             "cb_redock_flexible",
             "cb_redock_show_wt_traj",
             "cb_redock_show_mut_traj",
@@ -2986,27 +3464,30 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox = QtWidgets.QVBoxLayout(box)
             vbox.setContentsMargins(10, 8, 10, 8)
             vbox.setSpacing(7)
-            row = QtWidgets.QHBoxLayout()
+            actions = QtWidgets.QGridLayout()
+            actions.setHorizontalSpacing(8)
+            actions.setVerticalSpacing(8)
             self.btn_project_new = QtWidgets.QPushButton("New Project")
             self.btn_project_new.clicked.connect(self._on_project_new)
-            row.addWidget(self.btn_project_new)
+            actions.addWidget(self.btn_project_new, 0, 0)
             self.btn_project_open = QtWidgets.QPushButton("Open Project")
             self.btn_project_open.setToolTip(
                 f"Choose {PROJECT_MASTER_FILE_NAME} (or legacy {PROJECT_STATE_FILE_NAME})"
             )
             self.btn_project_open.clicked.connect(self._on_project_open)
-            row.addWidget(self.btn_project_open)
+            actions.addWidget(self.btn_project_open, 0, 1)
             self.btn_project_save = QtWidgets.QPushButton("Save Project")
             self.btn_project_save.setToolTip(
                 f"Updates both {PROJECT_MASTER_FILE_NAME} and {PROJECT_STATE_FILE_NAME}"
             )
             self.btn_project_save.clicked.connect(self._on_project_save)
-            row.addWidget(self.btn_project_save)
+            actions.addWidget(self.btn_project_save, 1, 0)
             self.btn_project_reset = QtWidgets.QPushButton("Reset Leonardo")
             self.btn_project_reset.clicked.connect(self._on_project_reset)
-            row.addWidget(self.btn_project_reset)
-            row.addStretch(1)
-            vbox.addLayout(row)
+            actions.addWidget(self.btn_project_reset, 1, 1)
+            actions.setColumnStretch(0, 1)
+            actions.setColumnStretch(1, 1)
+            vbox.addLayout(actions)
             self.lbl_project_status = QtWidgets.QLabel("")
             self.lbl_project_status.setWordWrap(True)
             vbox.addWidget(self.lbl_project_status)
@@ -3026,11 +3507,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if not hasattr(self, "verticalLayout"):
                 return
             entries = [
+                "btn_open_ai_assistant",
                 "btn_open_modeler",
                 "btn_open_alphafold",
                 "btn_open_bioseq",
                 "btn_open_psi4",
                 "btn_open_ligand_tools",
+                "btn_open_pka",
                 "btn_open_pocket_docking",
                 "btn_open_redocking",
                 "btn_open_virtual_screening",
@@ -3063,26 +3546,51 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             grid = QtWidgets.QGridLayout()
             grid.setHorizontalSpacing(8)
             grid.setVerticalSpacing(8)
-            ncols = 2
-            for i, btn in enumerate(buttons):
+            self._launcher_grid = grid
+            self._launcher_buttons = buttons
+            for btn in buttons:
                 try:
                     btn.setObjectName("pliLauncherButton")
                     btn.setMinimumHeight(44)
                     btn.setMaximumHeight(64)
-                    btn.setMinimumWidth(190)
+                    btn.setMinimumWidth(0)
                     btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
                 except Exception:
                     pass
-                r = i // ncols
-                c = i % ncols
-                grid.addWidget(btn, r, c)
-            for c in range(ncols):
-                grid.setColumnStretch(c, 1)
+            self._reflow_launcher_grid()
             hub_layout.addLayout(grid)
+            self.lbl_compute_hardware = QtWidgets.QLabel("Compute: detecting CPU/GPU...")
+            self.lbl_compute_hardware.setObjectName("pliLauncherDesc")
+            self.lbl_compute_hardware.setWordWrap(True)
+            hub_layout.addWidget(self.lbl_compute_hardware)
             insert_idx = 2 if self.verticalLayout.count() >= 2 else self.verticalLayout.count()
             self.verticalLayout.insertWidget(insert_idx, hub)
         except Exception as e:
             print(f"Launcher hub setup warning: {e}")
+    def _reflow_launcher_grid(self):
+        """Rearrange launcher cards when the main window crosses width breakpoints."""
+        grid = getattr(self, "_launcher_grid", None)
+        buttons = list(getattr(self, "_launcher_buttons", []) or [])
+        if grid is None or not buttons:
+            return
+        try:
+            viewport = getattr(self, "_main_scroll_area", None)
+            if viewport is not None:
+                available_width = int(viewport.viewport().width()) - 40
+            else:
+                available_width = int(self.width()) - 60
+            ncols = responsive_grid_columns(available_width, card_min_width=300, maximum_columns=3)
+            if int(getattr(self, "_launcher_column_count", 0) or 0) == int(ncols):
+                return
+            while grid.count():
+                grid.takeAt(0)
+            for idx, button in enumerate(buttons):
+                grid.addWidget(button, idx // ncols, idx % ncols)
+            for col in range(3):
+                grid.setColumnStretch(col, 1 if col < ncols else 0)
+            self._launcher_column_count = int(ncols)
+        except Exception:
+            pass
     def _setup_display_settings_popup(self):
         # Move dense display settings into a popup for a cleaner main window.
         try:
@@ -4297,13 +4805,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             # Final neutral suite override.  Keep this block last so it wins over
             # legacy blue accent rules while preserving the existing widget map.
             "QDialog {"
-            "  background-color: #F4F5F7;"
-            "  color: #20242A;"
+            "  background-color: #F3F5F6;"
+            "  color: #1F2A30;"
             "  font-size: 12px;"
             "}"
             "QFrame#leonardo_brand_header {"
-            "  background-color: #2F3338;"
-            "  border: 1px solid #454A50;"
+            "  background-color: #13212A;"
+            "  border: 1px solid #22343F;"
+            "  border-left: 4px solid #C2A15A;"
             "  border-radius: 8px;"
             "}"
             "QLabel#leonardo_brand_name { color: #FFFFFF; letter-spacing: 1px; }"
@@ -4356,29 +4865,29 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "QPushButton:pressed { background-color: #E5E7EA; padding-top: 7px; }"
             "QPushButton:disabled { background-color: #F0F1F3; color: #9BA1A8; border-color: #D8DCE0; }"
             "QPushButton#calc_btn, QPushButton#btn_open_interaction_workspace {"
-            "  background-color: #3B3F45;"
-            "  border: 1px solid #2C3035;"
-            "  border-bottom: 1px solid #202328;"
+            "  background-color: #315D66;"
+            "  border: 1px solid #274A52;"
+            "  border-bottom: 1px solid #1F3C43;"
             "  color: #FFFFFF;"
             "  font-weight: 700;"
             "}"
             "QPushButton#calc_btn:hover, QPushButton#btn_open_interaction_workspace:hover {"
-            "  background-color: #4A4F56;"
-            "  border-color: #30343A;"
+            "  background-color: #3D6F79;"
+            "  border-color: #274A52;"
             "}"
             "QPushButton#pliLauncherButton {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #D1D5DA;"
-            "  border-left: 3px solid #9AA1A9;"
+            "  border-left: 3px solid #C2A15A;"
             "  border-radius: 5px;"
             "  color: #262A30;"
             "  text-align: left;"
             "}"
             "QPushButton#pliLauncherButton:hover {"
-            "  background-color: #F4F5F7;"
-            "  border-color: #B8BDC3;"
-            "  border-left-color: #626A73;"
-            "  color: #15181C;"
+            "  background-color: #EDF3F4;"
+            "  border-color: #9BB1B7;"
+            "  border-left-color: #315D66;"
+            "  color: #19343B;"
             "}"
             "QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {"
             "  background-color: #FFFFFF;"
@@ -4418,7 +4927,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  border-radius: 3px;"
             "  background-color: #FFFFFF;"
             "}"
-            "QCheckBox::indicator:checked { background-color: #4A4F56; border-color: #30343A; }"
+            "QCheckBox::indicator:checked { background-color: #315D66; border-color: #274A52; }"
             "QTableWidget {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #D5D8DC;"
@@ -5637,7 +6146,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._on_clear()
         except Exception:
             pass
-        self.interactions = self._calculate_all_interactions()
+        try:
+            self.interactions = self._calculate_all_interactions()
+        except Exception as e:
+            error_text = (
+                "The interaction calculation could not be completed.\n\n"
+                f"{e}\n\n"
+                "Verify the selected structure, ligand chain, residue number, and residue name. "
+                "The complete diagnostic is also recorded in Leonardo's debug log."
+            )
+            try:
+                self._append_debug_log(f"Interaction calculation failed: {e}")
+            except Exception:
+                pass
+            QtWidgets.QMessageBox.critical(self, "Interaction Calculation Error", error_text)
+            return
         # Safety retry: if a non-topology object was analyzed and yielded zero, retry on topology.
         try:
             topo_obj = getattr(self, "_traj_topology_object", None)
@@ -6143,17 +6666,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             system_panel_widgets = []
             protocol_panel_widgets = []
             analysis_panel_widgets = []
-            row_obj = QtWidgets.QHBoxLayout()
-            row_obj.addWidget(QtWidgets.QLabel("Structure Object"))
+            row_obj = QtWidgets.QGridLayout()
+            row_obj.addWidget(QtWidgets.QLabel("Structure Object"), 0, 0)
             self.cmb_openmm_object = QtWidgets.QComboBox()
             self.cmb_openmm_object.currentTextChanged.connect(self._on_openmm_object_changed)
-            row_obj.addWidget(self.cmb_openmm_object, 1)
-            self.btn_openmm_refresh = QtWidgets.QPushButton("Refresh Objects")
+            row_obj.addWidget(self.cmb_openmm_object, 0, 1)
+            self.btn_openmm_refresh = QtWidgets.QPushButton("Refresh")
+            self.btn_openmm_refresh.setToolTip("Refresh structure objects")
             self.btn_openmm_refresh.clicked.connect(self._refresh_openmm_object_combo)
-            row_obj.addWidget(self.btn_openmm_refresh)
+            row_obj.addWidget(self.btn_openmm_refresh, 0, 2)
             self.btn_openmm_use_analysis_obj = QtWidgets.QPushButton("Use Analysis Object")
             self.btn_openmm_use_analysis_obj.clicked.connect(self._on_openmm_use_analysis_object)
-            row_obj.addWidget(self.btn_openmm_use_analysis_obj)
+            row_obj.addWidget(self.btn_openmm_use_analysis_obj, 1, 1, 1, 2)
+            row_obj.setColumnStretch(1, 1)
             vbox.addLayout(row_obj)
             self.lbl_openmm_tools = QtWidgets.QLabel("")
             self.lbl_openmm_tools.setWordWrap(True)
@@ -6163,31 +6688,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.lbl_openmm_ligand_status = QtWidgets.QLabel("Ligand status: n/a")
             self.lbl_openmm_ligand_status.setWordWrap(True)
             lig_v.addWidget(self.lbl_openmm_ligand_status)
-            row_xml = QtWidgets.QHBoxLayout()
-            row_xml.addWidget(QtWidgets.QLabel("Ligand XML"))
+            row_xml = QtWidgets.QGridLayout()
+            row_xml.addWidget(QtWidgets.QLabel("Ligand XML"), 0, 0)
             self.edit_openmm_ligand_xml = QtWidgets.QLineEdit()
             self.edit_openmm_ligand_xml.setPlaceholderText(
                 "Optional: ligand OpenMM XML from Ligand Source & Prep"
             )
-            row_xml.addWidget(self.edit_openmm_ligand_xml, 1)
+            self.edit_openmm_ligand_xml.setToolTip(
+                "Optional ligand OpenMM XML generated by Ligand Source & Prep"
+            )
+            row_xml.addWidget(self.edit_openmm_ligand_xml, 0, 1, 1, 2)
             self.btn_openmm_pick_xml = QtWidgets.QPushButton("Choose...")
             self.btn_openmm_pick_xml.clicked.connect(self._on_openmm_pick_ligand_xml)
-            row_xml.addWidget(self.btn_openmm_pick_xml)
+            row_xml.addWidget(self.btn_openmm_pick_xml, 0, 3)
             self.btn_openmm_use_xml = QtWidgets.QPushButton("Use Current")
             self.btn_openmm_use_xml.clicked.connect(self._on_openmm_use_current_ligand_xml)
-            row_xml.addWidget(self.btn_openmm_use_xml)
+            row_xml.addWidget(self.btn_openmm_use_xml, 1, 1)
             self.btn_openmm_export_xml = QtWidgets.QPushButton("Export XML")
             self.btn_openmm_export_xml.clicked.connect(self._on_export_ligand_openmm_xml)
-            row_xml.addWidget(self.btn_openmm_export_xml)
+            row_xml.addWidget(self.btn_openmm_export_xml, 1, 2)
+            row_xml.setColumnStretch(1, 1)
+            row_xml.setColumnStretch(2, 1)
             lig_v.addLayout(row_xml)
-            row_lig_tools = QtWidgets.QHBoxLayout()
-            self.btn_openmm_ligand_tools = QtWidgets.QPushButton("Open Ligand Source & Prep...")
+            row_lig_tools = QtWidgets.QGridLayout()
+            self.btn_openmm_ligand_tools = QtWidgets.QPushButton("Open Ligand Source && Prep...")
+            self.btn_openmm_ligand_tools.setToolTip("Open Ligand Source & Prep")
             self.btn_openmm_ligand_tools.clicked.connect(self._show_ligand_tools_popup)
-            row_lig_tools.addWidget(self.btn_openmm_ligand_tools)
+            row_lig_tools.addWidget(self.btn_openmm_ligand_tools, 0, 0)
             self.btn_openmm_crystal_ligands = QtWidgets.QPushButton("Crystal Ligands/XML...")
             self.btn_openmm_crystal_ligands.clicked.connect(self._on_openmm_manage_crystal_ligands)
-            row_lig_tools.addWidget(self.btn_openmm_crystal_ligands)
-            row_lig_tools.addStretch(1)
+            row_lig_tools.addWidget(self.btn_openmm_crystal_ligands, 0, 1)
+            row_lig_tools.setColumnStretch(0, 1)
+            row_lig_tools.setColumnStretch(1, 1)
             lig_v.addLayout(row_lig_tools)
             system_panel_widgets.append(lig_box)
             sys_box = QtWidgets.QGroupBox("System Setup")
@@ -6201,39 +6733,39 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_openmm_solvent_mode.setCurrentIndex(2)
             self.cmb_openmm_solvent_mode.currentIndexChanged.connect(self._on_openmm_solvent_mode_changed)
             grid_mode.addWidget(self.cmb_openmm_solvent_mode, 0, 1)
-            grid_mode.addWidget(QtWidgets.QLabel("Water model"), 0, 2)
+            grid_mode.addWidget(QtWidgets.QLabel("Water model"), 1, 0)
             self.cmb_openmm_water_model = QtWidgets.QComboBox()
             self.cmb_openmm_water_model.addItem("TIP3P", "tip3p")
             self.cmb_openmm_water_model.addItem("SPC/E", "spce")
             self.cmb_openmm_water_model.addItem("TIP4P-Ew", "tip4pew")
             self.cmb_openmm_water_model.addItem("TIP5P", "tip5p")
-            grid_mode.addWidget(self.cmb_openmm_water_model, 0, 3)
-            grid_mode.addWidget(QtWidgets.QLabel("Force field"), 1, 0)
+            grid_mode.addWidget(self.cmb_openmm_water_model, 1, 1)
+            grid_mode.addWidget(QtWidgets.QLabel("Force field"), 2, 0)
             self.cmb_openmm_ff_family = QtWidgets.QComboBox()
             self.cmb_openmm_ff_family.addItem("Amber14", "amber14")
             self.cmb_openmm_ff_family.addItem("Amber99SB-ILDN", "amber99sbildn")
             self.cmb_openmm_ff_family.addItem("CHARMM36", "charmm36")
-            grid_mode.addWidget(self.cmb_openmm_ff_family, 1, 1, 1, 3)
+            grid_mode.addWidget(self.cmb_openmm_ff_family, 2, 1)
             grid_mode.setColumnStretch(1, 1)
-            grid_mode.setColumnStretch(3, 1)
             sys_v.addLayout(grid_mode)
-            row_comp = QtWidgets.QHBoxLayout()
+            row_comp = QtWidgets.QGridLayout()
             self.cb_openmm_keep_cofactors = QtWidgets.QCheckBox("Keep crystal cofactors/ligands")
             self.cb_openmm_keep_cofactors.setChecked(True)
             self.cb_openmm_keep_cofactors.toggled.connect(lambda _v: self._openmm_update_component_summary())
-            row_comp.addWidget(self.cb_openmm_keep_cofactors)
+            row_comp.addWidget(self.cb_openmm_keep_cofactors, 0, 0)
             self.cb_openmm_keep_ions = QtWidgets.QCheckBox("Keep crystal ions")
             self.cb_openmm_keep_ions.setChecked(True)
             self.cb_openmm_keep_ions.toggled.connect(lambda _v: self._openmm_update_component_summary())
-            row_comp.addWidget(self.cb_openmm_keep_ions)
+            row_comp.addWidget(self.cb_openmm_keep_ions, 0, 1)
             self.cb_openmm_keep_waters = QtWidgets.QCheckBox("Keep crystal waters")
             self.cb_openmm_keep_waters.setChecked(False)
             self.cb_openmm_keep_waters.toggled.connect(lambda _v: self._openmm_update_component_summary())
-            row_comp.addWidget(self.cb_openmm_keep_waters)
+            row_comp.addWidget(self.cb_openmm_keep_waters, 1, 0)
             self.btn_openmm_customize_components = QtWidgets.QPushButton("Customize HETATM...")
             self.btn_openmm_customize_components.clicked.connect(self._on_openmm_customize_components)
-            row_comp.addWidget(self.btn_openmm_customize_components)
-            row_comp.addStretch(1)
+            row_comp.addWidget(self.btn_openmm_customize_components, 1, 1)
+            row_comp.setColumnStretch(0, 1)
+            row_comp.setColumnStretch(1, 1)
             sys_v.addLayout(row_comp)
             self.lbl_openmm_components = QtWidgets.QLabel("Components: n/a")
             self.lbl_openmm_components.setWordWrap(True)
@@ -6246,29 +6778,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.spin_openmm_ph.setSingleStep(0.1)
             self.spin_openmm_ph.setValue(7.4)
             grid_env.addWidget(self.spin_openmm_ph, 0, 1)
-            grid_env.addWidget(QtWidgets.QLabel("Ionic strength (M)"), 0, 2)
+            grid_env.addWidget(QtWidgets.QLabel("Ionic strength (M)"), 1, 0)
             self.spin_openmm_ionic_strength = QtWidgets.QDoubleSpinBox()
             self.spin_openmm_ionic_strength.setDecimals(3)
             self.spin_openmm_ionic_strength.setRange(0.0, 2.0)
             self.spin_openmm_ionic_strength.setSingleStep(0.01)
             self.spin_openmm_ionic_strength.setValue(0.15)
-            grid_env.addWidget(self.spin_openmm_ionic_strength, 0, 3)
-            grid_env.addWidget(QtWidgets.QLabel("Solvent padding (A)"), 1, 0)
+            grid_env.addWidget(self.spin_openmm_ionic_strength, 1, 1)
+            grid_env.addWidget(QtWidgets.QLabel("Solvent padding (A)"), 2, 0)
             self.spin_openmm_padding = QtWidgets.QDoubleSpinBox()
             self.spin_openmm_padding.setDecimals(1)
             self.spin_openmm_padding.setRange(4.0, 30.0)
             self.spin_openmm_padding.setSingleStep(0.5)
             self.spin_openmm_padding.setValue(10.0)
-            grid_env.addWidget(self.spin_openmm_padding, 1, 1)
-            grid_env.addWidget(QtWidgets.QLabel("Nonbonded cutoff (A)"), 1, 2)
+            grid_env.addWidget(self.spin_openmm_padding, 2, 1)
+            grid_env.addWidget(QtWidgets.QLabel("Nonbonded cutoff (A)"), 3, 0)
             self.spin_openmm_cutoff = QtWidgets.QDoubleSpinBox()
             self.spin_openmm_cutoff.setDecimals(1)
             self.spin_openmm_cutoff.setRange(6.0, 20.0)
             self.spin_openmm_cutoff.setSingleStep(0.1)
             self.spin_openmm_cutoff.setValue(10.0)
-            grid_env.addWidget(self.spin_openmm_cutoff, 1, 3)
+            grid_env.addWidget(self.spin_openmm_cutoff, 3, 1)
             grid_env.setColumnStretch(1, 1)
-            grid_env.setColumnStretch(3, 1)
             sys_v.addLayout(grid_env)
             system_panel_widgets.append(sys_box)
             protocol_box = QtWidgets.QGroupBox("Protocol")
@@ -6461,17 +6992,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             analysis_panel_widgets.append(analysis_box)
             advanced_box = QtWidgets.QGroupBox("Advanced Methods")
             advanced_v = QtWidgets.QVBoxLayout(advanced_box)
-            row_adv = QtWidgets.QHBoxLayout()
-            row_adv.addWidget(QtWidgets.QLabel("Workflow"))
+            row_adv = QtWidgets.QGridLayout()
+            row_adv.addWidget(QtWidgets.QLabel("Workflow"), 0, 0)
             self.cmb_openmm_advanced = QtWidgets.QComboBox()
             self.cmb_openmm_advanced.addItem("Umbrella sampling", "umbrella")
             self.cmb_openmm_advanced.addItem("Metadynamics", "metadynamics")
             self.cmb_openmm_advanced.addItem("Guided-exit binding diagnostic", "abfe")
             self.cmb_openmm_advanced.addItem("OpenMM-ML potential wrapper", "openmm_ml")
-            row_adv.addWidget(self.cmb_openmm_advanced, 1)
+            row_adv.addWidget(self.cmb_openmm_advanced, 0, 1)
             self.btn_openmm_run_advanced = QtWidgets.QPushButton("Launch Advanced Workflow")
             self.btn_openmm_run_advanced.clicked.connect(self._on_openmm_run_advanced_workflow)
-            row_adv.addWidget(self.btn_openmm_run_advanced)
+            row_adv.addWidget(self.btn_openmm_run_advanced, 1, 1)
+            row_adv.setColumnStretch(1, 1)
             advanced_v.addLayout(row_adv)
             cv_preset_box = QtWidgets.QGroupBox("Collective Variable Presets")
             cv_preset_v = QtWidgets.QVBoxLayout(cv_preset_box)
@@ -6534,33 +7066,36 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             panel_box = QtWidgets.QGroupBox("Configuration Panels")
             panel_v = QtWidgets.QVBoxLayout(panel_box)
-            row_panels = QtWidgets.QHBoxLayout()
+            row_panels = QtWidgets.QGridLayout()
             self.btn_openmm_open_system_panel = QtWidgets.QPushButton("System Setup...")
             self.btn_openmm_open_system_panel.clicked.connect(self._show_openmm_system_panel)
-            row_panels.addWidget(self.btn_openmm_open_system_panel)
+            row_panels.addWidget(self.btn_openmm_open_system_panel, 0, 0)
             self.btn_openmm_open_protocol_panel = QtWidgets.QPushButton("Protocol...")
             self.btn_openmm_open_protocol_panel.clicked.connect(self._show_openmm_protocol_panel)
-            row_panels.addWidget(self.btn_openmm_open_protocol_panel)
-            self.btn_openmm_open_analysis_panel = QtWidgets.QPushButton("Analysis & Advanced...")
+            row_panels.addWidget(self.btn_openmm_open_protocol_panel, 0, 1)
+            self.btn_openmm_open_analysis_panel = QtWidgets.QPushButton("Analysis && Advanced...")
+            self.btn_openmm_open_analysis_panel.setToolTip("Open Analysis & Advanced controls")
             self.btn_openmm_open_analysis_panel.clicked.connect(self._show_openmm_analysis_panel)
-            row_panels.addWidget(self.btn_openmm_open_analysis_panel)
-            row_panels.addStretch(1)
+            row_panels.addWidget(self.btn_openmm_open_analysis_panel, 1, 0, 1, 2)
+            row_panels.setColumnStretch(0, 1)
+            row_panels.setColumnStretch(1, 1)
             panel_v.addLayout(row_panels)
             vbox.addWidget(panel_box)
             self.lbl_openmm_status = QtWidgets.QLabel("Status: ready")
             self.lbl_openmm_status.setWordWrap(True)
             vbox.addWidget(self.lbl_openmm_status)
-            row_run = QtWidgets.QHBoxLayout()
+            row_run = QtWidgets.QGridLayout()
             self.btn_openmm_run = QtWidgets.QPushButton("Run OpenMM Workflow")
             self.btn_openmm_run.clicked.connect(self._on_openmm_run_workflow)
-            row_run.addWidget(self.btn_openmm_run)
+            row_run.addWidget(self.btn_openmm_run, 0, 0)
             self.btn_openmm_monitor = QtWidgets.QPushButton("Task Monitor")
             self.btn_openmm_monitor.clicked.connect(self._show_task_monitor_dialog)
-            row_run.addWidget(self.btn_openmm_monitor)
-            row_run.addStretch(1)
+            row_run.addWidget(self.btn_openmm_monitor, 0, 1)
             btn_close = QtWidgets.QPushButton("Close")
             btn_close.clicked.connect(self._openmm_dialog.close)
-            row_run.addWidget(btn_close)
+            row_run.addWidget(btn_close, 1, 1)
+            row_run.setColumnStretch(0, 1)
+            row_run.setColumnStretch(1, 1)
             vbox.addLayout(row_run)
             self.btn_open_openmm = QtWidgets.QPushButton("OpenMM Dynamics...")
             self.btn_open_openmm.setToolTip(
@@ -6583,6 +7118,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     def _openmm_create_panel_dialog(self, title, widgets):
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle(str(title or "OpenMM Panel"))
+        dlg._leonardo_scroll_checked = True
         dlg.resize(1080, 880)
         dlg.setMinimumSize(920, 720)
         try:
@@ -6598,7 +7134,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         )
         vbox = QtWidgets.QVBoxLayout(dlg)
         scroll = QtWidgets.QScrollArea(dlg)
+        scroll.setObjectName("openmmPanelScrollArea")
+        scroll.setProperty("leonardoVerticalOnly", True)
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         panel = QtWidgets.QWidget(scroll)
         panel_v = QtWidgets.QVBoxLayout(panel)
         for w in list(widgets or []):
@@ -7050,6 +7591,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             dlg = QtWidgets.QDialog(self)
             dlg.setWindowTitle("QM/MM Probe (MOPAC + OpenMM)")
+            dlg._leonardo_scroll_checked = True
             dlg.resize(1060, 840)
             dlg.setMinimumSize(900, 700)
             self._fit_dialog_to_screen(
@@ -7073,12 +7615,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             vbox = QtWidgets.QVBoxLayout(dlg)
             tabs = QtWidgets.QTabWidget()
+            self.tabs_qmmm = tabs
             vbox.addWidget(tabs, 1)
 
-            workflow_tab = QtWidgets.QWidget()
-            workflow_layout = QtWidgets.QVBoxLayout(workflow_tab)
-            workflow_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(workflow_tab, "Workflow")
+            def _qmmm_scroll_tab(title, tooltip=""):
+                tab = QtWidgets.QWidget()
+                outer = QtWidgets.QVBoxLayout(tab)
+                outer.setContentsMargins(0, 0, 0, 0)
+                scroll = QtWidgets.QScrollArea(tab)
+                scroll.setObjectName("qmmm" + str(title).replace("/", "").replace(" ", "") + "Scroll")
+                scroll.setProperty("leonardoVerticalOnly", True)
+                scroll.setWidgetResizable(True)
+                scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+                scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+                scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+                content = QtWidgets.QWidget(scroll)
+                layout = QtWidgets.QVBoxLayout(content)
+                layout.setContentsMargins(12, 12, 12, 12)
+                layout.setSpacing(10)
+                scroll.setWidget(content)
+                outer.addWidget(scroll, 1)
+                index = tabs.addTab(tab, str(title))
+                if tooltip:
+                    tabs.setTabToolTip(index, str(tooltip))
+                return tab, layout
+
+            workflow_tab, workflow_layout = _qmmm_scroll_tab("Workflow")
             intro = QtWidgets.QLabel(
                 "Choose the structure, MM context, and QM/MM task. Leonardo will build the MOPAC keyword line and region preflight from these choices."
             )
@@ -7086,17 +7648,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             intro.setProperty("role", "hint")
             workflow_layout.addWidget(intro)
             obj_box = QtWidgets.QGroupBox("Structure")
-            row_obj = QtWidgets.QHBoxLayout(obj_box)
-            row_obj.addWidget(QtWidgets.QLabel("Object"))
+            row_obj = QtWidgets.QGridLayout(obj_box)
+            row_obj.addWidget(QtWidgets.QLabel("Object"), 0, 0)
             self.cmb_qmmm_object = QtWidgets.QComboBox()
             self.cmb_qmmm_object.setEditable(True)
-            row_obj.addWidget(self.cmb_qmmm_object, 1)
+            row_obj.addWidget(self.cmb_qmmm_object, 0, 1)
             self.btn_qmmm_refresh = QtWidgets.QPushButton("Refresh")
             self.btn_qmmm_refresh.clicked.connect(self._qmmm_refresh_object_combo)
-            row_obj.addWidget(self.btn_qmmm_refresh)
+            row_obj.addWidget(self.btn_qmmm_refresh, 0, 2)
             self.btn_qmmm_use_analysis = QtWidgets.QPushButton("Use Analysis Object")
             self.btn_qmmm_use_analysis.clicked.connect(self._on_qmmm_use_analysis_object)
-            row_obj.addWidget(self.btn_qmmm_use_analysis)
+            row_obj.addWidget(self.btn_qmmm_use_analysis, 1, 1, 1, 2)
+            row_obj.setColumnStretch(1, 1)
             workflow_layout.addWidget(obj_box)
             sys_box = QtWidgets.QGroupBox("MM Environment")
             grid_sys = QtWidgets.QGridLayout(sys_box)
@@ -7106,23 +7669,24 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_qmmm_ff.addItem("Amber99SB-ILDN", "amber99sbildn")
             self.cmb_qmmm_ff.addItem("CHARMM36", "charmm36")
             grid_sys.addWidget(self.cmb_qmmm_ff, 0, 1)
-            grid_sys.addWidget(QtWidgets.QLabel("MM solvent context"), 0, 2)
+            grid_sys.addWidget(QtWidgets.QLabel("MM solvent context"), 1, 0)
             self.cmb_qmmm_mode = QtWidgets.QComboBox()
             self.cmb_qmmm_mode.addItem("Gas phase", "gas")
             self.cmb_qmmm_mode.addItem("Implicit water", "implicit")
             self.cmb_qmmm_mode.addItem("Explicit water box", "explicit")
-            grid_sys.addWidget(self.cmb_qmmm_mode, 0, 3)
-            grid_sys.addWidget(QtWidgets.QLabel("pH"), 0, 4)
+            grid_sys.addWidget(self.cmb_qmmm_mode, 1, 1)
+            grid_sys.addWidget(QtWidgets.QLabel("pH"), 2, 0)
             self.spin_qmmm_ph = QtWidgets.QDoubleSpinBox()
             self.spin_qmmm_ph.setDecimals(1)
             self.spin_qmmm_ph.setRange(0.0, 14.0)
             self.spin_qmmm_ph.setSingleStep(0.1)
             self.spin_qmmm_ph.setValue(7.4)
-            grid_sys.addWidget(self.spin_qmmm_ph, 0, 5)
+            grid_sys.addWidget(self.spin_qmmm_ph, 2, 1)
+            grid_sys.setColumnStretch(1, 1)
             workflow_layout.addWidget(sys_box)
             op_box = QtWidgets.QGroupBox("Operation")
-            row_op = QtWidgets.QHBoxLayout(op_box)
-            row_op.addWidget(QtWidgets.QLabel("QM/MM operation"))
+            row_op = QtWidgets.QGridLayout(op_box)
+            row_op.addWidget(QtWidgets.QLabel("QM/MM operation"), 0, 0)
             self.cmb_qmmm_operation = QtWidgets.QComboBox()
             self.cmb_qmmm_operation.addItem("Single-point probe", "probe")
             self.cmb_qmmm_operation.addItem("Electrostatic coupling report", "electrostatic")
@@ -7138,10 +7702,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_qmmm_operation.addItem("MD with periodic QM/MM probes", "md_periodic")
             self.cmb_qmmm_operation.addItem("Force-coupled QM/MM MD (experimental)", "md_coupled")
             self.cmb_qmmm_operation.addItem("Docking pose energy (QM/MM)", "redock_rescore")
-            row_op.addWidget(self.cmb_qmmm_operation, 1)
+            row_op.addWidget(self.cmb_qmmm_operation, 1, 0)
             self.btn_qmmm_config_operation = QtWidgets.QPushButton("Configure Operation...")
             self.btn_qmmm_config_operation.clicked.connect(self._on_qmmm_configure_operation)
-            row_op.addWidget(self.btn_qmmm_config_operation)
+            row_op.addWidget(self.btn_qmmm_config_operation, 2, 0)
+            row_op.setColumnStretch(0, 1)
             workflow_layout.addWidget(op_box)
             self.lbl_qmmm_operation_help = QtWidgets.QLabel("")
             self.lbl_qmmm_operation_help.setWordWrap(True)
@@ -7149,10 +7714,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             workflow_layout.addWidget(self.lbl_qmmm_operation_help)
             workflow_layout.addStretch(1)
 
-            region_tab = QtWidgets.QWidget()
-            region_layout = QtWidgets.QVBoxLayout(region_tab)
-            region_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(region_tab, "QM/MM Region")
+            region_tab, region_layout = _qmmm_scroll_tab("Region", "QM/MM Region")
             region_box = QtWidgets.QGroupBox("Region Definition")
             region_grid = QtWidgets.QGridLayout(region_box)
             region_grid.addWidget(QtWidgets.QLabel("Region mode"), 0, 0)
@@ -7177,14 +7739,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             region_grid.addWidget(self.spin_qmmm_max_qm_atoms, 1, 3)
             self.cb_qmmm_include_metals = QtWidgets.QCheckBox("Include nearby metals/ions")
             self.cb_qmmm_include_metals.setChecked(True)
-            region_grid.addWidget(self.cb_qmmm_include_metals, 1, 4)
-            region_grid.addWidget(QtWidgets.QLabel("QM PyMOL selection"), 2, 0)
+            region_grid.addWidget(self.cb_qmmm_include_metals, 2, 0, 1, 5)
+            region_grid.addWidget(QtWidgets.QLabel("QM PyMOL selection"), 3, 0, 1, 5)
             self.edit_qmmm_qm_selection = QtWidgets.QLineEdit("(sele)")
             self.edit_qmmm_qm_selection.setPlaceholderText("Example: chain A and resi 57+102 or (resn LIG)")
-            region_grid.addWidget(self.edit_qmmm_qm_selection, 2, 1, 1, 2)
+            region_grid.addWidget(self.edit_qmmm_qm_selection, 4, 0, 1, 3)
             self.btn_qmmm_qm_use_sele = QtWidgets.QPushButton("Use sele")
             self.btn_qmmm_qm_use_sele.clicked.connect(lambda: self._openmm_capture_selection_into_edit(self.edit_qmmm_qm_selection))
-            region_grid.addWidget(self.btn_qmmm_qm_use_sele, 2, 3)
+            region_grid.addWidget(self.btn_qmmm_qm_use_sele, 4, 3)
             self.btn_qmmm_qm_pick_atoms = QtWidgets.QPushButton("Pick...")
             self.btn_qmmm_qm_pick_atoms.clicked.connect(
                 lambda: self._on_qmmm_pick_selection_for_edit(
@@ -7192,14 +7754,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     title="Pick QM atoms from object",
                 )
             )
-            region_grid.addWidget(self.btn_qmmm_qm_pick_atoms, 2, 4)
-            region_grid.addWidget(QtWidgets.QLabel("MM PyMOL selection"), 3, 0)
+            region_grid.addWidget(self.btn_qmmm_qm_pick_atoms, 4, 4)
+            region_grid.addWidget(QtWidgets.QLabel("MM PyMOL selection"), 5, 0, 1, 5)
             self.edit_qmmm_mm_selection = QtWidgets.QLineEdit("")
             self.edit_qmmm_mm_selection.setPlaceholderText("Optional: leave empty to use complement of QM")
-            region_grid.addWidget(self.edit_qmmm_mm_selection, 3, 1, 1, 2)
+            region_grid.addWidget(self.edit_qmmm_mm_selection, 6, 0, 1, 3)
             self.btn_qmmm_mm_use_sele = QtWidgets.QPushButton("Use sele")
             self.btn_qmmm_mm_use_sele.clicked.connect(lambda: self._openmm_capture_selection_into_edit(self.edit_qmmm_mm_selection))
-            region_grid.addWidget(self.btn_qmmm_mm_use_sele, 3, 3)
+            region_grid.addWidget(self.btn_qmmm_mm_use_sele, 6, 3)
             self.btn_qmmm_mm_pick_atoms = QtWidgets.QPushButton("Pick...")
             self.btn_qmmm_mm_pick_atoms.clicked.connect(
                 lambda: self._on_qmmm_pick_selection_for_edit(
@@ -7207,19 +7769,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     title="Pick MM atoms from object",
                 )
             )
-            region_grid.addWidget(self.btn_qmmm_mm_pick_atoms, 3, 4)
-            region_grid.addWidget(QtWidgets.QLabel("QM residue names"), 4, 0)
+            region_grid.addWidget(self.btn_qmmm_mm_pick_atoms, 6, 4)
+            region_grid.addWidget(QtWidgets.QLabel("QM residue names"), 7, 0, 1, 5)
             self.edit_qmmm_qm_resnames = QtWidgets.QLineEdit("LIG")
             self.edit_qmmm_qm_resnames.setPlaceholderText("Comma/space separated, e.g. LIG,HEM")
-            region_grid.addWidget(self.edit_qmmm_qm_resnames, 4, 1, 1, 4)
-            region_grid.addWidget(QtWidgets.QLabel("QM atom indices"), 5, 0)
+            region_grid.addWidget(self.edit_qmmm_qm_resnames, 8, 0, 1, 5)
+            region_grid.addWidget(QtWidgets.QLabel("QM atom indices"), 9, 0, 1, 5)
             self.edit_qmmm_qm_indices = QtWidgets.QLineEdit("")
             self.edit_qmmm_qm_indices.setPlaceholderText("0-based indices, e.g. 120,121,122")
-            region_grid.addWidget(self.edit_qmmm_qm_indices, 5, 1, 1, 4)
-            region_grid.addWidget(QtWidgets.QLabel("MM atom indices"), 6, 0)
+            region_grid.addWidget(self.edit_qmmm_qm_indices, 10, 0, 1, 5)
+            region_grid.addWidget(QtWidgets.QLabel("MM atom indices"), 11, 0, 1, 5)
             self.edit_qmmm_mm_indices = QtWidgets.QLineEdit("")
             self.edit_qmmm_mm_indices.setPlaceholderText("Leave empty to use complement of QM region")
-            region_grid.addWidget(self.edit_qmmm_mm_indices, 6, 1, 1, 4)
+            region_grid.addWidget(self.edit_qmmm_mm_indices, 12, 0, 1, 5)
             row_prev = QtWidgets.QHBoxLayout()
             self.btn_qmmm_recommend_region = QtWidgets.QPushButton("Recommend Region")
             self.btn_qmmm_recommend_region.clicked.connect(self._on_qmmm_recommend_region)
@@ -7228,7 +7790,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_qmmm_preview_region.clicked.connect(self._on_qmmm_preview_region)
             row_prev.addWidget(self.btn_qmmm_preview_region)
             row_prev.addStretch(1)
-            region_grid.addLayout(row_prev, 7, 0, 1, 5)
+            region_grid.addLayout(row_prev, 13, 0, 1, 5)
+            region_grid.setColumnStretch(0, 1)
+            region_grid.setColumnStretch(1, 1)
+            region_grid.setColumnStretch(2, 1)
             region_layout.addWidget(region_box)
             self.lbl_qmmm_region_advice = QtWidgets.QLabel("Use the automatic ligand + pocket mode for most protein-ligand systems.")
             self.lbl_qmmm_region_advice.setWordWrap(True)
@@ -7236,48 +7801,47 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             region_layout.addWidget(self.lbl_qmmm_region_advice)
             region_layout.addStretch(1)
 
-            mopac_tab = QtWidgets.QWidget()
-            mopac_layout = QtWidgets.QVBoxLayout(mopac_tab)
-            mopac_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(mopac_tab, "MOPAC")
+            mopac_tab, mopac_layout = _qmmm_scroll_tab("MOPAC")
             mopac_box = QtWidgets.QGroupBox("MOPAC QM Settings")
             mopac_grid = QtWidgets.QGridLayout(mopac_box)
             mopac_grid.addWidget(QtWidgets.QLabel("MOPAC executable"), 0, 0)
             self.edit_qmmm_mopac_exe = QtWidgets.QLineEdit("mopac")
             mopac_grid.addWidget(self.edit_qmmm_mopac_exe, 0, 1)
-            mopac_grid.addWidget(QtWidgets.QLabel("Keywords"), 0, 2)
+            mopac_grid.addWidget(QtWidgets.QLabel("Keywords"), 1, 0)
             self.edit_qmmm_mopac_keywords = QtWidgets.QLineEdit("PM7 1SCF GRAD AUX QMMM")
             self.edit_qmmm_mopac_keywords.setToolTip(
                 "Operation-specific recommended keywords are applied automatically unless you keep a custom value."
             )
-            mopac_grid.addWidget(self.edit_qmmm_mopac_keywords, 0, 3, 1, 2)
+            mopac_grid.addWidget(self.edit_qmmm_mopac_keywords, 1, 1, 1, 3)
             self.btn_qmmm_use_recommended_keywords = QtWidgets.QPushButton("Use Recommended")
             self.btn_qmmm_use_recommended_keywords.clicked.connect(self._qmmm_apply_recommended_keywords)
-            mopac_grid.addWidget(self.btn_qmmm_use_recommended_keywords, 0, 5)
-            mopac_grid.addWidget(QtWidgets.QLabel("QM charge"), 1, 0)
+            mopac_grid.addWidget(self.btn_qmmm_use_recommended_keywords, 2, 1, 1, 3)
+            mopac_grid.addWidget(QtWidgets.QLabel("QM charge"), 3, 0)
             self.spin_qmmm_charge = QtWidgets.QSpinBox()
             self.spin_qmmm_charge.setRange(-20, 20)
             self.spin_qmmm_charge.setValue(0)
-            mopac_grid.addWidget(self.spin_qmmm_charge, 1, 1)
-            mopac_grid.addWidget(QtWidgets.QLabel("Multiplicity"), 1, 2)
+            mopac_grid.addWidget(self.spin_qmmm_charge, 3, 1)
+            mopac_grid.addWidget(QtWidgets.QLabel("Multiplicity"), 3, 2)
             self.spin_qmmm_mult = QtWidgets.QSpinBox()
             self.spin_qmmm_mult.setRange(1, 5)
             self.spin_qmmm_mult.setValue(1)
-            mopac_grid.addWidget(self.spin_qmmm_mult, 1, 3)
-            mopac_grid.addWidget(QtWidgets.QLabel("Dielectric"), 1, 4)
+            mopac_grid.addWidget(self.spin_qmmm_mult, 3, 3)
+            mopac_grid.addWidget(QtWidgets.QLabel("Dielectric"), 4, 0)
             self.spin_qmmm_dielectric = QtWidgets.QDoubleSpinBox()
             self.spin_qmmm_dielectric.setDecimals(2)
             self.spin_qmmm_dielectric.setRange(0.01, 1000.0)
             self.spin_qmmm_dielectric.setValue(1.0)
-            mopac_grid.addWidget(self.spin_qmmm_dielectric, 1, 5)
-            mopac_grid.addWidget(QtWidgets.QLabel("Timeout (s)"), 2, 0)
+            mopac_grid.addWidget(self.spin_qmmm_dielectric, 4, 1)
+            mopac_grid.addWidget(QtWidgets.QLabel("Timeout (s)"), 4, 2)
             self.spin_qmmm_timeout = QtWidgets.QSpinBox()
             self.spin_qmmm_timeout.setRange(5, 36000)
             self.spin_qmmm_timeout.setValue(180)
-            mopac_grid.addWidget(self.spin_qmmm_timeout, 2, 1)
+            mopac_grid.addWidget(self.spin_qmmm_timeout, 4, 3)
             self.cb_qmmm_strict = QtWidgets.QCheckBox("Strict mode (fail if probe fails)")
             self.cb_qmmm_strict.setChecked(False)
-            mopac_grid.addWidget(self.cb_qmmm_strict, 2, 2, 1, 4)
+            mopac_grid.addWidget(self.cb_qmmm_strict, 5, 0, 1, 4)
+            mopac_grid.setColumnStretch(1, 1)
+            mopac_grid.setColumnStretch(3, 1)
             mopac_layout.addWidget(mopac_box)
             self.lbl_qmmm_mopac_advice = QtWidgets.QLabel("")
             self.lbl_qmmm_mopac_advice.setWordWrap(True)
@@ -7285,26 +7849,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             mopac_layout.addWidget(self.lbl_qmmm_mopac_advice)
             mopac_layout.addStretch(1)
 
-            run_tab = QtWidgets.QWidget()
-            run_layout = QtWidgets.QVBoxLayout(run_tab)
-            run_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(run_tab, "Run")
+            run_tab, run_layout = _qmmm_scroll_tab("Run")
             self.lbl_qmmm_status = QtWidgets.QLabel("Status: ready")
             self.lbl_qmmm_status.setWordWrap(True)
             run_layout.addWidget(self.lbl_qmmm_status)
-            row_run = QtWidgets.QHBoxLayout()
+            row_run = QtWidgets.QGridLayout()
             self.btn_qmmm_run_probe = QtWidgets.QPushButton("Run QM/MM Probe")
             self.btn_qmmm_run_probe.clicked.connect(self._on_qmmm_run_probe)
-            row_run.addWidget(self.btn_qmmm_run_probe)
+            row_run.addWidget(self.btn_qmmm_run_probe, 0, 0)
             self.btn_qmmm_task_monitor = QtWidgets.QPushButton("Task Monitor")
             self.btn_qmmm_task_monitor.clicked.connect(self._show_task_monitor_dialog)
-            row_run.addWidget(self.btn_qmmm_task_monitor)
-            row_run.addStretch(1)
-            btn_close = QtWidgets.QPushButton("Close")
-            btn_close.clicked.connect(dlg.close)
-            row_run.addWidget(btn_close)
+            row_run.addWidget(self.btn_qmmm_task_monitor, 0, 1)
+            row_run.setColumnStretch(0, 1)
+            row_run.setColumnStretch(1, 1)
             run_layout.addLayout(row_run)
             run_layout.addStretch(1)
+            dialog_close_row = QtWidgets.QHBoxLayout()
+            dialog_close_row.addStretch(1)
+            btn_close = QtWidgets.QPushButton("Close")
+            btn_close.clicked.connect(dlg.close)
+            dialog_close_row.addWidget(btn_close)
+            vbox.addLayout(dialog_close_row)
             def _sync_region_ui():
                 mode = str(self.cmb_qmmm_region_mode.currentData() or "auto_ligand_pocket")
                 use_sel = mode == "pymol_selection"
@@ -9159,22 +9724,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         smiles_hint = self._openmm_component_smiles_hint(c)
         hydrated_pdb = os.path.join(work, "component_hydrated.pdb")
         hydrated_sdf = os.path.join(work, "component_hydrated.sdf")
-        try:
-            use_target_ph = float(self._current_small_molecule_target_ph())
-        except Exception:
-            use_target_ph = 7.4
+        # MD ligands/cofactors are protonated at the MD pH (it used to be the docking pH)
+        use_target_ph = float(self._openmm_ligand_target_ph())
         param_net_charge = int(net_charge)
         inferred_charge = int(self._rdkit_formal_charge_from_smiles(smiles_hint))
-        if int(param_net_charge) == 0 and int(inferred_charge) != 0:
-            param_net_charge = int(inferred_charge)
+        protonation_note = ""
         if smiles_hint:
             hyd = self._openmm_build_hydrated_component_pdb(
                 src_pdb,
                 hydrated_pdb,
                 c,
                 smiles_hint=smiles_hint,
+                target_ph=float(use_target_ph),
             )
             if bool(hyd.get("ok", False)) and os.path.isfile(hydrated_pdb):
+                if hyd.get("formal_charge") is not None:
+                    inferred_charge = int(hyd["formal_charge"])
+                prot = dict(hyd.get("protonation") or {})
+                protonation_note = (f"protonation:{prot.get('method', '?')}@pH{float(use_target_ph):.2f}"
+                                    f"(charge {inferred_charge:+d})")
                 try:
                     if self._prepare_ligand_3d_from_source(
                         src_pdb,
@@ -9183,10 +9751,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         target_ph=float(use_target_ph),
                     ):
                         src_for_param = str(hydrated_sdf)
+                        q_sdf = self._ligand_file_formal_charge(hydrated_sdf)
+                        if q_sdf is not None:
+                            inferred_charge = int(q_sdf)     # the molecule antechamber actually reads
                     else:
                         src_for_param = str(hydrated_pdb)
                 except Exception:
                     src_for_param = str(hydrated_pdb)
+        # net charge 0 in the dialog means "automatic": use the pH-protonated molecule's charge,
+        # not the raw CCD SMILES (which is usually the neutral form)
+        if int(param_net_charge) == 0 and int(inferred_charge) != 0:
+            param_net_charge = int(inferred_charge)
+        elif int(param_net_charge) != int(inferred_charge):
+            self._append_debug_log(
+                f"OpenMM component {tag}: requested net charge {int(param_net_charge):+d} differs from the "
+                f"protonated molecule at pH {float(use_target_ph):.2f} ({int(inferred_charge):+d})."
+            )
         res = self._openmm_parameterize_ligand_source_to_xml(
             source_file=src_for_param,
             out_dir=work,
@@ -9202,8 +9782,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return res
         if int(param_net_charge) != int(net_charge):
             res["notes"] = list(res.get("notes", []) or []) + [
-                f"auto_net_charge_from_smiles:{int(net_charge)}->{int(param_net_charge)}"
+                f"auto_net_charge_from_protonation:{int(net_charge)}->{int(param_net_charge)}"
             ]
+        if protonation_note:
+            res["notes"] = list(res.get("notes", []) or []) + [protonation_note]
         xml_path = str(res.get("xml_forcefield", "") or "").strip()
         if (not xml_path) or (not os.path.isfile(xml_path)):
             xml_path = str(res.get("xml", "") or "").strip()
@@ -9646,7 +10228,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "inpcrd": (str(inpcrd) if os.path.isfile(inpcrd) else ""),
             "hydrated_pdb": (str(hydrated_pdb) if os.path.isfile(hydrated_pdb) else ""),
         }
-    def _openmm_build_hydrated_component_pdb(self, source_pdb, out_pdb, comp, smiles_hint=""):
+    def _openmm_ligand_target_ph(self):
+        """pH for ligands/cofactors that go into MD: the OpenMM (MD) pH, else the docking pH."""
+        try:
+            if hasattr(self, "spin_openmm_ph"):
+                return float(self.spin_openmm_ph.value())
+        except Exception:
+            pass
+        try:
+            return float(self._current_small_molecule_target_ph())
+        except Exception:
+            return 7.4
+    def _openmm_build_hydrated_component_pdb(self, source_pdb, out_pdb, comp, smiles_hint="", target_ph=None):
         src = str(source_pdb or "").strip()
         outp = str(out_pdb or "").strip()
         smi = str(smiles_hint or "").strip()
@@ -9666,7 +10259,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
             mapped = AllChem.AssignBondOrdersFromTemplate(ref, crystal)
-            mapped_h = Chem.AddHs(mapped, addCoords=True)
+            # protonation at the MD pH before charges/parameters (the CCD SMILES is usually the
+            # neutral form); crystal heavy atoms keep coordinates and names
+            ph = float(self._openmm_ligand_target_ph() if target_ph is None else target_ph)
+            protonation = {}
+            try:
+                pka_method = self._pka_method()
+                mapped_h, protonation = pka_protonate_molecule(
+                    mapped, ph, method=pka_method, cache_dir=self._pka_cache_dir(),
+                    backend_options=self._pka_backend_options(pka_method))
+            except Exception as exc:
+                protonation = {"method": "none", "error": str(exc)}
+                mapped_h = Chem.AddHs(mapped, addCoords=True)
             resn = str(c.get("resn", "") or "LIG").strip().upper()[:3] or "LIG"
             chain_id = str(c.get("chain", "") or "").strip()[:1]
             resi_raw = str(c.get("resi", "") or "1").strip()
@@ -9728,6 +10332,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "atom_count": int(sum(1 for line in lines if str(line[:6]).strip().upper() in {"ATOM", "HETATM"})),
                 "hydrogen_count": int(sum(1 for line in lines if str(line[76:78]).strip().upper() == "H")),
                 "path": str(outp),
+                "formal_charge": int(Chem.GetFormalCharge(mapped_h)),
+                "protonation": dict(protonation or {}),
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -9875,7 +10481,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         notes = []
         tmp_paths = []
         try:
-            polymer_sel = f"{rec_sel} and polymer"
+            # peptide caps (ACE/NME...) belong to their chain, not to the components exported after it
+            polymer_sel = f"{rec_sel} and (polymer or resn {OPENMM_PEPTIDE_CAPS_SEL})"
             try:
                 polymer_count = int(cmd.count_atoms(polymer_sel))
             except Exception:
@@ -9890,6 +10497,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 with open(tmp_poly, "r", encoding="utf-8", errors="ignore") as fh:
                     polymer_lines = [ln.rstrip("\n") for ln in fh]
             for idx, comp in enumerate(list(include_components or []), start=1):
+                if str((comp or {}).get("resn", "") or "").strip().upper() in OPENMM_PEPTIDE_CAPS:
+                    continue
                 csel = self._dock_hetatm_component_selection(rec, comp)
                 if not csel:
                     continue
@@ -9911,7 +10520,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         if smiles_hint:
                             hyd_tmp = outp + f".component_{idx:03d}.hydrated.tmp.pdb"
                             tmp_paths.append(hyd_tmp)
-                            hyd = self._openmm_build_hydrated_component_pdb(
+                            hyd = self._openmm_build_hydrated_component_pdb(  # MD pH (default)
                                 tmp_comp,
                                 hyd_tmp,
                                 comp,
@@ -10191,6 +10800,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         mode = str(solvent_mode or "explicit").strip().lower()
         water = str(water_model or "tip3p").strip().lower()
         use_water_xml = bool(mode == "explicit" or include_waters)
+        # implicit water: OpenMM's GB/OBC2 parameters come from implicit/obc2.xml (the
+        # implicitSolvent= argument of createSystem only exists for AMBER prmtop files;
+        # OpenMM 8 rejects it with ForceField XMLs). There is no CHARMM36 implicit XML.
+        implicit_xml = ["implicit/obc2.xml"] if mode == "implicit" else []
         attempts = []
         family_order = [fam_pref, "amber14", "amber99sbildn", "charmm36"]
         seen = set()
@@ -10208,7 +10821,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 }
                 if use_water_xml:
                     files.append(str(wm.get(water, "amber14/tip3p.xml")))
-                attempts.append(("Amber14", files))
+                attempts.append(("Amber14" + (" + GB/OBC2" if implicit_xml else ""), files + implicit_xml))
             elif fam == "amber99sbildn":
                 files = ["amber99sbildn.xml"]
                 wm = {
@@ -10219,8 +10832,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 }
                 if use_water_xml:
                     files.append(str(wm.get(water, "tip3p.xml")))
-                attempts.append(("Amber99SB-ILDN", files))
+                attempts.append(("Amber99SB-ILDN" + (" + GB/OBC2" if implicit_xml else ""), files + implicit_xml))
             elif fam == "charmm36":
+                if implicit_xml:
+                    continue
                 files = ["charmm36.xml"]
                 if use_water_xml:
                     files.append("charmm36/water.xml")
@@ -10236,7 +10851,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return True
         if r in {"DA3", "DA5", "DC3", "DC5", "DG3", "DG5", "DT3", "DT5", "A3", "A5", "C3", "C5", "G3", "G5", "U3", "U5"}:
             return True
-        if r in {"ACE", "NME", "NH2", "NHE"}:
+        if r in {"ACE", "NME", "NMA", "NH2", "NHE"}:
             return True
         return False
     def _openmm_parse_missing_residue_names(self, err_text):
@@ -10267,6 +10882,75 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if "<system" in head:
             return "system"
         return ""
+    def _openmm_apply_component_library(self, modeller, ff_family, lig_xml_paths=(), out=None, qm_placeholders=False):
+        """
+        Give cofactors, ions and other components their curated templates (CHARMM36 heme, NAD,
+        ATP, lipids; Amber ions, lipid21, GLYCAM) so they are parameterized instead of dropped.
+        Residues covered by a ligand ForceField XML keep that parameterization. Returns extra
+        ForceField files the components need.
+        """
+        fam = {"amber14": "amber14", "charmm36": "charmm36"}.get(str(ff_family or "").strip().lower())
+        notes = out["notes"] if isinstance(out, dict) else []
+        if fam is None or OMM_UNIT is None:
+            return []
+        try:
+            own = set()
+            for xp in list(lig_xml_paths or []):
+                try:
+                    own.update(str(n).upper() for n in read_openmm_forcefield_residue_names(xp))
+                except Exception:
+                    pass
+            pos_nm = [tuple(p.value_in_unit(OMM_UNIT.nanometer)) for p in modeller.positions]
+            plan = component_resolve_components(modeller.topology, pos_nm, family=fam)
+            plan["components"] = [r for r in plan["components"] if str(r.get("resn", "")).upper() not in own]
+            renames = {}
+            files = component_prepare_modeller(modeller, plan, fam, renames=renames)
+            if isinstance(out, dict):
+                # template names are only needed while hydrogens are added; outputs keep PDB names
+                out["_component_renames"] = renames
+            if qm_placeholders:
+                # QM/MM: components without MM parameters (heme c, metal clusters...) go to the QM region
+                # with placeholder templates instead of being dropped
+                try:
+                    qm_files, qm_variants, qm_keys, qm_info = component_install_qm_placeholders(
+                        modeller, plan, family=fam)
+                except Exception as qm_err:
+                    # keep the library templates already applied (the residues were renamed for them)
+                    notes.append(f"QM/MM placeholders unavailable ({qm_err}); components without MM "
+                                 "parameters follow the previous route.")
+                    qm_files, qm_variants, qm_keys, qm_info = [], {}, [], []
+                files = list(files) + [f for f in qm_files if f not in files]
+                if isinstance(out, dict):
+                    out["_component_variants"] = dict(qm_variants)
+                    out["_qm_forced_keys"] = [{"chain": c, "resi": r, "resn": n} for c, r, n in qm_keys]
+                    out["qm_placeholder_components"] = qm_info
+                for row in qm_info:
+                    notes.append(
+                        f"QM/MM: {row['resn']} has no MM parameters; it is placed in the QM region "
+                        f"({row['qm_atoms']} atoms, organic formal charge {row['organic_formal_charge']:+d}"
+                        + ("; add the metal oxidation state to the QM charge" if row.get("has_metal") else "")
+                        + ")."
+                    )
+            used = sorted({f"{r['resn']}->{r['template']}" for r in plan["components"] if r.get("source") == "library"})
+            if used:
+                notes.append("Component library templates: " + ", ".join(used))
+            for w in list(plan.get("warnings", []) or [])[:6]:
+                notes.append("Component library: " + str(w))
+            if isinstance(out, dict):
+                out["component_plan"] = {k: plan[k] for k in ("family", "recommended_family", "counts", "warnings")}
+            base = set(forcefield_family_base_files(fam))
+            if not (set(files) & base):
+                # a component needs a different protein force-field file (e.g. phosphoresidues:
+                # openmmforcefields ff14SB + phosaa14SB instead of OpenMM's amber14-all)
+                notes.append("Component library: protein force field switched to " + ", ".join(
+                    os.path.basename(f) for f in files) + " for the modified residues.")
+                if isinstance(out, dict):
+                    out["_component_base_override"] = list(files)
+                return []
+            return [f for f in files if f not in base]
+        except Exception as e:
+            notes.append(f"Component library unavailable ({e}); non-standard residues follow the previous route.")
+            return []
     def _openmm_create_system_with_autodrop(self, forcefield, modeller, create_kwargs, max_rounds=12):
         removed = []
         if forcefield is None or modeller is None:
@@ -10466,6 +11150,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return {"ok": False, "error": f"QM/MM region resolution failed: {e}"}
         qidx = [int(i) for i in list(reg.get("qm_indices", []) or [])]
         midx = [int(i) for i in list(reg.get("mm_indices", []) or [])]
+        if not cfg.get("qm_indices") and bool(cfg.get("include_bonded_hydrogens", True)):
+            # the atom rows carry no coordinates: move the hydrogens bonded to QM heavy atoms into QM
+            # through the topology bonds (a heavy-atom selection must not leave its H classical)
+            qset = set(qidx)
+            added = set()
+            for bond in topology.bonds():
+                a1, a2 = bond[0], bond[1]
+                for heavy, h in ((a1, a2), (a2, a1)):
+                    if heavy.index in qset and h.index not in qset and h.element is not None \
+                            and h.element.symbol == "H":
+                        added.add(int(h.index))
+            if added:
+                qidx = sorted(qset | added)
+                midx = [i for i in midx if i not in added]
+                reg["bonded_hydrogens_added"] = int(len(added))
+                reg["qm_indices"], reg["mm_indices"] = list(qidx), list(midx)
         all_idx = sorted({int(i) for i in list(qidx) + list(midx) if int(i) >= 0})
         if not all_idx:
             return {"ok": False, "error": "QM/MM coupling plan produced an empty atom set."}
@@ -11235,6 +11935,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 water_model=water_model,
                 include_waters=include_waters,
             )
+            library_files = self._openmm_apply_component_library(
+                modeller, ff_family, lig_xml_paths, out, qm_placeholders=bool(qmmm_probe_cfg))
+            forced_keys = out.pop("_qm_forced_keys", None)
+            if forced_keys and qmmm_probe_cfg:
+                qmmm_probe_cfg["force_qm_residue_keys"] = list(qmmm_probe_cfg.get("force_qm_residue_keys", []) or []) + forced_keys
+                # the probe/coupling code reads data["qmmm_probe"]
+                probe_data = dict(data.get("qmmm_probe", {}) or {})
+                probe_data["force_qm_residue_keys"] = list(qmmm_probe_cfg["force_qm_residue_keys"])
+                data["qmmm_probe"] = probe_data
+            override = out.pop("_component_base_override", None)
+            if override:
+                attempts = [
+                    (lbl + " (phosaa)", list(override) + [x for x in files if str(x).startswith("implicit/")])
+                    for lbl, files in attempts
+                    if "amber14-all.xml" in list(files)
+                ] or attempts
+            if library_files:
+                # the component files belong to the requested family only (Amber ions/water on top of
+                # CHARMM36 in a fallback attempt would redefine templates)
+                fam_base = set(forcefield_family_base_files(str(ff_family or "").strip().lower()))
+                attempts = [
+                    (lbl, list(files) + [x for x in library_files if x not in list(files)])
+                    if (fam_base & set(files)) else (lbl, list(files))
+                    for lbl, files in attempts
+                ]
             lig_ff_xmls = []
             for lx in list(lig_xml_paths or []):
                 kind = self._openmm_xml_kind(lx)
@@ -11319,9 +12044,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     f"Input protein has no hydrogens; OpenMM preparation will add them at pH {float(data.get('ph', 7.4)):.2f} before minimization/MD."
                 )
             try:
-                modeller.addHydrogens(ff, pH=float(data.get("ph", 7.4)))
+                h_variants, h_variant_notes = component_coordination_variants(
+                    modeller.topology, [tuple(p.value_in_unit(OMM_UNIT.nanometer)) for p in modeller.positions])
+            except Exception:
+                h_variants, h_variant_notes = None, []
+            for idx, variant in (out.pop("_component_variants", {}) or {}).items():
+                if h_variants is not None and 0 <= int(idx) < len(h_variants):
+                    h_variants[int(idx)] = variant
+            try:
+                modeller.addHydrogens(ff, pH=float(data.get("ph", 7.4)), variants=h_variants)
             except Exception:
                 modeller.addHydrogens(pH=float(data.get("ph", 7.4)))
+            component_restore_names(modeller.topology, out.pop("_component_renames", {}) or {})
+            if h_variant_notes:
+                out["notes"].append("Metal-site protonation: " + ", ".join(h_variant_notes[:12]))
             try:
                 total_atoms_after_h = int(sum(1 for _a in modeller.topology.atoms()))
             except Exception:
@@ -11359,21 +12095,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             }
             if mode != "gas":
                 create_kwargs["nonbondedCutoff"] = float(cutoff_nm) * OMM_UNIT.nanometer
-            if mode == "implicit":
-                try:
-                    create_kwargs["implicitSolvent"] = OMM_APP.OBC2
-                except Exception:
-                    pass
             _emit(40, "Creating OpenMM system")
             ok_sys, system, removed_residues, err_sys = self._openmm_create_system_with_autodrop(
                 ff,
                 modeller,
                 create_kwargs,
             )
+            if removed_residues:
+                rec = str((out.get("component_plan") or {}).get("recommended_family", "") or "")
+                hint = f" {rec} has templates for more of them;" if rec and rec != ff_family else ""
+                out["notes"].insert(
+                    0,
+                    "WARNING: removed residue(s) without force-field template, the simulated system is incomplete: "
+                    + ", ".join(removed_residues[:12])
+                    + f".{hint} parameterize them or pick another force field.",
+                )
             if not ok_sys or system is None:
                 out["error"] = f"System creation failed: {err_sys}"
                 out["removed_residues"] = list(removed_residues or [])
                 return out
+            if bool(data.get("metal_restraints", True)):
+                try:
+                    metal_rows = component_add_coordination_restraints(
+                        system, modeller.topology,
+                        [tuple(p.value_in_unit(OMM_UNIT.nanometer)) for p in modeller.positions])
+                except Exception as e_metal:
+                    metal_rows = []
+                    out["notes"].append(f"Metal-site restraints skipped: {e_metal}")
+                if metal_rows:
+                    out["metal_restraints"] = list(metal_rows)
+                    out["notes"].append(
+                        f"Metal sites kept with {len(metal_rows)} flat-bottom distance restraint(s) (no bonded "
+                        "metal model): " + "; ".join(metal_rows[:6]))
             if qmmm_force_coupled:
                 plan = self._openmm_build_qmmm_coupling_plan(modeller.topology, qmmm_probe_cfg)
                 if not bool(plan.get("ok", False)):
@@ -11464,6 +12217,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             "Staged minimization restraint setup failed; continuing with unrestrained minimization."
                             + (f" Detail: {mk_rest.get('error', '')}" if mk_rest.get("error", "") else "")
                         )
+            if ensemble == "npt" and not bool(system.usesPeriodicBoundaryConditions()):
+                # gas phase / implicit solvent: no box, so no pressure coupling
+                ensemble = "nvt"
+                out["notes"].append("Non-periodic system (gas/implicit solvent): NPT not possible, using NVT.")
             if ensemble == "npt":
                 try:
                     system.addForce(
@@ -12252,6 +13009,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         removed = list(res.get("removed_residues", []) or [])
         notes = list(res.get("notes", []) or [])
         platform_used = str(res.get("platform_used", "") or "")
+        self._record_openmm_speed(platform_used, str(res.get("mode", "") or ""), final_pdb, csv_path)
         status_text = (
             f"OpenMM done | object={launch.get('object_name','')} | solvent={res.get('mode','')} | "
             f"ensemble={str(res.get('ensemble','')).upper()} | FF={ff_lbl}"
@@ -12284,6 +13042,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not bool(payload.get("ok", False)):
             QtWidgets.QMessageBox.warning(self, "OpenMM", str(payload.get("error", "OpenMM setup failed.")))
             return
+        if not bool(minimize_only):
+            minutes, est_text, advice = self._estimate_openmm_run(payload)
+            if est_text:
+                self._append_debug_log(f"OpenMM estimate: {est_text}" + (f" | {advice}" if advice else ""))
+            if minutes > 30:
+                ans = QtWidgets.QMessageBox.question(
+                    self,
+                    "Long MD run",
+                    f"Estimated time: {est_text}."
+                    + (f"\n\n{advice}." if advice else "")
+                    + "\n\nRun it now?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.Yes,
+                )
+                if ans != QtWidgets.QMessageBox.Yes:
+                    return
         if bool(minimize_only):
             self._openmm_min_live_object = str(payload.get("result_object", "openmm_min") or "openmm_min")
             self._openmm_min_live_last_update = 0.0
@@ -13562,20 +14336,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox.setSpacing(10)
             compact_modeler = self._is_compact_screen()
             # Shared receptor selection (applies to all modeler subwindows)
-            row_obj = QtWidgets.QHBoxLayout()
-            row_obj.addWidget(QtWidgets.QLabel("Receptor Object:"))
+            row_obj = QtWidgets.QGridLayout()
+            row_obj.setHorizontalSpacing(8)
+            row_obj.setVerticalSpacing(8)
+            row_obj.addWidget(QtWidgets.QLabel("Receptor Object:"), 0, 0)
             self.modeler_structure_combo = QtWidgets.QComboBox()
             self.modeler_structure_combo.currentTextChanged.connect(self._on_modeler_receptor_changed)
-            row_obj.addWidget(self.modeler_structure_combo, 1)
+            row_obj.addWidget(self.modeler_structure_combo, 0, 1, 1, 2)
             btn_load = QtWidgets.QPushButton("Load Receptor...")
             btn_load.clicked.connect(self._on_modeler_load_receptor)
-            row_obj.addWidget(btn_load)
+            row_obj.addWidget(btn_load, 1, 0)
             btn_refresh = QtWidgets.QPushButton("Refresh Objects")
             btn_refresh.clicked.connect(self._refresh_modeler_object_combo)
-            row_obj.addWidget(btn_refresh)
+            row_obj.addWidget(btn_refresh, 1, 1)
             self.btn_modeler_analyze = QtWidgets.QPushButton("Analyze Sequence/Gaps")
             self.btn_modeler_analyze.clicked.connect(self._on_modeler_analyze_receptor)
-            row_obj.addWidget(self.btn_modeler_analyze)
+            row_obj.addWidget(self.btn_modeler_analyze, 1, 2)
+            row_obj.setColumnStretch(0, 1)
+            row_obj.setColumnStretch(1, 1)
+            row_obj.setColumnStretch(2, 1)
             vbox.addLayout(row_obj)
             self.lbl_modeler_status = QtWidgets.QLabel(
                 "Status: choose receptor and run sequence/gap analysis."
@@ -18674,7 +19453,129 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         arr = np.round(arr, 3)
         digest = hashlib.sha1(arr.tobytes()).hexdigest()
         return f"{int(arr.shape[0])}:{digest}"
+    def _redock_mc_sample(self, pdb_in, out_dir, site_residues, n_structures, temperature_k, seed=1,
+                          progress_label=None):
+        """Run the Monte Carlo side-chain sampler in a child process (the GUI keeps refreshing)."""
+        import subprocess
+        mod = self._modeler_import_module("mc_ensemble_runtime")
+        hw = self._hardware_profile() or {}
+        platform = str((hw.get("md_platform") or {}).get("name") or "CPU")
+        os.makedirs(out_dir, exist_ok=True)
+        args = {"pdb_in": str(pdb_in), "out_dir": str(out_dir), "n_structures": int(n_structures),
+                "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform}
+        args_path = os.path.join(out_dir, "mc_args.json")
+        with open(args_path, "w") as fh:
+            json.dump(args, fh)
+        py = os.path.join(sys.prefix, "bin", "python")
+        py = py if os.path.isfile(py) else sys.executable
+        import queue
+        import threading
+        # -u: progress lines arrive as they are printed; a reader thread keeps the GUI loop from blocking
+        proc = subprocess.Popen([py, "-u", os.path.abspath(mod.__file__), args_path], cwd=out_dir,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        lines_q = queue.Queue()
+
+        def _reader():
+            for ln in proc.stdout:
+                lines_q.put(ln)
+
+        reader = threading.Thread(target=_reader, daemon=True)
+        reader.start()
+        tail = []
+        while True:
+            try:
+                line = lines_q.get(timeout=0.05)
+            except queue.Empty:
+                QtWidgets.QApplication.processEvents()
+                if proc.poll() is not None and not reader.is_alive() and lines_q.empty():
+                    break
+                continue
+            tail = (tail + [line.rstrip()])[-20:]
+            if line.startswith("PROGRESS") and progress_label is not None:
+                try:
+                    progress_label.setText(f"Monte Carlo ensemble: {line.split(' ', 1)[1].strip()}")
+                except Exception:
+                    pass
+            QtWidgets.QApplication.processEvents()
+        proc.wait()
+        res_path = os.path.join(out_dir, "mc_ensemble.json")
+        if proc.returncode != 0 or not os.path.isfile(res_path):
+            return {"ok": False, "error": "\n".join(tail[-6:]) or f"exit {proc.returncode}"}
+        return json.load(open(res_path))
+    def _redock_collect_mc_ensemble_systems(self, system_label, receptor_obj):
+        """
+        Receptor ensemble for redocking: the best model only (MODELLER best-DOPE model when the object
+        comes from a MODELLER run) plus N binding-site conformations sampled by Monte Carlo.
+        """
+        label = str(system_label or "System").strip() or "System"
+        source_obj = str(receptor_obj or "").strip()
+        out = {"ok": True, "used": False, "systems": [(label, source_obj, source_obj, f"{label}_model_001")],
+               "created_objects": [], "note": "", "model_count": 1, "run_id": ""}
+        if not source_obj:
+            return dict(out, ok=False, systems=[], model_count=0, note="Empty receptor object.")
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        work = os.path.join(self._dock_workspace_dir(), "redocking_mc_ensembles", f"{label.lower()}_{ts}")
+        os.makedirs(work, exist_ok=True)
+        best_pdb = ""
+        run_info = self._modeler_lookup_run_by_output(source_obj)
+        if isinstance(run_info, dict):
+            bp = str(run_info.get("best_model_path", "") or "")
+            if bp and os.path.isfile(bp):
+                best_pdb = bp
+        if not best_pdb:
+            best_pdb = os.path.join(work, "best_model.pdb")
+            cmd.save(best_pdb, f"({source_obj}) and polymer", state=1)
+        # binding site: residues around the reference ligand (same numbering in WT/mutant models)
+        ref_obj = str(self.cmb_redock_reference_obj.currentText() or "").strip() if hasattr(self, "cmb_redock_reference_obj") else ""
+        lig_sel = ""
+        try:
+            ch, ri, rn = (self.edit_redock_ref_chain.text().strip(), self.edit_redock_ref_resi.text().strip(),
+                          self.edit_redock_ref_resn.text().strip())
+            if ref_obj and rn:
+                lig_sel = self._pymol_residue_selection(ref_obj, ch, ri, rn)
+        except Exception:
+            lig_sel = ""
+        if not lig_sel or cmd.count_atoms(lig_sel) == 0:
+            out["note"] = f"{label}: Monte Carlo ensemble needs the reference ligand to define the site; single receptor used."
+            return out
+        radius = float(self.spin_redock_mc_radius.value()) if hasattr(self, "spin_redock_mc_radius") else 6.0
+        space = {"site": set()}
+        cmd.iterate(f"byres (({ref_obj}) and polymer and not hydro within {radius} of ({lig_sel}))",
+                    "site.add((chain, resi))", space=space)
+        site = sorted(space["site"])
+        n = int(self.spin_redock_mc_n.value()) if hasattr(self, "spin_redock_mc_n") else 10
+        temp = float(self.spin_redock_mc_temp.value()) if hasattr(self, "spin_redock_mc_temp") else 300.0
+        self._append_debug_log(f"Redocking MC ensemble ({label}): {n} structures, T={temp} K, {len(site)} site residues")
+        res = self._redock_mc_sample(best_pdb, work, site, n, temp,
+                                     progress_label=getattr(self, "lbl_redock_summary", None))
+        if not bool(res.get("ok", False)):
+            out["note"] = f"{label}: Monte Carlo sampling failed ({str(res.get('error', ''))[:200]}); single receptor used."
+            return out
+        systems, created = [], []
+        members = [{"path": best_pdb, "relative_energy_kj_mol": 0.0, "site_rmsd_to_start_A": 0.0}] + list(res.get("structures") or [])
+        for k, m in enumerate(members, start=1):
+            obj = self._dock_safe_obj_name(f"redock_{label.lower()}_mc_{k:03d}_{ts}")
+            try:
+                cmd.load(m["path"], obj)
+                cmd.hide("everything", obj)
+                cmd.show("cartoon", f"({obj}) and polymer")
+                cmd.group(f"Redocking.Ensemble.{label}", obj)
+                created.append(obj)
+                systems.append((label, obj, source_obj, f"{label}_mc_{k:03d}"))
+            except Exception as e:
+                self._append_debug_log(f"MC ensemble load warning ({m.get('path')}): {e}")
+        if not systems:
+            return out
+        self._redock_last_mc_ensemble = dict(res, label=label, members=members, objects=created)
+        out.update({"used": True, "systems": systems, "created_objects": created, "model_count": len(systems),
+                    "run_id": os.path.basename(work),
+                    "note": (f"{label}: Monte Carlo ensemble active ({len(systems)} structures: best model + "
+                             f"{len(systems) - 1} sampled at {temp:.0f} K, acceptance {res.get('acceptance')}, "
+                             f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A).")})
+        return out
     def _redock_collect_modeler_ensemble_systems(self, system_label, receptor_obj):
+        """Deprecated: MODELLER multi-model ensembles (use _redock_collect_mc_ensemble_systems)."""
         label = str(system_label or "System").strip() or "System"
         source_obj = str(receptor_obj or "").strip()
         out = {
@@ -18951,7 +19852,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             pbox.addLayout(row_fp)
             self.tbl_pockets = QtWidgets.QTableWidget(0, 7)
             self.tbl_pockets.setHorizontalHeaderLabels(
-                ["Pocket", "Rank", "Druggability", "Center (A)", "Size (A)", "Atoms", "Surface"]
+                ["Pocket", "fpocket Score", "Druggability", "Center (A)", "Size (A)", "Atoms", "Surface"]
             )
             self.tbl_pockets.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             self.tbl_pockets.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -19033,6 +19934,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_param.setColumnStretch(3, 1)
             lbox.addLayout(row_param)
             row_qm = QtWidgets.QHBoxLayout()
+            # protonation first: it fixes the net charge and atom types used by every charge method
+            self.btn_ligand_pka = QtWidgets.QPushButton("pKa & Protonation...")
+            self.btn_ligand_pka.setToolTip(
+                "Site pKa values and protonation state at a pH (empirical or PM7). Decide the state here "
+                "before building charges/parameters."
+            )
+            self.btn_ligand_pka.clicked.connect(self._show_pka_dialog)
+            row_qm.addWidget(self.btn_ligand_pka)
             self.btn_ligand_qm_espfit = QtWidgets.QPushButton("QM Charges (Psi4 ESP Fit)...")
             self.btn_ligand_qm_espfit.clicked.connect(self._on_open_psi4_espfit_for_ligand)
             row_qm.addWidget(self.btn_ligand_qm_espfit)
@@ -19405,6 +20314,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self.verticalLayout.insertWidget(insert_idx, self.btn_open_ligand_tools)
             else:
                 self.layout().addWidget(self.btn_open_ligand_tools)
+            self.btn_open_pka = QtWidgets.QPushButton("pKa & Protonation...")
+            self.btn_open_pka.setToolTip(
+                "pKa of small molecules (empirical or PM7/COSMO) and pH-dependent protonation states; "
+                "hand the chosen state to docking or parametrization"
+            )
+            self.btn_open_pka.clicked.connect(self._show_pka_dialog)
+            if hasattr(self, "verticalLayout"):
+                idx_lt = self.verticalLayout.indexOf(self.btn_open_ligand_tools)
+                self.verticalLayout.insertWidget(idx_lt + 1 if idx_lt >= 0 else self.verticalLayout.count(),
+                                                 self.btn_open_pka)
+            else:
+                self.layout().addWidget(self.btn_open_pka)
             self.btn_open_pocket_docking = QtWidgets.QPushButton("Pocket & Docking...")
             self.btn_open_pocket_docking.setToolTip(
                 "fpocket pocket detection, ligand sourcing, antechamber parameterization, "
@@ -19552,15 +20473,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_align.addStretch(1)
             qc_layout.addLayout(row_align)
             row_ensemble = QtWidgets.QHBoxLayout()
-            self.cb_redock_use_modeler_ensemble = QtWidgets.QCheckBox(
-                "Sample MODELLER ensembles (all generated WT/mutant models)"
-            )
+            # Deprecated: MODELLER multi-model ensembles (models differ by modeling noise, not by the
+            # binding-site flexibility redocking needs). Kept hidden so old projects still load.
+            self.cb_redock_use_modeler_ensemble = QtWidgets.QCheckBox("Sample MODELLER ensembles (deprecated)")
             self.cb_redock_use_modeler_ensemble.setChecked(False)
-            self.cb_redock_use_modeler_ensemble.setToolTip(
-                "If the selected WT/mutant objects come from MODELLER runs, redocking uses all generated models "
-                "as receptor ensemble members and aggregates statistics/classification across the ensemble."
+            self.cb_redock_use_modeler_ensemble.setVisible(False)
+            self.cb_redock_use_mc_ensemble = QtWidgets.QCheckBox("Receptor ensemble by Monte Carlo sampling")
+            self.cb_redock_use_mc_ensemble.setChecked(False)
+            self.cb_redock_use_mc_ensemble.setToolTip(
+                "From the best receptor model only (for MODELLER objects the best-DOPE model), sample the "
+                "binding-site side chains by Monte Carlo with minimization (chi-angle moves, Amber14/GB-OBC2, "
+                "Metropolis at T; backbone and the rest of the protein fixed) and redock into every sampled "
+                "structure. Replaces the deprecated MODELLER multi-model ensembles."
             )
-            row_ensemble.addWidget(self.cb_redock_use_modeler_ensemble)
+            row_ensemble.addWidget(self.cb_redock_use_mc_ensemble)
+            row_ensemble.addWidget(QtWidgets.QLabel("Structures"))
+            self.spin_redock_mc_n = QtWidgets.QSpinBox()
+            self.spin_redock_mc_n.setRange(2, 200)
+            self.spin_redock_mc_n.setValue(10)
+            self.spin_redock_mc_n.setToolTip("How many receptor conformations to sample")
+            row_ensemble.addWidget(self.spin_redock_mc_n)
+            row_ensemble.addWidget(QtWidgets.QLabel("T (K)"))
+            self.spin_redock_mc_temp = QtWidgets.QDoubleSpinBox()
+            self.spin_redock_mc_temp.setRange(100.0, 2000.0)
+            self.spin_redock_mc_temp.setValue(300.0)
+            self.spin_redock_mc_temp.setToolTip("Metropolis temperature: higher = more diverse, higher-energy states")
+            row_ensemble.addWidget(self.spin_redock_mc_temp)
+            row_ensemble.addWidget(QtWidgets.QLabel("Site radius (A)"))
+            self.spin_redock_mc_radius = QtWidgets.QDoubleSpinBox()
+            self.spin_redock_mc_radius.setRange(3.0, 15.0)
+            self.spin_redock_mc_radius.setValue(6.0)
+            self.spin_redock_mc_radius.setToolTip("Residues within this distance of the reference ligand move")
+            row_ensemble.addWidget(self.spin_redock_mc_radius)
             row_ensemble.addStretch(1)
             qc_layout.addLayout(row_ensemble)
             row_site_qc = QtWidgets.QHBoxLayout()
@@ -19619,11 +20563,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_lig_mode.addStretch(1)
             ligand_layout.addLayout(row_lig_mode)
             row_grid = QtWidgets.QHBoxLayout()
-            row_grid.addWidget(QtWidgets.QLabel("Grid padding (A)"))
+            row_grid.addWidget(QtWidgets.QLabel("Grid padding per side (A)"))
             self.spin_redock_padding = QtWidgets.QDoubleSpinBox()
             self.spin_redock_padding.setDecimals(2)
             self.spin_redock_padding.setRange(2.0, 20.0)
             self.spin_redock_padding.setValue(3.0)
+            self.spin_redock_padding.setToolTip(
+                "Added on each side of the crystal ligand's extent; the box is centred on the ligand and "
+                "never leaves less than 1 A around it, whatever the min/max edge."
+            )
             self.spin_redock_padding.valueChanged.connect(self._on_redock_grid_controls_changed)
             row_grid.addWidget(self.spin_redock_padding)
             row_grid.addWidget(QtWidgets.QLabel("Min box edge (A)"))
@@ -20457,9 +21405,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return ""
         ch, ri, rn = ref_fields
         try:
-            return self._pymol_residue_selection(receptor_obj, ch, ri, rn, wrap=True)
+            sel = self._pymol_residue_selection(receptor_obj, ch, ri, rn, wrap=True)
         except Exception:
             return ""
+        # one conformer of the crystal ligand: with alternate locations every atom was taken
+        # twice (docking input, RMSD reference and search box)
+        return f"({sel}) and alt ''+A" if sel else ""
     def _redock_reference_geometry(self, receptor_obj, ref_fields):
         sel = self._redock_reference_selection(receptor_obj, ref_fields)
         if not sel:
@@ -20473,8 +21424,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         arr = np.asarray(coords, dtype=float)
         if arr.ndim != 2 or arr.shape[0] <= 0:
             return None, None, 0
-        center = np.mean(arr, axis=0)
-        span = np.max(arr, axis=0) - np.min(arr, axis=0)
+        lo = np.min(arr, axis=0)
+        hi = np.max(arr, axis=0)
+        # box centred on the ligand's bounding box (its centroid can sit off-centre, and the
+        # padding is added on each side of the span)
+        center = 0.5 * (lo + hi)
+        span = hi - lo
         return center, span, int(arr.shape[0])
     def _redock_reference_grid_payload(self, receptor_obj, ref_fields):
         center, span, nref = self._redock_reference_geometry(receptor_obj, ref_fields)
@@ -20606,6 +21561,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 return (1, 0, str(v))
 
+        # alternate locations give one CA per conformer: keep the first per residue
+        seen = set()
+        unique = []
+        for rec in out:
+            key = (rec["chain"], rec["resi"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(rec)
+        out = unique
         out.sort(key=lambda x: (str(x.get("chain", "")), _resi_key(x.get("resi", ""))))
         return out
 
@@ -21903,7 +22868,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 label=str(label),
                 state_map=dict(state_map or {}),
                 n_states=int(n_states),
-                pick_best_pose_row_fn=redock_pick_best_pose_row,
+                pick_best_pose_row_fn=redock_pick_top_scored_pose_row,
                 resolve_state_for_member_fn=redock_resolve_state_for_member,
                 best_pose_for_member_fn=lambda all_rows, q_label, q_member: redock_best_pose_for_member(
                     list(all_rows or []),
@@ -22793,12 +23758,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             systems=list(systems or []),
             params=dict(params or {}),
             use_modeler_ensemble=bool(
-                getattr(self, "cb_redock_use_modeler_ensemble", None)
-                and self.cb_redock_use_modeler_ensemble.isChecked()
+                getattr(self, "cb_redock_use_mc_ensemble", None)
+                and self.cb_redock_use_mc_ensemble.isChecked()
             ),
             align_to_ref=bool(getattr(self, "cb_redock_align_to_ref", None) and self.cb_redock_align_to_ref.isChecked()),
             ref_obj=str(ref_obj or ""),
-            collect_modeler_ensemble_fn=self._redock_collect_modeler_ensemble_systems,
+            collect_modeler_ensemble_fn=self._redock_collect_mc_ensemble_systems,
             align_receptor_to_reference_fn=self._redock_align_receptor_to_reference,
             align_rmsd_max_a=float(align_rmsd_max),
             site_qc_enabled=bool(getattr(self, "cb_redock_site_qc", None) and self.cb_redock_site_qc.isChecked()),
@@ -23102,6 +24067,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             self._af_dialog = QtWidgets.QDialog(self)
             self._af_dialog.setWindowTitle("AlphaFold / ColabFold")
+            # Every AlphaFold tab manages its own responsive content.  Keep the
+            # shared dialog helper from adding a second, nested scroll area.
+            self._af_dialog._leonardo_scroll_checked = True
             self._af_dialog.resize(1120, 860)
             self._af_dialog.setMinimumSize(960, 720)
             self._fit_dialog_to_screen(self._af_dialog, preferred_w=1120, preferred_h=860, min_w=920, min_h=700)
@@ -23158,18 +24126,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox.setContentsMargins(12, 12, 12, 12)
             vbox.setSpacing(8)
 
-            header = QtWidgets.QLabel("AlphaFold / ColabFold")
-            header.setStyleSheet("font-size: 18px; font-weight: 600; color: #1f2328;")
-            vbox.addWidget(header)
+            class _WrappedWarningLabel(QtWidgets.QLabel):
+                # Qt gives word-wrapped labels less height than heightForWidth() in tight
+                # layouts, clipping the last line; keep the minimum height in sync with the width.
+                def resizeEvent(self, event):
+                    super().resizeEvent(event)
+                    needed = self.heightForWidth(self.width()) if self.text() else 0
+                    if needed > 0 and self.minimumHeight() != needed:
+                        self.setMinimumHeight(needed)
 
-            subtitle = QtWidgets.QLabel(
-                "Predict structures with ColabFold/AlphaFold2, prepare AlphaFold 3 JSON, or run AF3 locally when Docker, databases, model parameters, and GPU are available."
+            # Shown on every tab when the selected engine needs a GPU this computer lacks.
+            self.lbl_af_gpu_warning = _WrappedWarningLabel("")
+            self.lbl_af_gpu_warning.setWordWrap(True)
+            self.lbl_af_gpu_warning.setTextFormat(QtCore.Qt.RichText)
+            self.lbl_af_gpu_warning.setStyleSheet(
+                "background: #fff4e5; color: #7a3e00; border: 1px solid #f0b060; "
+                "border-radius: 6px; padding: 8px 10px;"
             )
-            subtitle.setWordWrap(True)
-            subtitle.setStyleSheet("color: #4b5563;")
-            vbox.addWidget(subtitle)
+            self.lbl_af_gpu_warning.setVisible(False)
+            vbox.addWidget(self.lbl_af_gpu_warning)
 
             tabs = QtWidgets.QTabWidget(self._af_dialog)
+            self.tabs_af = tabs
             vbox.addWidget(tabs, 1)
 
             def _group(title):
@@ -23387,73 +24365,88 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
 
             # Run tab: output folders, execution buttons, status, and logs.
             tab_run = QtWidgets.QWidget()
-            run_box = QtWidgets.QVBoxLayout(tab_run)
+            run_outer = QtWidgets.QVBoxLayout(tab_run)
+            run_outer.setContentsMargins(0, 0, 0, 0)
+            run_outer.setSpacing(0)
+            run_scroll = QtWidgets.QScrollArea(tab_run)
+            run_scroll.setObjectName("afRunScrollArea")
+            run_scroll.setProperty("leonardoVerticalOnly", True)
+            run_scroll.setWidgetResizable(True)
+            run_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            run_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            run_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            run_body = QtWidgets.QWidget(run_scroll)
+            run_body.setObjectName("afRunScrollContent")
+            run_scroll.setWidget(run_body)
+            run_outer.addWidget(run_scroll, 1)
+            run_box = QtWidgets.QVBoxLayout(run_body)
             run_box.setContentsMargins(10, 10, 10, 10)
-            run_box.setSpacing(8)
+            run_box.setSpacing(10)
             out_group, out_lay = _group("Output")
-            row_out = QtWidgets.QHBoxLayout()
-            row_out.addWidget(QtWidgets.QLabel("Output Root"))
+            output_grid = QtWidgets.QGridLayout()
+            output_grid.setHorizontalSpacing(8)
+            output_grid.setVerticalSpacing(8)
+            output_grid.addWidget(QtWidgets.QLabel("Output Root"), 0, 0)
             self.edit_af_out_dir = QtWidgets.QLineEdit()
-            row_out.addWidget(self.edit_af_out_dir, 1)
+            output_grid.addWidget(self.edit_af_out_dir, 0, 1, 1, 2)
             self.btn_af_pick_out = QtWidgets.QPushButton("Choose...")
             self.btn_af_pick_out.clicked.connect(self._on_af_pick_output_dir)
-            row_out.addWidget(self.btn_af_pick_out)
+            output_grid.addWidget(self.btn_af_pick_out, 0, 3)
             self.cb_af_autoload = QtWidgets.QCheckBox("Auto-load best model")
             self.cb_af_autoload.setChecked(True)
-            row_out.addWidget(self.cb_af_autoload)
-            out_lay.addLayout(row_out)
-            row_sync = QtWidgets.QGridLayout()
+            output_grid.addWidget(self.cb_af_autoload, 1, 1, 1, 2)
             self.lbl_af_sync_folder = QtWidgets.QLabel("Sync Folder")
-            row_sync.addWidget(self.lbl_af_sync_folder, 0, 0)
+            output_grid.addWidget(self.lbl_af_sync_folder, 2, 0)
             self.edit_af_sync_dir = QtWidgets.QLineEdit()
-            row_sync.addWidget(self.edit_af_sync_dir, 0, 1, 1, 3)
+            output_grid.addWidget(self.edit_af_sync_dir, 2, 1, 1, 2)
             self.btn_af_pick_sync = QtWidgets.QPushButton("Choose...")
             self.btn_af_pick_sync.clicked.connect(self._on_af_pick_sync_dir)
-            row_sync.addWidget(self.btn_af_pick_sync, 0, 4)
+            output_grid.addWidget(self.btn_af_pick_sync, 2, 3)
             self.btn_af_scan_sync = QtWidgets.QPushButton("Scan & Load")
             self.btn_af_scan_sync.clicked.connect(lambda: self._on_af_scan_sync_folder(silent=False, autoload=True))
-            row_sync.addWidget(self.btn_af_scan_sync, 1, 1)
             self.btn_af_import_result = QtWidgets.QPushButton("Import Result...")
             self.btn_af_import_result.clicked.connect(self._on_af_import_result)
-            row_sync.addWidget(self.btn_af_import_result, 1, 2)
             self.cb_af_auto_sync = QtWidgets.QCheckBox("Auto-sync")
             self.cb_af_auto_sync.setChecked(True)
-            row_sync.addWidget(self.cb_af_auto_sync, 1, 3)
             self.lbl_af_sync_interval = QtWidgets.QLabel("Every (s)")
-            row_sync.addWidget(self.lbl_af_sync_interval, 2, 1)
             self.spin_af_sync_interval = QtWidgets.QSpinBox()
             self.spin_af_sync_interval.setRange(5, 600)
             self.spin_af_sync_interval.setValue(20)
-            row_sync.addWidget(self.spin_af_sync_interval, 2, 2)
-            row_sync.setColumnStretch(1, 1)
-            row_sync.setColumnStretch(2, 1)
-            row_sync.setColumnStretch(3, 1)
-            out_lay.addLayout(row_sync)
+            sync_actions = QtWidgets.QHBoxLayout()
+            sync_actions.setSpacing(8)
+            sync_actions.addWidget(self.btn_af_scan_sync, 1)
+            sync_actions.addWidget(self.btn_af_import_result, 1)
+            sync_actions.addWidget(self.cb_af_auto_sync)
+            sync_actions.addWidget(self.lbl_af_sync_interval)
+            sync_actions.addWidget(self.spin_af_sync_interval)
+            output_grid.addLayout(sync_actions, 3, 0, 1, 4)
+            output_grid.setColumnStretch(1, 1)
+            output_grid.setColumnStretch(2, 1)
+            out_lay.addLayout(output_grid)
             run_box.addWidget(out_group)
 
             actions_group, actions_lay = _group("Run And Inspect")
-            row_run = QtWidgets.QHBoxLayout()
+            action_grid = QtWidgets.QGridLayout()
+            action_grid.setHorizontalSpacing(8)
+            action_grid.setVerticalSpacing(8)
             self.btn_af_run = QtWidgets.QPushButton("Run / Prepare")
             self.btn_af_run.clicked.connect(self._on_af_run_colabfold)
-            row_run.addWidget(self.btn_af_run)
+            action_grid.addWidget(self.btn_af_run, 0, 0)
             self.btn_af_load_best = QtWidgets.QPushButton("Load Best Model")
             self.btn_af_load_best.clicked.connect(self._on_af_load_best_model)
-            row_run.addWidget(self.btn_af_load_best)
-            row_run.addStretch(1)
-            actions_lay.addLayout(row_run)
-            row_plot = QtWidgets.QGridLayout()
+            action_grid.addWidget(self.btn_af_load_best, 0, 1)
             self.btn_af_plot_plddt = QtWidgets.QPushButton("Show pLDDT Plot")
             self.btn_af_plot_plddt.clicked.connect(lambda: self._on_af_show_plot("plddt"))
-            row_plot.addWidget(self.btn_af_plot_plddt, 0, 0)
+            action_grid.addWidget(self.btn_af_plot_plddt, 1, 0)
             self.btn_af_plot_pae = QtWidgets.QPushButton("Show PAE/Error Plot")
             self.btn_af_plot_pae.clicked.connect(lambda: self._on_af_show_plot("pae"))
-            row_plot.addWidget(self.btn_af_plot_pae, 0, 1)
+            action_grid.addWidget(self.btn_af_plot_pae, 1, 1)
             self.btn_af_plot_msa = QtWidgets.QPushButton("Show MSA/Coverage Plot")
             self.btn_af_plot_msa.clicked.connect(lambda: self._on_af_show_plot("msa"))
-            row_plot.addWidget(self.btn_af_plot_msa, 1, 0)
-            row_plot.setColumnStretch(0, 1)
-            row_plot.setColumnStretch(1, 1)
-            actions_lay.addLayout(row_plot)
+            action_grid.addWidget(self.btn_af_plot_msa, 2, 0, 1, 2)
+            action_grid.setColumnStretch(0, 1)
+            action_grid.setColumnStretch(1, 1)
+            actions_lay.addLayout(action_grid)
             run_box.addWidget(actions_group)
             self.lbl_af_tools = QtWidgets.QLabel("")
             self.lbl_af_tools.setWordWrap(True)
@@ -23465,10 +24458,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.lbl_af_status.setWordWrap(True)
             run_box.addWidget(self.lbl_af_status)
             self.txt_af_log = QtWidgets.QPlainTextEdit()
+            self.txt_af_log.setObjectName("afRunLog")
             self.txt_af_log.setReadOnly(True)
             self.txt_af_log.setPlaceholderText("Run log will appear here...")
-            self.txt_af_log.setMinimumHeight(260)
+            self.txt_af_log.setMinimumHeight(180)
             run_box.addWidget(self.txt_af_log, 1)
+            run_box.addStretch(1)
             tabs.addTab(tab_run, "Run")
 
             close_row = QtWidgets.QHBoxLayout()
@@ -23512,6 +24507,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print(f"AlphaFold UI Setup Error: {e}")
     def _show_alphafold_dialog(self):
         try:
+            self._af_gpu_info(refresh=True)
             self._refresh_af_source_combo()
             self._on_af_engine_changed()
             self._on_af_exec_mode_changed()
@@ -23555,7 +24551,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             raw = str(self.cmb_af_chain.currentData() or "").strip()
             if raw and raw.upper() not in {"MAIN", "SYNTHETIC_MAIN"}:
-                chain_id = re.sub(r"[^A-Za-z0-9]+", "", raw)[:4] or "A"
+                chain_id = af_sanitize_af3_chain_id(raw, 0)
         except Exception:
             chain_id = "A"
         return chain_id
@@ -23576,31 +24572,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         gpu_reason = "GPU not requested"
         if gpu_required:
             # Official AF3 Docker execution expects NVIDIA GPU access through Docker.
-            gpu_ok = False
-            gpu_reason = "no NVIDIA GPU detected"
-            nvsmi = shutil.which("nvidia-smi")
-            if nvsmi:
-                try:
-                    pr = subprocess.run(
-                        [str(nvsmi), "-L"],
-                        capture_output=True,
-                        text=True,
-                        timeout=6,
-                        check=False,
-                    )
-                    txt = (str(pr.stdout or "") + "\n" + str(pr.stderr or "")).strip()
-                    if (pr.returncode == 0) and ("GPU" in txt.upper()):
-                        gpu_ok = True
-                        gpu_reason = "nvidia-smi"
-                except Exception:
-                    pass
-            if not gpu_ok:
-                try:
-                    if os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version"):
-                        gpu_ok = True
-                        gpu_reason = "nvidia-device"
-                except Exception:
-                    pass
+            gpu_ok, gpu_reason = self._af_local_gpu_available(deep=bool(deep_probe))
         ready = bool(docker_path) and model_ok and db_ok and bool(gpu_ok)
         missing = []
         if not docker_path:
@@ -23651,6 +24623,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_af_plot_msa.setEnabled(engine == AF_ENGINE_COLABFOLD)
         except Exception:
             pass
+        self._af_update_gpu_warning()
         try:
             self._on_af_exec_mode_changed()
         except Exception:
@@ -23683,10 +24656,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         af3_output_dir = os.path.join(job_dir, "af3_output")
         os.makedirs(af3_input_dir, exist_ok=True)
         os.makedirs(af3_output_dir, exist_ok=True)
+        chains = af_split_protein_chains(str(bundle.get("seq") or ""))
         payload = af_build_alphafold3_input_json(
             job_name=str(bundle.get("job_name") or "af_job"),
-            protein_sequences=[str(bundle.get("seq") or "")],
-            chain_ids=[self._af_current_af3_chain_id()],
+            protein_sequences=chains,
+            # a single chain keeps the chain the user picked; a complex gets A, B, C, ...
+            chain_ids=[self._af_current_af3_chain_id()] if len(chains) == 1 else None,
             model_seeds=[self._af_af3_seed()],
         )
         json_path = os.path.join(af3_input_dir, "fold_input.json")
@@ -23787,58 +24762,59 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return str(self.cmb_af_exec_mode.currentData() or "auto")
         except Exception:
             return "auto"
+    def _af_gpu_info(self, refresh=False):
+        # nvidia-smi can take seconds; probe once per dialog opening, not on every UI refresh
+        info = getattr(self, "_af_gpu_info_cache", None)
+        if refresh or not isinstance(info, dict):
+            try:
+                info = dict(af_detect_local_gpu() or {})
+            except Exception:
+                info = {"available": False, "reason": "GPU detection failed", "apple_silicon": False}
+            self._af_gpu_info_cache = info
+        return dict(info)
     def _af_local_gpu_available(self, deep=False):
         """
-        Detect whether local ColabFold GPU execution is likely available.
-        Heuristic priority: nvidia-smi/device nodes, optional deep JAX probe.
+        Detect whether local ColabFold GPU execution is available: an NVIDIA/CUDA GPU.
+        Apple (Metal) GPUs and CPU-only JAX do not count.
         """
-        # Fast NVIDIA probe
-        nvsmi = shutil.which("nvidia-smi")
-        if nvsmi:
-            try:
-                pr = subprocess.run(
-                    [str(nvsmi), "-L"],
-                    capture_output=True,
-                    text=True,
-                    timeout=6,
-                    check=False,
-                )
-                txt = (str(pr.stdout or "") + "\\n" + str(pr.stderr or "")).strip()
-                if (pr.returncode == 0) and ("GPU" in txt.upper()):
-                    return True, "nvidia-smi"
-            except Exception:
-                pass
+        info = self._af_gpu_info(refresh=bool(deep))
+        return bool(info.get("available")), str(info.get("reason") or "no local GPU detected")
+    def _af_ask_gpu_fallback(self, gpu_msg):
+        """Return "colab", "local" or "cancel" for a local run requested without a detected GPU."""
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle(GPU_REQUIRED_TITLE)
+        box.setText(f"<b>{GPU_REQUIRED_TITLE}</b>")
+        box.setInformativeText(
+            f"{gpu_msg}\n\nIf this computer does have an NVIDIA GPU that was not detected, "
+            "you can still run locally."
+        )
+        btn_colab = box.addButton("Prepare for Google Colab", QtWidgets.QMessageBox.AcceptRole)
+        btn_local = box.addButton("Run locally anyway", QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(btn_colab)
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked is btn_colab:
+            return "colab"
+        if clicked is btn_local:
+            return "local"
+        return "cancel"
+    def _af_update_gpu_warning(self):
+        lbl = getattr(self, "lbl_af_gpu_warning", None)
+        if lbl is None:
+            return ""
+        msg = ""
         try:
-            if os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version"):
-                return True, "nvidia-device"
+            msg = af_gpu_requirement_message(self._af_current_engine(), self._af_gpu_info())
+        except Exception:
+            msg = ""
+        try:
+            lbl.setText(f"<b>&#9888; {GPU_REQUIRED_TITLE}.</b> {msg}" if msg else "")
+            lbl.setVisible(bool(msg))
         except Exception:
             pass
-        if deep:
-            # Deep probe using JAX (if installed in current PyMOL Python env).
-            try:
-                probe_cmd = [
-                    str(sys.executable),
-                    "-c",
-                    (
-                        "import jax; "
-                        "plats=sorted(set([str(getattr(d,'platform','')).lower() for d in jax.devices()])); "
-                        "print(','.join(plats))"
-                    ),
-                ]
-                pr = subprocess.run(
-                    probe_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-                if pr.returncode == 0:
-                    plats = [x.strip().lower() for x in str(pr.stdout or "").strip().split(",") if x.strip()]
-                    if any(x in {"gpu", "cuda", "rocm", "metal"} for x in plats):
-                        return True, f"jax:{'/'.join(plats)}"
-            except Exception:
-                pass
-        return False, "no local GPU detected"
+        return msg
     def _af_resolve_exec_mode(self, deep_probe=False):
         mode = self._af_current_exec_mode()
         if mode != "auto":
@@ -24055,10 +25031,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         job_name = af_sanitize_job_name(job_name)
         if self._af_is_af3_engine():
             try:
+                chains = af_split_protein_chains(seq)
                 payload = af_build_alphafold3_input_json(
                     job_name=job_name,
-                    protein_sequences=[seq],
-                    chain_ids=[self._af_current_af3_chain_id()],
+                    protein_sequences=chains,
+                    chain_ids=[self._af_current_af3_chain_id()] if len(chains) == 1 else None,
                     model_seeds=[self._af_af3_seed()],
                 )
                 txt = json.dumps(payload, indent=2)
@@ -24066,7 +25043,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "AlphaFold 3", f"Could not build AF3 JSON: {e}")
                 return
         else:
-            txt = f">{job_name}\n{seq}\n"
+            txt = af_fasta_text(job_name, seq)
         try:
             cb = QtWidgets.QApplication.clipboard()
             if cb is not None:
@@ -24139,16 +25116,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
     def _af_clean_sequence(self, text):
-        lines = []
-        for raw in str(text or "").splitlines():
-            ln = str(raw).strip()
-            if not ln:
-                continue
-            if ln.startswith(">"):
-                continue
-            lines.append(ln)
-        seq = re.sub(r"[^A-Za-z]", "", "".join(lines)).upper()
-        return seq
+        # Chains stay separated by ':' (ColabFold complex syntax); several FASTA records are
+        # several chains, not one concatenated sequence.
+        return af_colabfold_query(text)
     def _refresh_af_source_combo(self):
         if not hasattr(self, "af_source_combo"):
             return
@@ -24319,6 +25289,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(sync_root, exist_ok=True)
         except Exception:
             pass
+        # the Leonardo Colab cell downloads a ZIP; unpack it so its models can be found
+        for unpacked in af_extract_result_zips(sync_root):
+            self._af_append_log(f"Unpacked result ZIP: {unpacked}")
         best = self._af_find_best_model_recursive(sync_root, token=token, prefer_relaxed=self._af_relax_requested())
         if not best:
             if not silent:
@@ -24386,9 +25359,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             dst = os.path.join(out_root, f"import_colab_{ts}")
             try:
-                os.makedirs(dst, exist_ok=True)
-                with zipfile.ZipFile(fpath, "r") as zf:
-                    zf.extractall(dst)
+                af_safe_extract_zip(fpath, dst)
                 best = self._af_find_best_model_recursive(dst, token=str(getattr(self, "_af_pending_job_name", "") or ""), prefer_relaxed=self._af_relax_requested())
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "AlphaFold", f"Failed to import ZIP: {e}")
@@ -24767,7 +25738,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not seq:
             QtWidgets.QMessageBox.warning(self, "AlphaFold", "Sequence is empty.")
             return None
-        invalid = sorted(set([c for c in seq if c not in set("ACDEFGHIKLMNPQRSTVWYBXZJUO")]))
+        invalid = sorted(set([c for c in seq if c not in set("ACDEFGHIKLMNPQRSTVWYBXZJUO:")]))
         if invalid:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -24851,7 +25822,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         fasta = os.path.join(job_dir, f"{job_name}.fasta")
         try:
             with open(fasta, "w", encoding="utf-8") as fh:
-                fh.write(f">{job_name}\n{seq}\n")
+                # ColabFold: one record, chains joined by ':'; AlphaFold 3: one record per chain
+                fh.write(af_fasta_text(job_name, seq, per_chain=engine in {AF_ENGINE_AF3_LOCAL, AF_ENGINE_AF3_SERVER}))
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "AlphaFold", f"Failed to write FASTA: {e}")
             return None
@@ -24954,15 +25926,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     server_url = ""
                 if not server_url:
                     server_url = AF3_SERVER_URL
+                server_json = os.path.join(bundle["job_dir"], "af3_input", "alphafold_server_input.json")
+                try:
+                    af_write_json(
+                        af_build_alphafold_server_json(
+                            bundle["job_name"],
+                            af_split_protein_chains(str(bundle.get("seq") or "")),
+                            model_seeds=[self._af_af3_seed()],
+                        ),
+                        server_json,
+                    )
+                    bundle["af3_server_json"] = server_json
+                except Exception as e:
+                    server_json = f"(not written: {e})"
                 info_txt = os.path.join(bundle["job_dir"], "AF3_HANDOFF_INSTRUCTIONS.txt")
                 try:
                     with open(info_txt, "w", encoding="utf-8") as fh:
                         fh.write(
                             "AlphaFold 3 handoff workflow\n"
                             f"Job: {bundle['job_name']}\n"
-                            f"AF3 JSON: {json_path}\n"
+                            f"AlphaFold Server upload file: {server_json}\n"
+                            f"AF3 Docker/cluster input: {json_path}\n"
                             f"Suggested output folder: {bundle.get('af3_output_dir')}\n"
                             f"AlphaFold Server: {server_url}\n\n"
+                            "AlphaFold Server: use 'Upload JSON' with alphafold_server_input.json (the Server\n"
+                            "format; fold_input.json is the AlphaFold 3 Docker format and is rejected there).\n"
+                            "The Server accepts only its own list of CCD ligands, not SMILES.\n\n"
                             "Local Docker command template:\n"
                             f"{docker_cmd_txt}\n\n"
                             "Notes:\n"
@@ -24976,6 +25965,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._af_append_log("Prepared AlphaFold 3 handoff")
                 self._af_append_log(f"job_dir: {bundle['job_dir']}")
                 self._af_append_log(f"json: {json_path}")
+                self._af_append_log(f"server_json: {server_json}")
                 self._af_append_log(f"instructions: {info_txt}")
                 self._af_append_log("docker_command: " + docker_cmd_txt)
                 if missing:
@@ -24990,7 +25980,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     self,
                     "AlphaFold 3",
                     "AlphaFold 3 input prepared.\n\n"
-                    f"JSON: {json_path}\n"
+                    f"AlphaFold Server upload: {server_json}\n"
+                    f"AF3 Docker/cluster JSON: {json_path}\n"
                     f"Instructions: {info_txt}\n\n"
                     "Run AF3 on AlphaFold Server or an AF3-capable Colab/remote/local runtime, then import the CIF/PDB/ZIP result.",
                 )
@@ -25049,6 +26040,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
             return
+        if mode == "local":
+            has_gpu, _gpu_reason = self._af_local_gpu_available(deep=True)
+            if not has_gpu:
+                gpu_msg = af_gpu_requirement_message(engine, self._af_gpu_info())
+                self._af_update_gpu_warning()
+                self._af_append_log(f"{GPU_REQUIRED_TITLE}: {gpu_msg}")
+                choice = self._af_ask_gpu_fallback(gpu_msg)
+                if choice == "cancel":
+                    self.lbl_af_status.setText(f"{GPU_REQUIRED_TITLE}: local run cancelled (no NVIDIA GPU).")
+                    return
+                if choice == "colab":
+                    mode = "colab_remote"
+                else:
+                    # detection can miss a real GPU (nvidia-smi not on PATH, WSL2, containers)
+                    self._af_append_log("Running locally without a detected NVIDIA GPU at the user's request.")
         if mode == "colab_remote":
             sync_root = self._af_sync_root_dir()
             try:
@@ -25259,93 +26265,136 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             self._bioseq_dialog = QtWidgets.QDialog(self)
             self._bioseq_dialog.setWindowTitle("Bioinformatics Sequence Analysis")
+            # Bioinformatics tabs provide their own scrolling surfaces.
+            self._bioseq_dialog._leonardo_scroll_checked = True
             self._bioseq_dialog.resize(1080, 880)
             self._bioseq_dialog.setMinimumSize(940, 720)
             self._fit_dialog_to_screen(self._bioseq_dialog, preferred_w=1080, preferred_h=880, min_w=900, min_h=700)
             vbox = QtWidgets.QVBoxLayout(self._bioseq_dialog)
             tabs = QtWidgets.QTabWidget(self._bioseq_dialog)
+            self.tabs_bioseq = tabs
             vbox.addWidget(tabs, 1)
 
-            # Tab 1: compact local analysis hub (heavy views moved to popups)
+            # Tab 1: responsive local analysis hub (heavy views moved to popups).
             tab_local = QtWidgets.QWidget()
-            local_box = QtWidgets.QVBoxLayout(tab_local)
-            row_obj = QtWidgets.QHBoxLayout()
-            row_obj.addWidget(QtWidgets.QLabel("Structure Object"))
+            local_outer = QtWidgets.QVBoxLayout(tab_local)
+            local_outer.setContentsMargins(0, 0, 0, 0)
+            local_scroll = QtWidgets.QScrollArea(tab_local)
+            local_scroll.setObjectName("bioseqLocalScrollArea")
+            local_scroll.setProperty("leonardoVerticalOnly", True)
+            local_scroll.setWidgetResizable(True)
+            local_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            local_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            local_body = QtWidgets.QWidget(local_scroll)
+            local_body.setObjectName("bioseqLocalScrollContent")
+            local_scroll.setWidget(local_body)
+            local_outer.addWidget(local_scroll, 1)
+            local_box = QtWidgets.QVBoxLayout(local_body)
+            local_box.setContentsMargins(10, 10, 10, 10)
+            local_box.setSpacing(10)
+
+            source_group = QtWidgets.QGroupBox("Sequence Source")
+            source_grid = QtWidgets.QGridLayout(source_group)
+            source_grid.addWidget(QtWidgets.QLabel("Structure Object"), 0, 0)
             self.cmb_bioseq_object = QtWidgets.QComboBox()
             self.cmb_bioseq_object.currentTextChanged.connect(self._bioseq_on_object_changed)
-            row_obj.addWidget(self.cmb_bioseq_object, 1)
+            source_grid.addWidget(self.cmb_bioseq_object, 0, 1, 1, 2)
             self.btn_bioseq_refresh_objects = QtWidgets.QPushButton("Refresh")
             self.btn_bioseq_refresh_objects.clicked.connect(self._bioseq_refresh_object_combo)
-            row_obj.addWidget(self.btn_bioseq_refresh_objects)
-            row_obj.addWidget(QtWidgets.QLabel("Chain"))
+            source_grid.addWidget(self.btn_bioseq_refresh_objects, 0, 3)
+            source_grid.addWidget(QtWidgets.QLabel("Chain"), 1, 0)
             self.cmb_bioseq_chain = QtWidgets.QComboBox()
-            row_obj.addWidget(self.cmb_bioseq_chain)
+            source_grid.addWidget(self.cmb_bioseq_chain, 1, 1, 1, 3)
             self.btn_bioseq_import_chain = QtWidgets.QPushButton("Use Observed Chain Sequence")
             self.btn_bioseq_import_chain.clicked.connect(self._bioseq_import_chain_sequence)
-            row_obj.addWidget(self.btn_bioseq_import_chain)
+            source_grid.addWidget(self.btn_bioseq_import_chain, 2, 0, 1, 2)
             self.btn_bioseq_use_modeler = QtWidgets.QPushButton("Use Modeler Sequence")
             self.btn_bioseq_use_modeler.clicked.connect(self._bioseq_use_modeler_sequence)
-            row_obj.addWidget(self.btn_bioseq_use_modeler)
-            local_box.addLayout(row_obj)
-            row_rcsb = QtWidgets.QHBoxLayout()
-            row_rcsb.addWidget(QtWidgets.QLabel("RCSB PDB ID"))
+            source_grid.addWidget(self.btn_bioseq_use_modeler, 2, 2, 1, 2)
+            source_grid.setColumnStretch(1, 1)
+            source_grid.setColumnStretch(2, 1)
+            source_grid.setColumnStretch(3, 1)
+            local_box.addWidget(source_group)
+
+            identifiers_group = QtWidgets.QGroupBox("Database Identifiers")
+            identifiers_grid = QtWidgets.QGridLayout(identifiers_group)
+            identifiers_grid.addWidget(QtWidgets.QLabel("RCSB PDB ID"), 0, 0)
             self.edit_bioseq_pdb_id = QtWidgets.QLineEdit()
             self.edit_bioseq_pdb_id.setPlaceholderText("Optional, e.g. 3PTB")
-            row_rcsb.addWidget(self.edit_bioseq_pdb_id)
+            identifiers_grid.addWidget(self.edit_bioseq_pdb_id, 0, 1)
             self.btn_bioseq_fetch_rcsb = QtWidgets.QPushButton("Fetch Full Chain Sequence from RCSB")
             self.btn_bioseq_fetch_rcsb.clicked.connect(self._bioseq_fetch_rcsb_sequence)
-            row_rcsb.addWidget(self.btn_bioseq_fetch_rcsb)
-            row_rcsb.addWidget(QtWidgets.QLabel("UniProt"))
+            identifiers_grid.addWidget(self.btn_bioseq_fetch_rcsb, 0, 2)
+            identifiers_grid.addWidget(QtWidgets.QLabel("UniProt"), 1, 0)
             self.edit_bioseq_uniprot_id = QtWidgets.QLineEdit()
             self.edit_bioseq_uniprot_id.setPlaceholderText("Optional accession, e.g. P00760")
-            self.edit_bioseq_uniprot_id.setMaximumWidth(180)
-            row_rcsb.addWidget(self.edit_bioseq_uniprot_id)
-            row_rcsb.addStretch(1)
-            local_box.addLayout(row_rcsb)
+            identifiers_grid.addWidget(self.edit_bioseq_uniprot_id, 1, 1, 1, 2)
+            identifiers_grid.setColumnStretch(1, 1)
+            identifiers_grid.setColumnStretch(2, 1)
+            local_box.addWidget(identifiers_group)
+
+            sequence_group = QtWidgets.QGroupBox("Protein Sequence")
+            sequence_box = QtWidgets.QVBoxLayout(sequence_group)
             self.txt_bioseq_sequence = QtWidgets.QPlainTextEdit()
+            self.txt_bioseq_sequence.setObjectName("bioseqLocalSequence")
             self.txt_bioseq_sequence.setPlaceholderText(
                 "Paste protein sequence (single-letter amino acids) or import from object/chain."
             )
             self.txt_bioseq_sequence.setMinimumHeight(120)
-            local_box.addWidget(self.txt_bioseq_sequence)
-            row_run = QtWidgets.QHBoxLayout()
+            sequence_box.addWidget(self.txt_bioseq_sequence)
+            local_box.addWidget(sequence_group)
+
+            actions_group = QtWidgets.QGroupBox("Analysis Actions")
+            actions_grid = QtWidgets.QGridLayout(actions_group)
             self.btn_bioseq_run_local = QtWidgets.QPushButton("Run Local Simulation-Readiness Analysis")
             self.btn_bioseq_run_local.clicked.connect(self._bioseq_run_local_analysis)
-            row_run.addWidget(self.btn_bioseq_run_local)
+            actions_grid.addWidget(self.btn_bioseq_run_local, 0, 0, 1, 2)
             self.btn_bioseq_run_msa = QtWidgets.QPushButton("Compute MSA Conservation")
             self.btn_bioseq_run_msa.clicked.connect(self._bioseq_run_msa_conservation)
-            row_run.addWidget(self.btn_bioseq_run_msa)
+            actions_grid.addWidget(self.btn_bioseq_run_msa, 1, 0)
             self.btn_bioseq_clear = QtWidgets.QPushButton("Clear")
             self.btn_bioseq_clear.clicked.connect(lambda: self.txt_bioseq_sequence.setPlainText(""))
-            row_run.addWidget(self.btn_bioseq_clear)
-            row_run.addStretch(1)
-            local_box.addLayout(row_run)
-            row_views = QtWidgets.QHBoxLayout()
+            actions_grid.addWidget(self.btn_bioseq_clear, 1, 1)
             self.btn_bioseq_open_summary = QtWidgets.QPushButton("Open Summary...")
             self.btn_bioseq_open_summary.clicked.connect(self._bioseq_open_summary_dialog)
-            row_views.addWidget(self.btn_bioseq_open_summary)
+            actions_grid.addWidget(self.btn_bioseq_open_summary, 2, 0)
             self.btn_bioseq_open_motifs = QtWidgets.QPushButton("Open Motifs...")
             self.btn_bioseq_open_motifs.clicked.connect(self._bioseq_open_motif_dialog)
-            row_views.addWidget(self.btn_bioseq_open_motifs)
+            actions_grid.addWidget(self.btn_bioseq_open_motifs, 2, 1)
             self.btn_bioseq_open_msa = QtWidgets.QPushButton("Open MSA...")
             self.btn_bioseq_open_msa.clicked.connect(self._bioseq_open_msa_dialog)
-            row_views.addWidget(self.btn_bioseq_open_msa)
+            actions_grid.addWidget(self.btn_bioseq_open_msa, 3, 0)
             self.btn_bioseq_open_questions = QtWidgets.QPushButton("Open Questions...")
             self.btn_bioseq_open_questions.clicked.connect(self._bioseq_open_questions_dialog)
-            row_views.addWidget(self.btn_bioseq_open_questions)
-            row_views.addStretch(1)
-            local_box.addLayout(row_views)
+            actions_grid.addWidget(self.btn_bioseq_open_questions, 3, 1)
+            actions_grid.setColumnStretch(0, 1)
+            actions_grid.setColumnStretch(1, 1)
+            local_box.addWidget(actions_group)
             self.lbl_bioseq_local_hint = QtWidgets.QLabel(
                 "Local tab is compact. Use the buttons above to open dedicated windows for each analysis tool."
             )
             self.lbl_bioseq_local_hint.setWordWrap(True)
             local_box.addWidget(self.lbl_bioseq_local_hint)
             local_box.addStretch(1)
-            tabs.addTab(tab_local, "Local Analysis")
+            local_idx = tabs.addTab(tab_local, "Local")
+            tabs.setTabToolTip(local_idx, "Local Analysis")
 
             # Tab 2: external tool launcher
             tab_tools = QtWidgets.QWidget()
-            tool_box = QtWidgets.QVBoxLayout(tab_tools)
+            tool_outer = QtWidgets.QVBoxLayout(tab_tools)
+            tool_outer.setContentsMargins(0, 0, 0, 0)
+            tool_scroll = QtWidgets.QScrollArea(tab_tools)
+            tool_scroll.setObjectName("bioseqToolScrollArea")
+            tool_scroll.setProperty("leonardoVerticalOnly", True)
+            tool_scroll.setWidgetResizable(True)
+            tool_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            tool_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            tool_body = QtWidgets.QWidget(tool_scroll)
+            tool_scroll.setWidget(tool_body)
+            tool_outer.addWidget(tool_scroll, 1)
+            tool_box = QtWidgets.QVBoxLayout(tool_body)
+            tool_box.setContentsMargins(10, 10, 10, 10)
+            tool_box.setSpacing(10)
             self.lbl_bioseq_catalog = QtWidgets.QLabel("")
             self.lbl_bioseq_catalog.setWordWrap(True)
             tool_box.addWidget(self.lbl_bioseq_catalog)
@@ -25374,27 +26423,33 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             grid.setColumnStretch(1, 1)
             tool_box.addWidget(grp_tools)
             tool_box.addStretch(1)
-            tabs.addTab(tab_tools, "Tool Launcher")
+            tools_idx = tabs.addTab(tab_tools, "Tools")
+            tabs.setTabToolTip(tools_idx, "Tool Launcher")
 
             # Tab 3: scientific question mapper
             tab_q = QtWidgets.QWidget()
             q_box = QtWidgets.QVBoxLayout(tab_q)
             self.tbl_bioseq_questions = QtWidgets.QTableWidget(0, 3)
+            self.tbl_bioseq_questions.setObjectName("bioseqQuestionsTable")
             self.tbl_bioseq_questions.setHorizontalHeaderLabels(
-                ["Scientific Question", "Recommended Analysis", "Current Hint"]
+                ["Question", "Recommended Analysis", "Current Result"]
             )
             self.tbl_bioseq_questions.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             self.tbl_bioseq_questions.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self.tbl_bioseq_questions.setWordWrap(True)
+            self.tbl_bioseq_questions.setTextElideMode(QtCore.Qt.ElideNone)
+            self.tbl_bioseq_questions.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
             self.tbl_bioseq_questions.verticalHeader().setVisible(False)
             q_box.addWidget(self.tbl_bioseq_questions, 1)
             try:
                 hdr = self.tbl_bioseq_questions.horizontalHeader()
                 hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-                hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+                hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
                 hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
             except Exception:
                 pass
-            tabs.addTab(tab_q, "Scientific Questions")
+            questions_idx = tabs.addTab(tab_q, "Questions")
+            tabs.setTabToolTip(questions_idx, "Scientific Questions")
             self._bioseq_setup_local_tool_popups()
 
             self.lbl_bioseq_status = QtWidgets.QLabel(
@@ -25441,6 +26496,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Summary popup
         self._bioseq_summary_dialog = QtWidgets.QDialog(parent)
         self._bioseq_summary_dialog.setWindowTitle("Bioinformatics - Local Summary")
+        self._bioseq_summary_dialog._leonardo_scroll_checked = True
         self._bioseq_summary_dialog.resize(1000, 760)
         self._bioseq_summary_dialog.setMinimumSize(860, 640)
         self._fit_dialog_to_screen(self._bioseq_summary_dialog, preferred_w=1000, preferred_h=760, min_w=840, min_h=620)
@@ -25458,6 +26514,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Motif popup
         self._bioseq_motif_dialog = QtWidgets.QDialog(parent)
         self._bioseq_motif_dialog.setWindowTitle("Bioinformatics - Motif Summary")
+        self._bioseq_motif_dialog._leonardo_scroll_checked = True
         self._bioseq_motif_dialog.resize(940, 700)
         self._bioseq_motif_dialog.setMinimumSize(820, 580)
         self._fit_dialog_to_screen(self._bioseq_motif_dialog, preferred_w=940, preferred_h=700, min_w=800, min_h=560)
@@ -25491,6 +26548,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # MSA popup
         self._bioseq_msa_dialog = QtWidgets.QDialog(parent)
         self._bioseq_msa_dialog.setWindowTitle("Bioinformatics - MSA Conservation")
+        self._bioseq_msa_dialog._leonardo_scroll_checked = True
         self._bioseq_msa_dialog.resize(1000, 760)
         self._bioseq_msa_dialog.setMinimumSize(860, 640)
         self._fit_dialog_to_screen(self._bioseq_msa_dialog, preferred_w=1000, preferred_h=760, min_w=840, min_h=620)
@@ -25534,22 +26592,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Questions popup
         self._bioseq_questions_dialog = QtWidgets.QDialog(parent)
         self._bioseq_questions_dialog.setWindowTitle("Bioinformatics - Scientific Questions")
+        self._bioseq_questions_dialog._leonardo_scroll_checked = True
         self._bioseq_questions_dialog.resize(1000, 760)
         self._bioseq_questions_dialog.setMinimumSize(860, 640)
         self._fit_dialog_to_screen(self._bioseq_questions_dialog, preferred_w=1000, preferred_h=760, min_w=840, min_h=620)
         lay_q = QtWidgets.QVBoxLayout(self._bioseq_questions_dialog)
         self.tbl_bioseq_questions_popup = QtWidgets.QTableWidget(0, 3)
+        self.tbl_bioseq_questions_popup.setObjectName("bioseqQuestionsPopupTable")
         self.tbl_bioseq_questions_popup.setHorizontalHeaderLabels(
-            ["Scientific Question", "Recommended Analysis", "Current Hint"]
+            ["Question", "Recommended Analysis", "Current Result"]
         )
         self.tbl_bioseq_questions_popup.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.tbl_bioseq_questions_popup.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.tbl_bioseq_questions_popup.setWordWrap(True)
+        self.tbl_bioseq_questions_popup.setTextElideMode(QtCore.Qt.ElideNone)
+        self.tbl_bioseq_questions_popup.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.tbl_bioseq_questions_popup.verticalHeader().setVisible(False)
         lay_q.addWidget(self.tbl_bioseq_questions_popup, 1)
         try:
             hdr = self.tbl_bioseq_questions_popup.horizontalHeader()
             hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-            hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+            hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
             hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
         except Exception:
             pass
@@ -26361,24 +27424,45 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         dlg_parent = getattr(self, "_bioseq_dialog", self)
         dlg = QtWidgets.QDialog(dlg_parent)
         dlg.setWindowTitle(str(spec.get("title", key)))
-        dlg.resize(760, 560)
-        dlg.setMinimumSize(560, 380)
-        self._fit_dialog_to_screen(dlg, preferred_w=760, preferred_h=560, min_w=540, min_h=360)
+        dlg._leonardo_scroll_checked = True
+        dlg.resize(820, 680)
+        dlg.setMinimumSize(600, 440)
+        self._fit_dialog_to_screen(dlg, preferred_w=820, preferred_h=680, min_w=580, min_h=420)
+        self._bioseq_tool_dialog = dlg
+        self._bioseq_tool_dialog_key = key
         vbox = QtWidgets.QVBoxLayout(dlg)
+        content_scroll = QtWidgets.QScrollArea(dlg)
+        content_scroll.setObjectName("bioseqToolDialogScroll")
+        content_scroll.setProperty("leonardoVerticalOnly", True)
+        content_scroll.setWidgetResizable(True)
+        content_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        content_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        content = QtWidgets.QWidget(content_scroll)
+        content.setObjectName("bioseqToolDialogContent")
+        content_scroll.setWidget(content)
+        vbox.addWidget(content_scroll, 1)
+        content_box = QtWidgets.QVBoxLayout(content)
+        content_box.setContentsMargins(8, 8, 8, 8)
+        content_box.setSpacing(10)
         lbl = QtWidgets.QLabel(str(spec.get("objective", "")))
         lbl.setWordWrap(True)
-        vbox.addWidget(lbl)
-        row_url = QtWidgets.QHBoxLayout()
-        row_url.addWidget(QtWidgets.QLabel("Tool URL"))
+        content_box.addWidget(lbl)
+        url_group = QtWidgets.QGroupBox("Tool Address")
+        url_box = QtWidgets.QVBoxLayout(url_group)
         edit_url = QtWidgets.QLineEdit(str(url))
         try:
             edit_url.setCursorPosition(0)
         except Exception:
             pass
-        row_url.addWidget(edit_url, 1)
-        vbox.addLayout(row_url)
+        url_box.addWidget(edit_url)
+        content_box.addWidget(url_group)
         params_group = QtWidgets.QGroupBox("Suggested Parameters")
         params_form = QtWidgets.QFormLayout(params_group)
+        params_form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        params_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        params_form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        params_form.setHorizontalSpacing(8)
+        params_form.setVerticalSpacing(6)
         param_widgets = []
         for ent in list(spec.get("parameters", []) or []):
             if not isinstance(ent, (list, tuple)) or len(ent) < 2:
@@ -26388,25 +27472,37 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             w = QtWidgets.QLineEdit(val_p)
             params_form.addRow(lbl_p, w)
             param_widgets.append((lbl_p, w))
-        vbox.addWidget(params_group)
+        content_box.addWidget(params_group)
         seq_group = QtWidgets.QGroupBox("Sequence")
         seq_box = QtWidgets.QVBoxLayout(seq_group)
         txt_seq = QtWidgets.QPlainTextEdit()
+        txt_seq.setObjectName("bioseqToolSequence")
         txt_seq.setPlainText(str(seq or ""))
         txt_seq.setMinimumHeight(140)
         txt_seq.setPlaceholderText("Sequence used for this tool (editable).")
         seq_box.addWidget(txt_seq)
-        vbox.addWidget(seq_group, 1)
-        row_btn = QtWidgets.QHBoxLayout()
+        content_box.addWidget(seq_group)
+        content_box.addStretch(1)
+
+        action_grid = QtWidgets.QGridLayout()
+        action_grid.setHorizontalSpacing(8)
+        action_grid.setVerticalSpacing(8)
         btn_copy_seq = QtWidgets.QPushButton("Copy Sequence")
         btn_copy_params = QtWidgets.QPushButton("Copy Parameter Notes")
         btn_open = QtWidgets.QPushButton("Open Tool")
         btn_open_copy = QtWidgets.QPushButton("Open Tool + Copy Sequence")
         btn_close = QtWidgets.QPushButton("Close")
-        for b in (btn_copy_seq, btn_copy_params, btn_open, btn_open_copy, btn_close):
-            row_btn.addWidget(b)
-        row_btn.addStretch(1)
-        vbox.addLayout(row_btn)
+        action_grid.addWidget(btn_copy_seq, 0, 0)
+        action_grid.addWidget(btn_copy_params, 0, 1)
+        action_grid.addWidget(btn_open, 1, 0)
+        action_grid.addWidget(btn_open_copy, 1, 1)
+        action_grid.setColumnStretch(0, 1)
+        action_grid.setColumnStretch(1, 1)
+        vbox.addLayout(action_grid)
+        close_row = QtWidgets.QHBoxLayout()
+        close_row.addStretch(1)
+        close_row.addWidget(btn_close)
+        vbox.addLayout(close_row)
 
         def _param_notes():
             lines = [f"{str(spec.get('title', key))} suggested parameters:"]
@@ -26464,7 +27560,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             tools = str(ent.get("tools", "") or "").strip()
             purpose = str(ent.get("purpose", "") or "").strip()
             lines.append(f"- {title}: {tools}. {purpose}")
-        self.lbl_bioseq_catalog.setText("\n".join(lines))
+        self.lbl_bioseq_catalog.setText(
+            "Choose an external analysis tool. Each button opens a clean form with the sequence, "
+            "recommended parameters, and launch options."
+        )
+        self.lbl_bioseq_catalog.setToolTip("\n".join(lines))
     def _bioseq_populate_question_table(self, answers=None):
         answer_map = {}
         for row in list(answers or []):
@@ -26487,6 +27587,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 tbl.setItem(r, 0, QtWidgets.QTableWidgetItem(q))
                 tbl.setItem(r, 1, QtWidgets.QTableWidgetItem(a))
                 tbl.setItem(r, 2, QtWidgets.QTableWidgetItem(hint))
+                for col, full_text in enumerate((q, a, hint)):
+                    item = tbl.item(r, col)
+                    if item is not None:
+                        item.setToolTip(full_text)
+            try:
+                tbl.resizeRowsToContents()
+                tbl.verticalHeader().setMinimumSectionSize(42)
+            except Exception:
+                pass
     def _bioseq_format_range_list(self, segments, value_key=""):
         out = []
         for seg in list(segments or []):
@@ -26765,8 +27874,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._fit_dialog_to_screen(self._psi4_dialog, preferred_w=1080, preferred_h=880, min_w=900, min_h=700)
             root_vbox = QtWidgets.QVBoxLayout(self._psi4_dialog)
             self._psi4_scroll_area = QtWidgets.QScrollArea(self._psi4_dialog)
+            self._psi4_scroll_area.setObjectName("psi4MainScrollArea")
+            self._psi4_scroll_area.setProperty("leonardoVerticalOnly", True)
             self._psi4_scroll_area.setWidgetResizable(True)
-            self._psi4_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            self._psi4_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
             self._psi4_scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
             self._psi4_scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
             self._psi4_scroll_widget = QtWidgets.QWidget()
@@ -26776,6 +27887,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._psi4_scroll_area.setWidget(self._psi4_scroll_widget)
             root_vbox.addWidget(self._psi4_scroll_area, 1)
             tabs = QtWidgets.QTabWidget()
+            self.tabs_psi4 = tabs
+            tabs.setMinimumWidth(0)
+            tabs.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
             vbox.addWidget(tabs, 1)
             tab_setup = QtWidgets.QWidget()
             setup_box = QtWidgets.QVBoxLayout(tab_setup)
@@ -26906,8 +28020,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.edit_psi4_custom_sel.setPlaceholderText("PyMOL selection expression")
             row_region.addWidget(self.edit_psi4_custom_sel, 1)
             source_box.addLayout(row_region)
-            row_op = QtWidgets.QHBoxLayout()
-            row_op.addWidget(QtWidgets.QLabel("Operation"))
+            row_op = QtWidgets.QGridLayout()
+            row_op.addWidget(QtWidgets.QLabel("Operation"), 0, 0)
             self.cmb_psi4_operation = QtWidgets.QComboBox()
             self.cmb_psi4_operation.addItem("Single Point Energy", "energy")
             self.cmb_psi4_operation.addItem("Optimize Geometry (minimum)", "optimize")
@@ -26919,52 +28033,57 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_psi4_operation.addItem("IRC from TS", "irc")
             self.cmb_psi4_operation.addItem("ESP Fit Charges -> MOL2", "esp_fit")
             self.cmb_psi4_operation.currentIndexChanged.connect(self._on_psi4_operation_changed)
-            row_op.addWidget(self.cmb_psi4_operation, 1)
+            row_op.addWidget(self.cmb_psi4_operation, 1, 0)
+            row_op.setColumnStretch(0, 1)
             reaction_controls_box.addLayout(row_op)
-            row_qst_intro = QtWidgets.QHBoxLayout()
             self.lbl_psi4_qst_note = QtWidgets.QLabel(
                 "QST-like TS uses interpolation/alignment of reactant/product geometries (and optional TS guess), then runs TS optimize + frequency."
             )
             self.lbl_psi4_qst_note.setWordWrap(True)
-            row_qst_intro.addWidget(self.lbl_psi4_qst_note, 1)
-            reaction_controls_box.addLayout(row_qst_intro)
-            row_qst_react = QtWidgets.QHBoxLayout()
-            row_qst_react.addWidget(QtWidgets.QLabel("QST Reactant"))
+            reaction_controls_box.addWidget(self.lbl_psi4_qst_note)
+            qst_sources_grid = QtWidgets.QGridLayout()
+            qst_sources_grid.setHorizontalSpacing(8)
+            qst_sources_grid.setVerticalSpacing(6)
+            self.lbl_psi4_qst_react = QtWidgets.QLabel("QST Reactant")
+            qst_sources_grid.addWidget(self.lbl_psi4_qst_react, 0, 0, 1, 3)
             self.edit_psi4_qst_react = QtWidgets.QLineEdit()
             self.edit_psi4_qst_react.setPlaceholderText("File path or PyMOL selection/object")
-            row_qst_react.addWidget(self.edit_psi4_qst_react, 1)
+            self.edit_psi4_qst_react.setToolTip("Reactant file path or PyMOL selection/object")
+            qst_sources_grid.addWidget(self.edit_psi4_qst_react, 1, 0)
             self.btn_psi4_qst_react_pick = QtWidgets.QPushButton("File...")
             self.btn_psi4_qst_react_pick.clicked.connect(self._on_psi4_pick_qst_react_file)
-            row_qst_react.addWidget(self.btn_psi4_qst_react_pick)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_react_pick, 1, 1)
             self.btn_psi4_qst_react_from_current = QtWidgets.QPushButton("Use Current")
             self.btn_psi4_qst_react_from_current.clicked.connect(lambda: self._on_psi4_qst_set_from_current("react"))
-            row_qst_react.addWidget(self.btn_psi4_qst_react_from_current)
-            reaction_controls_box.addLayout(row_qst_react)
-            row_qst_prod = QtWidgets.QHBoxLayout()
-            row_qst_prod.addWidget(QtWidgets.QLabel("QST Product"))
+            qst_sources_grid.addWidget(self.btn_psi4_qst_react_from_current, 1, 2)
+            self.lbl_psi4_qst_prod = QtWidgets.QLabel("QST Product")
+            qst_sources_grid.addWidget(self.lbl_psi4_qst_prod, 2, 0, 1, 3)
             self.edit_psi4_qst_prod = QtWidgets.QLineEdit()
             self.edit_psi4_qst_prod.setPlaceholderText("File path or PyMOL selection/object")
-            row_qst_prod.addWidget(self.edit_psi4_qst_prod, 1)
+            self.edit_psi4_qst_prod.setToolTip("Product file path or PyMOL selection/object")
+            qst_sources_grid.addWidget(self.edit_psi4_qst_prod, 3, 0)
             self.btn_psi4_qst_prod_pick = QtWidgets.QPushButton("File...")
             self.btn_psi4_qst_prod_pick.clicked.connect(self._on_psi4_pick_qst_prod_file)
-            row_qst_prod.addWidget(self.btn_psi4_qst_prod_pick)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_prod_pick, 3, 1)
             self.btn_psi4_qst_prod_from_current = QtWidgets.QPushButton("Use Current")
             self.btn_psi4_qst_prod_from_current.clicked.connect(lambda: self._on_psi4_qst_set_from_current("prod"))
-            row_qst_prod.addWidget(self.btn_psi4_qst_prod_from_current)
-            reaction_controls_box.addLayout(row_qst_prod)
-            row_qst_ts = QtWidgets.QHBoxLayout()
+            qst_sources_grid.addWidget(self.btn_psi4_qst_prod_from_current, 3, 2)
             self.lbl_psi4_qst_ts = QtWidgets.QLabel("QST TS Guess")
-            row_qst_ts.addWidget(self.lbl_psi4_qst_ts)
+            qst_sources_grid.addWidget(self.lbl_psi4_qst_ts, 4, 0, 1, 3)
             self.edit_psi4_qst_ts = QtWidgets.QLineEdit()
-            self.edit_psi4_qst_ts.setPlaceholderText("Optional file path or PyMOL selection/object (required for QST3-like)")
-            row_qst_ts.addWidget(self.edit_psi4_qst_ts, 1)
+            self.edit_psi4_qst_ts.setPlaceholderText("Optional TS guess file/selection (required for QST3)")
+            self.edit_psi4_qst_ts.setToolTip(
+                "Optional TS guess file path or PyMOL selection/object; required for QST3-like mode"
+            )
+            qst_sources_grid.addWidget(self.edit_psi4_qst_ts, 5, 0)
             self.btn_psi4_qst_ts_pick = QtWidgets.QPushButton("File...")
             self.btn_psi4_qst_ts_pick.clicked.connect(self._on_psi4_pick_qst_ts_file)
-            row_qst_ts.addWidget(self.btn_psi4_qst_ts_pick)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_ts_pick, 5, 1)
             self.btn_psi4_qst_ts_from_current = QtWidgets.QPushButton("Use Current")
             self.btn_psi4_qst_ts_from_current.clicked.connect(lambda: self._on_psi4_qst_set_from_current("ts"))
-            row_qst_ts.addWidget(self.btn_psi4_qst_ts_from_current)
-            reaction_controls_box.addLayout(row_qst_ts)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_ts_from_current, 5, 2)
+            qst_sources_grid.setColumnStretch(0, 1)
+            reaction_controls_box.addLayout(qst_sources_grid)
             row_qst_weight = QtWidgets.QHBoxLayout()
             self.lbl_psi4_qst_ts_weight = QtWidgets.QLabel("TS guess weight")
             row_qst_weight.addWidget(self.lbl_psi4_qst_ts_weight)
@@ -27057,40 +28176,48 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_pcm.addWidget(self.cmb_psi4_solvent)
             row_pcm.addStretch(1)
             theory_box.addLayout(row_pcm)
-            row_irc = QtWidgets.QHBoxLayout()
+            row_irc = QtWidgets.QGridLayout()
+            row_irc.setHorizontalSpacing(8)
+            row_irc.setVerticalSpacing(6)
             self.lbl_psi4_irc = QtWidgets.QLabel("IRC")
-            row_irc.addWidget(self.lbl_psi4_irc)
+            row_irc.addWidget(self.lbl_psi4_irc, 0, 0)
             self.cmb_psi4_irc_direction = QtWidgets.QComboBox()
             self.cmb_psi4_irc_direction.addItem("Forward", "FORWARD")
             self.cmb_psi4_irc_direction.addItem("Backward", "BACKWARD")
             self.cmb_psi4_irc_direction.addItem("Both", "BOTH")
-            row_irc.addWidget(self.cmb_psi4_irc_direction)
-            row_irc.addWidget(QtWidgets.QLabel("Points"))
+            row_irc.addWidget(self.cmb_psi4_irc_direction, 0, 1, 1, 3)
+            self.lbl_psi4_irc_points = QtWidgets.QLabel("Points")
+            row_irc.addWidget(self.lbl_psi4_irc_points, 1, 0)
             self.spin_psi4_irc_points = QtWidgets.QSpinBox()
             self.spin_psi4_irc_points.setRange(4, 200)
             self.spin_psi4_irc_points.setValue(20)
-            row_irc.addWidget(self.spin_psi4_irc_points)
-            row_irc.addWidget(QtWidgets.QLabel("Step"))
+            row_irc.addWidget(self.spin_psi4_irc_points, 1, 1)
+            self.lbl_psi4_irc_step = QtWidgets.QLabel("Step")
+            row_irc.addWidget(self.lbl_psi4_irc_step, 1, 2)
             self.spin_psi4_irc_step = QtWidgets.QDoubleSpinBox()
             self.spin_psi4_irc_step.setDecimals(3)
             self.spin_psi4_irc_step.setRange(0.01, 2.00)
             self.spin_psi4_irc_step.setSingleStep(0.05)
             self.spin_psi4_irc_step.setValue(0.20)
-            row_irc.addWidget(self.spin_psi4_irc_step)
-            row_irc.addStretch(1)
+            row_irc.addWidget(self.spin_psi4_irc_step, 1, 3)
+            row_irc.setColumnStretch(1, 1)
+            row_irc.setColumnStretch(3, 1)
             reaction_controls_box.addLayout(row_irc)
-            row_esp = QtWidgets.QHBoxLayout()
+            row_esp = QtWidgets.QGridLayout()
+            row_esp.setHorizontalSpacing(8)
+            row_esp.setVerticalSpacing(6)
             self.lbl_psi4_esp = QtWidgets.QLabel("ESP fit")
-            row_esp.addWidget(self.lbl_psi4_esp)
-            row_esp.addWidget(QtWidgets.QLabel("Grid points/atom"))
+            row_esp.addWidget(self.lbl_psi4_esp, 0, 0)
+            self.lbl_psi4_esp_points = QtWidgets.QLabel("Grid points/atom")
+            row_esp.addWidget(self.lbl_psi4_esp_points, 0, 1)
             self.spin_psi4_esp_points = QtWidgets.QSpinBox()
             self.spin_psi4_esp_points.setRange(8, 240)
             self.spin_psi4_esp_points.setValue(36)
-            row_esp.addWidget(self.spin_psi4_esp_points)
+            row_esp.addWidget(self.spin_psi4_esp_points, 0, 2)
             self.cb_psi4_use_param_mol2 = QtWidgets.QCheckBox("Use parameterized MOL2 when available")
             self.cb_psi4_use_param_mol2.setChecked(True)
-            row_esp.addWidget(self.cb_psi4_use_param_mol2)
-            row_esp.addStretch(1)
+            row_esp.addWidget(self.cb_psi4_use_param_mol2, 1, 0, 1, 3)
+            row_esp.setColumnStretch(2, 1)
             reaction_controls_box.addLayout(row_esp)
             row_bin = QtWidgets.QHBoxLayout()
             row_bin.addWidget(QtWidgets.QLabel("psi4 executable"))
@@ -29703,27 +30830,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         for wname in (
             "lbl_psi4_irc",
             "cmb_psi4_irc_direction",
+            "lbl_psi4_irc_points",
             "spin_psi4_irc_points",
+            "lbl_psi4_irc_step",
             "spin_psi4_irc_step",
         ):
             try:
                 getattr(self, wname).setEnabled(irc_on)
+                getattr(self, wname).setVisible(irc_on)
             except Exception:
                 pass
         file_mode = (self._psi4_input_mode() == "file")
-        for wname in ("lbl_psi4_esp", "spin_psi4_esp_points", "cb_psi4_use_param_mol2"):
+        for wname in (
+            "lbl_psi4_esp",
+            "lbl_psi4_esp_points",
+            "spin_psi4_esp_points",
+            "cb_psi4_use_param_mol2",
+        ):
             try:
                 en = esp_on
                 if wname == "cb_psi4_use_param_mol2" and file_mode:
                     en = False
                 getattr(self, wname).setEnabled(en)
+                getattr(self, wname).setVisible(esp_on)
             except Exception:
                 pass
         qst_widgets = (
             "lbl_psi4_qst_note",
+            "lbl_psi4_qst_react",
             "edit_psi4_qst_react",
             "btn_psi4_qst_react_pick",
             "btn_psi4_qst_react_from_current",
+            "lbl_psi4_qst_prod",
             "edit_psi4_qst_prod",
             "btn_psi4_qst_prod_pick",
             "btn_psi4_qst_prod_from_current",
@@ -30297,6 +31435,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines.append("    n = int(min(c.shape[0], e.size))")
         lines.append("    return c[:n, :, :], e[:n]")
         lines.append("")
+        # optking's IRC trajectory holds the IRC points (TS first, then each converged point with its
+        # energy); psi4.optimize's history also has every constrained micro-step, which scrambles the path
+        lines.append("def _irc_traj_history():")
+        lines.append("    files = sorted(glob.glob('irc_traj*.xyz'), key=os.path.getmtime)")
+        lines.append("    if not files:")
+        lines.append("        return None")
+        lines.append("    rows = open(files[-1]).read().splitlines()")
+        lines.append("    E, C, i = [], [], 0")
+        # optking writes the IRC points' x as they are, in bohr (like psi4's own history)
+        lines.append("    while i < len(rows):")
+        lines.append("        if not rows[i].strip():")
+        lines.append("            i += 1")
+        lines.append("            continue")
+        lines.append("        n = int(rows[i].split()[0])")
+        lines.append("        tail = rows[i + 1].split('E:')")
+        lines.append("        E.append(float(tail[1].split()[0]) if len(tail) > 1 else float('nan'))")
+        lines.append("        C.append([[float(v) for v in ln.split()[1:4]] for ln in rows[i + 2:i + 2 + n]])")
+        lines.append("        i += 2 + n")
+        lines.append("    try:")
+        lines.append("        os.replace(files[-1], files[-1].replace('irc_traj', 'irc_branch_done'))")
+        lines.append("    except Exception:")
+        lines.append("        pass")
+        lines.append("    if len(E) < 2:")
+        lines.append("        return None")
+        lines.append("    return {'coordinates': np.asarray(C, dtype=float), 'energy': np.asarray(E, dtype=float)}")
+        lines.append("")
         lines.append("def _combine_irc_histories(back_hist, fwd_hist):")
         lines.append("    bc, be = _history_arrays(back_hist)")
         lines.append("    fc, fe = _history_arrays(fwd_hist)")
@@ -30455,6 +31619,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             lines.append("            pass")
             lines.append("        ret = psi4.optimize(method_name, return_wfn=True, return_history=True)")
             lines.append("        _e, _w, _hist = _parse_opt_return(ret)")
+            lines.append("        _traj_hist = _irc_traj_history()")
+            lines.append("        if _traj_hist is not None:")
+            lines.append("            _hist = _traj_hist")
             lines.append("        _last_e = _e")
             lines.append("        _last_wfn = _w")
             lines.append("        _last_hist = _hist")
@@ -30592,6 +31759,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines.append("                    result['ir_spectrum_csv'] = 'ir_spectrum.csv'")
         lines.append("                except Exception:")
         lines.append("                    pass")
+        # DFT frequencies come from finite differences of gradients: that wavefunction has no MO
+        # coefficients, so oeprop raises and cubeprop crashes Psi4 (SIGSEGV) after the frequencies are
+        # done. Properties and cubes then use a single point at the final geometry.
+        lines.append("        if wfn_last is not None:")
+        lines.append("            try:")
+        lines.append("                wfn_last.Ca()")
+        lines.append("            except Exception:")
+        lines.append("                try:")
+        lines.append("                    _e_sp, wfn_last = psi4.energy(method_name, return_wfn=True)")
+        lines.append("                    result['property_wavefunction'] = 'single_point_final_geometry'")
+        lines.append("                except Exception as _sp_e:")
+        lines.append("                    result['property_warning'] = f'no orbitals for properties: {_sp_e}'")
+        lines.append("                    wfn_last = None")
+        # keep the wavefunction: any orbital (HOMO-n, LUMO+n) can be rendered later without recomputing
+        lines.append("        if wfn_last is not None:")
+        lines.append("            try:")
+        lines.append("                wfn_last.to_file('wfn_last')")
+        lines.append("                result['wavefunction_file'] = 'wfn_last.npy'")
+        lines.append("            except Exception:")
+        lines.append("                pass")
         lines.append("        if wfn_last is not None:")
         lines.append("            try:")
         lines.append("                psi4.oeprop(wfn_last, 'MULLIKEN_CHARGES')")
@@ -31591,6 +32778,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             if fb:
                 self._psi4_append_log("Psi4 note: region selection returned 0 atoms; auto-fallback to whole object.")
+        try:
+            _syms = [str(a.get("element") or a.get("symbol") or a.get("elem") or "C") if isinstance(a, dict)
+                     else str(a[0]) for a in atoms]
+            _op = str(self.cmb_psi4_operation.currentData() or "energy")
+            _est = self._hardware_mod().estimate_psi4(
+                _syms, _op, str(self.cmb_psi4_method.currentText()), str(self.cmb_psi4_basis.currentText()),
+                threads=int(self.spin_psi4_threads.value()), prof=self._hardware_profile())
+            self._psi4_append_log(f"Psi4 estimate: {_est.get('text')}")
+            if float(_est.get("minutes", 0)) > 60 and len(atoms) <= 350:
+                ans = QtWidgets.QMessageBox.question(
+                    self,
+                    "Long QM calculation",
+                    f"Estimated time: {_est.get('text')}.\n\n{_est.get('advice') or ''}\n\nRun it now?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.Yes,
+                )
+                if ans != QtWidgets.QMessageBox.Yes:
+                    return
+        except Exception:
+            pass
         if len(atoms) > 350:
             ans = QtWidgets.QMessageBox.question(
                 self,
@@ -31718,246 +32925,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         return
     def _setup_ligand_editor_ui(self):
         try:
-            self._ligand_editor_dialog = QtWidgets.QDialog(self)
-            self._ligand_editor_dialog.setWindowTitle("Ligand Editor (2D -> 3D)")
-            self._ligand_editor_dialog.resize(1100, 880)
-            self._ligand_editor_dialog.setMinimumSize(940, 720)
-            self._fit_dialog_to_screen(self._ligand_editor_dialog, preferred_w=1100, preferred_h=880, min_w=900, min_h=700)
-            vbox = QtWidgets.QVBoxLayout(self._ligand_editor_dialog)
-            intro = QtWidgets.QLabel(
-                "Preferred workflow: edit directly in the built-in 2D mouse canvas below, then build 3D and "
-                "apply the ligand. External editors remain optional fallback tools."
-            )
-            intro.setWordWrap(True)
-            vbox.addWidget(intro)
-            row_src = QtWidgets.QHBoxLayout()
-            self.btn_liged_load_active = QtWidgets.QPushButton("Load Active Ligand")
-            self.btn_liged_load_active.clicked.connect(self._on_ligand_editor_load_active)
-            row_src.addWidget(self.btn_liged_load_active)
-            self.btn_liged_load_file = QtWidgets.QPushButton("Load From File...")
-            self.btn_liged_load_file.clicked.connect(self._on_ligand_editor_pick_file)
-            row_src.addWidget(self.btn_liged_load_file)
-            self.btn_liged_apply_smiles = QtWidgets.QPushButton("Apply SMILES")
-            self.btn_liged_apply_smiles.clicked.connect(self._on_ligand_editor_apply_smiles)
-            self.btn_liged_apply_smiles.setVisible(False)
-            row_src.addWidget(self.btn_liged_apply_smiles)
-            self.btn_liged_undo = QtWidgets.QPushButton("Undo")
-            self.btn_liged_undo.clicked.connect(self._on_liged_undo)
-            self.btn_liged_undo.setVisible(False)
-            row_src.addWidget(self.btn_liged_undo)
-            row_src.addStretch(1)
-            vbox.addLayout(row_src)
-            self.w_liged_smiles = QtWidgets.QWidget()
-            row_smiles = QtWidgets.QHBoxLayout(self.w_liged_smiles)
-            row_smiles.setContentsMargins(0, 0, 0, 0)
-            row_smiles.addWidget(QtWidgets.QLabel("SMILES (advanced)"))
-            self.edit_liged_smiles = QtWidgets.QLineEdit()
-            self.edit_liged_smiles.setPlaceholderText("Optional manual SMILES edit")
-            self.edit_liged_smiles.returnPressed.connect(self._on_ligand_editor_apply_smiles)
-            row_smiles.addWidget(self.edit_liged_smiles, 1)
-            self.w_liged_smiles.setVisible(False)
-            vbox.addWidget(self.w_liged_smiles)
-            row_draw = QtWidgets.QHBoxLayout()
-            self.btn_liged_open_drawer = QtWidgets.QPushButton("Open Web Drawer (Optional)")
-            self.btn_liged_open_drawer.clicked.connect(self._on_liged_open_drawer)
-            row_draw.addWidget(self.btn_liged_open_drawer)
-            self.cmb_liged_drawer_tool = QtWidgets.QComboBox()
-            self.cmb_liged_drawer_tool.addItem("Ketcher (Web)", "ketcher")
-            self.cmb_liged_drawer_tool.addItem("JSME Local", "local_jsme")
-            self.cmb_liged_drawer_tool.addItem("JSME (Web)", "jsme")
-            row_draw.addWidget(self.cmb_liged_drawer_tool)
-            self.btn_liged_import_file_quick = QtWidgets.QPushButton("Import Drawing File...")
-            self.btn_liged_import_file_quick.clicked.connect(self._on_liged_import_drawing_file)
-            row_draw.addWidget(self.btn_liged_import_file_quick)
-            self.btn_liged_use_drawing_quick = QtWidgets.QPushButton("Use Clipboard Drawing (Auto 3D)")
-            self.btn_liged_use_drawing_quick.clicked.connect(self._on_liged_use_drawing_quick)
-            row_draw.addWidget(self.btn_liged_use_drawing_quick)
-            self.btn_liged_copy_smiles = QtWidgets.QPushButton("Copy SMILES")
-            self.btn_liged_copy_smiles.clicked.connect(self._on_liged_copy_smiles_clipboard)
-            self.btn_liged_copy_smiles.setVisible(False)
-            row_draw.addWidget(self.btn_liged_copy_smiles)
-            self.btn_liged_import_clip = QtWidgets.QPushButton("Apply Drawing From Clipboard")
-            self.btn_liged_import_clip.clicked.connect(self._on_liged_import_smiles_clipboard)
-            self.btn_liged_import_clip.setVisible(False)
-            row_draw.addWidget(self.btn_liged_import_clip)
-            row_draw.addStretch(1)
-            vbox.addLayout(row_draw)
-            row_mouse = QtWidgets.QHBoxLayout()
-            row_mouse.addWidget(QtWidgets.QLabel("Mouse Mode"))
-            self.cmb_liged_mouse_mode = QtWidgets.QComboBox()
-            self.cmb_liged_mouse_mode.addItem("Select / Move", "select")
-            self.cmb_liged_mouse_mode.addItem("Add Atom", "attach_atom")
-            self.cmb_liged_mouse_mode.addItem("Replace Atom", "replace_atom")
-            self.cmb_liged_mouse_mode.addItem("Delete Atom", "delete_atom")
-            self.cmb_liged_mouse_mode.addItem("Add Bond", "add_bond")
-            self.cmb_liged_mouse_mode.addItem("Set Bond", "set_bond")
-            self.cmb_liged_mouse_mode.addItem("Delete Bond", "delete_bond")
-            self.cmb_liged_mouse_mode.addItem("Attach Fragment", "attach_fragment")
-            self.cmb_liged_mouse_mode.currentIndexChanged.connect(self._on_liged_mouse_mode_changed)
-            row_mouse.addWidget(self.cmb_liged_mouse_mode)
-            self.lbl_liged_mouse_hint = QtWidgets.QLabel(
-                "Click Atom A. Shift-click sets Atom B. Drag atoms in Select / Move mode."
-            )
-            self.lbl_liged_mouse_hint.setWordWrap(True)
-            row_mouse.addWidget(self.lbl_liged_mouse_hint, 1)
-            self.btn_liged_open_tools = QtWidgets.QPushButton("Pop-out Tools...")
-            self.btn_liged_open_tools.clicked.connect(self._show_liged_tool_popup)
-            row_mouse.addWidget(self.btn_liged_open_tools)
-            vbox.addLayout(row_mouse)
-            atom_box = QtWidgets.QGroupBox("Atom Palette")
-            self.grp_liged_atom_palette = atom_box
-            atom_layout = QtWidgets.QVBoxLayout(atom_box)
-            row_atom_palette = QtWidgets.QHBoxLayout()
-            self._liged_atom_palette_buttons = {}
-            for sym in self._liged_atom_palette_symbols():
-                btn = QtWidgets.QToolButton()
-                btn.setText(sym)
-                btn.setCheckable(True)
-                btn.clicked.connect(lambda _checked=False, atom_symbol=sym: self._on_liged_choose_element(atom_symbol))
-                row_atom_palette.addWidget(btn)
-                self._liged_atom_palette_buttons[str(sym).strip().upper()] = btn
-            btn_periodic = QtWidgets.QPushButton("Periodic Table...")
-            btn_periodic.clicked.connect(self._on_liged_open_periodic_table)
-            row_atom_palette.addWidget(btn_periodic)
-            row_atom_palette.addStretch(1)
-            atom_layout.addLayout(row_atom_palette)
-            self.lbl_liged_selected_element = QtWidgets.QLabel("Selected atom: C")
-            self.lbl_liged_selected_element.setWordWrap(True)
-            atom_layout.addWidget(self.lbl_liged_selected_element)
-            atom_box.setVisible(False)
-            vbox.addWidget(atom_box)
-            frag_box = QtWidgets.QGroupBox("Quick Organic Groups")
-            self.grp_liged_quick_groups = frag_box
-            frag_layout = QtWidgets.QHBoxLayout(frag_box)
-            self._liged_quick_fragment_buttons = []
-            for short_label, full_label, smi in self._liged_quick_fragment_specs():
-                btn = QtWidgets.QToolButton()
-                btn.setText(short_label)
-                btn.setToolTip(full_label)
-                btn.clicked.connect(
-                    lambda _checked=False, frag_smiles=smi, frag_label=full_label: self._on_liged_pick_quick_fragment(
-                        frag_smiles,
-                        frag_label,
-                    )
-                )
-            frag_layout.addWidget(btn)
-            self._liged_quick_fragment_buttons.append(btn)
-            frag_layout.addStretch(1)
-            frag_box.setVisible(False)
-            vbox.addWidget(frag_box)
-            row_mode = QtWidgets.QHBoxLayout()
-            self.cb_liged_show_advanced = QtWidgets.QCheckBox("Show advanced manual tools")
-            self.cb_liged_show_advanced.setChecked(False)
-            self.cb_liged_show_advanced.toggled.connect(self._on_liged_toggle_advanced)
-            row_mode.addWidget(self.cb_liged_show_advanced)
-            row_mode.addStretch(1)
-            vbox.addLayout(row_mode)
-            row_opts = QtWidgets.QHBoxLayout()
-            self.btn_liged_addh = QtWidgets.QPushButton("Refresh Hydrogens")
-            self.btn_liged_addh.clicked.connect(self._on_ligand_editor_add_hydrogens)
-            row_opts.addWidget(self.btn_liged_addh)
-            self.cb_liged_addh_3d = QtWidgets.QCheckBox("Include hydrogens in 3D")
-            self.cb_liged_addh_3d.setChecked(True)
-            row_opts.addWidget(self.cb_liged_addh_3d)
-            self.cb_liged_mmff = QtWidgets.QCheckBox("MMFF/UFF relax 3D")
-            self.cb_liged_mmff.setChecked(True)
-            row_opts.addWidget(self.cb_liged_mmff)
-            self.cb_liged_show_idx = QtWidgets.QCheckBox("Show atom indices")
-            self.cb_liged_show_idx.setChecked(True)
-            self.cb_liged_show_idx.toggled.connect(self._on_liged_refresh_depiction)
-            row_opts.addWidget(self.cb_liged_show_idx)
-            row_opts.addStretch(1)
-            vbox.addLayout(row_opts)
-            edit_box = QtWidgets.QGroupBox("2D Graph Edit Tools")
-            self.grp_liged_advanced = edit_box
-            edit_layout = QtWidgets.QVBoxLayout(edit_box)
-            row_edit_top = QtWidgets.QHBoxLayout()
-            row_edit_top.addWidget(QtWidgets.QLabel("Atom A"))
-            self.spin_liged_atom_a = QtWidgets.QSpinBox()
-            self.spin_liged_atom_a.setRange(0, 999)
-            row_edit_top.addWidget(self.spin_liged_atom_a)
-            row_edit_top.addWidget(QtWidgets.QLabel("Atom B"))
-            self.spin_liged_atom_b = QtWidgets.QSpinBox()
-            self.spin_liged_atom_b.setRange(0, 999)
-            row_edit_top.addWidget(self.spin_liged_atom_b)
-            self.spin_liged_atom_a.valueChanged.connect(lambda _v: self._liged_refresh_canvas_selection())
-            self.spin_liged_atom_b.valueChanged.connect(lambda _v: self._liged_refresh_canvas_selection())
-            row_edit_top.addWidget(QtWidgets.QLabel("Element"))
-            self.cmb_liged_element = QtWidgets.QComboBox()
-            self.cmb_liged_element.setEditable(True)
-            for el in ("C", "N", "O", "S", "P", "F", "Cl", "Br", "I", "H", "B", "Si"):
-                self.cmb_liged_element.addItem(el)
-            self.cmb_liged_element.setCurrentText("C")
-            self.cmb_liged_element.currentTextChanged.connect(lambda _txt: self._liged_refresh_mouse_guidance())
-            row_edit_top.addWidget(self.cmb_liged_element)
-            row_edit_top.addWidget(QtWidgets.QLabel("Bond"))
-            self.cmb_liged_bond = QtWidgets.QComboBox()
-            self.cmb_liged_bond.addItem("Single", "single")
-            self.cmb_liged_bond.addItem("Double", "double")
-            self.cmb_liged_bond.addItem("Triple", "triple")
-            self.cmb_liged_bond.addItem("Aromatic", "aromatic")
-            self.cmb_liged_bond.currentIndexChanged.connect(lambda _idx: self._liged_refresh_mouse_guidance())
-            row_edit_top.addWidget(self.cmb_liged_bond)
-            row_edit_top.addStretch(1)
-            edit_layout.addLayout(row_edit_top)
-            row_edit_btn = QtWidgets.QHBoxLayout()
-            self.btn_liged_attach_atom = QtWidgets.QPushButton("Attach Atom to A")
-            self.btn_liged_attach_atom.clicked.connect(self._on_liged_attach_atom)
-            row_edit_btn.addWidget(self.btn_liged_attach_atom)
-            self.btn_liged_replace_atom = QtWidgets.QPushButton("Replace Atom A")
-            self.btn_liged_replace_atom.clicked.connect(self._on_liged_replace_atom)
-            row_edit_btn.addWidget(self.btn_liged_replace_atom)
-            self.btn_liged_add_bond = QtWidgets.QPushButton("Add Bond A-B")
-            self.btn_liged_add_bond.clicked.connect(self._on_liged_add_bond)
-            row_edit_btn.addWidget(self.btn_liged_add_bond)
-            self.btn_liged_set_bond = QtWidgets.QPushButton("Set Bond A-B")
-            self.btn_liged_set_bond.clicked.connect(self._on_liged_set_bond)
-            row_edit_btn.addWidget(self.btn_liged_set_bond)
-            self.btn_liged_del_bond = QtWidgets.QPushButton("Delete Bond A-B")
-            self.btn_liged_del_bond.clicked.connect(self._on_liged_delete_bond)
-            row_edit_btn.addWidget(self.btn_liged_del_bond)
-            self.btn_liged_del_atom = QtWidgets.QPushButton("Delete Atom A")
-            self.btn_liged_del_atom.clicked.connect(self._on_liged_delete_atom)
-            row_edit_btn.addWidget(self.btn_liged_del_atom)
-            edit_layout.addLayout(row_edit_btn)
-            row_frag = QtWidgets.QHBoxLayout()
-            row_frag.addWidget(QtWidgets.QLabel("Fragments"))
-            self.cmb_liged_fragment = QtWidgets.QComboBox()
-            for label, smi in self._ligand_editor_fragment_library():
-                self.cmb_liged_fragment.addItem(label, smi)
-            self.cmb_liged_fragment.currentIndexChanged.connect(lambda _idx: self._liged_refresh_mouse_guidance())
-            row_frag.addWidget(self.cmb_liged_fragment, 1)
-            self.btn_liged_attach_fragment = QtWidgets.QPushButton("Attach to Atom A")
-            self.btn_liged_attach_fragment.clicked.connect(self._on_liged_attach_fragment)
-            row_frag.addWidget(self.btn_liged_attach_fragment)
-            edit_layout.addLayout(row_frag)
-            edit_box.setVisible(False)
-            vbox.addWidget(edit_box)
-            self.liged_canvas_2d = Ligand2DInteractiveCanvas(Chem, AllChem, self._ligand_editor_dialog)
-            self.liged_canvas_2d.on_atom_click = self._on_liged_canvas_atom_click
-            self.liged_canvas_2d.on_bond_click = self._on_liged_canvas_bond_click
-            self.liged_canvas_2d.on_atom_extend = self._on_liged_canvas_atom_extend
-            self.liged_canvas_2d.on_hydrogen_click = self._on_liged_canvas_hydrogen_click
-            self.liged_canvas_2d.on_empty_click = self._on_liged_canvas_empty_click
-            self.liged_canvas_2d.on_atom_drag = self._on_liged_canvas_atom_drag
-            vbox.addWidget(self.liged_canvas_2d, 1)
+            dlg = QtWidgets.QDialog(self)
+            self._ligand_editor_dialog = dlg
+            dlg.setWindowTitle("Ligand Editor")
+            dlg.resize(1220, 800)
+            dlg.setMinimumSize(900, 600)
+            self._fit_dialog_to_screen(dlg, preferred_w=1220, preferred_h=800, min_w=880, min_h=580)
+            vbox = QtWidgets.QVBoxLayout(dlg)
+            vbox.setContentsMargins(0, 0, 0, 0)
+            sketcher = LigandSketcherWidget(dlg)
+            self.liged_sketcher = sketcher
+            sketcher.on_molecule_changed = self._on_liged_sketcher_changed
+            sketcher.on_build_3d = self._on_ligand_editor_generate_3d_apply
+            sketcher.on_import_active = self._on_ligand_editor_load_active
+            sketcher.on_import_file = self._on_liged_import_drawing_file
+            sketcher.on_paste_clipboard = self._on_liged_import_smiles_clipboard
+            sketcher.on_open_web_drawer = self._on_liged_open_web_drawer_tool
+            sketcher.on_protonate = self._on_ligand_editor_add_hydrogens
+            vbox.addWidget(sketcher, 1)
+            # The 3D build and protonation handlers read these option widgets.
+            self.cb_liged_addh_3d = sketcher.cb_include_h
+            self.cb_liged_mmff = sketcher.cb_relax
+            # Hidden SMILES field kept for the clipboard/web-drawer import path.
+            self.edit_liged_smiles = QtWidgets.QLineEdit(dlg)
+            self.edit_liged_smiles.setVisible(False)
             self.lbl_liged_2d = None
-            self.lbl_liged_status = QtWidgets.QLabel("Status: load active ligand or file.")
-            self.lbl_liged_status.setWordWrap(True)
-            vbox.addWidget(self.lbl_liged_status)
-            row_run = QtWidgets.QHBoxLayout()
-            self.btn_liged_generate3d = QtWidgets.QPushButton("3) Build 3D and Use Ligand")
-            self.btn_liged_generate3d.clicked.connect(self._on_ligand_editor_generate_3d_apply)
-            row_run.addWidget(self.btn_liged_generate3d)
-            row_run.addStretch(1)
-            vbox.addLayout(row_run)
-            close_row = QtWidgets.QHBoxLayout()
-            close_row.addStretch(1)
-            btn_close = QtWidgets.QPushButton("Close")
-            btn_close.clicked.connect(self._ligand_editor_dialog.close)
-            close_row.addWidget(btn_close)
-            vbox.addLayout(close_row)
-            self._on_liged_mouse_mode_changed()
+            sketcher.show_status("Draw a ligand, type a SMILES, or use Import to load one.", "info")
             # Keep a hidden compatibility button; ligand entrypoint is now the
             # main "Ligand Source & Prep" launcher.
             self.btn_open_ligand_editor = QtWidgets.QPushButton("Ligand Editor...")
@@ -31968,6 +32961,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_open_ligand_editor.setVisible(False)
         except Exception as e:
             print(f"Ligand Editor UI Setup Error: {e}")
+    def _on_liged_sketcher_changed(self, mol):
+        self._ligand_editor_mol = None if mol is None else Chem.Mol(mol)
+    def _on_liged_open_web_drawer_tool(self, tool_key):
+        self._liged_drawer_tool_choice = str(tool_key or "ketcher")
+        self._on_liged_open_drawer()
     def _show_ligand_editor_dialog(self):
         if not HAS_RDKIT:
             QtWidgets.QMessageBox.warning(self, "Ligand Editor", "RDKit is required for ligand editing.")
@@ -31995,7 +32993,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._ligand_editor_load_from_file(active, announce=False)
         except Exception:
             pass
-    def _ligand_editor_set_status(self, text):
+    def _ligand_editor_set_status(self, text, kind=None):
+        sketcher = getattr(self, "liged_sketcher", None)
+        if sketcher is not None:
+            if kind is None:
+                low = str(text or "").lower()
+                kind = "error" if ("fail" in low or "error" in low or "not found" in low) else "info"
+            try:
+                sketcher.show_status(str(text), kind)
+            except Exception:
+                pass
+            return
         try:
             if hasattr(self, "lbl_liged_status"):
                 self.lbl_liged_status.setText(str(text))
@@ -32062,6 +33070,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return False
         if mol is None:
             return False
+        sketcher = getattr(self, "liged_sketcher", None)
+        if sketcher is not None:
+            try:
+                sketcher.set_molecule(mol)
+                return True
+            except Exception:
+                return False
         show_idx = bool(self.cb_liged_show_idx.isChecked()) if hasattr(self, "cb_liged_show_idx") else True
         try:
             if hasattr(self, "liged_canvas_2d") and self.liged_canvas_2d is not None:
@@ -32167,10 +33182,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         src = f"source={source_label} | " if source_label else ""
-        self._ligand_editor_set_status(
-            f"Status: {src}atoms={int(work.GetNumAtoms())}, heavy={int(work.GetNumHeavyAtoms())}, "
-            f"2D={'ok' if ok_draw else 'failed'}"
-        )
+        if getattr(self, "liged_sketcher", None) is not None:
+            label = f" from {source_label}" if source_label else ""
+            self._ligand_editor_set_status(
+                f"Loaded{label}: {int(work.GetNumHeavyAtoms())} heavy atoms.",
+                "ok" if ok_draw else "error",
+            )
+        else:
+            self._ligand_editor_set_status(
+                f"Status: {src}atoms={int(work.GetNumAtoms())}, heavy={int(work.GetNumHeavyAtoms())}, "
+                f"2D={'ok' if ok_draw else 'failed'}"
+            )
         return True
     def _ligand_editor_get_current_mol(self):
         if not HAS_RDKIT:
@@ -33072,6 +34094,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     return q
         return ""
     def _liged_current_drawer_tool(self):
+        choice = str(getattr(self, "_liged_drawer_tool_choice", "") or "").strip().lower()
+        if choice in ("local_jsme", "ketcher", "jsme"):
+            return choice
         try:
             if hasattr(self, "cmb_liged_drawer_tool"):
                 key = str(self.cmb_liged_drawer_tool.currentData() or "").strip().lower()
@@ -33431,7 +34456,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "Fallback workflow:\n"
                     "1) Draw/edit molecule in browser drawer\n"
                     "2) Copy SMILES in the drawer\n"
-                    "3) Back in plugin click '2) Use Drawing (Auto 3D)'"
+                    "3) Back in the Ligand Editor choose Import > Paste SMILES from clipboard"
                 )
                 if err:
                     msg += "\n\nTechnical details: " + str(err)[:300]
@@ -34149,6 +35174,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             use_ph = self._current_small_molecule_target_ph()
             work, prep = self._prepare_small_molecule_working_mol(mol, include_h=include_h, target_ph=use_ph if include_h else None)
             needs_embed, _why = self._ligand_geometry_is_bad(work)
+            if int(work.GetNumConformers()) > 0 and int(work.GetNumAtoms()) >= 3:
+                zs = [abs(float(work.GetConformer().GetAtomPosition(i).z)) for i in range(int(work.GetNumAtoms()))]
+                if max(zs) < 1e-3:
+                    needs_embed = True  # 2D sketch coordinates are not a 3D geometry
             if needs_embed or int(work.GetNumConformers()) <= 0:
                 p = AllChem.ETKDGv3()
                 p.randomSeed = 20260223
@@ -34175,6 +35204,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(lig_dir, exist_ok=True)
             tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             out_sdf = os.path.join(lig_dir, f"ligand_edited_{tag}.sdf")
+            k = 2
+            while os.path.exists(out_sdf):      # two builds in the same second get distinct files
+                out_sdf = os.path.join(lig_dir, f"ligand_edited_{tag}_{k}.sdf")
+                k += 1
             w = Chem.SDWriter(out_sdf)
             w.write(work)
             w.close()
@@ -34191,12 +35224,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 f"H={int(summary.get('explicit_hydrogens', 0) or 0)}, "
                 f"repair={'yes' if bool(prep.get('used_repair', False)) else 'no'}"
             )
-            QtWidgets.QMessageBox.information(
-                self,
-                "Ligand Editor",
-                "Edited ligand was rebuilt in 3D and applied as active ligand source.\n\n"
-                f"File: {out_sdf}",
-            )
+            if getattr(self, "liged_sketcher", None) is not None:
+                self._ligand_editor_set_status(
+                    f"3D ligand built and set as the active ligand "
+                    f"(charge {int(summary.get('formal_charge', 0) or 0):+d}, "
+                    f"{int(work.GetNumAtoms())} atoms): {os.path.basename(out_sdf)}",
+                    "ok",
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Ligand Editor",
+                    "Edited ligand was rebuilt in 3D and applied as active ligand source.\n\n"
+                    f"File: {out_sdf}",
+                )
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Ligand Editor", f"3D generation failed: {e}")
     def _setup_virtual_screening_ui(self):
@@ -34407,6 +35448,23 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_params.addWidget(self.cb_vs_show_grid)
             row_params.addStretch(1)
             run_box.addLayout(row_params)
+            row_filter = QtWidgets.QHBoxLayout()
+            row_filter.addWidget(QtWidgets.QLabel("Drug-likeness pre-filter"))
+            self.cmb_vs_druglike_filter = QtWidgets.QComboBox()
+            for key, label in (("none", "None"), ("lipinski", "Lipinski Ro5 (<= 1 violation)"),
+                               ("lipinski_strict", "Lipinski Ro5 (no violation)"), ("veber", "Veber"),
+                               ("lipinski_veber", "Lipinski + Veber"), ("ghose", "Ghose"), ("egan", "Egan"),
+                               ("lead_like", "Lead-like")):
+                self.cmb_vs_druglike_filter.addItem(label, key)
+            self.cmb_vs_druglike_filter.setToolTip(
+                "Compounds failing the rule are not docked (Lipinski: MW<=500, cLogP<=5, HBD<=5, HBA<=10; "
+                "Veber: rotatable bonds<=10, TPSA<=140). Properties and estimated ADME are kept for every hit.")
+            row_filter.addWidget(self.cmb_vs_druglike_filter)
+            self.cb_vs_exclude_pains = QtWidgets.QCheckBox("Exclude PAINS")
+            self.cb_vs_exclude_pains.setToolTip("Skip compounds with PAINS substructure alerts (assay interference)")
+            row_filter.addWidget(self.cb_vs_exclude_pains)
+            row_filter.addStretch(1)
+            run_box.addLayout(row_filter)
             row_run = QtWidgets.QHBoxLayout()
             self.btn_vs_run = QtWidgets.QPushButton("Run Virtual Screening")
             self.btn_vs_run.clicked.connect(self._on_run_virtual_screening)
@@ -34599,7 +35657,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     atoms = 0
                 label = f"Pocket {pid}" if pid > 0 else "Pocket"
                 if np.isfinite(rank):
-                    label += f" (rank {rank:.3f})"
+                    label += f" (score {rank:.3f})"
                 if atoms > 0:
                     label += f" | atoms {atoms}"
                 self.cmb_vs_pocket.addItem(label, p)
@@ -34819,6 +35877,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         center = list(payload.get("center", (0.0, 0.0, 0.0)))
         size = list(payload.get("size", (18.0, 18.0, 18.0)))
+        try:
+            spins = [getattr(self, k) for k in ("spin_vs_cx", "spin_vs_cy", "spin_vs_cz",
+                                                "spin_vs_sx", "spin_vs_sy", "spin_vs_sz")]
+            if any(w.hasFocus() for w in spins):
+                self._vs_grid_user_defined = True
+        except Exception:
+            pass
+        # (0, 0, 0) is the untouched default: no grid to draw yet
+        if not (bool(getattr(self, "_vs_grid_user_defined", False)) or any(abs(float(c)) > 1e-6 for c in center)):
+            return
         self._show_docking_grid_box(center, size, zoom=False)
     def _set_vs_grid_visibility(self, visible):
         self._vs_grid_visible = bool(visible)
@@ -34862,7 +35930,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return importlib.util.find_spec("meeko") is not None
         except Exception:
             return False
-    def _vs_prepare_ligand_with_meeko(self, mol, out_pdbqt):
+    def _vs_prepare_ligand_with_meeko(self, mol, out_pdbqt, target_ph=None):
+        """Meeko PDBQT for a ligand. With ``target_ph`` the ligand is first protonated at that pH
+        by the pKa module (Virtual Screening / Lead Optimization libraries arrive as drawn);
+        docking passes None because its ligand was already protonated (or chosen in the pKa window)."""
         if (not HAS_RDKIT) or mol is None:
             return False, "RDKit unavailable or invalid molecule"
         try:
@@ -34889,6 +35960,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 core = rebuilt
         except Exception:
             pass
+        if target_ph is not None:
+            try:
+                core = Chem.RemoveHs(pka_protonate_molecule(core, float(target_ph), method=self._pka_method(bulk=True),
+                                                            cache_dir=self._pka_cache_dir())[0])
+            except Exception as exc:
+                self._append_debug_log(f"Meeko prep: pKa protonation skipped ({exc}).")
         try:
             work = Chem.AddHs(core, addCoords=True)
         except Exception as e:
@@ -34961,6 +36038,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             sup = Chem.SDMolSupplier(lib, removeHs=False, sanitize=False)
         except Exception:
             return [], {"loaded": 0, "skipped": 0, "total": 0, "reason": "invalid_sdf"}
+        # the drug-likeness filter runs while reading, so the limit counts compounds that pass it
+        rule = str(self.cmb_vs_druglike_filter.currentData() or "none") if hasattr(self, "cmb_vs_druglike_filter") else "none"
+        no_pains = bool(self.cb_vs_exclude_pains.isChecked()) if hasattr(self, "cb_vs_exclude_pains") else False
+        rejected = []
+        log = getattr(self, "_append_debug_log", lambda _m: None)
+        try:
+            try:
+                dl = self._modeler_import_module("druglike_runtime")
+            except Exception:
+                import druglike_runtime as dl
+        except Exception as e:
+            dl = None
+            log(f"VS drug-likeness filter skipped: {e}")
         for i, m in enumerate(sup):
             total += 1
             if len(out) >= lim:
@@ -34993,8 +36083,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             ident = ""
             for p in ("_Name", "NAME", "name", "ID", "id", "CID", "cid"):
                 try:
-                    if mol.HasProp(p):
-                        v = str(mol.GetProp(p)).strip()
+                    # the SDF record (m) keeps the properties; the rebuilt molecule does not
+                    if m.HasProp(p):
+                        v = str(m.GetProp(p)).strip()
                         if v and (not name):
                             name = v
                         if v and p.lower() in ("id", "cid") and (not ident):
@@ -35003,20 +36094,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     continue
             if not name:
                 name = f"Lig_{i+1}"
-            out.append(
-                {
-                    "index": int(i + 1),
-                    "name": str(name),
-                    "identifier": str(ident),
-                    "mol": mol,
-                }
-            )
+            entry = {
+                "index": int(i + 1),
+                "name": str(name),
+                "identifier": str(ident),
+                "mol": mol,
+            }
+            if dl is not None:
+                try:
+                    kept, rej = dl.filter_entries([entry], rule=rule, exclude_pains=no_pains)
+                except Exception:
+                    kept, rej = [entry], []
+                rejected.extend(rej)
+                if not kept:
+                    continue
+            out.append(entry)
+        try:
+            self._vs_library_props = {int(e["index"]): dict(e.get("druglike") or {}) for e in out + rejected}
+            self._vs_filter_rejected = [{"index": e.get("index"), "name": e.get("name"),
+                                         "reason": e.get("filter_reason", "")} for e in rejected]
+            if rejected:
+                log(f"VS drug-likeness filter '{rule}'{' + PAINS' if no_pains else ''}: "
+                    f"{len(rejected)} compound(s) removed before docking")
+        except Exception as e:
+            log(f"VS drug-likeness filter skipped: {e}")
         return out, {
             "loaded": int(len(out)),
             "skipped": int(skipped),
             "total": int(total),
             "limit": int(lim),
             "truncated": bool(truncated),
+            "filtered": int(len(rejected)),
+            "filter": rule + (" + PAINS" if no_pains else ""),
             "reason": "ok",
         }
     def _populate_vs_table(self):
@@ -35232,19 +36341,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             return False, str(e)
     def _vs_prepare_meeko_for_docking(self, mol, out_pdbqt):
-        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt)
+        ph = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
+        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt, target_ph=ph)
     def _vs_fallback_prepare_ligand_for_docking(self, lig_sdf, fallback_job, target_ph_local):
         try:
             os.makedirs(fallback_job, exist_ok=True)
         except Exception:
             pass
-        return self._prepare_ligand_for_docking(
-            lig_sdf,
-            fallback_job,
-            target_ph=float(target_ph_local),
-            smiles_hint="",
-            preserve_input_charges=False,
-        )
+        # library-scale preparation: the pKa default Psi4 becomes PM7 (minutes per molecule otherwise)
+        with self._pka_bulk_mode():
+            return self._prepare_ligand_for_docking(
+                lig_sdf,
+                fallback_job,
+                target_ph=float(target_ph_local),
+                smiles_hint="",
+                preserve_input_charges=False,
+            )
     def _vs_convert_pose_for_view_runtime(self, out_pose, pose_dir_local, stem_local):
         pose_view_local = str(out_pose)
         if str(out_pose).lower().endswith(".pdbqt"):
@@ -36822,6 +37934,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 net_charge_raw = self.spin_net_charge.value() if hasattr(self, "spin_net_charge") else 0
             except Exception:
                 net_charge_raw = 0
+            # Each analog has its own protonation state and net charge: the docking-panel
+            # net charge used to be applied to every hit. Protonate at the VS pH first.
+            hit_mol = hit.get("mol") if isinstance(hit, dict) else None
+            if hit_mol is not None:
+                try:
+                    ph_vs = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
+                    pka_method = self._pka_method()
+                    prot_mol, prot_info = pka_protonate_molecule(
+                        hit_mol, ph_vs, method=pka_method, cache_dir=self._pka_cache_dir(),
+                        backend_options=self._pka_backend_options(pka_method))
+                    hit = dict(hit, mol=prot_mol)
+                    net_charge_raw = int(prot_info["charge"])
+                except Exception as exc:
+                    self._append_debug_log(f"Lead-opt refine: pKa protonation of hit {hit_idx} failed ({exc}).")
             try:
                 charge_method_raw = str(self.cmb_charge_method.currentData()) if hasattr(self, "cmb_charge_method") else "bcc"
             except Exception:
@@ -37136,19 +38262,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             return False, str(e)
     def _leadopt_prepare_meeko_for_docking(self, mol, out_pdbqt):
-        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt)
+        ph = float(self.spin_vs_ph.value()) if hasattr(self, "spin_vs_ph") else 7.4
+        return self._vs_prepare_ligand_with_meeko(mol, out_pdbqt, target_ph=ph)
     def _leadopt_fallback_prepare_ligand_for_docking(self, lig_sdf, fallback_job, item_local, target_ph_local):
         try:
             os.makedirs(fallback_job, exist_ok=True)
         except Exception:
             pass
-        return self._prepare_ligand_for_docking(
-            lig_sdf,
-            fallback_job,
-            target_ph=float(target_ph_local),
-            smiles_hint=str((item_local or {}).get("smiles", "") or ""),
-            preserve_input_charges=False,
-        )
+        # library-scale preparation: the pKa default Psi4 becomes PM7 (minutes per molecule otherwise)
+        with self._pka_bulk_mode():
+            return self._prepare_ligand_for_docking(
+                lig_sdf,
+                fallback_job,
+                target_ph=float(target_ph_local),
+                smiles_hint=str((item_local or {}).get("smiles", "") or ""),
+                preserve_input_charges=False,
+            )
     def _leadopt_convert_pose_for_view_runtime(self, out_pose, pose_dir_local, stem_local):
         pose_view_local = str(out_pose)
         if str(out_pose).lower().endswith(".pdbqt"):
@@ -37398,7 +38527,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         gen_controls = self._leadopt_read_generation_controls()
         max_analogs = int(gen_controls.get("max_analogs", 120) or 120)
         pool_hits = int(gen_controls.get("pool_hits", 30) or 30)
-        min_sim = float(gen_controls.get("min_sim", 0.35) or 0.35)
+        min_sim = gen_controls.get("min_sim", 0.35)
+        min_sim = 0.35 if min_sim is None else float(min_sim)          # 0.0 is a valid choice
         max_sim = float(gen_controls.get("max_sim", 0.95) or 0.95)
         pool_mols = self._leadopt_get_pool_molecules_from_vs(max_hits=int(pool_hits))
         analogs = self._leadopt_generate_analogs(
@@ -37763,8 +38893,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             if src_ref and os.path.isfile(src_ref):
                 exp = dict(self._dock_expected_rotatable_info(src_ref, smiles_hint=smi_hint) or {})
-                exp_rot = int(exp.get("rotb", -1) or -1)
-                exp_aro = int(exp.get("aromatic_bonds", -1) or -1)
+                exp_rot = int(-1 if exp.get("rotb") is None else exp.get("rotb"))
+                exp_aro = int(-1 if exp.get("aromatic_bonds") is None else exp.get("aromatic_bonds"))
         except Exception:
             exp_rot = -1
             exp_aro = -1
@@ -38244,6 +39374,59 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return False
         except Exception:
             return False
+    def _ligand_file_formal_charge(self, path):
+        if not HAS_RDKIT:
+            return None
+        src = str(path or "")
+        ext = os.path.splitext(src)[1].lower()
+        try:
+            if ext == ".sdf":
+                mol = next((m for m in Chem.SDMolSupplier(src, removeHs=False) if m is not None), None)
+            elif ext == ".mol":
+                mol = Chem.MolFromMolFile(src, removeHs=False)
+            elif ext == ".mol2":
+                mol = Chem.MolFromMol2File(src, removeHs=False)
+            elif ext == ".pdb":
+                mol = Chem.MolFromPDBFile(src, removeHs=False)
+            else:
+                mol = None
+        except Exception:
+            mol = None
+        return int(Chem.GetFormalCharge(mol)) if mol is not None else None
+    def _smiles_hint_matches_ligand_file(self, smiles, lig_file):
+        """False when the SMILES has a different heavy-atom composition than the ligand
+        file (the hint then describes another molecule); True if either cannot be read."""
+        if not HAS_RDKIT or not str(smiles or "").strip():
+            return True
+        try:
+            m_smi = Chem.MolFromSmiles(str(smiles).strip())
+        except Exception:
+            m_smi = None
+        src = str(lig_file or "").strip()
+        ext = os.path.splitext(src)[1].lower()
+        m_file = None
+        try:
+            if ext == ".sdf":
+                m_file = next((m for m in Chem.SDMolSupplier(src, removeHs=False, sanitize=False) if m is not None), None)
+            elif ext == ".mol":
+                m_file = Chem.MolFromMolFile(src, removeHs=False, sanitize=False)
+            elif ext == ".mol2":
+                m_file = Chem.MolFromMol2File(src, removeHs=False, sanitize=False)
+            elif ext == ".pdb":
+                m_file = Chem.MolFromPDBFile(src, removeHs=False, sanitize=False)
+        except Exception:
+            m_file = None
+        if m_smi is None or m_file is None:
+            return True
+
+        def _heavy(m):
+            counts = {}
+            for a in m.GetAtoms():
+                if a.GetAtomicNum() > 1:
+                    counts[a.GetSymbol()] = counts.get(a.GetSymbol(), 0) + 1
+            return counts
+
+        return _heavy(m_smi) == _heavy(m_file)
     def _dock_rdkit_load_molecule(self, lig_file, smiles_hint=""):
         """Load ligand as RDKit molecule for topology/torsion QC."""
         if (not HAS_RDKIT) or (not lig_file):
@@ -38253,6 +39436,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return None
         mol = None
         smi = str(smiles_hint or "").strip()
+        if smi and not self._smiles_hint_matches_ligand_file(smi, src):
+            smi = ""
         if smi:
             try:
                 m_smi = Chem.MolFromSmiles(smi)
@@ -38358,11 +39543,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return True, diag
         exp = dict(expected_info or {})
         try:
-            exp_rotb = int(exp.get("rotb", -1) or -1)
+            exp_rotb = int(-1 if exp.get("rotb") is None else exp.get("rotb"))
         except Exception:
             exp_rotb = -1
         try:
-            exp_aro = int(exp.get("aromatic_bonds", -1) or -1)
+            exp_aro = int(-1 if exp.get("aromatic_bonds") is None else exp.get("aromatic_bonds"))
         except Exception:
             exp_aro = -1
         diag["expected_rotb"] = int(exp_rotb)
@@ -38382,15 +39567,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return False, diag
         diag["reason"] = "ok"
         return True, diag
-    def _dock_guess_element_from_atom_name(self, atom_name):
-        raw = re.sub(r"[^A-Za-z]", "", str(atom_name or "").strip())
-        if not raw:
-            return "C"
-        up = raw.upper()
-        for two in ("CL", "BR", "NA", "MG", "ZN", "FE", "MN", "CO", "NI", "CU", "CA"):
-            if up.startswith(two):
-                return two
-        return up[0]
+    def _dock_guess_element_from_atom_name(self, atom_name, resn=""):
+        # PDB alignment rule: " CA " is an alpha carbon, "CA  " a calcium ion (never strip first)
+        return dock_pdb_atom_element(atom_name, resn)
     def _dock_element_to_pdbqt_type(self, elem):
         e = str(elem or "").upper()
         # Conservative AutoDock atom-type fallback map.
@@ -38445,13 +39624,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Na",
             "K",
         }
-    def _dock_normalize_pdbqt_atom_type(self, atom_name, atype):
+    def _dock_normalize_pdbqt_atom_type(self, atom_name, atype, resn=""):
         """
         Normalize raw atom type labels (e.g., Open Babel Ce/Nb/Os variants)
         into a strict AutoDock set accepted by smina.
         """
         t = str(atype or "").strip()
-        elem = self._dock_guess_element_from_atom_name(atom_name)
+        elem = self._dock_guess_element_from_atom_name(atom_name, resn)
+        type_element = {
+            "A": "C", "C": "C", "N": "N", "NA": "N", "O": "O", "OA": "O", "S": "S", "SA": "S",
+            "H": "H", "HD": "H", "P": "P", "F": "F", "Cl": "CL", "Br": "BR", "I": "I",
+            "Mg": "MG", "Mn": "MN", "Zn": "ZN", "Ca": "CA", "Fe": "FE", "Cu": "CU", "Ni": "NI",
+            "Co": "CO", "Na": "NA", "K": "K",
+        }
+        if type_element.get(t) == elem:
+            return t        # already a valid AutoDock type for this element (e.g. obabel output)
         # Carbon-like atom names should never carry metal-type labels like "Ca".
         if elem == "C":
             if t == "A":
@@ -38553,8 +39740,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     line = raw.rstrip("\n")
                     if raw.startswith("ATOM") or raw.startswith("HETATM"):
                         atom_name = line[12:16] if len(line) >= 16 else ""
+                        resn = line[17:20] if len(line) >= 20 else ""
                         old_type = self._dock_pdbqt_type_token(line)
-                        new_type = self._dock_normalize_pdbqt_atom_type(atom_name, old_type)
+                        new_type = self._dock_normalize_pdbqt_atom_type(atom_name, old_type, resn)
                         if new_type != old_type:
                             fixed += 1
                         atype = str(new_type).strip()[:2] if str(new_type).strip() else "C"
@@ -38661,7 +39849,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             chain = (line[21:22] if len(line) >= 22 else "").strip()
             resi = (line[22:27] if len(line) >= 27 else "").strip()
             atype = self._dock_pdbqt_type_token(line)
-            elem = str(self._dock_guess_element_from_atom_name(atom_name) or "").strip().upper()
+            elem = str(self._dock_guess_element_from_atom_name(atom_name, resn) or "").strip().upper()
             if not elem:
                 elem = str(self._infer_element_symbol(atom_name, atype) or "").strip().upper()
             q = _parse_q(line)
@@ -39688,7 +40876,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             aname = str(getattr(a, "name", "") or "").strip()
             sym = str(getattr(a, "symbol", "") or "").strip().upper()
             if not sym:
-                sym = str(self._dock_guess_element_from_atom_name(aname) or "").strip().upper()
+                sym = str(self._dock_guess_element_from_atom_name(aname, resn) or "").strip().upper()
             key = (chain, resi, resn, segi)
             info = grouped.get(key)
             if info is None:
@@ -39989,11 +41177,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 extra.append(rsel)
             if extra:
                 sel = f"({sel}) or ({' or '.join(extra)})"
+            # One conformer per atom: with every altloc exported, reduce/obabel doubled the
+            # side chains (two OG on Ser195) and Meeko refused the file ("Use --wanted_altloc").
+            try:
+                if int(cmd.count_atoms(f"({sel}) and not alt ''")) > 0:
+                    sel = f"({sel}) and alt ''+A"
+            except Exception:
+                pass
             state_idx = int(self._resolve_receptor_export_state(receptor_obj))
             cmd.save(out_pdb, sel, state=state_idx)
             if (state_idx != 1) and ((not os.path.isfile(out_pdb)) or (os.path.getsize(out_pdb) <= 0)):
                 cmd.save(out_pdb, sel, state=1)
-            return os.path.isfile(out_pdb) and os.path.getsize(out_pdb) > 0
+            if not (os.path.isfile(out_pdb) and os.path.getsize(out_pdb) > 0):
+                return False
+            with open(out_pdb, "r", encoding="utf-8", errors="ignore") as fh:
+                lines = fh.readlines()
+            with open(out_pdb, "w", encoding="utf-8") as fh:
+                for line in lines:
+                    if line.startswith(("ATOM", "HETATM", "ANISOU")) and len(line) > 16 and line[16] != " ":
+                        line = line[:16] + " " + line[17:]
+                    fh.write(line)
+            return True
         except Exception:
             return False
     def _collect_ligand_charges_from_file(self, ligand_file):
@@ -40012,7 +41216,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         return 7.4
-    def _prepare_small_molecule_working_mol(self, mol, include_h=True, target_ph=None):
+    def _prepare_small_molecule_working_mol(self, mol, include_h=True, target_ph=None, reprotonate=False):
         use_ph = self._current_small_molecule_target_ph() if target_ph is None else float(target_ph)
         repair_fn = None
         if bool(include_h) and (target_ph is not None):
@@ -40023,6 +41227,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             target_ph=float(use_ph),
             repair_fn=repair_fn,
             select_fragment_fn=self._select_best_ligand_fragment,
+            reprotonate=bool(reprotonate),
         )
     def _sync_small_molecule_formal_charge(self, mol):
         summary = summarize_small_molecule_state(mol)
@@ -40200,7 +41405,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         return False, {"reason": "ok"}
-    def _prepare_ligand_3d_from_source(self, in_file, out_sdf, smiles_hint=None, target_ph=None):
+    def _prepare_ligand_3d_from_source(self, in_file, out_sdf, smiles_hint=None, target_ph=None, reprotonate=False):
         """
         Generate a clean 3D SDF (with hydrogens) from ligand source using RDKit.
         Returns True on success.
@@ -40217,6 +41422,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             ext = os.path.splitext(str(in_file))[1].lower()
             mol = None
+            if smiles_hint and not self._smiles_hint_matches_ligand_file(smiles_hint, in_file):
+                smiles_hint = None      # the hint describes another molecule
             # Prefer rebuilding from SMILES when available to preserve chemically sane bond orders.
             if smiles_hint:
                 try:
@@ -40250,6 +41457,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     mol,
                     include_h=True,
                     target_ph=target_ph,
+                    reprotonate=bool(reprotonate) and target_ph is not None,
                 )
             except Exception:
                 return False
@@ -41939,12 +43147,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 clean_sdf,
                 smiles_hint=smi_hint,
                 target_ph=ph,
+                # the docking pH applies unless input charges are preserved or the state was
+                # chosen in the pKa window
+                reprotonate=not self._pka_ligand_is_locked(original_source),
             ):
+                q_in = self._ligand_file_formal_charge(original_source)
+                q_out = self._ligand_file_formal_charge(clean_sdf)
                 source = clean_sdf
                 notes.append("rdkit_3d_clean")
+                if q_in is not None and q_out is not None and q_in != q_out:
+                    # visible trace: the user's own protonation was replaced at the docking pH
+                    notes.append(f"reprotonated_pH{ph:.2f} (input {q_in:+d} -> {q_out:+d})")
                 ext = os.path.splitext(source)[1].lower()
         elif preserve_charges:
             notes.append("preserve_input_charges")
+        lock_note, lock_warn = self._pka_locked_state_note(original_source, ph)
+        if lock_note:
+            notes.append(lock_note)
+        if lock_warn:
+            notes.append("warning:" + lock_warn)
+            self._append_debug_log(lock_warn)
 
         def _load_qc_mol(path):
             if not HAS_RDKIT:
@@ -41969,6 +43191,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 prepared_qc_mol = _load_qc_mol(prepared_path)
             except Exception:
                 prepared_qc_mol = None
+            if prepared_qc_mol is None and str(source) != str(original_source):
+                # a PDBQT has no formal charges; audit against the cleaned/protonated SDF
+                try:
+                    prepared_qc_mol = _load_qc_mol(source)
+                except Exception:
+                    prepared_qc_mol = None
             try:
                 qc = build_small_molecule_prep_qc(
                     input_mol=input_qc_mol,
@@ -42028,13 +43256,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if not self._dock_pdbqt_syntax_ok(out_pdbqt, min_atoms=3, require_types=True):
                 return False
             tors_ok, tors_diag = self._dock_pdbqt_torsion_qc(out_pdbqt, expected_info=expected)
-            tval = int(tors_diag.get("torsdof", -1) or -1)
+            tval = int(-1 if tors_diag.get("torsdof") is None else tors_diag.get("torsdof"))
             if tval >= 0:
                 notes.append(f"torsdof_{tval}")
             if not tors_ok:
                 try:
-                    exp_rot = int(tors_diag.get("expected_rotb", -1) or -1)
-                    max_alw = int(tors_diag.get("max_allowed", -1) or -1)
+                    exp_rot = int(-1 if tors_diag.get("expected_rotb") is None else tors_diag.get("expected_rotb"))
+                    max_alw = int(-1 if tors_diag.get("max_allowed") is None else tors_diag.get("max_allowed"))
                 except Exception:
                     exp_rot = -1
                     max_alw = -1
@@ -42142,21 +43370,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         val = self._dock_float_or_nan(value)
         return float(val) if np.isfinite(val) else float(default)
     def _pocket_rank_score(self, pocket):
-        best_drug = None
-        best_score = None
+        """(fpocket Score, druggability score). The ranking uses fpocket's own Score: the
+        druggability score is ~0 for small or polar sites (trypsin's S1 pocket: 0.016), so
+        ranking by it put a pocket 12 A away from the benzamidine site first."""
+        score = None
+        drug = None
         for k, v in pocket.items():
             if not isinstance(v, (int, float, np.floating)):
                 continue
             lk = str(k).lower()
             if "druggability" in lk:
-                best_drug = float(v) if best_drug is None else max(float(v), best_drug)
-            if lk in ("score", "pocket_score") or lk.endswith("_score"):
-                best_score = float(v) if best_score is None else max(float(v), best_score)
-        if best_drug is not None:
-            return float(best_drug), float(best_drug)
-        if best_score is not None:
-            return float(best_score), np.nan
-        return -1.0, np.nan
+                drug = float(v) if drug is None else max(float(v), drug)
+            elif lk in ("score", "pocket_score"):
+                score = float(v)
+        return (float(score) if score is not None else -1.0), (float(drug) if drug is not None else np.nan)
     def _pocket_surface_obj_name(self, pid):
         return f"dock_pocket_surface_{int(pid)}"
     def _get_pocket_by_id(self, pid):
@@ -42359,7 +43586,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._pocket_surface_buttons[int(pid)] = btn
             if hasattr(self, "cmb_dock_pocket"):
                 rank_txt = f"{rank:.3f}" if np.isfinite(rank) else "n/a"
-                self.cmb_dock_pocket.addItem(f"Pocket {pid} | rank {rank_txt} | atoms {atoms}", p)
+                self.cmb_dock_pocket.addItem(f"Pocket {pid} | score {rank_txt} | atoms {atoms}", p)
         if hasattr(self, "cmb_dock_pocket"):
             self.cmb_dock_pocket.blockSignals(False)
             if self.cmb_dock_pocket.count() > 0:
@@ -42470,13 +43697,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     pp["rank_score"] = rank_score
                     pp["druggability"] = drug
                     pmap[pid] = pp
+            # fpocket's order: highest Score first; pocket numbers are fpocket's own ranking
             pockets = sorted(
                 list(pmap.values()),
                 key=lambda x: (
-                    self._dock_sort_float(x.get("rank_score", -1.0), default=-1.0),
-                    self._dock_sort_float(x.get("atom_count", 0), default=0.0),
+                    -self._dock_sort_float(x.get("rank_score", -1.0), default=-1.0),
+                    self._dock_sort_float(x.get("id", 0), default=0.0),
                 ),
-                reverse=True,
             )
             return {
                 "ok": True,
@@ -42509,8 +43736,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             best = pockets[0]
             btxt = (
-                f"Most probable pocket: Pocket {int(best.get('id', 1))}, "
-                f"rank={float(best.get('rank_score', np.nan)):.3f}"
+                f"Top-ranked pocket (fpocket score): Pocket {int(best.get('id', 1))}, "
+                f"score={float(best.get('rank_score', np.nan)):.3f}"
             )
             if np.isfinite(float(best.get("druggability", np.nan))):
                 btxt += f", druggability={float(best.get('druggability')):.3f}"
@@ -42806,8 +44033,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         center = [float(self.spin_cx.value()), float(self.spin_cy.value()), float(self.spin_cz.value())]
         size = [float(self.spin_sx.value()), float(self.spin_sy.value()), float(self.spin_sz.value())]
+        # The controls start at (0, 0, 0): that is "no grid yet", not a box at the origin. Draw only a
+        # grid set by a pocket, a redock, a project or the user (a stray cyan dot otherwise sits at the origin).
+        if not (bool(getattr(self, "_dock_grid_user_defined", False)) or any(abs(c) > 1e-6 for c in center)):
+            self._delete_docking_grid_objects()
+            return
         self._show_docking_grid_box(center, size, zoom=bool(zoom))
     def _on_docking_grid_controls_changed(self, *_args):
+        try:
+            spins = [getattr(self, k) for k in ("spin_cx", "spin_cy", "spin_cz", "spin_sx", "spin_sy", "spin_sz")]
+            if any(w.hasFocus() for w in spins):
+                self._dock_grid_user_defined = True      # typed by the user, even at the origin
+        except Exception:
+            pass
         self._show_current_docking_grid(zoom=False)
         self._update_docking_grid_summary_label(source="controls")
     def _convert_pdbqt_to_pdb_for_pymol(self, pdbqt_file, out_pdb):
@@ -42935,7 +44173,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             data = resp.read().decode("utf-8", "ignore")
         return json.loads(data)
     def _current_pubchem_smiles_hint(self):
-        """Return selected PubChem SMILES hint (prefer isomeric), if available."""
+        """Return selected PubChem SMILES hint (prefer isomeric), if available.
+
+        Only while the docking ligand is still the file downloaded from PubChem: a hint
+        from an old search used to replace a different uploaded ligand (benzamidine SDF
+        docked as aspirin)."""
+        hint_file = str(getattr(self, "_pubchem_hint_ligand_file", "") or "").strip()
+        current_file = str(getattr(self, "_docking_ligand_file", "") or "").strip()
+        if (not hint_file) or (hint_file != current_file):
+            return ""
         try:
             hits = list(getattr(self, "_pubchem_hits", []) or [])
         except Exception:
@@ -43202,6 +44448,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         )
     def _set_docking_ligand_file(self, path, source_label=""):
         self._docking_ligand_file = str(path)
+        self._pubchem_hint_ligand_file = None      # a PubChem SMILES only describes its own download
         self._parameterized_ligand_mol2 = None
         self._parameterized_ligand_frcmod = None
         self._parameterized_ligand_prmtop = None
@@ -43284,6 +44531,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     # Keep SDF as canonical ligand source to avoid bond-order artifacts on conversion.
                     # MOL2/PDBQT are produced later only for required downstream steps.
                     self._set_docking_ligand_file(final_lig_file, source_label=f"PubChem CID {cid}")
+                    self._pubchem_hint_ligand_file = str(final_lig_file)
                     QtWidgets.QMessageBox.information(
                         self,
                         "PubChem",
@@ -43373,12 +44621,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     os.makedirs(os.path.dirname(clean_sdf), exist_ok=True)
                 except Exception:
                     pass
+                # Protonation is decided here, before charges and GAFF types: a source that
+                # already has hydrogens (PubChem 3D SDF) used to keep them, so acids were
+                # parametrized as neutral COOH. A state chosen in the pKa window is kept.
                 if self._prepare_ligand_3d_from_source(
                     source_file,
                     clean_sdf,
                     smiles_hint=self._current_pubchem_smiles_hint(),
                     target_ph=self._current_small_molecule_target_ph(),
+                    reprotonate=not self._pka_ligand_is_locked(source_file),
                 ):
+                    _lock_note, lock_warn = self._pka_locked_state_note(
+                        str(self._docking_ligand_file), self._current_small_molecule_target_ph())
+                    if lock_warn:
+                        self._append_debug_log(lock_warn)
+                        QtWidgets.QMessageBox.warning(self, "Protonation state", lock_warn)
                     source_file = clean_sdf
                     try:
                         clean_mol = self._ligand_editor_mol_from_file(clean_sdf)
@@ -43386,8 +44643,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         clean_mol = None
                     if clean_mol is not None:
                         charge_state = self._sync_small_molecule_formal_charge(clean_mol)
-                        net_charge = int(charge_state.get("formal_charge", net_charge) or net_charge)
-                        rdkit_formal_charge = int(charge_state.get("formal_charge", net_charge) or net_charge)
+                        formal = charge_state.get("formal_charge")
+                        # "formal or net_charge" dropped a formal charge of 0 in favour of a stale spinbox
+                        if formal is not None:
+                            net_charge = int(formal)
+                            rdkit_formal_charge = int(formal)
                         try:
                             rdkit_atomic_z_sum = int(sum(int(a.GetAtomicNum()) for a in clean_mol.GetAtoms()))
                         except Exception:
@@ -43595,7 +44855,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if n >= 2:
             out["std"] = float(np.std(arr, ddof=1))
             out["sem"] = float(out["std"] / np.sqrt(float(n)))
-            if n >= 3:
+            # n = 2 gives no meaningful interval (t = 12.7); a percentile bootstrap cannot leave
+            # the observed range, so small n uses the Student-t interval.
+            if 3 <= n < 10:
+                t_crit = {2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262}[n - 1]
+                out["ci_low"] = float(out["mean"] - t_crit * out["sem"])
+                out["ci_high"] = float(out["mean"] + t_crit * out["sem"])
+            elif n >= 10:
                 try:
                     nb = int(max(300, min(5000, int(bootstrap_n))))
                 except Exception:
@@ -43610,14 +44876,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if np.isfinite(out["sem"]):
                         out["ci_low"] = float(out["mean"] - 1.96 * out["sem"])
                         out["ci_high"] = float(out["mean"] + 1.96 * out["sem"])
-            elif np.isfinite(out["sem"]):
-                out["ci_low"] = float(out["mean"] - 1.96 * out["sem"])
-                out["ci_high"] = float(out["mean"] + 1.96 * out["sem"])
         if np.isfinite(out["ci_low"]) and np.isfinite(out["ci_high"]):
             out["ci_half"] = float(abs(out["ci_high"] - out["ci_low"]) * 0.5)
         out["confidence"] = self._dock_repeat_confidence_label(out.get("std"), out.get("ci_half"), n)
         return out
     def _dock_write_repeat_csv(self, job_dir, repeat_rows):
+        import csv
+
         rows = list(repeat_rows or [])
         if (not job_dir) or (not rows):
             return ""
@@ -44232,6 +45497,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         pocket, pocket_idx = self._get_selected_docking_pocket(None)
         if not isinstance(pocket, dict):
             QtWidgets.QMessageBox.warning(self, "Input", "Run fpocket and choose a pocket first.")
+            return
+        scanned_obj = str(getattr(self, "_fpocket_receptor_object", "") or "").strip()
+        if scanned_obj and scanned_obj != str(receptor_obj):
+            # the receptor can change without the pocket list being cleared (e.g. object deleted)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Input",
+                f"The pockets were detected on '{scanned_obj}', but the receptor is now '{receptor_obj}'.\n"
+                "Run fpocket again on the current receptor before docking.",
+            )
             return
         try:
             pocket_id = int(pocket.get("id", 0))
@@ -46428,6 +47703,120 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             elif el in ("CL", "BR", "I", "F"):
                 q = -0.05
         return float(np.clip(q, -1.2, 1.2))
+    def _hardware_mod(self):
+        return self._modeler_import_module("hardware_runtime")
+    def _hardware_profile(self):
+        """Cached hardware profile (fast; the benchmark runs once, in the background)."""
+        prof = getattr(self, "_hw_profile", None)
+        if isinstance(prof, dict) and prof:
+            return prof
+        try:
+            prof = dict(self._hardware_mod()._load_cache() or {})
+        except Exception:
+            prof = {}
+        if prof:
+            self._hw_profile = prof
+        return prof
+    def _start_hardware_detection(self, refresh=False):
+        """Detect CPU/GPU and benchmark OpenMM platforms in a worker thread (child processes)."""
+        import threading
+        state = {"done": False, "profile": None}
+        def work():
+            try:
+                state["profile"] = self._hardware_mod().detect(benchmark=True, refresh=bool(refresh))
+            except Exception as e:
+                state["profile"] = {"error": str(e)}
+            state["done"] = True
+        threading.Thread(target=work, daemon=True).start()
+        def poll():
+            if not state["done"]:
+                QtCore.QTimer.singleShot(500, poll)
+                return
+            prof = state["profile"] or {}
+            if prof and not prof.get("error"):
+                self._hw_profile = prof
+            self._update_hardware_label()
+        QtCore.QTimer.singleShot(500, poll)
+    def _apply_hardware_defaults(self):
+        """Psi4 threads/memory from the machine (performance cores, half the RAM) unless the user changed them."""
+        prof = self._hardware_profile()
+        thr = (prof or {}).get("threads") or {}
+        for attr, key in (("spin_psi4_threads", "psi4"), ("spin_psi4_memory_gb", "psi4_memory_gb")):
+            w = getattr(self, attr, None)
+            if w is None or not thr.get(key):
+                continue
+            try:
+                if not bool(getattr(self, f"_{attr}_user_set", False)):
+                    w.setValue(int(thr[key]))
+            except Exception:
+                pass
+    def _estimate_openmm_run(self, payload):
+        """(minutes, text, advice) for an OpenMM payload, from the hardware profile and past runs."""
+        try:
+            hw = self._hardware_mod()
+            obj = str(payload.get("object_name", "") or "")
+            n_atoms = int(cmd.count_atoms(f"({obj}) and not solvent")) if obj else 0
+            mode = str(payload.get("mode", "implicit") or "implicit")
+            if mode == "explicit":
+                n_atoms = int(n_atoms * 8)            # rough solvated box
+            elif cmd.count_atoms(f"({obj}) and not elem H") == cmd.count_atoms(f"({obj})"):
+                n_atoms = int(n_atoms * 2)            # hydrogens will be added
+            dt_fs = float(payload.get("timestep_fs", 2.0) or 2.0)
+            steps = sum(int(payload.get(k, 0) or 0) for k in ("heat_steps", "equil_steps", "prod_steps"))
+            ns = steps * dt_fs * 1e-6
+            platform, _props, picked = self._auto_pick_openmm_platform()
+            est = hw.estimate_md(n_atoms, ns, mode, platform_name=picked, prof=self._hardware_profile())
+            return float(est.get("minutes", 0.0)), str(est.get("text", "")), str(est.get("advice", "") or "")
+        except Exception:
+            return 0.0, "", ""
+    def _record_openmm_speed(self, platform_used, mode, final_pdb, csv_path):
+        """Measured ns/day of a finished MD -> calibration of future estimates on this machine."""
+        try:
+            if not (csv_path and os.path.isfile(csv_path) and final_pdb and os.path.isfile(final_pdb)):
+                return
+            speeds = []
+            with open(csv_path) as fh:
+                head = fh.readline().strip('#\n').split(",")
+                col = [i for i, h in enumerate(head) if "Speed" in h]
+                for line in fh:
+                    parts = line.strip().split(",")
+                    if col and len(parts) > col[0]:
+                        try:
+                            v = float(parts[col[0]])
+                        except Exception:
+                            continue
+                        if v > 0:
+                            speeds.append(v)
+            if len(speeds) < 3:
+                return
+            with open(final_pdb) as fh:
+                n_atoms = sum(1 for ln in fh if ln.startswith(("ATOM", "HETATM")))
+            speed = float(np.median(speeds[len(speeds) // 3:]))
+            self._hardware_mod().record_md_speed(platform_used, mode or "implicit", n_atoms, speed)
+            self._hw_profile = None                         # reload with the new calibration
+        except Exception as e:
+            self._append_debug_log(f"MD speed calibration skipped: {e}")
+    def _update_hardware_label(self):
+        lbl = getattr(self, "lbl_compute_hardware", None)
+        prof = self._hardware_profile()
+        if lbl is None:
+            return
+        if not prof:
+            lbl.setText("Compute: hardware not detected yet")
+            return
+        cpu = prof.get("cpu") or {}
+        md = prof.get("md_platform") or {}
+        thr = prof.get("threads") or {}
+        gpu = ", ".join(g.get("name", "") for g in prof.get("gpus") or []) or "no GPU"
+        lbl.setText(
+            f"Compute: {cpu.get('brand', 'CPU')} · {cpu.get('physical_cores')} cores · {gpu} · "
+            f"MD on {md.get('name', 'CPU')}" + (f" ({md.get('speedup_vs_cpu')}x CPU)" if md.get("is_gpu") else "")
+            + f" · QM {thr.get('psi4', 1)} threads"
+        )
+        try:
+            lbl.setToolTip(self._hardware_mod().summary(prof))
+        except Exception:
+            pass
     def _auto_pick_openmm_platform(self):
         """
         Auto-select a usable OpenMM platform.
@@ -46447,6 +47836,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 available[str(p.getName())] = p
             except Exception:
                 continue
+        hw = self._hardware_profile()
+        hw_md = (hw or {}).get("md_platform") or {}
+        hw_pick = str(hw_md.get("name", "") or "")
+        hw_bench = (((hw or {}).get("openmm_benchmark") or {}).get(hw_pick) or {})
+        user_override = os.environ.get("PROTLIGINTERACT_OPENMM_PLATFORM") or os.environ.get("LEONARDO_OPENMM_PLATFORM")
+        # only a GPU that really ran (and won) the benchmark overrides the usual plan; a CPU pick (also
+        # the result of a failed/timed-out GPU benchmark) keeps the plan and its per-OS safety order
+        if (hw_pick in available and bool(hw_md.get("is_gpu")) and hw_bench.get("steps_per_s")
+                and not user_override):
+            # measured in a child process on this machine (a crashing GPU driver never reached PyMOL)
+            threads = int(((hw or {}).get("threads") or {}).get("openmm_cpu") or 0)
+            props = {"Precision": "mixed"} if hw_pick in ("CUDA", "OpenCL", "HIP", "Metal") else (
+                {"Threads": str(threads)} if hw_pick == "CPU" and threads else {})
+            return available[hw_pick], props, hw_pick
         pick_plan = abfe_build_openmm_platform_selection_plan(list(available.keys()))
         picked = str(pick_plan.get("picked_platform_name", "") or "").strip()
         if picked and picked in available:
@@ -49795,6 +51198,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 n_unbound_hold = int(n_unbound)
             estimator_window_mode = str(data.get("estimator_window_mode", "state_fallback") or "state_fallback")
+            # set by the local-MD replica (whether a binding estimate is meaningful for this run)
+            binding_estimate_status = str(data.get("binding_estimate_status", "") or "")
+            binding_estimate_note = str(data.get("binding_estimate_note", "") or "")
             if total_valid.size < 3:
                 QtWidgets.QMessageBox.warning(
                     self,
@@ -51064,7 +52470,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 cands = list(candidates or [])
             except Exception:
                 cands = []
-            if reference_smiles:
+            # The unprotonated input is only a fallback: adding it next to Dimorphite's
+            # answer made the median charge round to it (benzamidine and ethylamine stayed
+            # neutral at pH 7.4).
+            if reference_smiles and not cands:
                 cands.append(str(reference_smiles))
             # preserve order while deduplicating
             uniq = []
@@ -51109,9 +52518,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             charges = sorted(x[1] for x in scored)
             mid = len(charges) // 2
             if len(charges) % 2 == 1:
-                target_q = charges[mid]
+                target_q = float(charges[mid])
             else:
-                target_q = int(round((charges[mid - 1] + charges[mid]) / 2.0))
+                target_q = (charges[mid - 1] + charges[mid]) / 2.0
             # Prefer chemically plausible and non-extreme protonation:
             # 1) minimal unsupported positive nitrogens
             # 2) avoid variants where all nitrogens are protonated
@@ -51133,7 +52542,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             # Newer Dimorphite-DL exposes a top-level protonate_smiles function.
             fn = getattr(dmd, "protonate_smiles", None)
             if callable(fn):
-                out = fn(smiles, ph_min=min_ph, ph_max=max_ph)
+                try:
+                    # Dimorphite-DL 2.x: majority species at the exact pH. With the default
+                    # precision (1 pKa unit) it returns both amine forms for pH 7.15-7.65.
+                    out = fn(smiles, ph_min=float(target_ph), ph_max=float(target_ph), precision=0.1)
+                except TypeError:
+                    out = fn(smiles, ph_min=min_ph, ph_max=max_ph)
                 pick = _pick_reasonable_variant(out, reference_smiles=smiles)
                 if pick:
                     return pick
@@ -51157,10 +52571,195 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             print(f"Dimorphite protonation warning: {e}")
         return None
+    def _pka_method(self, bulk=False):
+        """Method used for automatic protonation everywhere ("empirical", "pm7" or "psi4").
+        Library-scale work (virtual screening) never runs Psi4 (minutes per molecule): PM7 instead."""
+        method = str(getattr(self, "_pka_default_method", "empirical") or "empirical")
+        bulk = bool(bulk) or bool(getattr(self.__dict__.get("_pka_bulk_local"), "active", 0))
+        return "pm7" if (bulk and method == "psi4") else method
+    def _pka_bulk_mode(self):
+        """Context: protonation in this thread counts as library-scale (see _pka_method)."""
+        import contextlib
+        import threading
+        local = self.__dict__.setdefault("_pka_bulk_local", threading.local())
+
+        @contextlib.contextmanager
+        def _mode():
+            local.active = int(getattr(local, "active", 0)) + 1
+            try:
+                yield
+            finally:
+                local.active -= 1
+        return _mode()
+    def _pka_backend_options(self, method):
+        """Backend options for pka_runtime: the Psi4 executable Leonardo is configured with."""
+        if str(method) != "psi4":
+            return None
+        try:
+            exe = self._psi4_tool_path()
+        except Exception:
+            exe = None
+        return {"psi4_exe": exe} if exe else None
+    def _show_pka_dialog(self):
+        """pKa & Protonation window (protonation is decided before charges/parameters)."""
+        try:
+            try:
+                from .pka_dialog import PkaDialog
+            except ImportError:
+                from leonardo.pka_dialog import PkaDialog
+            dlg = getattr(self, "_pka_dialog", None)
+            if dlg is None:
+                dlg = PkaDialog(
+                    self,
+                    submit_task=lambda fn, ok, err, fin: self._submit_background_task(
+                        fn, on_success=ok, on_error=err, on_finished=fin, task_name="pKa calculation"),
+                    load_selection=self._pka_selection_molecule,
+                    current_docking_ligand=lambda: str(getattr(self, "_docking_ligand_file", "") or ""),
+                    use_for_docking=lambda mol, info: self._pka_use_state(mol, info, target="docking"),
+                    use_for_parametrization=lambda mol, info: self._pka_use_state(mol, info, target="parametrization"),
+                    cache_dir=self._pka_cache_dir(),
+                    default_ph=float(self._current_small_molecule_target_ph()),
+                    default_method=self._pka_method(),
+                    set_default_method=self._pka_set_default_method,
+                    backend_options=self._pka_backend_options,
+                )
+                self._pka_dialog = dlg
+            self._fit_dialog_to_screen(dlg, preferred_w=1060, preferred_h=860, min_w=900, min_h=700)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "pKa & Protonation", f"Failed to open the pKa window: {e}")
+    def _pka_set_default_method(self, method):
+        self._pka_default_method = str(method or "empirical")
+        self._append_debug_log(f"Automatic protonation method set to: {self._pka_default_method}")
+    def _pka_selection_molecule(self, selection="sele"):
+        """Small molecule from a PyMOL selection ('sele' by default) with bond orders (CCD template, else obabel)."""
+        if not HAS_RDKIT:
+            raise RuntimeError("RDKit is required.")
+        sel = str(selection or "sele")
+        try:
+            n_atoms = int(cmd.count_atoms(f"({sel}) and not hydro"))
+        except Exception:
+            n_atoms = 0
+        if n_atoms <= 0:
+            raise RuntimeError("Select the ligand/cofactor in PyMOL first (it must be in the selection 'sele').")
+        if n_atoms > 200:
+            raise RuntimeError(f"The selection has {n_atoms} heavy atoms; select a single small molecule.")
+        resns = set()
+        cmd.iterate(f"({sel}) and not hydro", "resns.add(resn)", space={"resns": resns})
+        pdb_block = cmd.get_pdbstr(f"({sel}) and not hydro")
+        crystal = Chem.MolFromPDBBlock(pdb_block, removeHs=True, sanitize=False)
+        if crystal is None:
+            raise RuntimeError("RDKit could not read the selection.")
+        mol = None
+        resn = sorted(resns)[0] if len(resns) == 1 else ""
+        template_smiles = self._openmm_component_smiles_hint({"resn": resn}) if resn else ""
+        if template_smiles:
+            try:
+                template = Chem.RemoveHs(Chem.MolFromSmiles(template_smiles))
+                mol = AllChem.AssignBondOrdersFromTemplate(template, crystal)
+            except Exception:
+                mol = None
+        if mol is None:
+            # no template: bond orders perceived by Open Babel from the coordinates
+            obabel = self._dock_tool_path("obabel")
+            if obabel:
+                import tempfile
+                with tempfile.TemporaryDirectory() as td:
+                    pin, pout = os.path.join(td, "sel.pdb"), os.path.join(td, "sel.sdf")
+                    with open(pin, "w", encoding="utf-8") as fh:
+                        fh.write(pdb_block)
+                    subprocess.run([obabel, pin, "-O", pout], capture_output=True, timeout=120, check=False)
+                    if os.path.isfile(pout):
+                        mol = next((m for m in Chem.SDMolSupplier(pout, removeHs=True) if m is not None), None)
+        if mol is None:
+            raise RuntimeError("Could not assign bond orders to the selection (no CCD template, Open Babel failed).")
+        label = f"PyMOL selection ({resn or 'mixed residues'}, {n_atoms} heavy atoms)"
+        return mol, label
+    def _pka_use_state(self, mol, info, target="docking"):
+        """Hand a protonation state from the pKa window to docking or parametrization. The state is
+        locked: docking/parametrization keep its hydrogens instead of re-protonating."""
+        try:
+            from .pka_dialog import write_state_sdf
+        except ImportError:
+            from leonardo.pka_dialog import write_state_sdf
+        lig_dir = os.path.join(self._dock_workspace_dir(), "ligands")
+        os.makedirs(lig_dir, exist_ok=True)
+        tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(lig_dir, f"pka_state_{tag}_pH{float(info.get('ph', 7.4)):.2f}.sdf")
+        write_state_sdf(mol, info, path)
+        label = f"pKa module: {info.get('method')}, pH {float(info.get('ph', 7.4)):.2f}, charge {int(info.get('charge', 0)):+d}"
+        self._set_docking_ligand_file(path, source_label=label)
+        self._pka_locked_ligand_file = str(path)
+        try:
+            if hasattr(self, "spin_docking_ph"):
+                self.spin_docking_ph.setValue(float(info.get("ph", 7.4)))
+            if hasattr(self, "spin_net_charge"):
+                self.spin_net_charge.setValue(int(info.get("charge", 0)))
+        except Exception:
+            pass
+        self._append_debug_log(f"pKa state sent to {target}: {path} ({label}; population "
+                               f"{100 * float(info.get('population', float('nan'))):.0f}%)")
+        if target == "parametrization":
+            return (f"State set as the ligand source (net charge {int(info.get('charge', 0)):+d}). "
+                    "Now run 'Build Charged MOL2 + Amber FF' to assign charges and parameters.")
+        return f"State set as the docking ligand (net charge {int(info.get('charge', 0)):+d}); it will not be re-protonated."
+    def _pka_ligand_is_locked(self, path):
+        """True when ``path`` is a state chosen in the pKa window (keep its hydrogens)."""
+        locked = str(getattr(self, "_pka_locked_ligand_file", "") or "")
+        return bool(locked) and os.path.abspath(str(path or "")) == os.path.abspath(locked)
+    def _pka_locked_state_note(self, path, current_ph):
+        """(note, warning) for a ligand locked from the pKa window, or (None, None)."""
+        if not self._pka_ligand_is_locked(path) or not HAS_RDKIT:
+            return None, None
+        try:
+            m = next((x for x in Chem.SDMolSupplier(str(path), removeHs=False) if x is not None), None)
+            method = m.GetProp("LEONARDO_PROTONATION_METHOD") if m is not None and m.HasProp("LEONARDO_PROTONATION_METHOD") else "?"
+            ph = float(m.GetProp("LEONARDO_PROTONATION_PH")) if m is not None and m.HasProp("LEONARDO_PROTONATION_PH") else None
+        except Exception:
+            method, ph = "?", None
+        note = f"protonation_locked:pka_window({method}, pH {ph:.2f})" if ph is not None else "protonation_locked:pka_window"
+        warn = None
+        if ph is not None and abs(float(current_ph) - ph) > 0.5:
+            warn = (f"The ligand's protonation state was chosen at pH {ph:.2f} in the pKa window, but the current pH "
+                    f"is {float(current_ph):.2f}; the locked state is used. Recompute it in the pKa window if needed.")
+        return note, warn
+    def _pka_cache_dir(self):
+        try:
+            return os.path.join(self._dock_workspace_dir(), "pka_cache")
+        except Exception:
+            return None
     def _repair_and_protonate(self, mol, target_ph=7.4):
         """
-        Repair common ligand ionization states for interaction typing.
-        Uses Dimorphite-DL at target pH when available.
+        pH-dependent protonation of a small molecule (heavy-atom coordinates kept).
+
+        Delegates to leonardo.pka_runtime (empirical class pKa by default, PM7 or Psi4 when
+        chosen in the pKa window); the older Dimorphite-DL path is only a fallback when the pKa
+        module cannot handle the molecule. The result (method, site pKa, population,
+        warnings) is kept in self._last_protonation_info.
+        """
+        if not HAS_RDKIT:
+            return None
+        try:
+            method = self._pka_method()
+            out, info = pka_protonate_molecule(mol, float(target_ph), method=method,
+                                               cache_dir=self._pka_cache_dir(),
+                                               backend_options=self._pka_backend_options(method))
+            self._last_protonation_info = dict(info)
+            for warn in list(info.get("warnings", []) or [])[:4]:
+                self._append_debug_log(f"Protonation ({info.get('method')}, pH {float(target_ph):.2f}): {warn}")
+            return out
+        except Exception as exc:
+            try:
+                self._append_debug_log(f"pKa module could not protonate the ligand ({exc}); using Dimorphite-DL fallback.")
+            except Exception:
+                pass
+            self._last_protonation_info = {"method": "dimorphite_fallback", "ph": float(target_ph), "error": str(exc)}
+            return self._repair_and_protonate_dimorphite(mol, target_ph=target_ph)
+    def _repair_and_protonate_dimorphite(self, mol, target_ph=7.4):
+        """
+        Fallback: repair common ligand ionization states with Dimorphite-DL at target pH.
         """
         if not HAS_RDKIT:
             return None
@@ -51216,26 +52815,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print("Chemistry Repair: Dimorphite-DL not used; skipping generic amine charge inference.")
             # Keep amidinium/guanidinium-like motifs cationic, but assign only one +1
             # per motif to avoid overcharging every nitrogen atom.
-            amidinium = Chem.MolFromSmarts("[NX2,NX3][C](=[NX2,NX3])[NX2,NX3]")
+            # amidine (benzamidine) or guanidine: N-C(=N)-C/N; amidoximes (=N-O) are not basic.
+            # The old pattern needed three N on the carbon, so it only matched guanidines.
+            amidinium = Chem.MolFromSmarts("[NX3;!$(N-C=O)][CX3](=[NX2;!$(N-[OX2])])[#6,#7]")
             if amidinium:
                 for match in rw_mol.GetSubstructMatches(amidinium):
                     n_idxs = [idx for idx in match if rw_mol.GetAtomWithIdx(idx).GetAtomicNum() == 7]
-                    if not n_idxs:
-                        continue
                     # Skip motifs that are already explicitly charged.
                     if any(rw_mol.GetAtomWithIdx(idx).GetFormalCharge() > 0 for idx in n_idxs):
                         continue
-                    # Prefer the terminal amine-like N (more Hs / lower heavy-degree),
-                    # e.g., [NH2+]=C(N)- in benzamidine-style systems.
-                    def _pick_key(idx):
-                        a = rw_mol.GetAtomWithIdx(idx)
-                        heavy_deg = sum(1 for nb in a.GetNeighbors() if nb.GetAtomicNum() > 1)
-                        return (-int(a.GetTotalNumHs()), heavy_deg, idx)
-                    chosen = sorted(n_idxs, key=_pick_key)[0]
-                    a = rw_mol.GetAtomWithIdx(chosen)
+                    # protonate the imine N: -C(=N)- -> -C(=[NH2+])-  (one +1 per motif)
+                    a = rw_mol.GetAtomWithIdx(match[2])
+                    n_h = int(a.GetTotalNumHs())
                     a.SetFormalCharge(1)
-                    if not a.GetNoImplicit():
-                        a.SetNumExplicitHs(max(1, int(a.GetTotalNumHs())))
+                    a.SetNumExplicitHs(n_h + 1)
                     a.SetNoImplicit(True)
         try:
             Chem.SanitizeMol(rw_mol)

@@ -336,6 +336,9 @@ def build_small_molecule_prep_qc(
     elif in_file and not in_file.lower().endswith(".pdbqt"):
         warnings.append("input ligand could not be parsed by RDKit for charge/topology QC")
 
+    if bool(prepared_summary.get("ok", False)):
+        # the pH step may change the net charge (neutral amidine -> amidinium)
+        formal_charge = int(prepared_summary.get("formal_charge", 0) or 0)
     if pdbqt_summary and formal_charge is not None:
         qsum = float(pdbqt_summary.get("charge_sum", 0.0) or 0.0)
         q_delta = abs(qsum - float(formal_charge))
@@ -382,13 +385,16 @@ def prepare_small_molecule_working_mol(
     target_ph: float = 7.4,
     repair_fn: Callable[..., Any] | None = None,
     select_fragment_fn: Callable[..., Any] | None = None,
+    reprotonate: bool = False,
 ):
     """
     Build a sanitized working molecule for small-molecule editing/preparation.
 
     When hydrogens are requested and the source currently has no explicit hydrogens,
     an optional `repair_fn` can provide a chemistry-aware protonated model before
-    falling back to plain RDKit `AddHs`.
+    falling back to plain RDKit `AddHs`. With ``reprotonate`` the repair also runs on
+    a source that already has hydrogens (docking at a chosen pH: a neutral benzamidine
+    SDF must become the amidinium).
     """
 
     from rdkit import Chem
@@ -414,7 +420,7 @@ def prepare_small_molecule_working_mol(
             pass
     info["input_hydrogens"] = int(small_molecule_explicit_hydrogen_count(work))
     if include_h:
-        if info["input_hydrogens"] <= 0 and callable(repair_fn):
+        if (info["input_hydrogens"] <= 0 or bool(reprotonate)) and callable(repair_fn):
             try:
                 repaired = repair_fn(Chem.Mol(work), target_ph=float(target_ph))
                 if repaired is not None:
