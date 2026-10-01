@@ -13,6 +13,7 @@ import time
 
 import numpy as np
 
+from ..jobs import POPEN_GROUP, stop_process
 from ..registry import ToolError
 from . import _headless, qmviz
 from . import psi4 as P4
@@ -126,7 +127,7 @@ def _psi4_child_job(ctx, kind, workdir, args, collect, description):
         os.remove(result_path)
     log = open(os.path.join(workdir, "leonardo_ai_stdout.txt"), "w")
     proc = subprocess.Popen([_python(), "leonardo_ai_task.py", "leonardo_ai_args.json"], cwd=workdir,
-                            stdout=log, stderr=subprocess.STDOUT)
+                            stdout=log, stderr=subprocess.STDOUT, **POPEN_GROUP)
 
     def poll():
         if proc.poll() is None:
@@ -141,9 +142,7 @@ def _psi4_child_job(ctx, kind, workdir, args, collect, description):
             return {"done": True, "error": str(exc)}
 
     def cancel():
-        if proc.poll() is None:
-            proc.kill()
-        log.close()
+        stop_process(proc, log)
 
     return ctx.jobs.start(kind, poll, cancel=cancel, description=description)
 

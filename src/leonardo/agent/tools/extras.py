@@ -3,6 +3,7 @@ single-interaction distributions, 2D interaction maps, CSV export, projects, cha
 detection, QM/MM region preview, ligand force-field rebuild, AlphaFold import, lead-optimization hits."""
 
 import os
+import re
 import sys
 import time
 import zipfile
@@ -142,9 +143,13 @@ def register(reg):
         for p in (topology, trajectory):
             if p and not os.path.isfile(os.path.expanduser(p)):
                 raise ToolError(f"no such file: {p}")
-        name = name or "traj"
-        if name in cmd.get_names("objects"):
-            cmd.delete(name)
+        name = re.sub(r"[^A-Za-z0-9_]", "_", name or "traj")[:60] or "traj"
+        existing = set(cmd.get_names("objects"))
+        if name in existing:          # never replace an object the user has (e.g. name="1abc")
+            k = 2
+            while f"{name}_{k}" in existing:
+                k += 1
+            name = f"{name}_{k}"
         cmd.load(os.path.expanduser(topology), name)
         if trajectory:
             cmd.load_traj(os.path.expanduser(trajectory), name, interval=int(stride))

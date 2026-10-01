@@ -22,6 +22,7 @@ def test_ui_polish_rules_keep_dense_dialog_text_compact_and_neutral():
 
     assert dlg._compact_ui_text("Open Ligand Source & Prep...") == "Ligand Prep..."
     assert dlg._compact_ui_text("Run minimization-only in main workflow", widget_kind="checkbox") == "Min-only in workflow"
+    assert dlg._compact_ui_text("Check MODELLER Prerequisites") == "Check Prerequisites"
 
     qss = dlg._neutral_dialog_stylesheet()
     assert "LEONARDO_NEUTRAL_POLISH_V2" in qss

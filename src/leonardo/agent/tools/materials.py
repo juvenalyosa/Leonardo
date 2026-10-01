@@ -2,6 +2,7 @@
 QM clusters for MOPAC/Psi4."""
 
 import os
+import re
 import time
 
 from ..registry import ToolError
@@ -42,11 +43,17 @@ def register(reg):
         from ...materials_runtime import write_material_pdb
 
         model = build(material, kind, facet, size_nm=(size_nm, size_nm), layers=layers, shells=shells)
-        obj = name or (f"{material}{facet}_slab" if kind == "slab" else f"{material}{model['n_atoms']}_np")
-        path = write_material_pdb(model, os.path.join(ctx.workspace("materials"), f"{obj}.pdb"))
+        facet_tag = model.get("facet", facet)
+        obj = name or (f"{material}{facet_tag}_slab" if kind == "slab" else f"{material}{model['n_atoms']}_np")
+        obj = re.sub(r"[^A-Za-z0-9_]", "_", obj)[:60] or "material"
         cmd = _cmd()
-        if obj in cmd.get_names("objects"):
-            cmd.delete(obj)
+        existing = set(cmd.get_names("objects"))
+        if obj in existing:           # never replace one of the user's objects
+            k = 2
+            while f"{obj}_{k}" in existing:
+                k += 1
+            obj = f"{obj}_{k}"
+        path = write_material_pdb(model, os.path.join(ctx.workspace("materials"), f"{obj}.pdb"))
         cmd.load(path, obj)
         if material in ("SiO2", "TiO2"):
             cmd.show_as("sticks", obj)
@@ -82,7 +89,8 @@ def register(reg):
                   "gap_A": {"type": "number", "minimum": 1.5, "maximum": 20},
                   "water_above_A": {"type": "number", "minimum": 8, "maximum": 40},
                   "anchor_cys": {"type": "string", "description": "Cys residues bound to the metal, e.g. 'A:112'"},
-                  "family": {"type": "string", "enum": ["amber14", "charmm36"]},
+                  "family": {"type": "string", "enum": ["amber14"],
+                             "description": "substrate models use Amber-style nonbonded terms"},
                   "ionic_strength_M": {"type": "number", "minimum": 0, "maximum": 1},
                   "ph": {"type": "number", "minimum": 0, "maximum": 14},
               }, "required": ["object"]},
@@ -92,6 +100,8 @@ def register(reg):
                                      family="amber14", ionic_strength_M=0.15, ph=7.0, oxide_params=None):
         if toward_surface and away_from_surface:
             raise ToolError("give toward_surface or away_from_surface, not both")
+        if material not in ("SiO2", "TiO2") and str(facet) not in ("111", "100", "110"):
+            raise ToolError(f"{material} slabs are built as the 111, 100 or 110 facet")
         if material in ("SiO2", "TiO2"):
             from ...materials_runtime import OXIDES, _oxide_forcefield_xml
 

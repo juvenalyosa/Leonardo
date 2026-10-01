@@ -5,6 +5,7 @@ import os
 import subprocess
 import time
 
+from ..jobs import POPEN_GROUP, stop_process
 from ..registry import ToolError
 from .components import _save_object
 from .diagnostics import _python_executable
@@ -26,7 +27,7 @@ def _launch(ctx, action, args, workdir, on_done, description, module="leonardo.m
     log_path = os.path.join(workdir, f"{action}_log.txt")
     log = open(log_path, "w")
     proc = subprocess.Popen([_python_executable(), "-m", module, args_path], cwd=workdir,
-                            stdout=log, stderr=subprocess.STDOUT, env=env)
+                            stdout=log, stderr=subprocess.STDOUT, env=env, **POPEN_GROUP)
 
     def poll():
         if proc.poll() is None:
@@ -52,8 +53,7 @@ def _launch(ctx, action, args, workdir, on_done, description, module="leonardo.m
         return {"done": True, "result": on_done(res)}
 
     def cancel():
-        if proc.poll() is None:
-            proc.terminate()
+        stop_process(proc, log)
 
     return ctx.jobs.start(f"{module.rsplit('.', 1)[-1].replace('_runtime', '')}_{action}", poll, cancel=cancel,
                           description=description)

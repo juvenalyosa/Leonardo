@@ -10,6 +10,7 @@ import time
 import urllib.request
 
 from .. import presentation
+from ..jobs import POPEN_GROUP, stop_process
 from ..registry import ToolError
 from .structure import _object_summary, register_in_leonardo
 
@@ -126,7 +127,7 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         fh.write(_BUILD_SCRIPT)
     log = open(os.path.join(run_root, "modeller.log"), "w")
     proc = subprocess.Popen([_python_executable(), "agent_build.py", "agent_args.json"], cwd=run_root,
-                            stdout=log, stderr=subprocess.STDOUT)
+                            stdout=log, stderr=subprocess.STDOUT, **POPEN_GROUP)
 
     def progress():
         try:
@@ -159,7 +160,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
             with open(log.name) as fh:
                 tail = "".join(fh.readlines()[-15:])
             return {"done": True, "error": f"MODELLER failed (exit {proc.returncode}): {tail[-1500:]}"}
-        meta = json.load(open(result_file))
+        with open(result_file) as fh:
+            meta = json.load(fh)
         best = meta.get("best_model_path") or ""
         best = best if os.path.isabs(best) else os.path.join(run_root, best)
         if not os.path.isfile(best):
@@ -212,8 +214,7 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         return {"done": True, "result": result}
 
     def cancel():
-        if proc.poll() is None:
-            proc.kill()
+        stop_process(proc, log)
 
     return ctx.jobs.start("modeling", poll, cancel=cancel, description=f"MODELLER {name} from {', '.join(codes)}")
 

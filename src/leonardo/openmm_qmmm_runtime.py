@@ -1894,9 +1894,11 @@ def resolve_qmmm_regions(atom_rows, n_atoms, config=None):
         before = len(set(qm_idx))
         qm_idx = sorted(set(int(i) for i in list(qm_idx) + list(forced_qm)))
         info["forced_qm_atom_count"] = int(max(0, len(set(qm_idx)) - before))
-    if bool(cfg.get("include_bonded_hydrogens", True)):
+    added = []
+    if bool(cfg.get("include_bonded_hydrogens", True)) and not explicit_qm:
         # selections made on a crystal structure (no H) name heavy atoms only: their hydrogens must be
-        # QM too, otherwise MOPAC sees radicals and the H stay MM behind 1-A "link atoms"
+        # QM too, otherwise MOPAC sees radicals and the H stay MM behind 1-A "link atoms".
+        # Explicit qm_indices are taken as given (the caller also fixes the matching MM set).
         added = _hydrogens_bonded_to(atom_rows, set(qm_idx), n)
         if added:
             qm_idx = sorted(set(qm_idx) | set(added))
@@ -1931,6 +1933,10 @@ def resolve_qmmm_regions(atom_rows, n_atoms, config=None):
     if forced_qm and not explicit_mm:
         qset = set(qm_idx)
         mm_idx = [i for i in mm_idx if int(i) not in qset]
+    if added:
+        # hydrogens moved to QM leave any MM selection that still lists them
+        aset = set(int(i) for i in added)
+        mm_idx = [i for i in mm_idx if int(i) not in aset]
     if not mm_idx:
         raise ValueError("MM region is empty.")
     if set(qm_idx).intersection(set(mm_idx)):

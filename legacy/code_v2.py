@@ -858,6 +858,10 @@ except ImportError:
         PLUGIN_VERSION, PLUGIN_BUILD, SUITE_NAME, PROJECT_MASTER_FILE_NAME,
         PROJECT_STATE_FILE_NAME, SUITE_TAGLINE, SUITE_AUTHOR_LINE, resource_string,
     )
+try:
+    from .ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
+except ImportError:
+    from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
 # Literal aliases are retained for legacy packaging/version inspections.
 PLUGIN_VERSION = "0.2.0a5"
 PLUGIN_BUILD = "2026-07-08-r5"
@@ -1403,10 +1407,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "AI Assistant", f"Could not open the AI assistant: {e}")
     def _apply_window_defaults(self):
-        """Use a comfortable initial size while still allowing docked-window scrolling."""
+        """Apply screen-aware defaults to the main Leonardo window."""
         try:
-            self.resize(1120, 900)
-            self.setMinimumSize(860, 620)
+            geometry = self._screen_available_geometry(self)
+            plan = build_responsive_window_plan(
+                geometry.width(),
+                geometry.height(),
+                preferred_width=1120,
+                preferred_height=900,
+                minimum_width=720,
+                minimum_height=520,
+                margin=32,
+            )
+            self.setMinimumSize(plan["minimum_width"], plan["minimum_height"])
+            self.setMaximumSize(plan["maximum_width"], plan["maximum_height"])
+            self.resize(plan["width"], plan["height"])
         except Exception:
             pass
 
@@ -1421,12 +1436,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """
         return (
             "/* LEONARDO_NEUTRAL_POLISH_V2 */"
-            "QDialog { background-color: #F4F5F7; color: #20242A; font-size: 12px; }"
-            "QWidget { color: #20242A; }"
+            "QDialog { background-color: #F3F5F6; color: #1F2A30; font-size: 12px; }"
+            "QWidget { color: #1F2A30; }"
             "QScrollArea { border: none; background: transparent; }"
+            "QWidget#pliResponsiveDialogContent { background-color: #F3F5F6; }"
+            "QFrame#pliDialogHeader {"
+            "  background-color: #13212A;"
+            "  border: 1px solid #22343F;"
+            "  border-left: 4px solid #C2A15A;"
+            "  border-radius: 7px;"
+            "}"
+            "QLabel#pliDialogKicker {"
+            "  color: #8FB3BC; font-size: 9px; font-weight: 700; letter-spacing: 1px;"
+            "}"
+            "QLabel#pliDialogTitle { color: #FFFFFF; font-size: 17px; font-weight: 700; }"
+            "QLabel#pliDialogSubtitle { color: #C7D2D7; font-size: 10px; }"
+            "QLabel#pliDialogMark {"
+            "  color: #D2B56F; font-size: 11px; font-weight: 700;"
+            "  border: 1px solid #52636C; border-radius: 10px; padding: 4px 8px;"
+            "}"
             "QGroupBox {"
             "  background-color: #FFFFFF;"
-            "  border: 1px solid #D5D8DC;"
+            "  border: 1px solid #D6DEE2;"
             "  border-radius: 6px;"
             "  margin-top: 30px;"
             "  padding: 22px 12px 12px 12px;"
@@ -1439,7 +1470,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  top: 8px;"
             "  padding: 2px 8px;"
             "  background-color: #FFFFFF;"
-            "  color: #30343A;"
+            "  color: #315D66;"
             "  font-weight: 700;"
             "  letter-spacing: 0px;"
             "}"
@@ -1455,23 +1486,23 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  font-weight: 500;"
             "  min-height: 30px;"
             "}"
-            "QPushButton:hover { background-color: #F2F3F5; border-color: #AEB4BB; color: #15181C; }"
+            "QPushButton:hover { background-color: #EDF3F4; border-color: #7899A1; color: #15242A; }"
             "QPushButton:pressed { background-color: #E5E7EA; padding-top: 7px; }"
             "QPushButton:disabled { background-color: #F0F1F3; color: #9BA1A8; border-color: #D8DCE0; }"
             "QPushButton#calc_btn, QPushButton#btn_open_interaction_workspace,"
             "QPushButton#pliModelerPrimaryButton {"
-            "  background-color: #3B3F45;"
-            "  border: 1px solid #2C3035;"
+            "  background-color: #315D66;"
+            "  border: 1px solid #274A52;"
             "  color: #FFFFFF;"
             "  font-weight: 700;"
             "}"
             "QPushButton#calc_btn:hover, QPushButton#btn_open_interaction_workspace:hover,"
-            "QPushButton#pliModelerPrimaryButton:hover { background-color: #4A4F56; }"
+            "QPushButton#pliModelerPrimaryButton:hover { background-color: #3D6F79; }"
             "QPushButton#pliLauncherButton, QPushButton#pliModelerStepButton,"
             "QPushButton#pliModelerActionButton {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #D1D5DA;"
-            "  border-left: 3px solid #9AA1A9;"
+            "  border-left: 3px solid #C2A15A;"
             "  border-radius: 5px;"
             "  color: #262A30;"
             "  text-align: left;"
@@ -1479,7 +1510,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "QPushButton#pliLauncherButton:hover, QPushButton#pliModelerStepButton:hover,"
             "QPushButton#pliModelerActionButton:hover {"
             "  background-color: #F4F5F7;"
-            "  border-left-color: #626A73;"
+            "  border-left-color: #315D66;"
             "}"
             "QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {"
             "  background-color: #FFFFFF;"
@@ -1487,16 +1518,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  border-radius: 5px;"
             "  color: #20242A;"
             "  min-height: 28px;"
-            "  selection-background-color: #DDE1E5;"
+            "  selection-background-color: #DCE9EC;"
             "  selection-color: #101214;"
             "}"
             "QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus,"
-            "QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #7E858E; background-color: #FFFFFF; }"
+            "QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #557F88; background-color: #FFFFFF; }"
             "QLineEdit:read-only { background-color: #F1F2F4; color: #646B74; }"
             "QComboBox QAbstractItemView {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #C8CCD1;"
-            "  selection-background-color: #E1E4E8;"
+            "  selection-background-color: #DCE9EC;"
             "  selection-color: #20242A;"
             "}"
             "QTableWidget {"
@@ -1505,7 +1536,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  border-radius: 5px;"
             "  gridline-color: #ECEEF0;"
             "  alternate-background-color: #F7F8F9;"
-            "  selection-background-color: #E1E4E8;"
+            "  selection-background-color: #DCE9EC;"
             "  selection-color: #20242A;"
             "}"
             "QHeaderView::section {"
@@ -1527,10 +1558,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  padding: 8px 14px;"
             "  margin-right: 2px;"
             "}"
-            "QTabBar::tab:selected { background-color: #FFFFFF; color: #20242A; font-weight: 700; }"
-            "QTabBar::tab:hover:!selected { background-color: #F4F5F7; color: #30343A; }"
+            "QTabBar::tab:selected { background-color: #FFFFFF; color: #315D66; font-weight: 700; }"
+            "QTabBar::tab:hover:!selected { background-color: #EDF3F4; color: #315D66; }"
             "QCheckBox { color: #30343A; spacing: 12px; padding: 2px 6px 2px 2px; min-height: 28px; }"
             "QCheckBox::indicator { width: 16px; height: 16px; margin-left: 2px; margin-right: 8px; }"
+            "QCheckBox::indicator:checked { background-color: #315D66; border: 1px solid #274A52; }"
             "QSlider::groove:horizontal { background-color: #DDE1E5; height: 5px; border-radius: 2px; }"
             "QSlider::sub-page:horizontal { background-color: #7E858E; border-radius: 2px; }"
             "QSlider::handle:horizontal {"
@@ -1545,6 +1577,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background-color: #AEB4BB; border-radius: 4px; }"
             "QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background-color: #808891; }"
             "QSplitter::handle { background-color: #D1D5DA; }"
+            "QProgressBar {"
+            "  background-color: #E7E9EC; border: 1px solid #D1D5DA; border-radius: 5px;"
+            "  color: #30343A; text-align: center; min-height: 18px;"
+            "}"
+            "QProgressBar::chunk { background-color: #557F88; border-radius: 4px; }"
             "QToolTip {"
             "  background-color: #30343A;"
             "  color: #FFFFFF;"
@@ -1601,19 +1638,333 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     def eventFilter(self, obj, event):
         try:
             etype = event.type() if event is not None else None
-            if etype in (QtCore.QEvent.Show, QtCore.QEvent.Polish, QtCore.QEvent.LayoutRequest):
+            if etype in (QtCore.QEvent.Show, QtCore.QEvent.Polish):
                 if isinstance(obj, QtWidgets.QDialog) and self._is_leonardo_qt_widget(obj):
                     if not bool(getattr(self, "_ui_polish_event_filter_busy", False)):
                         self._ui_polish_event_filter_busy = True
                         try:
-                            self._apply_widget_layout_polish(obj)
+                            if isinstance(obj, QtWidgets.QMessageBox):
+                                self._stabilize_message_box_layout(obj)
+                                if etype == QtCore.QEvent.Show:
+                                    QtCore.QTimer.singleShot(
+                                        0, lambda target=obj: self._stabilize_message_box_layout(target)
+                                    )
+                            else:
+                                if etype == QtCore.QEvent.Show and obj is not self:
+                                    self._ensure_dialog_header(obj)
+                                    self._ensure_dialog_scroll_area(obj)
+                                self._apply_widget_layout_polish(obj)
+                                if etype == QtCore.QEvent.Show and obj is not self:
+                                    self._fit_dialog_to_screen(obj)
+                                    QtCore.QTimer.singleShot(
+                                        0, lambda target=obj: self._stabilize_dialog_text_layout(target)
+                                    )
                         finally:
                             self._ui_polish_event_filter_busy = False
+            elif etype == QtCore.QEvent.Resize:
+                if obj is self:
+                    QtCore.QTimer.singleShot(0, self._reflow_launcher_grid)
+                elif isinstance(obj, QtWidgets.QDialog) and self._is_leonardo_qt_widget(obj):
+                    QtCore.QTimer.singleShot(0, lambda target=obj: self._stabilize_dialog_text_layout(target))
         except Exception:
             pass
         try:
             return super().eventFilter(obj, event)
         except Exception:
+            return False
+
+    def _stabilize_message_box_layout(self, box):
+        """Keep Leonardo message boxes readable and expose long diagnostics in a scrollable detail view."""
+        if box is None or not isinstance(box, QtWidgets.QMessageBox):
+            return
+        try:
+            self._append_neutral_dialog_stylesheet(box)
+        except Exception:
+            pass
+        try:
+            full_text = str(box.text() or "").strip()
+            informative = str(box.informativeText() or "").strip()
+            complete_text = "\n\n".join(part for part in (full_text, informative) if part)
+            already_prepared = bool(box.property("leonardoReadableMessage"))
+            is_long = len(complete_text) > 700 or complete_text.count("\n") > 10
+            if is_long and not already_prepared:
+                if not str(box.detailedText() or "").strip():
+                    box.setDetailedText(complete_text)
+                preview = complete_text[:640].rstrip()
+                if len(complete_text) > 640:
+                    cut = max(preview.rfind("\n"), preview.rfind(" "))
+                    if cut >= 420:
+                        preview = preview[:cut].rstrip()
+                    preview += "\n\n… El mensaje completo está disponible en Mostrar detalles."
+                box.setText(preview)
+                box.setInformativeText("")
+            box.setProperty("leonardoReadableMessage", True)
+        except Exception:
+            pass
+        try:
+            geometry = self._screen_available_geometry(box)
+            maximum_width = max(420, int(geometry.width()) - 96)
+            maximum_height = max(260, int(geometry.height()) - 96)
+            text_length = len(str(box.text() or "")) + len(str(box.informativeText() or ""))
+            target_width = min(maximum_width, 700 if text_length > 180 else 560)
+            layout = box.layout()
+            if layout is not None:
+                layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+                spacer = getattr(box, "_leonardo_message_width_spacer", None)
+                spacer_width = max(360, int(target_width) - 48)
+                if spacer is None:
+                    spacer = QtWidgets.QSpacerItem(
+                        spacer_width,
+                        0,
+                        QtWidgets.QSizePolicy.Minimum,
+                        QtWidgets.QSizePolicy.Expanding,
+                    )
+                    layout.addItem(spacer, layout.rowCount(), 0, 1, max(1, layout.columnCount()))
+                    box._leonardo_message_width_spacer = spacer
+                else:
+                    spacer.changeSize(
+                        spacer_width,
+                        0,
+                        QtWidgets.QSizePolicy.Minimum,
+                        QtWidgets.QSizePolicy.Expanding,
+                    )
+                layout.invalidate()
+            # QMessageBox fixes its own size while polishing.  Release those
+            # constraints before applying Leonardo's readable dimensions.
+            box.setMaximumSize(maximum_width, maximum_height)
+            box.setMinimumSize(0, 0)
+            box.setMinimumWidth(min(target_width, maximum_width))
+            for label in box.findChildren(QtWidgets.QLabel):
+                if str(label.objectName() or "") in ("qt_msgboxex_icon_label", "qt_msgbox_icon_label"):
+                    continue
+                label.setWordWrap(True)
+                label.setMinimumWidth(max(280, target_width - 150))
+                label.setMaximumWidth(max(300, target_width - 110))
+                label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+                label.setTextInteractionFlags(
+                    label.textInteractionFlags()
+                    | QtCore.Qt.TextSelectableByMouse
+                    | QtCore.Qt.LinksAccessibleByMouse
+                )
+            for editor in box.findChildren(QtWidgets.QTextEdit):
+                editor.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
+                editor.setMinimumHeight(180)
+            for button in box.findChildren(QtWidgets.QPushButton):
+                button.setMaximumWidth(190)
+                button.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+            box.adjustSize()
+            target_height = min(maximum_height, max(180, int(box.sizeHint().height())))
+            box.resize(min(target_width, maximum_width), target_height)
+            box.setSizeGripEnabled(True)
+        except Exception:
+            pass
+
+    def _stabilize_dialog_text_layout(self, root):
+        """Give wrapped labels enough height and elide only controls that cannot wrap."""
+        if root is None:
+            return
+        try:
+            af_log = root.findChild(QtWidgets.QPlainTextEdit, "afRunLog")
+            if af_log is not None:
+                af_log.setMinimumHeight(140 if int(root.height()) < 640 else 180)
+            for object_name in ("bioseqLocalSequence", "bioseqToolSequence"):
+                sequence_editor = root.findChild(QtWidgets.QPlainTextEdit, object_name)
+                if sequence_editor is not None:
+                    sequence_editor.setMinimumHeight(110 if int(root.height()) < 640 else 150)
+            for object_name in ("bioseqQuestionsTable", "bioseqQuestionsPopupTable"):
+                question_table = root.findChild(QtWidgets.QTableWidget, object_name)
+                if question_table is not None:
+                    question_table.resizeRowsToContents()
+        except Exception:
+            pass
+        try:
+            for label in root.findChildren(QtWidgets.QLabel):
+                text = str(label.text() or "").strip()
+                if not text:
+                    continue
+                object_name = str(label.objectName() or "")
+                if object_name == "pliDialogTitle":
+                    label.setMinimumHeight(max(22, int(label.sizeHint().height())))
+                    continue
+                if object_name in ("pliDialogKicker", "pliDialogSubtitle"):
+                    label.setMinimumHeight(max(14, int(label.sizeHint().height())))
+                    continue
+                if len(text) < 28 and "\n" not in text:
+                    continue
+                label.setWordWrap(True)
+                label.setMinimumWidth(0)
+                label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Minimum)
+                width = max(80, int(label.width()) - 4)
+                bounds = label.fontMetrics().boundingRect(
+                    0,
+                    0,
+                    width,
+                    2000,
+                    QtCore.Qt.TextWordWrap | QtCore.Qt.AlignLeft,
+                    text,
+                )
+                required = max(int(label.fontMetrics().height()) + 4, int(bounds.height()) + 6)
+                label.setMinimumHeight(min(180, required))
+                if required > 180 and not str(label.toolTip() or "").strip():
+                    label.setToolTip(text)
+        except Exception:
+            pass
+        try:
+            text_controls = root.findChildren(QtWidgets.QPushButton)
+            text_controls += root.findChildren(QtWidgets.QCheckBox)
+            text_controls += root.findChildren(QtWidgets.QRadioButton)
+            for control in text_controls:
+                current = str(control.text() or "").strip()
+                stored = str(control.property("leonardoFullText") or "").strip()
+                shown = str(control.property("leonardoShownText") or "").strip()
+                # the stored full text is only valid while the label is still the one set here; Leonardo
+                # relabels buttons at runtime (e.g. AlphaFold engine, QM/MM run), and that new text wins
+                if stored and current in (shown, stored):
+                    full_text = stored
+                else:
+                    full_text = current
+                    if stored and str(control.toolTip() or "").strip() == stored:
+                        control.setToolTip("")
+                if not full_text:
+                    continue
+                control.setProperty("leonardoFullText", full_text)
+                available = max(24, int(control.width()) - 24)
+                if control.fontMetrics().horizontalAdvance(full_text) <= available:
+                    if current != full_text:
+                        control.setText(full_text)
+                    control.setProperty("leonardoShownText", full_text)
+                    continue
+                elided = control.fontMetrics().elidedText(full_text, QtCore.Qt.ElideRight, available)
+                if elided and elided != full_text:
+                    control.setText(elided)
+                    control.setProperty("leonardoShownText", elided)
+                    if not str(control.toolTip() or "").strip():
+                        control.setToolTip(full_text)
+        except Exception:
+            pass
+
+    def _ensure_dialog_header(self, dlg):
+        """Add a compact branded header and purpose line to a tool dialog."""
+        if dlg is None or bool(getattr(dlg, "_leonardo_header_added", False)):
+            return False
+        try:
+            if type(dlg) is not QtWidgets.QDialog:
+                return False
+            layout = dlg.layout()
+            if layout is None or not isinstance(layout, QtWidgets.QVBoxLayout):
+                dlg._leonardo_header_added = True
+                return False
+            identity = dialog_identity(dlg.windowTitle())
+            header = QtWidgets.QFrame(dlg)
+            header.setObjectName("pliDialogHeader")
+            header.setMinimumHeight(72)
+            header.setMaximumHeight(86)
+            header.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            row = QtWidgets.QHBoxLayout(header)
+            row.setContentsMargins(16, 10, 14, 10)
+            row.setSpacing(12)
+            titles = QtWidgets.QVBoxLayout()
+            titles.setContentsMargins(0, 0, 0, 0)
+            titles.setSpacing(2)
+            kicker = QtWidgets.QLabel(identity["category"], header)
+            kicker.setObjectName("pliDialogKicker")
+            title = QtWidgets.QLabel(identity["title"], header)
+            title.setObjectName("pliDialogTitle")
+            title.setWordWrap(True)
+            titles.addWidget(kicker)
+            titles.addWidget(title)
+            row.addLayout(titles, 1)
+            mark = QtWidgets.QLabel("L", header)
+            mark.setObjectName("pliDialogMark")
+            mark.setAlignment(QtCore.Qt.AlignCenter)
+            mark.setToolTip("Leonardo molecular modeling suite")
+            row.addWidget(mark, 0, QtCore.Qt.AlignVCenter)
+            header.setToolTip(identity["subtitle"])
+            layout.insertWidget(0, header)
+            dlg._leonardo_header_added = True
+            dlg._leonardo_dialog_header = header
+            return True
+        except Exception:
+            try:
+                dlg._leonardo_header_added = True
+            except Exception:
+                pass
+            return False
+
+    def _ensure_dialog_scroll_area(self, dlg):
+        """Wrap oversized vertical dialog content without changing large-screen layouts."""
+        if dlg is None or bool(getattr(dlg, "_leonardo_scroll_checked", False)):
+            return False
+        try:
+            if type(dlg) is not QtWidgets.QDialog:
+                return False
+            layout = dlg.layout()
+            if layout is None or not isinstance(layout, QtWidgets.QVBoxLayout):
+                dlg._leonardo_scroll_checked = True
+                return False
+            for idx in range(layout.count()):
+                item = layout.itemAt(idx)
+                if item is not None and isinstance(item.widget(), QtWidgets.QScrollArea):
+                    dlg._leonardo_scroll_checked = True
+                    return False
+            g = self._screen_available_geometry(dlg)
+            plan = build_responsive_window_plan(
+                g.width(),
+                g.height(),
+                preferred_width=int(getattr(dlg, "_leonardo_preferred_width", 0) or dlg.width() or 1080),
+                preferred_height=int(getattr(dlg, "_leonardo_preferred_height", 0) or dlg.height() or 820),
+                minimum_width=int(getattr(dlg, "_leonardo_minimum_width", 0) or 560),
+                minimum_height=int(getattr(dlg, "_leonardo_minimum_height", 0) or 360),
+                margin=48,
+            )
+            hint = layout.sizeHint()
+            needs_scroll = bool(
+                plan["compact"]
+                and (int(hint.width()) > int(plan["width"] - 20) or int(hint.height()) > int(plan["height"] - 20))
+            )
+            if not needs_scroll:
+                return False
+
+            content = QtWidgets.QWidget(dlg)
+            content.setObjectName("pliResponsiveDialogContent")
+            content_layout = QtWidgets.QVBoxLayout(content)
+            content_layout.setContentsMargins(4, 4, 4, 4)
+            content_layout.setSpacing(10)
+            pinned_widgets = []
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                child_layout = item.layout()
+                spacer = item.spacerItem()
+                if widget is not None:
+                    if str(widget.objectName() or "") == "pliDialogHeader":
+                        pinned_widgets.append(widget)
+                    else:
+                        content_layout.addWidget(widget)
+                elif child_layout is not None:
+                    content_layout.addLayout(child_layout)
+                elif spacer is not None:
+                    content_layout.addItem(spacer)
+
+            scroll = QtWidgets.QScrollArea(dlg)
+            scroll.setObjectName("pliResponsiveDialogScroll")
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            scroll.setWidget(content)
+            content.setMinimumHeight(max(0, int(hint.height())))
+            for widget in pinned_widgets:
+                layout.addWidget(widget)
+            layout.addWidget(scroll, 1)
+            dlg._leonardo_scroll_checked = True
+            dlg._leonardo_responsive_scroll = scroll
+            return True
+        except Exception:
+            try:
+                dlg._leonardo_scroll_checked = True
+            except Exception:
+                pass
             return False
 
     def _compact_ui_text(self, text, widget_kind="button"):
@@ -1655,6 +2006,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Distribution (All Interactions)": "All Distributions",
             "Open Prepared Notebook File": "Open Notebook",
             "Official Notebook Fallback": "Official Fallback",
+            "Set Sequence & Start...": "Set Sequence...",
+            "Analyze Sequence/Gaps": "Analyze Sequence",
+            "Use Modeler Sequence": "Use Modeler",
+            "Use Observed Chain Sequence": "Use Observed",
+            "Fetch Full Sequence from RCSB": "Fetch from RCSB",
+            "Check MODELLER Prerequisites": "Check Prerequisites",
+            "Use Last Model as Docking Receptor": "Use as Docking Receptor",
+            "Open Cluster Enzymatic Reaction Pipeline...": "Cluster Reaction...",
+            "Rebuild Amber/XML (keep charges)": "Rebuild Amber/XML",
+            "Show HOMO/LUMO Orbitals": "HOMO/LUMO",
         }
         if key in mapping:
             return mapping[key]
@@ -1754,6 +2115,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         self._append_neutral_dialog_stylesheet(root)
         try:
+            compact = bool(int(root.width()) < 760 or int(root.height()) < 560)
+        except Exception:
+            compact = self._is_compact_screen(root)
+        try:
             if isinstance(root, QtWidgets.QDialog):
                 root.setSizeGripEnabled(True)
         except Exception:
@@ -1761,6 +2126,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             top_layout = root.layout()
             if top_layout is not None:
+                top_layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
                 self._polish_layout_tree(top_layout, top_level=True)
         except Exception:
             pass
@@ -1768,7 +2134,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for scroll in root.findChildren(QtWidgets.QScrollArea):
                 scroll.setWidgetResizable(True)
                 scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-                scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+                if bool(scroll.property("leonardoVerticalOnly")):
+                    scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+                else:
+                    scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
                 scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         except Exception:
             pass
@@ -1776,8 +2145,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for box in root.findChildren(QtWidgets.QGroupBox):
                 lay = box.layout()
                 if lay is not None:
-                    lay.setContentsMargins(12, 28, 12, 12)
-                    lay.setSpacing(max(8, int(lay.spacing() if lay.spacing() >= 0 else 8)))
+                    side = 9 if compact else 12
+                    lay.setContentsMargins(side, 25 if compact else 28, side, side)
+                    lay.setSpacing(max(7 if compact else 8, int(lay.spacing() if lay.spacing() >= 0 else 8)))
         except Exception:
             pass
         try:
@@ -1785,7 +2155,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 text = str(label.text() or "")
                 if len(text) > 18 or "\n" in text:
                     label.setWordWrap(True)
-                    label.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.MinimumExpanding)
+                    label.setMinimumWidth(0)
+                    label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
                 label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         except Exception:
             pass
@@ -1793,13 +2164,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for button in root.findChildren(QtWidgets.QPushButton):
                 button.setMinimumHeight(34)
                 original = str(button.text() or "")
-                compact = self._compact_ui_text(original, widget_kind="button")
-                if compact != original:
+                short_text = self._compact_ui_text(original, widget_kind="button")
+                if short_text != original:
+                    button.setProperty("leonardoFullText", original)
                     if not str(button.toolTip() or "").strip():
                         button.setToolTip(original)
-                    button.setText(compact)
+                    button.setText(short_text)
+                    button.setProperty("leonardoShownText", short_text)
                 text = str(button.text() or "")
-                if len(text) > 16:
+                if compact:
+                    button.setMinimumWidth(0)
+                    button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+                elif len(text) > 16:
                     button.setMinimumWidth(min(190, max(124, 7 * len(text))))
                     button.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
                 else:
@@ -1809,11 +2185,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             for cb in root.findChildren(QtWidgets.QCheckBox):
                 original = str(cb.text() or "")
-                compact = self._compact_ui_text(original, widget_kind="checkbox")
-                if compact != original:
+                short_text = self._compact_ui_text(original, widget_kind="checkbox")
+                if short_text != original:
+                    cb.setProperty("leonardoFullText", original)
                     if not str(cb.toolTip() or "").strip():
                         cb.setToolTip(original)
-                    cb.setText(compact)
+                    cb.setText(short_text)
+                    cb.setProperty("leonardoShownText", short_text)
                 cb.setMinimumHeight(28)
                 cb.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         except Exception:
@@ -1823,15 +2201,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 for field in root.findChildren(cls):
                     field.setMinimumHeight(30)
                     if isinstance(field, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-                        field.setMinimumWidth(max(82, int(field.minimumWidth() or 0)))
+                        field.setMinimumWidth(64 if compact else max(82, int(field.minimumWidth() or 0)))
                     elif isinstance(field, QtWidgets.QComboBox):
-                        field.setMinimumWidth(max(128, int(field.minimumWidth() or 0)))
+                        field.setMinimumWidth(72 if compact else max(128, int(field.minimumWidth() or 0)))
         except Exception:
             pass
         try:
             for table in root.findChildren(QtWidgets.QTableWidget):
                 table.setAlternatingRowColors(True)
-                table.setMinimumHeight(max(180, int(table.minimumHeight() or 0)))
+                table.setMinimumHeight(140 if compact else max(180, int(table.minimumHeight() or 0)))
                 hh = table.horizontalHeader()
                 if hh is not None:
                     hh.setStretchLastSection(True)
@@ -2205,10 +2583,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._update_main_workspace_summary()
         except Exception as e:
             print(f"Open molecules box setup warning: {e}")
-    def _screen_available_geometry(self):
+    def _screen_available_geometry(self, widget=None):
         """Return available screen geometry for responsive popup sizing."""
+        target = widget if widget is not None else self
         try:
-            wh = self.windowHandle()
+            wh = target.windowHandle()
         except Exception:
             wh = None
         screen = None
@@ -2230,8 +2609,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
         return QtCore.QRect(0, 0, 1366, 820)
-    def _is_compact_screen(self):
-        g = self._screen_available_geometry()
+    def _is_compact_screen(self, widget=None):
+        g = self._screen_available_geometry(widget)
         return bool(g.width() <= 1366 or g.height() <= 820)
     def _fit_dialog_to_screen(self, dlg, preferred_w=None, preferred_h=None, min_w=560, min_h=360, margin=72):
         """
@@ -2240,26 +2619,39 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if dlg is None:
             return
         try:
-            g = self._screen_available_geometry()
-            avail_w = max(480, int(g.width()) - int(margin))
-            avail_h = max(320, int(g.height()) - int(margin))
+            g = self._screen_available_geometry(dlg)
             if preferred_w is None:
-                try:
-                    preferred_w = int(dlg.width())
-                except Exception:
-                    preferred_w = avail_w
+                preferred_w = int(getattr(dlg, "_leonardo_preferred_width", 0) or dlg.width() or 1080)
+            else:
+                dlg._leonardo_preferred_width = int(preferred_w)
             if preferred_h is None:
-                try:
-                    preferred_h = int(dlg.height())
-                except Exception:
-                    preferred_h = avail_h
-            w = min(int(avail_w), max(int(min_w), int(preferred_w)))
-            h = min(int(avail_h), max(int(min_h), int(preferred_h)))
-            eff_min_w = min(int(min_w), int(w))
-            eff_min_h = min(int(min_h), int(h))
-            dlg.setMinimumSize(eff_min_w, eff_min_h)
-            dlg.setMaximumSize(int(avail_w), int(avail_h))
-            dlg.resize(int(w), int(h))
+                preferred_h = int(getattr(dlg, "_leonardo_preferred_height", 0) or dlg.height() or 820)
+            else:
+                dlg._leonardo_preferred_height = int(preferred_h)
+            stored_min_w = int(getattr(dlg, "_leonardo_minimum_width", 0) or min_w)
+            stored_min_h = int(getattr(dlg, "_leonardo_minimum_height", 0) or min_h)
+            if min_w != 560:
+                stored_min_w = int(min_w)
+                dlg._leonardo_minimum_width = stored_min_w
+            if min_h != 360:
+                stored_min_h = int(min_h)
+                dlg._leonardo_minimum_height = stored_min_h
+            plan = build_responsive_window_plan(
+                g.width(),
+                g.height(),
+                preferred_width=preferred_w,
+                preferred_height=preferred_h,
+                minimum_width=stored_min_w,
+                minimum_height=stored_min_h,
+                margin=margin,
+            )
+            dlg.setMinimumSize(plan["minimum_width"], plan["minimum_height"])
+            dlg.setMaximumSize(plan["maximum_width"], plan["maximum_height"])
+            dlg.resize(plan["width"], plan["height"])
+            dlg.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+            x = int(g.x()) + max(0, (int(g.width()) - int(plan["width"])) // 2)
+            y = int(g.y()) + max(0, (int(g.height()) - int(plan["height"])) // 2)
+            dlg.move(x, y)
             self._apply_widget_layout_polish(dlg)
         except Exception:
             pass
@@ -3072,27 +3464,30 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox = QtWidgets.QVBoxLayout(box)
             vbox.setContentsMargins(10, 8, 10, 8)
             vbox.setSpacing(7)
-            row = QtWidgets.QHBoxLayout()
+            actions = QtWidgets.QGridLayout()
+            actions.setHorizontalSpacing(8)
+            actions.setVerticalSpacing(8)
             self.btn_project_new = QtWidgets.QPushButton("New Project")
             self.btn_project_new.clicked.connect(self._on_project_new)
-            row.addWidget(self.btn_project_new)
+            actions.addWidget(self.btn_project_new, 0, 0)
             self.btn_project_open = QtWidgets.QPushButton("Open Project")
             self.btn_project_open.setToolTip(
                 f"Choose {PROJECT_MASTER_FILE_NAME} (or legacy {PROJECT_STATE_FILE_NAME})"
             )
             self.btn_project_open.clicked.connect(self._on_project_open)
-            row.addWidget(self.btn_project_open)
+            actions.addWidget(self.btn_project_open, 0, 1)
             self.btn_project_save = QtWidgets.QPushButton("Save Project")
             self.btn_project_save.setToolTip(
                 f"Updates both {PROJECT_MASTER_FILE_NAME} and {PROJECT_STATE_FILE_NAME}"
             )
             self.btn_project_save.clicked.connect(self._on_project_save)
-            row.addWidget(self.btn_project_save)
+            actions.addWidget(self.btn_project_save, 1, 0)
             self.btn_project_reset = QtWidgets.QPushButton("Reset Leonardo")
             self.btn_project_reset.clicked.connect(self._on_project_reset)
-            row.addWidget(self.btn_project_reset)
-            row.addStretch(1)
-            vbox.addLayout(row)
+            actions.addWidget(self.btn_project_reset, 1, 1)
+            actions.setColumnStretch(0, 1)
+            actions.setColumnStretch(1, 1)
+            vbox.addLayout(actions)
             self.lbl_project_status = QtWidgets.QLabel("")
             self.lbl_project_status.setWordWrap(True)
             vbox.addWidget(self.lbl_project_status)
@@ -3151,21 +3546,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             grid = QtWidgets.QGridLayout()
             grid.setHorizontalSpacing(8)
             grid.setVerticalSpacing(8)
-            ncols = 2
-            for i, btn in enumerate(buttons):
+            self._launcher_grid = grid
+            self._launcher_buttons = buttons
+            for btn in buttons:
                 try:
                     btn.setObjectName("pliLauncherButton")
                     btn.setMinimumHeight(44)
                     btn.setMaximumHeight(64)
-                    btn.setMinimumWidth(190)
+                    btn.setMinimumWidth(0)
                     btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
                 except Exception:
                     pass
-                r = i // ncols
-                c = i % ncols
-                grid.addWidget(btn, r, c)
-            for c in range(ncols):
-                grid.setColumnStretch(c, 1)
+            self._reflow_launcher_grid()
             hub_layout.addLayout(grid)
             self.lbl_compute_hardware = QtWidgets.QLabel("Compute: detecting CPU/GPU...")
             self.lbl_compute_hardware.setObjectName("pliLauncherDesc")
@@ -3175,6 +3567,30 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.verticalLayout.insertWidget(insert_idx, hub)
         except Exception as e:
             print(f"Launcher hub setup warning: {e}")
+    def _reflow_launcher_grid(self):
+        """Rearrange launcher cards when the main window crosses width breakpoints."""
+        grid = getattr(self, "_launcher_grid", None)
+        buttons = list(getattr(self, "_launcher_buttons", []) or [])
+        if grid is None or not buttons:
+            return
+        try:
+            viewport = getattr(self, "_main_scroll_area", None)
+            if viewport is not None:
+                available_width = int(viewport.viewport().width()) - 40
+            else:
+                available_width = int(self.width()) - 60
+            ncols = responsive_grid_columns(available_width, card_min_width=300, maximum_columns=3)
+            if int(getattr(self, "_launcher_column_count", 0) or 0) == int(ncols):
+                return
+            while grid.count():
+                grid.takeAt(0)
+            for idx, button in enumerate(buttons):
+                grid.addWidget(button, idx // ncols, idx % ncols)
+            for col in range(3):
+                grid.setColumnStretch(col, 1 if col < ncols else 0)
+            self._launcher_column_count = int(ncols)
+        except Exception:
+            pass
     def _setup_display_settings_popup(self):
         # Move dense display settings into a popup for a cleaner main window.
         try:
@@ -4389,13 +4805,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             # Final neutral suite override.  Keep this block last so it wins over
             # legacy blue accent rules while preserving the existing widget map.
             "QDialog {"
-            "  background-color: #F4F5F7;"
-            "  color: #20242A;"
+            "  background-color: #F3F5F6;"
+            "  color: #1F2A30;"
             "  font-size: 12px;"
             "}"
             "QFrame#leonardo_brand_header {"
-            "  background-color: #2F3338;"
-            "  border: 1px solid #454A50;"
+            "  background-color: #13212A;"
+            "  border: 1px solid #22343F;"
+            "  border-left: 4px solid #C2A15A;"
             "  border-radius: 8px;"
             "}"
             "QLabel#leonardo_brand_name { color: #FFFFFF; letter-spacing: 1px; }"
@@ -4448,29 +4865,29 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "QPushButton:pressed { background-color: #E5E7EA; padding-top: 7px; }"
             "QPushButton:disabled { background-color: #F0F1F3; color: #9BA1A8; border-color: #D8DCE0; }"
             "QPushButton#calc_btn, QPushButton#btn_open_interaction_workspace {"
-            "  background-color: #3B3F45;"
-            "  border: 1px solid #2C3035;"
-            "  border-bottom: 1px solid #202328;"
+            "  background-color: #315D66;"
+            "  border: 1px solid #274A52;"
+            "  border-bottom: 1px solid #1F3C43;"
             "  color: #FFFFFF;"
             "  font-weight: 700;"
             "}"
             "QPushButton#calc_btn:hover, QPushButton#btn_open_interaction_workspace:hover {"
-            "  background-color: #4A4F56;"
-            "  border-color: #30343A;"
+            "  background-color: #3D6F79;"
+            "  border-color: #274A52;"
             "}"
             "QPushButton#pliLauncherButton {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #D1D5DA;"
-            "  border-left: 3px solid #9AA1A9;"
+            "  border-left: 3px solid #C2A15A;"
             "  border-radius: 5px;"
             "  color: #262A30;"
             "  text-align: left;"
             "}"
             "QPushButton#pliLauncherButton:hover {"
-            "  background-color: #F4F5F7;"
-            "  border-color: #B8BDC3;"
-            "  border-left-color: #626A73;"
-            "  color: #15181C;"
+            "  background-color: #EDF3F4;"
+            "  border-color: #9BB1B7;"
+            "  border-left-color: #315D66;"
+            "  color: #19343B;"
             "}"
             "QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {"
             "  background-color: #FFFFFF;"
@@ -4510,7 +4927,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "  border-radius: 3px;"
             "  background-color: #FFFFFF;"
             "}"
-            "QCheckBox::indicator:checked { background-color: #4A4F56; border-color: #30343A; }"
+            "QCheckBox::indicator:checked { background-color: #315D66; border-color: #274A52; }"
             "QTableWidget {"
             "  background-color: #FFFFFF;"
             "  border: 1px solid #D5D8DC;"
@@ -5729,7 +6146,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._on_clear()
         except Exception:
             pass
-        self.interactions = self._calculate_all_interactions()
+        try:
+            self.interactions = self._calculate_all_interactions()
+        except Exception as e:
+            error_text = (
+                "The interaction calculation could not be completed.\n\n"
+                f"{e}\n\n"
+                "Verify the selected structure, ligand chain, residue number, and residue name. "
+                "The complete diagnostic is also recorded in Leonardo's debug log."
+            )
+            try:
+                self._append_debug_log(f"Interaction calculation failed: {e}")
+            except Exception:
+                pass
+            QtWidgets.QMessageBox.critical(self, "Interaction Calculation Error", error_text)
+            return
         # Safety retry: if a non-topology object was analyzed and yielded zero, retry on topology.
         try:
             topo_obj = getattr(self, "_traj_topology_object", None)
@@ -6235,17 +6666,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             system_panel_widgets = []
             protocol_panel_widgets = []
             analysis_panel_widgets = []
-            row_obj = QtWidgets.QHBoxLayout()
-            row_obj.addWidget(QtWidgets.QLabel("Structure Object"))
+            row_obj = QtWidgets.QGridLayout()
+            row_obj.addWidget(QtWidgets.QLabel("Structure Object"), 0, 0)
             self.cmb_openmm_object = QtWidgets.QComboBox()
             self.cmb_openmm_object.currentTextChanged.connect(self._on_openmm_object_changed)
-            row_obj.addWidget(self.cmb_openmm_object, 1)
-            self.btn_openmm_refresh = QtWidgets.QPushButton("Refresh Objects")
+            row_obj.addWidget(self.cmb_openmm_object, 0, 1)
+            self.btn_openmm_refresh = QtWidgets.QPushButton("Refresh")
+            self.btn_openmm_refresh.setToolTip("Refresh structure objects")
             self.btn_openmm_refresh.clicked.connect(self._refresh_openmm_object_combo)
-            row_obj.addWidget(self.btn_openmm_refresh)
+            row_obj.addWidget(self.btn_openmm_refresh, 0, 2)
             self.btn_openmm_use_analysis_obj = QtWidgets.QPushButton("Use Analysis Object")
             self.btn_openmm_use_analysis_obj.clicked.connect(self._on_openmm_use_analysis_object)
-            row_obj.addWidget(self.btn_openmm_use_analysis_obj)
+            row_obj.addWidget(self.btn_openmm_use_analysis_obj, 1, 1, 1, 2)
+            row_obj.setColumnStretch(1, 1)
             vbox.addLayout(row_obj)
             self.lbl_openmm_tools = QtWidgets.QLabel("")
             self.lbl_openmm_tools.setWordWrap(True)
@@ -6255,31 +6688,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.lbl_openmm_ligand_status = QtWidgets.QLabel("Ligand status: n/a")
             self.lbl_openmm_ligand_status.setWordWrap(True)
             lig_v.addWidget(self.lbl_openmm_ligand_status)
-            row_xml = QtWidgets.QHBoxLayout()
-            row_xml.addWidget(QtWidgets.QLabel("Ligand XML"))
+            row_xml = QtWidgets.QGridLayout()
+            row_xml.addWidget(QtWidgets.QLabel("Ligand XML"), 0, 0)
             self.edit_openmm_ligand_xml = QtWidgets.QLineEdit()
             self.edit_openmm_ligand_xml.setPlaceholderText(
                 "Optional: ligand OpenMM XML from Ligand Source & Prep"
             )
-            row_xml.addWidget(self.edit_openmm_ligand_xml, 1)
+            self.edit_openmm_ligand_xml.setToolTip(
+                "Optional ligand OpenMM XML generated by Ligand Source & Prep"
+            )
+            row_xml.addWidget(self.edit_openmm_ligand_xml, 0, 1, 1, 2)
             self.btn_openmm_pick_xml = QtWidgets.QPushButton("Choose...")
             self.btn_openmm_pick_xml.clicked.connect(self._on_openmm_pick_ligand_xml)
-            row_xml.addWidget(self.btn_openmm_pick_xml)
+            row_xml.addWidget(self.btn_openmm_pick_xml, 0, 3)
             self.btn_openmm_use_xml = QtWidgets.QPushButton("Use Current")
             self.btn_openmm_use_xml.clicked.connect(self._on_openmm_use_current_ligand_xml)
-            row_xml.addWidget(self.btn_openmm_use_xml)
+            row_xml.addWidget(self.btn_openmm_use_xml, 1, 1)
             self.btn_openmm_export_xml = QtWidgets.QPushButton("Export XML")
             self.btn_openmm_export_xml.clicked.connect(self._on_export_ligand_openmm_xml)
-            row_xml.addWidget(self.btn_openmm_export_xml)
+            row_xml.addWidget(self.btn_openmm_export_xml, 1, 2)
+            row_xml.setColumnStretch(1, 1)
+            row_xml.setColumnStretch(2, 1)
             lig_v.addLayout(row_xml)
-            row_lig_tools = QtWidgets.QHBoxLayout()
-            self.btn_openmm_ligand_tools = QtWidgets.QPushButton("Open Ligand Source & Prep...")
+            row_lig_tools = QtWidgets.QGridLayout()
+            self.btn_openmm_ligand_tools = QtWidgets.QPushButton("Open Ligand Source && Prep...")
+            self.btn_openmm_ligand_tools.setToolTip("Open Ligand Source & Prep")
             self.btn_openmm_ligand_tools.clicked.connect(self._show_ligand_tools_popup)
-            row_lig_tools.addWidget(self.btn_openmm_ligand_tools)
+            row_lig_tools.addWidget(self.btn_openmm_ligand_tools, 0, 0)
             self.btn_openmm_crystal_ligands = QtWidgets.QPushButton("Crystal Ligands/XML...")
             self.btn_openmm_crystal_ligands.clicked.connect(self._on_openmm_manage_crystal_ligands)
-            row_lig_tools.addWidget(self.btn_openmm_crystal_ligands)
-            row_lig_tools.addStretch(1)
+            row_lig_tools.addWidget(self.btn_openmm_crystal_ligands, 0, 1)
+            row_lig_tools.setColumnStretch(0, 1)
+            row_lig_tools.setColumnStretch(1, 1)
             lig_v.addLayout(row_lig_tools)
             system_panel_widgets.append(lig_box)
             sys_box = QtWidgets.QGroupBox("System Setup")
@@ -6293,39 +6733,39 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_openmm_solvent_mode.setCurrentIndex(2)
             self.cmb_openmm_solvent_mode.currentIndexChanged.connect(self._on_openmm_solvent_mode_changed)
             grid_mode.addWidget(self.cmb_openmm_solvent_mode, 0, 1)
-            grid_mode.addWidget(QtWidgets.QLabel("Water model"), 0, 2)
+            grid_mode.addWidget(QtWidgets.QLabel("Water model"), 1, 0)
             self.cmb_openmm_water_model = QtWidgets.QComboBox()
             self.cmb_openmm_water_model.addItem("TIP3P", "tip3p")
             self.cmb_openmm_water_model.addItem("SPC/E", "spce")
             self.cmb_openmm_water_model.addItem("TIP4P-Ew", "tip4pew")
             self.cmb_openmm_water_model.addItem("TIP5P", "tip5p")
-            grid_mode.addWidget(self.cmb_openmm_water_model, 0, 3)
-            grid_mode.addWidget(QtWidgets.QLabel("Force field"), 1, 0)
+            grid_mode.addWidget(self.cmb_openmm_water_model, 1, 1)
+            grid_mode.addWidget(QtWidgets.QLabel("Force field"), 2, 0)
             self.cmb_openmm_ff_family = QtWidgets.QComboBox()
             self.cmb_openmm_ff_family.addItem("Amber14", "amber14")
             self.cmb_openmm_ff_family.addItem("Amber99SB-ILDN", "amber99sbildn")
             self.cmb_openmm_ff_family.addItem("CHARMM36", "charmm36")
-            grid_mode.addWidget(self.cmb_openmm_ff_family, 1, 1, 1, 3)
+            grid_mode.addWidget(self.cmb_openmm_ff_family, 2, 1)
             grid_mode.setColumnStretch(1, 1)
-            grid_mode.setColumnStretch(3, 1)
             sys_v.addLayout(grid_mode)
-            row_comp = QtWidgets.QHBoxLayout()
+            row_comp = QtWidgets.QGridLayout()
             self.cb_openmm_keep_cofactors = QtWidgets.QCheckBox("Keep crystal cofactors/ligands")
             self.cb_openmm_keep_cofactors.setChecked(True)
             self.cb_openmm_keep_cofactors.toggled.connect(lambda _v: self._openmm_update_component_summary())
-            row_comp.addWidget(self.cb_openmm_keep_cofactors)
+            row_comp.addWidget(self.cb_openmm_keep_cofactors, 0, 0)
             self.cb_openmm_keep_ions = QtWidgets.QCheckBox("Keep crystal ions")
             self.cb_openmm_keep_ions.setChecked(True)
             self.cb_openmm_keep_ions.toggled.connect(lambda _v: self._openmm_update_component_summary())
-            row_comp.addWidget(self.cb_openmm_keep_ions)
+            row_comp.addWidget(self.cb_openmm_keep_ions, 0, 1)
             self.cb_openmm_keep_waters = QtWidgets.QCheckBox("Keep crystal waters")
             self.cb_openmm_keep_waters.setChecked(False)
             self.cb_openmm_keep_waters.toggled.connect(lambda _v: self._openmm_update_component_summary())
-            row_comp.addWidget(self.cb_openmm_keep_waters)
+            row_comp.addWidget(self.cb_openmm_keep_waters, 1, 0)
             self.btn_openmm_customize_components = QtWidgets.QPushButton("Customize HETATM...")
             self.btn_openmm_customize_components.clicked.connect(self._on_openmm_customize_components)
-            row_comp.addWidget(self.btn_openmm_customize_components)
-            row_comp.addStretch(1)
+            row_comp.addWidget(self.btn_openmm_customize_components, 1, 1)
+            row_comp.setColumnStretch(0, 1)
+            row_comp.setColumnStretch(1, 1)
             sys_v.addLayout(row_comp)
             self.lbl_openmm_components = QtWidgets.QLabel("Components: n/a")
             self.lbl_openmm_components.setWordWrap(True)
@@ -6338,29 +6778,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.spin_openmm_ph.setSingleStep(0.1)
             self.spin_openmm_ph.setValue(7.4)
             grid_env.addWidget(self.spin_openmm_ph, 0, 1)
-            grid_env.addWidget(QtWidgets.QLabel("Ionic strength (M)"), 0, 2)
+            grid_env.addWidget(QtWidgets.QLabel("Ionic strength (M)"), 1, 0)
             self.spin_openmm_ionic_strength = QtWidgets.QDoubleSpinBox()
             self.spin_openmm_ionic_strength.setDecimals(3)
             self.spin_openmm_ionic_strength.setRange(0.0, 2.0)
             self.spin_openmm_ionic_strength.setSingleStep(0.01)
             self.spin_openmm_ionic_strength.setValue(0.15)
-            grid_env.addWidget(self.spin_openmm_ionic_strength, 0, 3)
-            grid_env.addWidget(QtWidgets.QLabel("Solvent padding (A)"), 1, 0)
+            grid_env.addWidget(self.spin_openmm_ionic_strength, 1, 1)
+            grid_env.addWidget(QtWidgets.QLabel("Solvent padding (A)"), 2, 0)
             self.spin_openmm_padding = QtWidgets.QDoubleSpinBox()
             self.spin_openmm_padding.setDecimals(1)
             self.spin_openmm_padding.setRange(4.0, 30.0)
             self.spin_openmm_padding.setSingleStep(0.5)
             self.spin_openmm_padding.setValue(10.0)
-            grid_env.addWidget(self.spin_openmm_padding, 1, 1)
-            grid_env.addWidget(QtWidgets.QLabel("Nonbonded cutoff (A)"), 1, 2)
+            grid_env.addWidget(self.spin_openmm_padding, 2, 1)
+            grid_env.addWidget(QtWidgets.QLabel("Nonbonded cutoff (A)"), 3, 0)
             self.spin_openmm_cutoff = QtWidgets.QDoubleSpinBox()
             self.spin_openmm_cutoff.setDecimals(1)
             self.spin_openmm_cutoff.setRange(6.0, 20.0)
             self.spin_openmm_cutoff.setSingleStep(0.1)
             self.spin_openmm_cutoff.setValue(10.0)
-            grid_env.addWidget(self.spin_openmm_cutoff, 1, 3)
+            grid_env.addWidget(self.spin_openmm_cutoff, 3, 1)
             grid_env.setColumnStretch(1, 1)
-            grid_env.setColumnStretch(3, 1)
             sys_v.addLayout(grid_env)
             system_panel_widgets.append(sys_box)
             protocol_box = QtWidgets.QGroupBox("Protocol")
@@ -6553,17 +6992,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             analysis_panel_widgets.append(analysis_box)
             advanced_box = QtWidgets.QGroupBox("Advanced Methods")
             advanced_v = QtWidgets.QVBoxLayout(advanced_box)
-            row_adv = QtWidgets.QHBoxLayout()
-            row_adv.addWidget(QtWidgets.QLabel("Workflow"))
+            row_adv = QtWidgets.QGridLayout()
+            row_adv.addWidget(QtWidgets.QLabel("Workflow"), 0, 0)
             self.cmb_openmm_advanced = QtWidgets.QComboBox()
             self.cmb_openmm_advanced.addItem("Umbrella sampling", "umbrella")
             self.cmb_openmm_advanced.addItem("Metadynamics", "metadynamics")
             self.cmb_openmm_advanced.addItem("Guided-exit binding diagnostic", "abfe")
             self.cmb_openmm_advanced.addItem("OpenMM-ML potential wrapper", "openmm_ml")
-            row_adv.addWidget(self.cmb_openmm_advanced, 1)
+            row_adv.addWidget(self.cmb_openmm_advanced, 0, 1)
             self.btn_openmm_run_advanced = QtWidgets.QPushButton("Launch Advanced Workflow")
             self.btn_openmm_run_advanced.clicked.connect(self._on_openmm_run_advanced_workflow)
-            row_adv.addWidget(self.btn_openmm_run_advanced)
+            row_adv.addWidget(self.btn_openmm_run_advanced, 1, 1)
+            row_adv.setColumnStretch(1, 1)
             advanced_v.addLayout(row_adv)
             cv_preset_box = QtWidgets.QGroupBox("Collective Variable Presets")
             cv_preset_v = QtWidgets.QVBoxLayout(cv_preset_box)
@@ -6626,33 +7066,36 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             panel_box = QtWidgets.QGroupBox("Configuration Panels")
             panel_v = QtWidgets.QVBoxLayout(panel_box)
-            row_panels = QtWidgets.QHBoxLayout()
+            row_panels = QtWidgets.QGridLayout()
             self.btn_openmm_open_system_panel = QtWidgets.QPushButton("System Setup...")
             self.btn_openmm_open_system_panel.clicked.connect(self._show_openmm_system_panel)
-            row_panels.addWidget(self.btn_openmm_open_system_panel)
+            row_panels.addWidget(self.btn_openmm_open_system_panel, 0, 0)
             self.btn_openmm_open_protocol_panel = QtWidgets.QPushButton("Protocol...")
             self.btn_openmm_open_protocol_panel.clicked.connect(self._show_openmm_protocol_panel)
-            row_panels.addWidget(self.btn_openmm_open_protocol_panel)
-            self.btn_openmm_open_analysis_panel = QtWidgets.QPushButton("Analysis & Advanced...")
+            row_panels.addWidget(self.btn_openmm_open_protocol_panel, 0, 1)
+            self.btn_openmm_open_analysis_panel = QtWidgets.QPushButton("Analysis && Advanced...")
+            self.btn_openmm_open_analysis_panel.setToolTip("Open Analysis & Advanced controls")
             self.btn_openmm_open_analysis_panel.clicked.connect(self._show_openmm_analysis_panel)
-            row_panels.addWidget(self.btn_openmm_open_analysis_panel)
-            row_panels.addStretch(1)
+            row_panels.addWidget(self.btn_openmm_open_analysis_panel, 1, 0, 1, 2)
+            row_panels.setColumnStretch(0, 1)
+            row_panels.setColumnStretch(1, 1)
             panel_v.addLayout(row_panels)
             vbox.addWidget(panel_box)
             self.lbl_openmm_status = QtWidgets.QLabel("Status: ready")
             self.lbl_openmm_status.setWordWrap(True)
             vbox.addWidget(self.lbl_openmm_status)
-            row_run = QtWidgets.QHBoxLayout()
+            row_run = QtWidgets.QGridLayout()
             self.btn_openmm_run = QtWidgets.QPushButton("Run OpenMM Workflow")
             self.btn_openmm_run.clicked.connect(self._on_openmm_run_workflow)
-            row_run.addWidget(self.btn_openmm_run)
+            row_run.addWidget(self.btn_openmm_run, 0, 0)
             self.btn_openmm_monitor = QtWidgets.QPushButton("Task Monitor")
             self.btn_openmm_monitor.clicked.connect(self._show_task_monitor_dialog)
-            row_run.addWidget(self.btn_openmm_monitor)
-            row_run.addStretch(1)
+            row_run.addWidget(self.btn_openmm_monitor, 0, 1)
             btn_close = QtWidgets.QPushButton("Close")
             btn_close.clicked.connect(self._openmm_dialog.close)
-            row_run.addWidget(btn_close)
+            row_run.addWidget(btn_close, 1, 1)
+            row_run.setColumnStretch(0, 1)
+            row_run.setColumnStretch(1, 1)
             vbox.addLayout(row_run)
             self.btn_open_openmm = QtWidgets.QPushButton("OpenMM Dynamics...")
             self.btn_open_openmm.setToolTip(
@@ -6675,6 +7118,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     def _openmm_create_panel_dialog(self, title, widgets):
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle(str(title or "OpenMM Panel"))
+        dlg._leonardo_scroll_checked = True
         dlg.resize(1080, 880)
         dlg.setMinimumSize(920, 720)
         try:
@@ -6690,7 +7134,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         )
         vbox = QtWidgets.QVBoxLayout(dlg)
         scroll = QtWidgets.QScrollArea(dlg)
+        scroll.setObjectName("openmmPanelScrollArea")
+        scroll.setProperty("leonardoVerticalOnly", True)
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         panel = QtWidgets.QWidget(scroll)
         panel_v = QtWidgets.QVBoxLayout(panel)
         for w in list(widgets or []):
@@ -7142,6 +7591,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             dlg = QtWidgets.QDialog(self)
             dlg.setWindowTitle("QM/MM Probe (MOPAC + OpenMM)")
+            dlg._leonardo_scroll_checked = True
             dlg.resize(1060, 840)
             dlg.setMinimumSize(900, 700)
             self._fit_dialog_to_screen(
@@ -7165,12 +7615,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             vbox = QtWidgets.QVBoxLayout(dlg)
             tabs = QtWidgets.QTabWidget()
+            self.tabs_qmmm = tabs
             vbox.addWidget(tabs, 1)
 
-            workflow_tab = QtWidgets.QWidget()
-            workflow_layout = QtWidgets.QVBoxLayout(workflow_tab)
-            workflow_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(workflow_tab, "Workflow")
+            def _qmmm_scroll_tab(title, tooltip=""):
+                tab = QtWidgets.QWidget()
+                outer = QtWidgets.QVBoxLayout(tab)
+                outer.setContentsMargins(0, 0, 0, 0)
+                scroll = QtWidgets.QScrollArea(tab)
+                scroll.setObjectName("qmmm" + str(title).replace("/", "").replace(" ", "") + "Scroll")
+                scroll.setProperty("leonardoVerticalOnly", True)
+                scroll.setWidgetResizable(True)
+                scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+                scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+                scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+                content = QtWidgets.QWidget(scroll)
+                layout = QtWidgets.QVBoxLayout(content)
+                layout.setContentsMargins(12, 12, 12, 12)
+                layout.setSpacing(10)
+                scroll.setWidget(content)
+                outer.addWidget(scroll, 1)
+                index = tabs.addTab(tab, str(title))
+                if tooltip:
+                    tabs.setTabToolTip(index, str(tooltip))
+                return tab, layout
+
+            workflow_tab, workflow_layout = _qmmm_scroll_tab("Workflow")
             intro = QtWidgets.QLabel(
                 "Choose the structure, MM context, and QM/MM task. Leonardo will build the MOPAC keyword line and region preflight from these choices."
             )
@@ -7178,17 +7648,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             intro.setProperty("role", "hint")
             workflow_layout.addWidget(intro)
             obj_box = QtWidgets.QGroupBox("Structure")
-            row_obj = QtWidgets.QHBoxLayout(obj_box)
-            row_obj.addWidget(QtWidgets.QLabel("Object"))
+            row_obj = QtWidgets.QGridLayout(obj_box)
+            row_obj.addWidget(QtWidgets.QLabel("Object"), 0, 0)
             self.cmb_qmmm_object = QtWidgets.QComboBox()
             self.cmb_qmmm_object.setEditable(True)
-            row_obj.addWidget(self.cmb_qmmm_object, 1)
+            row_obj.addWidget(self.cmb_qmmm_object, 0, 1)
             self.btn_qmmm_refresh = QtWidgets.QPushButton("Refresh")
             self.btn_qmmm_refresh.clicked.connect(self._qmmm_refresh_object_combo)
-            row_obj.addWidget(self.btn_qmmm_refresh)
+            row_obj.addWidget(self.btn_qmmm_refresh, 0, 2)
             self.btn_qmmm_use_analysis = QtWidgets.QPushButton("Use Analysis Object")
             self.btn_qmmm_use_analysis.clicked.connect(self._on_qmmm_use_analysis_object)
-            row_obj.addWidget(self.btn_qmmm_use_analysis)
+            row_obj.addWidget(self.btn_qmmm_use_analysis, 1, 1, 1, 2)
+            row_obj.setColumnStretch(1, 1)
             workflow_layout.addWidget(obj_box)
             sys_box = QtWidgets.QGroupBox("MM Environment")
             grid_sys = QtWidgets.QGridLayout(sys_box)
@@ -7198,23 +7669,24 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_qmmm_ff.addItem("Amber99SB-ILDN", "amber99sbildn")
             self.cmb_qmmm_ff.addItem("CHARMM36", "charmm36")
             grid_sys.addWidget(self.cmb_qmmm_ff, 0, 1)
-            grid_sys.addWidget(QtWidgets.QLabel("MM solvent context"), 0, 2)
+            grid_sys.addWidget(QtWidgets.QLabel("MM solvent context"), 1, 0)
             self.cmb_qmmm_mode = QtWidgets.QComboBox()
             self.cmb_qmmm_mode.addItem("Gas phase", "gas")
             self.cmb_qmmm_mode.addItem("Implicit water", "implicit")
             self.cmb_qmmm_mode.addItem("Explicit water box", "explicit")
-            grid_sys.addWidget(self.cmb_qmmm_mode, 0, 3)
-            grid_sys.addWidget(QtWidgets.QLabel("pH"), 0, 4)
+            grid_sys.addWidget(self.cmb_qmmm_mode, 1, 1)
+            grid_sys.addWidget(QtWidgets.QLabel("pH"), 2, 0)
             self.spin_qmmm_ph = QtWidgets.QDoubleSpinBox()
             self.spin_qmmm_ph.setDecimals(1)
             self.spin_qmmm_ph.setRange(0.0, 14.0)
             self.spin_qmmm_ph.setSingleStep(0.1)
             self.spin_qmmm_ph.setValue(7.4)
-            grid_sys.addWidget(self.spin_qmmm_ph, 0, 5)
+            grid_sys.addWidget(self.spin_qmmm_ph, 2, 1)
+            grid_sys.setColumnStretch(1, 1)
             workflow_layout.addWidget(sys_box)
             op_box = QtWidgets.QGroupBox("Operation")
-            row_op = QtWidgets.QHBoxLayout(op_box)
-            row_op.addWidget(QtWidgets.QLabel("QM/MM operation"))
+            row_op = QtWidgets.QGridLayout(op_box)
+            row_op.addWidget(QtWidgets.QLabel("QM/MM operation"), 0, 0)
             self.cmb_qmmm_operation = QtWidgets.QComboBox()
             self.cmb_qmmm_operation.addItem("Single-point probe", "probe")
             self.cmb_qmmm_operation.addItem("Electrostatic coupling report", "electrostatic")
@@ -7230,10 +7702,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_qmmm_operation.addItem("MD with periodic QM/MM probes", "md_periodic")
             self.cmb_qmmm_operation.addItem("Force-coupled QM/MM MD (experimental)", "md_coupled")
             self.cmb_qmmm_operation.addItem("Docking pose energy (QM/MM)", "redock_rescore")
-            row_op.addWidget(self.cmb_qmmm_operation, 1)
+            row_op.addWidget(self.cmb_qmmm_operation, 1, 0)
             self.btn_qmmm_config_operation = QtWidgets.QPushButton("Configure Operation...")
             self.btn_qmmm_config_operation.clicked.connect(self._on_qmmm_configure_operation)
-            row_op.addWidget(self.btn_qmmm_config_operation)
+            row_op.addWidget(self.btn_qmmm_config_operation, 2, 0)
+            row_op.setColumnStretch(0, 1)
             workflow_layout.addWidget(op_box)
             self.lbl_qmmm_operation_help = QtWidgets.QLabel("")
             self.lbl_qmmm_operation_help.setWordWrap(True)
@@ -7241,10 +7714,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             workflow_layout.addWidget(self.lbl_qmmm_operation_help)
             workflow_layout.addStretch(1)
 
-            region_tab = QtWidgets.QWidget()
-            region_layout = QtWidgets.QVBoxLayout(region_tab)
-            region_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(region_tab, "QM/MM Region")
+            region_tab, region_layout = _qmmm_scroll_tab("Region", "QM/MM Region")
             region_box = QtWidgets.QGroupBox("Region Definition")
             region_grid = QtWidgets.QGridLayout(region_box)
             region_grid.addWidget(QtWidgets.QLabel("Region mode"), 0, 0)
@@ -7269,14 +7739,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             region_grid.addWidget(self.spin_qmmm_max_qm_atoms, 1, 3)
             self.cb_qmmm_include_metals = QtWidgets.QCheckBox("Include nearby metals/ions")
             self.cb_qmmm_include_metals.setChecked(True)
-            region_grid.addWidget(self.cb_qmmm_include_metals, 1, 4)
-            region_grid.addWidget(QtWidgets.QLabel("QM PyMOL selection"), 2, 0)
+            region_grid.addWidget(self.cb_qmmm_include_metals, 2, 0, 1, 5)
+            region_grid.addWidget(QtWidgets.QLabel("QM PyMOL selection"), 3, 0, 1, 5)
             self.edit_qmmm_qm_selection = QtWidgets.QLineEdit("(sele)")
             self.edit_qmmm_qm_selection.setPlaceholderText("Example: chain A and resi 57+102 or (resn LIG)")
-            region_grid.addWidget(self.edit_qmmm_qm_selection, 2, 1, 1, 2)
+            region_grid.addWidget(self.edit_qmmm_qm_selection, 4, 0, 1, 3)
             self.btn_qmmm_qm_use_sele = QtWidgets.QPushButton("Use sele")
             self.btn_qmmm_qm_use_sele.clicked.connect(lambda: self._openmm_capture_selection_into_edit(self.edit_qmmm_qm_selection))
-            region_grid.addWidget(self.btn_qmmm_qm_use_sele, 2, 3)
+            region_grid.addWidget(self.btn_qmmm_qm_use_sele, 4, 3)
             self.btn_qmmm_qm_pick_atoms = QtWidgets.QPushButton("Pick...")
             self.btn_qmmm_qm_pick_atoms.clicked.connect(
                 lambda: self._on_qmmm_pick_selection_for_edit(
@@ -7284,14 +7754,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     title="Pick QM atoms from object",
                 )
             )
-            region_grid.addWidget(self.btn_qmmm_qm_pick_atoms, 2, 4)
-            region_grid.addWidget(QtWidgets.QLabel("MM PyMOL selection"), 3, 0)
+            region_grid.addWidget(self.btn_qmmm_qm_pick_atoms, 4, 4)
+            region_grid.addWidget(QtWidgets.QLabel("MM PyMOL selection"), 5, 0, 1, 5)
             self.edit_qmmm_mm_selection = QtWidgets.QLineEdit("")
             self.edit_qmmm_mm_selection.setPlaceholderText("Optional: leave empty to use complement of QM")
-            region_grid.addWidget(self.edit_qmmm_mm_selection, 3, 1, 1, 2)
+            region_grid.addWidget(self.edit_qmmm_mm_selection, 6, 0, 1, 3)
             self.btn_qmmm_mm_use_sele = QtWidgets.QPushButton("Use sele")
             self.btn_qmmm_mm_use_sele.clicked.connect(lambda: self._openmm_capture_selection_into_edit(self.edit_qmmm_mm_selection))
-            region_grid.addWidget(self.btn_qmmm_mm_use_sele, 3, 3)
+            region_grid.addWidget(self.btn_qmmm_mm_use_sele, 6, 3)
             self.btn_qmmm_mm_pick_atoms = QtWidgets.QPushButton("Pick...")
             self.btn_qmmm_mm_pick_atoms.clicked.connect(
                 lambda: self._on_qmmm_pick_selection_for_edit(
@@ -7299,19 +7769,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     title="Pick MM atoms from object",
                 )
             )
-            region_grid.addWidget(self.btn_qmmm_mm_pick_atoms, 3, 4)
-            region_grid.addWidget(QtWidgets.QLabel("QM residue names"), 4, 0)
+            region_grid.addWidget(self.btn_qmmm_mm_pick_atoms, 6, 4)
+            region_grid.addWidget(QtWidgets.QLabel("QM residue names"), 7, 0, 1, 5)
             self.edit_qmmm_qm_resnames = QtWidgets.QLineEdit("LIG")
             self.edit_qmmm_qm_resnames.setPlaceholderText("Comma/space separated, e.g. LIG,HEM")
-            region_grid.addWidget(self.edit_qmmm_qm_resnames, 4, 1, 1, 4)
-            region_grid.addWidget(QtWidgets.QLabel("QM atom indices"), 5, 0)
+            region_grid.addWidget(self.edit_qmmm_qm_resnames, 8, 0, 1, 5)
+            region_grid.addWidget(QtWidgets.QLabel("QM atom indices"), 9, 0, 1, 5)
             self.edit_qmmm_qm_indices = QtWidgets.QLineEdit("")
             self.edit_qmmm_qm_indices.setPlaceholderText("0-based indices, e.g. 120,121,122")
-            region_grid.addWidget(self.edit_qmmm_qm_indices, 5, 1, 1, 4)
-            region_grid.addWidget(QtWidgets.QLabel("MM atom indices"), 6, 0)
+            region_grid.addWidget(self.edit_qmmm_qm_indices, 10, 0, 1, 5)
+            region_grid.addWidget(QtWidgets.QLabel("MM atom indices"), 11, 0, 1, 5)
             self.edit_qmmm_mm_indices = QtWidgets.QLineEdit("")
             self.edit_qmmm_mm_indices.setPlaceholderText("Leave empty to use complement of QM region")
-            region_grid.addWidget(self.edit_qmmm_mm_indices, 6, 1, 1, 4)
+            region_grid.addWidget(self.edit_qmmm_mm_indices, 12, 0, 1, 5)
             row_prev = QtWidgets.QHBoxLayout()
             self.btn_qmmm_recommend_region = QtWidgets.QPushButton("Recommend Region")
             self.btn_qmmm_recommend_region.clicked.connect(self._on_qmmm_recommend_region)
@@ -7320,7 +7790,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_qmmm_preview_region.clicked.connect(self._on_qmmm_preview_region)
             row_prev.addWidget(self.btn_qmmm_preview_region)
             row_prev.addStretch(1)
-            region_grid.addLayout(row_prev, 7, 0, 1, 5)
+            region_grid.addLayout(row_prev, 13, 0, 1, 5)
+            region_grid.setColumnStretch(0, 1)
+            region_grid.setColumnStretch(1, 1)
+            region_grid.setColumnStretch(2, 1)
             region_layout.addWidget(region_box)
             self.lbl_qmmm_region_advice = QtWidgets.QLabel("Use the automatic ligand + pocket mode for most protein-ligand systems.")
             self.lbl_qmmm_region_advice.setWordWrap(True)
@@ -7328,48 +7801,47 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             region_layout.addWidget(self.lbl_qmmm_region_advice)
             region_layout.addStretch(1)
 
-            mopac_tab = QtWidgets.QWidget()
-            mopac_layout = QtWidgets.QVBoxLayout(mopac_tab)
-            mopac_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(mopac_tab, "MOPAC")
+            mopac_tab, mopac_layout = _qmmm_scroll_tab("MOPAC")
             mopac_box = QtWidgets.QGroupBox("MOPAC QM Settings")
             mopac_grid = QtWidgets.QGridLayout(mopac_box)
             mopac_grid.addWidget(QtWidgets.QLabel("MOPAC executable"), 0, 0)
             self.edit_qmmm_mopac_exe = QtWidgets.QLineEdit("mopac")
             mopac_grid.addWidget(self.edit_qmmm_mopac_exe, 0, 1)
-            mopac_grid.addWidget(QtWidgets.QLabel("Keywords"), 0, 2)
+            mopac_grid.addWidget(QtWidgets.QLabel("Keywords"), 1, 0)
             self.edit_qmmm_mopac_keywords = QtWidgets.QLineEdit("PM7 1SCF GRAD AUX QMMM")
             self.edit_qmmm_mopac_keywords.setToolTip(
                 "Operation-specific recommended keywords are applied automatically unless you keep a custom value."
             )
-            mopac_grid.addWidget(self.edit_qmmm_mopac_keywords, 0, 3, 1, 2)
+            mopac_grid.addWidget(self.edit_qmmm_mopac_keywords, 1, 1, 1, 3)
             self.btn_qmmm_use_recommended_keywords = QtWidgets.QPushButton("Use Recommended")
             self.btn_qmmm_use_recommended_keywords.clicked.connect(self._qmmm_apply_recommended_keywords)
-            mopac_grid.addWidget(self.btn_qmmm_use_recommended_keywords, 0, 5)
-            mopac_grid.addWidget(QtWidgets.QLabel("QM charge"), 1, 0)
+            mopac_grid.addWidget(self.btn_qmmm_use_recommended_keywords, 2, 1, 1, 3)
+            mopac_grid.addWidget(QtWidgets.QLabel("QM charge"), 3, 0)
             self.spin_qmmm_charge = QtWidgets.QSpinBox()
             self.spin_qmmm_charge.setRange(-20, 20)
             self.spin_qmmm_charge.setValue(0)
-            mopac_grid.addWidget(self.spin_qmmm_charge, 1, 1)
-            mopac_grid.addWidget(QtWidgets.QLabel("Multiplicity"), 1, 2)
+            mopac_grid.addWidget(self.spin_qmmm_charge, 3, 1)
+            mopac_grid.addWidget(QtWidgets.QLabel("Multiplicity"), 3, 2)
             self.spin_qmmm_mult = QtWidgets.QSpinBox()
             self.spin_qmmm_mult.setRange(1, 5)
             self.spin_qmmm_mult.setValue(1)
-            mopac_grid.addWidget(self.spin_qmmm_mult, 1, 3)
-            mopac_grid.addWidget(QtWidgets.QLabel("Dielectric"), 1, 4)
+            mopac_grid.addWidget(self.spin_qmmm_mult, 3, 3)
+            mopac_grid.addWidget(QtWidgets.QLabel("Dielectric"), 4, 0)
             self.spin_qmmm_dielectric = QtWidgets.QDoubleSpinBox()
             self.spin_qmmm_dielectric.setDecimals(2)
             self.spin_qmmm_dielectric.setRange(0.01, 1000.0)
             self.spin_qmmm_dielectric.setValue(1.0)
-            mopac_grid.addWidget(self.spin_qmmm_dielectric, 1, 5)
-            mopac_grid.addWidget(QtWidgets.QLabel("Timeout (s)"), 2, 0)
+            mopac_grid.addWidget(self.spin_qmmm_dielectric, 4, 1)
+            mopac_grid.addWidget(QtWidgets.QLabel("Timeout (s)"), 4, 2)
             self.spin_qmmm_timeout = QtWidgets.QSpinBox()
             self.spin_qmmm_timeout.setRange(5, 36000)
             self.spin_qmmm_timeout.setValue(180)
-            mopac_grid.addWidget(self.spin_qmmm_timeout, 2, 1)
+            mopac_grid.addWidget(self.spin_qmmm_timeout, 4, 3)
             self.cb_qmmm_strict = QtWidgets.QCheckBox("Strict mode (fail if probe fails)")
             self.cb_qmmm_strict.setChecked(False)
-            mopac_grid.addWidget(self.cb_qmmm_strict, 2, 2, 1, 4)
+            mopac_grid.addWidget(self.cb_qmmm_strict, 5, 0, 1, 4)
+            mopac_grid.setColumnStretch(1, 1)
+            mopac_grid.setColumnStretch(3, 1)
             mopac_layout.addWidget(mopac_box)
             self.lbl_qmmm_mopac_advice = QtWidgets.QLabel("")
             self.lbl_qmmm_mopac_advice.setWordWrap(True)
@@ -7377,26 +7849,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             mopac_layout.addWidget(self.lbl_qmmm_mopac_advice)
             mopac_layout.addStretch(1)
 
-            run_tab = QtWidgets.QWidget()
-            run_layout = QtWidgets.QVBoxLayout(run_tab)
-            run_layout.setContentsMargins(14, 14, 14, 14)
-            tabs.addTab(run_tab, "Run")
+            run_tab, run_layout = _qmmm_scroll_tab("Run")
             self.lbl_qmmm_status = QtWidgets.QLabel("Status: ready")
             self.lbl_qmmm_status.setWordWrap(True)
             run_layout.addWidget(self.lbl_qmmm_status)
-            row_run = QtWidgets.QHBoxLayout()
+            row_run = QtWidgets.QGridLayout()
             self.btn_qmmm_run_probe = QtWidgets.QPushButton("Run QM/MM Probe")
             self.btn_qmmm_run_probe.clicked.connect(self._on_qmmm_run_probe)
-            row_run.addWidget(self.btn_qmmm_run_probe)
+            row_run.addWidget(self.btn_qmmm_run_probe, 0, 0)
             self.btn_qmmm_task_monitor = QtWidgets.QPushButton("Task Monitor")
             self.btn_qmmm_task_monitor.clicked.connect(self._show_task_monitor_dialog)
-            row_run.addWidget(self.btn_qmmm_task_monitor)
-            row_run.addStretch(1)
-            btn_close = QtWidgets.QPushButton("Close")
-            btn_close.clicked.connect(dlg.close)
-            row_run.addWidget(btn_close)
+            row_run.addWidget(self.btn_qmmm_task_monitor, 0, 1)
+            row_run.setColumnStretch(0, 1)
+            row_run.setColumnStretch(1, 1)
             run_layout.addLayout(row_run)
             run_layout.addStretch(1)
+            dialog_close_row = QtWidgets.QHBoxLayout()
+            dialog_close_row.addStretch(1)
+            btn_close = QtWidgets.QPushButton("Close")
+            btn_close.clicked.connect(dlg.close)
+            dialog_close_row.addWidget(btn_close)
+            vbox.addLayout(dialog_close_row)
             def _sync_region_ui():
                 mode = str(self.cmb_qmmm_region_mode.currentData() or "auto_ligand_pocket")
                 use_sel = mode == "pymol_selection"
@@ -10438,7 +10911,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if qm_placeholders:
                 # QM/MM: components without MM parameters (heme c, metal clusters...) go to the QM region
                 # with placeholder templates instead of being dropped
-                qm_files, qm_variants, qm_keys, qm_info = component_install_qm_placeholders(modeller, plan)
+                try:
+                    qm_files, qm_variants, qm_keys, qm_info = component_install_qm_placeholders(
+                        modeller, plan, family=fam)
+                except Exception as qm_err:
+                    # keep the library templates already applied (the residues were renamed for them)
+                    notes.append(f"QM/MM placeholders unavailable ({qm_err}); components without MM "
+                                 "parameters follow the previous route.")
+                    qm_files, qm_variants, qm_keys, qm_info = [], {}, [], []
                 files = list(files) + [f for f in qm_files if f not in files]
                 if isinstance(out, dict):
                     out["_component_variants"] = dict(qm_variants)
@@ -10670,6 +11150,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return {"ok": False, "error": f"QM/MM region resolution failed: {e}"}
         qidx = [int(i) for i in list(reg.get("qm_indices", []) or [])]
         midx = [int(i) for i in list(reg.get("mm_indices", []) or [])]
+        if not cfg.get("qm_indices") and bool(cfg.get("include_bonded_hydrogens", True)):
+            # the atom rows carry no coordinates: move the hydrogens bonded to QM heavy atoms into QM
+            # through the topology bonds (a heavy-atom selection must not leave its H classical)
+            qset = set(qidx)
+            added = set()
+            for bond in topology.bonds():
+                a1, a2 = bond[0], bond[1]
+                for heavy, h in ((a1, a2), (a2, a1)):
+                    if heavy.index in qset and h.index not in qset and h.element is not None \
+                            and h.element.symbol == "H":
+                        added.add(int(h.index))
+            if added:
+                qidx = sorted(qset | added)
+                midx = [i for i in midx if i not in added]
+                reg["bonded_hydrogens_added"] = int(len(added))
+                reg["qm_indices"], reg["mm_indices"] = list(qidx), list(midx)
         all_idx = sorted({int(i) for i in list(qidx) + list(midx) if int(i) >= 0})
         if not all_idx:
             return {"ok": False, "error": "QM/MM coupling plan produced an empty atom set."}
@@ -13840,20 +14336,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox.setSpacing(10)
             compact_modeler = self._is_compact_screen()
             # Shared receptor selection (applies to all modeler subwindows)
-            row_obj = QtWidgets.QHBoxLayout()
-            row_obj.addWidget(QtWidgets.QLabel("Receptor Object:"))
+            row_obj = QtWidgets.QGridLayout()
+            row_obj.setHorizontalSpacing(8)
+            row_obj.setVerticalSpacing(8)
+            row_obj.addWidget(QtWidgets.QLabel("Receptor Object:"), 0, 0)
             self.modeler_structure_combo = QtWidgets.QComboBox()
             self.modeler_structure_combo.currentTextChanged.connect(self._on_modeler_receptor_changed)
-            row_obj.addWidget(self.modeler_structure_combo, 1)
+            row_obj.addWidget(self.modeler_structure_combo, 0, 1, 1, 2)
             btn_load = QtWidgets.QPushButton("Load Receptor...")
             btn_load.clicked.connect(self._on_modeler_load_receptor)
-            row_obj.addWidget(btn_load)
+            row_obj.addWidget(btn_load, 1, 0)
             btn_refresh = QtWidgets.QPushButton("Refresh Objects")
             btn_refresh.clicked.connect(self._refresh_modeler_object_combo)
-            row_obj.addWidget(btn_refresh)
+            row_obj.addWidget(btn_refresh, 1, 1)
             self.btn_modeler_analyze = QtWidgets.QPushButton("Analyze Sequence/Gaps")
             self.btn_modeler_analyze.clicked.connect(self._on_modeler_analyze_receptor)
-            row_obj.addWidget(self.btn_modeler_analyze)
+            row_obj.addWidget(self.btn_modeler_analyze, 1, 2)
+            row_obj.setColumnStretch(0, 1)
+            row_obj.setColumnStretch(1, 1)
+            row_obj.setColumnStretch(2, 1)
             vbox.addLayout(row_obj)
             self.lbl_modeler_status = QtWidgets.QLabel(
                 "Status: choose receptor and run sequence/gap analysis."
@@ -23566,6 +24067,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             self._af_dialog = QtWidgets.QDialog(self)
             self._af_dialog.setWindowTitle("AlphaFold / ColabFold")
+            # Every AlphaFold tab manages its own responsive content.  Keep the
+            # shared dialog helper from adding a second, nested scroll area.
+            self._af_dialog._leonardo_scroll_checked = True
             self._af_dialog.resize(1120, 860)
             self._af_dialog.setMinimumSize(960, 720)
             self._fit_dialog_to_screen(self._af_dialog, preferred_w=1120, preferred_h=860, min_w=920, min_h=700)
@@ -23622,17 +24126,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox.setContentsMargins(12, 12, 12, 12)
             vbox.setSpacing(8)
 
-            header = QtWidgets.QLabel("AlphaFold / ColabFold")
-            header.setStyleSheet("font-size: 18px; font-weight: 600; color: #1f2328;")
-            vbox.addWidget(header)
-
-            subtitle = QtWidgets.QLabel(
-                "Predict structures with ColabFold/AlphaFold2, prepare AlphaFold 3 JSON, or run AF3 locally when Docker, databases, model parameters, and GPU are available."
-            )
-            subtitle.setWordWrap(True)
-            subtitle.setStyleSheet("color: #4b5563;")
-            vbox.addWidget(subtitle)
-
             class _WrappedWarningLabel(QtWidgets.QLabel):
                 # Qt gives word-wrapped labels less height than heightForWidth() in tight
                 # layouts, clipping the last line; keep the minimum height in sync with the width.
@@ -23654,6 +24147,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             vbox.addWidget(self.lbl_af_gpu_warning)
 
             tabs = QtWidgets.QTabWidget(self._af_dialog)
+            self.tabs_af = tabs
             vbox.addWidget(tabs, 1)
 
             def _group(title):
@@ -23871,73 +24365,88 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
 
             # Run tab: output folders, execution buttons, status, and logs.
             tab_run = QtWidgets.QWidget()
-            run_box = QtWidgets.QVBoxLayout(tab_run)
+            run_outer = QtWidgets.QVBoxLayout(tab_run)
+            run_outer.setContentsMargins(0, 0, 0, 0)
+            run_outer.setSpacing(0)
+            run_scroll = QtWidgets.QScrollArea(tab_run)
+            run_scroll.setObjectName("afRunScrollArea")
+            run_scroll.setProperty("leonardoVerticalOnly", True)
+            run_scroll.setWidgetResizable(True)
+            run_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            run_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            run_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            run_body = QtWidgets.QWidget(run_scroll)
+            run_body.setObjectName("afRunScrollContent")
+            run_scroll.setWidget(run_body)
+            run_outer.addWidget(run_scroll, 1)
+            run_box = QtWidgets.QVBoxLayout(run_body)
             run_box.setContentsMargins(10, 10, 10, 10)
-            run_box.setSpacing(8)
+            run_box.setSpacing(10)
             out_group, out_lay = _group("Output")
-            row_out = QtWidgets.QHBoxLayout()
-            row_out.addWidget(QtWidgets.QLabel("Output Root"))
+            output_grid = QtWidgets.QGridLayout()
+            output_grid.setHorizontalSpacing(8)
+            output_grid.setVerticalSpacing(8)
+            output_grid.addWidget(QtWidgets.QLabel("Output Root"), 0, 0)
             self.edit_af_out_dir = QtWidgets.QLineEdit()
-            row_out.addWidget(self.edit_af_out_dir, 1)
+            output_grid.addWidget(self.edit_af_out_dir, 0, 1, 1, 2)
             self.btn_af_pick_out = QtWidgets.QPushButton("Choose...")
             self.btn_af_pick_out.clicked.connect(self._on_af_pick_output_dir)
-            row_out.addWidget(self.btn_af_pick_out)
+            output_grid.addWidget(self.btn_af_pick_out, 0, 3)
             self.cb_af_autoload = QtWidgets.QCheckBox("Auto-load best model")
             self.cb_af_autoload.setChecked(True)
-            row_out.addWidget(self.cb_af_autoload)
-            out_lay.addLayout(row_out)
-            row_sync = QtWidgets.QGridLayout()
+            output_grid.addWidget(self.cb_af_autoload, 1, 1, 1, 2)
             self.lbl_af_sync_folder = QtWidgets.QLabel("Sync Folder")
-            row_sync.addWidget(self.lbl_af_sync_folder, 0, 0)
+            output_grid.addWidget(self.lbl_af_sync_folder, 2, 0)
             self.edit_af_sync_dir = QtWidgets.QLineEdit()
-            row_sync.addWidget(self.edit_af_sync_dir, 0, 1, 1, 3)
+            output_grid.addWidget(self.edit_af_sync_dir, 2, 1, 1, 2)
             self.btn_af_pick_sync = QtWidgets.QPushButton("Choose...")
             self.btn_af_pick_sync.clicked.connect(self._on_af_pick_sync_dir)
-            row_sync.addWidget(self.btn_af_pick_sync, 0, 4)
+            output_grid.addWidget(self.btn_af_pick_sync, 2, 3)
             self.btn_af_scan_sync = QtWidgets.QPushButton("Scan & Load")
             self.btn_af_scan_sync.clicked.connect(lambda: self._on_af_scan_sync_folder(silent=False, autoload=True))
-            row_sync.addWidget(self.btn_af_scan_sync, 1, 1)
             self.btn_af_import_result = QtWidgets.QPushButton("Import Result...")
             self.btn_af_import_result.clicked.connect(self._on_af_import_result)
-            row_sync.addWidget(self.btn_af_import_result, 1, 2)
             self.cb_af_auto_sync = QtWidgets.QCheckBox("Auto-sync")
             self.cb_af_auto_sync.setChecked(True)
-            row_sync.addWidget(self.cb_af_auto_sync, 1, 3)
             self.lbl_af_sync_interval = QtWidgets.QLabel("Every (s)")
-            row_sync.addWidget(self.lbl_af_sync_interval, 2, 1)
             self.spin_af_sync_interval = QtWidgets.QSpinBox()
             self.spin_af_sync_interval.setRange(5, 600)
             self.spin_af_sync_interval.setValue(20)
-            row_sync.addWidget(self.spin_af_sync_interval, 2, 2)
-            row_sync.setColumnStretch(1, 1)
-            row_sync.setColumnStretch(2, 1)
-            row_sync.setColumnStretch(3, 1)
-            out_lay.addLayout(row_sync)
+            sync_actions = QtWidgets.QHBoxLayout()
+            sync_actions.setSpacing(8)
+            sync_actions.addWidget(self.btn_af_scan_sync, 1)
+            sync_actions.addWidget(self.btn_af_import_result, 1)
+            sync_actions.addWidget(self.cb_af_auto_sync)
+            sync_actions.addWidget(self.lbl_af_sync_interval)
+            sync_actions.addWidget(self.spin_af_sync_interval)
+            output_grid.addLayout(sync_actions, 3, 0, 1, 4)
+            output_grid.setColumnStretch(1, 1)
+            output_grid.setColumnStretch(2, 1)
+            out_lay.addLayout(output_grid)
             run_box.addWidget(out_group)
 
             actions_group, actions_lay = _group("Run And Inspect")
-            row_run = QtWidgets.QHBoxLayout()
+            action_grid = QtWidgets.QGridLayout()
+            action_grid.setHorizontalSpacing(8)
+            action_grid.setVerticalSpacing(8)
             self.btn_af_run = QtWidgets.QPushButton("Run / Prepare")
             self.btn_af_run.clicked.connect(self._on_af_run_colabfold)
-            row_run.addWidget(self.btn_af_run)
+            action_grid.addWidget(self.btn_af_run, 0, 0)
             self.btn_af_load_best = QtWidgets.QPushButton("Load Best Model")
             self.btn_af_load_best.clicked.connect(self._on_af_load_best_model)
-            row_run.addWidget(self.btn_af_load_best)
-            row_run.addStretch(1)
-            actions_lay.addLayout(row_run)
-            row_plot = QtWidgets.QGridLayout()
+            action_grid.addWidget(self.btn_af_load_best, 0, 1)
             self.btn_af_plot_plddt = QtWidgets.QPushButton("Show pLDDT Plot")
             self.btn_af_plot_plddt.clicked.connect(lambda: self._on_af_show_plot("plddt"))
-            row_plot.addWidget(self.btn_af_plot_plddt, 0, 0)
+            action_grid.addWidget(self.btn_af_plot_plddt, 1, 0)
             self.btn_af_plot_pae = QtWidgets.QPushButton("Show PAE/Error Plot")
             self.btn_af_plot_pae.clicked.connect(lambda: self._on_af_show_plot("pae"))
-            row_plot.addWidget(self.btn_af_plot_pae, 0, 1)
+            action_grid.addWidget(self.btn_af_plot_pae, 1, 1)
             self.btn_af_plot_msa = QtWidgets.QPushButton("Show MSA/Coverage Plot")
             self.btn_af_plot_msa.clicked.connect(lambda: self._on_af_show_plot("msa"))
-            row_plot.addWidget(self.btn_af_plot_msa, 1, 0)
-            row_plot.setColumnStretch(0, 1)
-            row_plot.setColumnStretch(1, 1)
-            actions_lay.addLayout(row_plot)
+            action_grid.addWidget(self.btn_af_plot_msa, 2, 0, 1, 2)
+            action_grid.setColumnStretch(0, 1)
+            action_grid.setColumnStretch(1, 1)
+            actions_lay.addLayout(action_grid)
             run_box.addWidget(actions_group)
             self.lbl_af_tools = QtWidgets.QLabel("")
             self.lbl_af_tools.setWordWrap(True)
@@ -23949,10 +24458,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.lbl_af_status.setWordWrap(True)
             run_box.addWidget(self.lbl_af_status)
             self.txt_af_log = QtWidgets.QPlainTextEdit()
+            self.txt_af_log.setObjectName("afRunLog")
             self.txt_af_log.setReadOnly(True)
             self.txt_af_log.setPlaceholderText("Run log will appear here...")
-            self.txt_af_log.setMinimumHeight(260)
+            self.txt_af_log.setMinimumHeight(180)
             run_box.addWidget(self.txt_af_log, 1)
+            run_box.addStretch(1)
             tabs.addTab(tab_run, "Run")
 
             close_row = QtWidgets.QHBoxLayout()
@@ -25754,93 +26265,136 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             self._bioseq_dialog = QtWidgets.QDialog(self)
             self._bioseq_dialog.setWindowTitle("Bioinformatics Sequence Analysis")
+            # Bioinformatics tabs provide their own scrolling surfaces.
+            self._bioseq_dialog._leonardo_scroll_checked = True
             self._bioseq_dialog.resize(1080, 880)
             self._bioseq_dialog.setMinimumSize(940, 720)
             self._fit_dialog_to_screen(self._bioseq_dialog, preferred_w=1080, preferred_h=880, min_w=900, min_h=700)
             vbox = QtWidgets.QVBoxLayout(self._bioseq_dialog)
             tabs = QtWidgets.QTabWidget(self._bioseq_dialog)
+            self.tabs_bioseq = tabs
             vbox.addWidget(tabs, 1)
 
-            # Tab 1: compact local analysis hub (heavy views moved to popups)
+            # Tab 1: responsive local analysis hub (heavy views moved to popups).
             tab_local = QtWidgets.QWidget()
-            local_box = QtWidgets.QVBoxLayout(tab_local)
-            row_obj = QtWidgets.QHBoxLayout()
-            row_obj.addWidget(QtWidgets.QLabel("Structure Object"))
+            local_outer = QtWidgets.QVBoxLayout(tab_local)
+            local_outer.setContentsMargins(0, 0, 0, 0)
+            local_scroll = QtWidgets.QScrollArea(tab_local)
+            local_scroll.setObjectName("bioseqLocalScrollArea")
+            local_scroll.setProperty("leonardoVerticalOnly", True)
+            local_scroll.setWidgetResizable(True)
+            local_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            local_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            local_body = QtWidgets.QWidget(local_scroll)
+            local_body.setObjectName("bioseqLocalScrollContent")
+            local_scroll.setWidget(local_body)
+            local_outer.addWidget(local_scroll, 1)
+            local_box = QtWidgets.QVBoxLayout(local_body)
+            local_box.setContentsMargins(10, 10, 10, 10)
+            local_box.setSpacing(10)
+
+            source_group = QtWidgets.QGroupBox("Sequence Source")
+            source_grid = QtWidgets.QGridLayout(source_group)
+            source_grid.addWidget(QtWidgets.QLabel("Structure Object"), 0, 0)
             self.cmb_bioseq_object = QtWidgets.QComboBox()
             self.cmb_bioseq_object.currentTextChanged.connect(self._bioseq_on_object_changed)
-            row_obj.addWidget(self.cmb_bioseq_object, 1)
+            source_grid.addWidget(self.cmb_bioseq_object, 0, 1, 1, 2)
             self.btn_bioseq_refresh_objects = QtWidgets.QPushButton("Refresh")
             self.btn_bioseq_refresh_objects.clicked.connect(self._bioseq_refresh_object_combo)
-            row_obj.addWidget(self.btn_bioseq_refresh_objects)
-            row_obj.addWidget(QtWidgets.QLabel("Chain"))
+            source_grid.addWidget(self.btn_bioseq_refresh_objects, 0, 3)
+            source_grid.addWidget(QtWidgets.QLabel("Chain"), 1, 0)
             self.cmb_bioseq_chain = QtWidgets.QComboBox()
-            row_obj.addWidget(self.cmb_bioseq_chain)
+            source_grid.addWidget(self.cmb_bioseq_chain, 1, 1, 1, 3)
             self.btn_bioseq_import_chain = QtWidgets.QPushButton("Use Observed Chain Sequence")
             self.btn_bioseq_import_chain.clicked.connect(self._bioseq_import_chain_sequence)
-            row_obj.addWidget(self.btn_bioseq_import_chain)
+            source_grid.addWidget(self.btn_bioseq_import_chain, 2, 0, 1, 2)
             self.btn_bioseq_use_modeler = QtWidgets.QPushButton("Use Modeler Sequence")
             self.btn_bioseq_use_modeler.clicked.connect(self._bioseq_use_modeler_sequence)
-            row_obj.addWidget(self.btn_bioseq_use_modeler)
-            local_box.addLayout(row_obj)
-            row_rcsb = QtWidgets.QHBoxLayout()
-            row_rcsb.addWidget(QtWidgets.QLabel("RCSB PDB ID"))
+            source_grid.addWidget(self.btn_bioseq_use_modeler, 2, 2, 1, 2)
+            source_grid.setColumnStretch(1, 1)
+            source_grid.setColumnStretch(2, 1)
+            source_grid.setColumnStretch(3, 1)
+            local_box.addWidget(source_group)
+
+            identifiers_group = QtWidgets.QGroupBox("Database Identifiers")
+            identifiers_grid = QtWidgets.QGridLayout(identifiers_group)
+            identifiers_grid.addWidget(QtWidgets.QLabel("RCSB PDB ID"), 0, 0)
             self.edit_bioseq_pdb_id = QtWidgets.QLineEdit()
             self.edit_bioseq_pdb_id.setPlaceholderText("Optional, e.g. 3PTB")
-            row_rcsb.addWidget(self.edit_bioseq_pdb_id)
+            identifiers_grid.addWidget(self.edit_bioseq_pdb_id, 0, 1)
             self.btn_bioseq_fetch_rcsb = QtWidgets.QPushButton("Fetch Full Chain Sequence from RCSB")
             self.btn_bioseq_fetch_rcsb.clicked.connect(self._bioseq_fetch_rcsb_sequence)
-            row_rcsb.addWidget(self.btn_bioseq_fetch_rcsb)
-            row_rcsb.addWidget(QtWidgets.QLabel("UniProt"))
+            identifiers_grid.addWidget(self.btn_bioseq_fetch_rcsb, 0, 2)
+            identifiers_grid.addWidget(QtWidgets.QLabel("UniProt"), 1, 0)
             self.edit_bioseq_uniprot_id = QtWidgets.QLineEdit()
             self.edit_bioseq_uniprot_id.setPlaceholderText("Optional accession, e.g. P00760")
-            self.edit_bioseq_uniprot_id.setMaximumWidth(180)
-            row_rcsb.addWidget(self.edit_bioseq_uniprot_id)
-            row_rcsb.addStretch(1)
-            local_box.addLayout(row_rcsb)
+            identifiers_grid.addWidget(self.edit_bioseq_uniprot_id, 1, 1, 1, 2)
+            identifiers_grid.setColumnStretch(1, 1)
+            identifiers_grid.setColumnStretch(2, 1)
+            local_box.addWidget(identifiers_group)
+
+            sequence_group = QtWidgets.QGroupBox("Protein Sequence")
+            sequence_box = QtWidgets.QVBoxLayout(sequence_group)
             self.txt_bioseq_sequence = QtWidgets.QPlainTextEdit()
+            self.txt_bioseq_sequence.setObjectName("bioseqLocalSequence")
             self.txt_bioseq_sequence.setPlaceholderText(
                 "Paste protein sequence (single-letter amino acids) or import from object/chain."
             )
             self.txt_bioseq_sequence.setMinimumHeight(120)
-            local_box.addWidget(self.txt_bioseq_sequence)
-            row_run = QtWidgets.QHBoxLayout()
+            sequence_box.addWidget(self.txt_bioseq_sequence)
+            local_box.addWidget(sequence_group)
+
+            actions_group = QtWidgets.QGroupBox("Analysis Actions")
+            actions_grid = QtWidgets.QGridLayout(actions_group)
             self.btn_bioseq_run_local = QtWidgets.QPushButton("Run Local Simulation-Readiness Analysis")
             self.btn_bioseq_run_local.clicked.connect(self._bioseq_run_local_analysis)
-            row_run.addWidget(self.btn_bioseq_run_local)
+            actions_grid.addWidget(self.btn_bioseq_run_local, 0, 0, 1, 2)
             self.btn_bioseq_run_msa = QtWidgets.QPushButton("Compute MSA Conservation")
             self.btn_bioseq_run_msa.clicked.connect(self._bioseq_run_msa_conservation)
-            row_run.addWidget(self.btn_bioseq_run_msa)
+            actions_grid.addWidget(self.btn_bioseq_run_msa, 1, 0)
             self.btn_bioseq_clear = QtWidgets.QPushButton("Clear")
             self.btn_bioseq_clear.clicked.connect(lambda: self.txt_bioseq_sequence.setPlainText(""))
-            row_run.addWidget(self.btn_bioseq_clear)
-            row_run.addStretch(1)
-            local_box.addLayout(row_run)
-            row_views = QtWidgets.QHBoxLayout()
+            actions_grid.addWidget(self.btn_bioseq_clear, 1, 1)
             self.btn_bioseq_open_summary = QtWidgets.QPushButton("Open Summary...")
             self.btn_bioseq_open_summary.clicked.connect(self._bioseq_open_summary_dialog)
-            row_views.addWidget(self.btn_bioseq_open_summary)
+            actions_grid.addWidget(self.btn_bioseq_open_summary, 2, 0)
             self.btn_bioseq_open_motifs = QtWidgets.QPushButton("Open Motifs...")
             self.btn_bioseq_open_motifs.clicked.connect(self._bioseq_open_motif_dialog)
-            row_views.addWidget(self.btn_bioseq_open_motifs)
+            actions_grid.addWidget(self.btn_bioseq_open_motifs, 2, 1)
             self.btn_bioseq_open_msa = QtWidgets.QPushButton("Open MSA...")
             self.btn_bioseq_open_msa.clicked.connect(self._bioseq_open_msa_dialog)
-            row_views.addWidget(self.btn_bioseq_open_msa)
+            actions_grid.addWidget(self.btn_bioseq_open_msa, 3, 0)
             self.btn_bioseq_open_questions = QtWidgets.QPushButton("Open Questions...")
             self.btn_bioseq_open_questions.clicked.connect(self._bioseq_open_questions_dialog)
-            row_views.addWidget(self.btn_bioseq_open_questions)
-            row_views.addStretch(1)
-            local_box.addLayout(row_views)
+            actions_grid.addWidget(self.btn_bioseq_open_questions, 3, 1)
+            actions_grid.setColumnStretch(0, 1)
+            actions_grid.setColumnStretch(1, 1)
+            local_box.addWidget(actions_group)
             self.lbl_bioseq_local_hint = QtWidgets.QLabel(
                 "Local tab is compact. Use the buttons above to open dedicated windows for each analysis tool."
             )
             self.lbl_bioseq_local_hint.setWordWrap(True)
             local_box.addWidget(self.lbl_bioseq_local_hint)
             local_box.addStretch(1)
-            tabs.addTab(tab_local, "Local Analysis")
+            local_idx = tabs.addTab(tab_local, "Local")
+            tabs.setTabToolTip(local_idx, "Local Analysis")
 
             # Tab 2: external tool launcher
             tab_tools = QtWidgets.QWidget()
-            tool_box = QtWidgets.QVBoxLayout(tab_tools)
+            tool_outer = QtWidgets.QVBoxLayout(tab_tools)
+            tool_outer.setContentsMargins(0, 0, 0, 0)
+            tool_scroll = QtWidgets.QScrollArea(tab_tools)
+            tool_scroll.setObjectName("bioseqToolScrollArea")
+            tool_scroll.setProperty("leonardoVerticalOnly", True)
+            tool_scroll.setWidgetResizable(True)
+            tool_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            tool_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            tool_body = QtWidgets.QWidget(tool_scroll)
+            tool_scroll.setWidget(tool_body)
+            tool_outer.addWidget(tool_scroll, 1)
+            tool_box = QtWidgets.QVBoxLayout(tool_body)
+            tool_box.setContentsMargins(10, 10, 10, 10)
+            tool_box.setSpacing(10)
             self.lbl_bioseq_catalog = QtWidgets.QLabel("")
             self.lbl_bioseq_catalog.setWordWrap(True)
             tool_box.addWidget(self.lbl_bioseq_catalog)
@@ -25869,27 +26423,33 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             grid.setColumnStretch(1, 1)
             tool_box.addWidget(grp_tools)
             tool_box.addStretch(1)
-            tabs.addTab(tab_tools, "Tool Launcher")
+            tools_idx = tabs.addTab(tab_tools, "Tools")
+            tabs.setTabToolTip(tools_idx, "Tool Launcher")
 
             # Tab 3: scientific question mapper
             tab_q = QtWidgets.QWidget()
             q_box = QtWidgets.QVBoxLayout(tab_q)
             self.tbl_bioseq_questions = QtWidgets.QTableWidget(0, 3)
+            self.tbl_bioseq_questions.setObjectName("bioseqQuestionsTable")
             self.tbl_bioseq_questions.setHorizontalHeaderLabels(
-                ["Scientific Question", "Recommended Analysis", "Current Hint"]
+                ["Question", "Recommended Analysis", "Current Result"]
             )
             self.tbl_bioseq_questions.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             self.tbl_bioseq_questions.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self.tbl_bioseq_questions.setWordWrap(True)
+            self.tbl_bioseq_questions.setTextElideMode(QtCore.Qt.ElideNone)
+            self.tbl_bioseq_questions.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
             self.tbl_bioseq_questions.verticalHeader().setVisible(False)
             q_box.addWidget(self.tbl_bioseq_questions, 1)
             try:
                 hdr = self.tbl_bioseq_questions.horizontalHeader()
                 hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-                hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+                hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
                 hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
             except Exception:
                 pass
-            tabs.addTab(tab_q, "Scientific Questions")
+            questions_idx = tabs.addTab(tab_q, "Questions")
+            tabs.setTabToolTip(questions_idx, "Scientific Questions")
             self._bioseq_setup_local_tool_popups()
 
             self.lbl_bioseq_status = QtWidgets.QLabel(
@@ -25936,6 +26496,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Summary popup
         self._bioseq_summary_dialog = QtWidgets.QDialog(parent)
         self._bioseq_summary_dialog.setWindowTitle("Bioinformatics - Local Summary")
+        self._bioseq_summary_dialog._leonardo_scroll_checked = True
         self._bioseq_summary_dialog.resize(1000, 760)
         self._bioseq_summary_dialog.setMinimumSize(860, 640)
         self._fit_dialog_to_screen(self._bioseq_summary_dialog, preferred_w=1000, preferred_h=760, min_w=840, min_h=620)
@@ -25953,6 +26514,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Motif popup
         self._bioseq_motif_dialog = QtWidgets.QDialog(parent)
         self._bioseq_motif_dialog.setWindowTitle("Bioinformatics - Motif Summary")
+        self._bioseq_motif_dialog._leonardo_scroll_checked = True
         self._bioseq_motif_dialog.resize(940, 700)
         self._bioseq_motif_dialog.setMinimumSize(820, 580)
         self._fit_dialog_to_screen(self._bioseq_motif_dialog, preferred_w=940, preferred_h=700, min_w=800, min_h=560)
@@ -25986,6 +26548,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # MSA popup
         self._bioseq_msa_dialog = QtWidgets.QDialog(parent)
         self._bioseq_msa_dialog.setWindowTitle("Bioinformatics - MSA Conservation")
+        self._bioseq_msa_dialog._leonardo_scroll_checked = True
         self._bioseq_msa_dialog.resize(1000, 760)
         self._bioseq_msa_dialog.setMinimumSize(860, 640)
         self._fit_dialog_to_screen(self._bioseq_msa_dialog, preferred_w=1000, preferred_h=760, min_w=840, min_h=620)
@@ -26029,22 +26592,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Questions popup
         self._bioseq_questions_dialog = QtWidgets.QDialog(parent)
         self._bioseq_questions_dialog.setWindowTitle("Bioinformatics - Scientific Questions")
+        self._bioseq_questions_dialog._leonardo_scroll_checked = True
         self._bioseq_questions_dialog.resize(1000, 760)
         self._bioseq_questions_dialog.setMinimumSize(860, 640)
         self._fit_dialog_to_screen(self._bioseq_questions_dialog, preferred_w=1000, preferred_h=760, min_w=840, min_h=620)
         lay_q = QtWidgets.QVBoxLayout(self._bioseq_questions_dialog)
         self.tbl_bioseq_questions_popup = QtWidgets.QTableWidget(0, 3)
+        self.tbl_bioseq_questions_popup.setObjectName("bioseqQuestionsPopupTable")
         self.tbl_bioseq_questions_popup.setHorizontalHeaderLabels(
-            ["Scientific Question", "Recommended Analysis", "Current Hint"]
+            ["Question", "Recommended Analysis", "Current Result"]
         )
         self.tbl_bioseq_questions_popup.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.tbl_bioseq_questions_popup.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.tbl_bioseq_questions_popup.setWordWrap(True)
+        self.tbl_bioseq_questions_popup.setTextElideMode(QtCore.Qt.ElideNone)
+        self.tbl_bioseq_questions_popup.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.tbl_bioseq_questions_popup.verticalHeader().setVisible(False)
         lay_q.addWidget(self.tbl_bioseq_questions_popup, 1)
         try:
             hdr = self.tbl_bioseq_questions_popup.horizontalHeader()
             hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-            hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+            hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
             hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
         except Exception:
             pass
@@ -26856,24 +27424,45 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         dlg_parent = getattr(self, "_bioseq_dialog", self)
         dlg = QtWidgets.QDialog(dlg_parent)
         dlg.setWindowTitle(str(spec.get("title", key)))
-        dlg.resize(760, 560)
-        dlg.setMinimumSize(560, 380)
-        self._fit_dialog_to_screen(dlg, preferred_w=760, preferred_h=560, min_w=540, min_h=360)
+        dlg._leonardo_scroll_checked = True
+        dlg.resize(820, 680)
+        dlg.setMinimumSize(600, 440)
+        self._fit_dialog_to_screen(dlg, preferred_w=820, preferred_h=680, min_w=580, min_h=420)
+        self._bioseq_tool_dialog = dlg
+        self._bioseq_tool_dialog_key = key
         vbox = QtWidgets.QVBoxLayout(dlg)
+        content_scroll = QtWidgets.QScrollArea(dlg)
+        content_scroll.setObjectName("bioseqToolDialogScroll")
+        content_scroll.setProperty("leonardoVerticalOnly", True)
+        content_scroll.setWidgetResizable(True)
+        content_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        content_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        content = QtWidgets.QWidget(content_scroll)
+        content.setObjectName("bioseqToolDialogContent")
+        content_scroll.setWidget(content)
+        vbox.addWidget(content_scroll, 1)
+        content_box = QtWidgets.QVBoxLayout(content)
+        content_box.setContentsMargins(8, 8, 8, 8)
+        content_box.setSpacing(10)
         lbl = QtWidgets.QLabel(str(spec.get("objective", "")))
         lbl.setWordWrap(True)
-        vbox.addWidget(lbl)
-        row_url = QtWidgets.QHBoxLayout()
-        row_url.addWidget(QtWidgets.QLabel("Tool URL"))
+        content_box.addWidget(lbl)
+        url_group = QtWidgets.QGroupBox("Tool Address")
+        url_box = QtWidgets.QVBoxLayout(url_group)
         edit_url = QtWidgets.QLineEdit(str(url))
         try:
             edit_url.setCursorPosition(0)
         except Exception:
             pass
-        row_url.addWidget(edit_url, 1)
-        vbox.addLayout(row_url)
+        url_box.addWidget(edit_url)
+        content_box.addWidget(url_group)
         params_group = QtWidgets.QGroupBox("Suggested Parameters")
         params_form = QtWidgets.QFormLayout(params_group)
+        params_form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
+        params_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        params_form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        params_form.setHorizontalSpacing(8)
+        params_form.setVerticalSpacing(6)
         param_widgets = []
         for ent in list(spec.get("parameters", []) or []):
             if not isinstance(ent, (list, tuple)) or len(ent) < 2:
@@ -26883,25 +27472,37 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             w = QtWidgets.QLineEdit(val_p)
             params_form.addRow(lbl_p, w)
             param_widgets.append((lbl_p, w))
-        vbox.addWidget(params_group)
+        content_box.addWidget(params_group)
         seq_group = QtWidgets.QGroupBox("Sequence")
         seq_box = QtWidgets.QVBoxLayout(seq_group)
         txt_seq = QtWidgets.QPlainTextEdit()
+        txt_seq.setObjectName("bioseqToolSequence")
         txt_seq.setPlainText(str(seq or ""))
         txt_seq.setMinimumHeight(140)
         txt_seq.setPlaceholderText("Sequence used for this tool (editable).")
         seq_box.addWidget(txt_seq)
-        vbox.addWidget(seq_group, 1)
-        row_btn = QtWidgets.QHBoxLayout()
+        content_box.addWidget(seq_group)
+        content_box.addStretch(1)
+
+        action_grid = QtWidgets.QGridLayout()
+        action_grid.setHorizontalSpacing(8)
+        action_grid.setVerticalSpacing(8)
         btn_copy_seq = QtWidgets.QPushButton("Copy Sequence")
         btn_copy_params = QtWidgets.QPushButton("Copy Parameter Notes")
         btn_open = QtWidgets.QPushButton("Open Tool")
         btn_open_copy = QtWidgets.QPushButton("Open Tool + Copy Sequence")
         btn_close = QtWidgets.QPushButton("Close")
-        for b in (btn_copy_seq, btn_copy_params, btn_open, btn_open_copy, btn_close):
-            row_btn.addWidget(b)
-        row_btn.addStretch(1)
-        vbox.addLayout(row_btn)
+        action_grid.addWidget(btn_copy_seq, 0, 0)
+        action_grid.addWidget(btn_copy_params, 0, 1)
+        action_grid.addWidget(btn_open, 1, 0)
+        action_grid.addWidget(btn_open_copy, 1, 1)
+        action_grid.setColumnStretch(0, 1)
+        action_grid.setColumnStretch(1, 1)
+        vbox.addLayout(action_grid)
+        close_row = QtWidgets.QHBoxLayout()
+        close_row.addStretch(1)
+        close_row.addWidget(btn_close)
+        vbox.addLayout(close_row)
 
         def _param_notes():
             lines = [f"{str(spec.get('title', key))} suggested parameters:"]
@@ -26959,7 +27560,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             tools = str(ent.get("tools", "") or "").strip()
             purpose = str(ent.get("purpose", "") or "").strip()
             lines.append(f"- {title}: {tools}. {purpose}")
-        self.lbl_bioseq_catalog.setText("\n".join(lines))
+        self.lbl_bioseq_catalog.setText(
+            "Choose an external analysis tool. Each button opens a clean form with the sequence, "
+            "recommended parameters, and launch options."
+        )
+        self.lbl_bioseq_catalog.setToolTip("\n".join(lines))
     def _bioseq_populate_question_table(self, answers=None):
         answer_map = {}
         for row in list(answers or []):
@@ -26982,6 +27587,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 tbl.setItem(r, 0, QtWidgets.QTableWidgetItem(q))
                 tbl.setItem(r, 1, QtWidgets.QTableWidgetItem(a))
                 tbl.setItem(r, 2, QtWidgets.QTableWidgetItem(hint))
+                for col, full_text in enumerate((q, a, hint)):
+                    item = tbl.item(r, col)
+                    if item is not None:
+                        item.setToolTip(full_text)
+            try:
+                tbl.resizeRowsToContents()
+                tbl.verticalHeader().setMinimumSectionSize(42)
+            except Exception:
+                pass
     def _bioseq_format_range_list(self, segments, value_key=""):
         out = []
         for seg in list(segments or []):
@@ -27260,8 +27874,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._fit_dialog_to_screen(self._psi4_dialog, preferred_w=1080, preferred_h=880, min_w=900, min_h=700)
             root_vbox = QtWidgets.QVBoxLayout(self._psi4_dialog)
             self._psi4_scroll_area = QtWidgets.QScrollArea(self._psi4_dialog)
+            self._psi4_scroll_area.setObjectName("psi4MainScrollArea")
+            self._psi4_scroll_area.setProperty("leonardoVerticalOnly", True)
             self._psi4_scroll_area.setWidgetResizable(True)
-            self._psi4_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            self._psi4_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
             self._psi4_scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
             self._psi4_scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
             self._psi4_scroll_widget = QtWidgets.QWidget()
@@ -27271,6 +27887,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._psi4_scroll_area.setWidget(self._psi4_scroll_widget)
             root_vbox.addWidget(self._psi4_scroll_area, 1)
             tabs = QtWidgets.QTabWidget()
+            self.tabs_psi4 = tabs
+            tabs.setMinimumWidth(0)
+            tabs.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
             vbox.addWidget(tabs, 1)
             tab_setup = QtWidgets.QWidget()
             setup_box = QtWidgets.QVBoxLayout(tab_setup)
@@ -27401,8 +28020,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.edit_psi4_custom_sel.setPlaceholderText("PyMOL selection expression")
             row_region.addWidget(self.edit_psi4_custom_sel, 1)
             source_box.addLayout(row_region)
-            row_op = QtWidgets.QHBoxLayout()
-            row_op.addWidget(QtWidgets.QLabel("Operation"))
+            row_op = QtWidgets.QGridLayout()
+            row_op.addWidget(QtWidgets.QLabel("Operation"), 0, 0)
             self.cmb_psi4_operation = QtWidgets.QComboBox()
             self.cmb_psi4_operation.addItem("Single Point Energy", "energy")
             self.cmb_psi4_operation.addItem("Optimize Geometry (minimum)", "optimize")
@@ -27414,52 +28033,57 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_psi4_operation.addItem("IRC from TS", "irc")
             self.cmb_psi4_operation.addItem("ESP Fit Charges -> MOL2", "esp_fit")
             self.cmb_psi4_operation.currentIndexChanged.connect(self._on_psi4_operation_changed)
-            row_op.addWidget(self.cmb_psi4_operation, 1)
+            row_op.addWidget(self.cmb_psi4_operation, 1, 0)
+            row_op.setColumnStretch(0, 1)
             reaction_controls_box.addLayout(row_op)
-            row_qst_intro = QtWidgets.QHBoxLayout()
             self.lbl_psi4_qst_note = QtWidgets.QLabel(
                 "QST-like TS uses interpolation/alignment of reactant/product geometries (and optional TS guess), then runs TS optimize + frequency."
             )
             self.lbl_psi4_qst_note.setWordWrap(True)
-            row_qst_intro.addWidget(self.lbl_psi4_qst_note, 1)
-            reaction_controls_box.addLayout(row_qst_intro)
-            row_qst_react = QtWidgets.QHBoxLayout()
-            row_qst_react.addWidget(QtWidgets.QLabel("QST Reactant"))
+            reaction_controls_box.addWidget(self.lbl_psi4_qst_note)
+            qst_sources_grid = QtWidgets.QGridLayout()
+            qst_sources_grid.setHorizontalSpacing(8)
+            qst_sources_grid.setVerticalSpacing(6)
+            self.lbl_psi4_qst_react = QtWidgets.QLabel("QST Reactant")
+            qst_sources_grid.addWidget(self.lbl_psi4_qst_react, 0, 0, 1, 3)
             self.edit_psi4_qst_react = QtWidgets.QLineEdit()
             self.edit_psi4_qst_react.setPlaceholderText("File path or PyMOL selection/object")
-            row_qst_react.addWidget(self.edit_psi4_qst_react, 1)
+            self.edit_psi4_qst_react.setToolTip("Reactant file path or PyMOL selection/object")
+            qst_sources_grid.addWidget(self.edit_psi4_qst_react, 1, 0)
             self.btn_psi4_qst_react_pick = QtWidgets.QPushButton("File...")
             self.btn_psi4_qst_react_pick.clicked.connect(self._on_psi4_pick_qst_react_file)
-            row_qst_react.addWidget(self.btn_psi4_qst_react_pick)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_react_pick, 1, 1)
             self.btn_psi4_qst_react_from_current = QtWidgets.QPushButton("Use Current")
             self.btn_psi4_qst_react_from_current.clicked.connect(lambda: self._on_psi4_qst_set_from_current("react"))
-            row_qst_react.addWidget(self.btn_psi4_qst_react_from_current)
-            reaction_controls_box.addLayout(row_qst_react)
-            row_qst_prod = QtWidgets.QHBoxLayout()
-            row_qst_prod.addWidget(QtWidgets.QLabel("QST Product"))
+            qst_sources_grid.addWidget(self.btn_psi4_qst_react_from_current, 1, 2)
+            self.lbl_psi4_qst_prod = QtWidgets.QLabel("QST Product")
+            qst_sources_grid.addWidget(self.lbl_psi4_qst_prod, 2, 0, 1, 3)
             self.edit_psi4_qst_prod = QtWidgets.QLineEdit()
             self.edit_psi4_qst_prod.setPlaceholderText("File path or PyMOL selection/object")
-            row_qst_prod.addWidget(self.edit_psi4_qst_prod, 1)
+            self.edit_psi4_qst_prod.setToolTip("Product file path or PyMOL selection/object")
+            qst_sources_grid.addWidget(self.edit_psi4_qst_prod, 3, 0)
             self.btn_psi4_qst_prod_pick = QtWidgets.QPushButton("File...")
             self.btn_psi4_qst_prod_pick.clicked.connect(self._on_psi4_pick_qst_prod_file)
-            row_qst_prod.addWidget(self.btn_psi4_qst_prod_pick)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_prod_pick, 3, 1)
             self.btn_psi4_qst_prod_from_current = QtWidgets.QPushButton("Use Current")
             self.btn_psi4_qst_prod_from_current.clicked.connect(lambda: self._on_psi4_qst_set_from_current("prod"))
-            row_qst_prod.addWidget(self.btn_psi4_qst_prod_from_current)
-            reaction_controls_box.addLayout(row_qst_prod)
-            row_qst_ts = QtWidgets.QHBoxLayout()
+            qst_sources_grid.addWidget(self.btn_psi4_qst_prod_from_current, 3, 2)
             self.lbl_psi4_qst_ts = QtWidgets.QLabel("QST TS Guess")
-            row_qst_ts.addWidget(self.lbl_psi4_qst_ts)
+            qst_sources_grid.addWidget(self.lbl_psi4_qst_ts, 4, 0, 1, 3)
             self.edit_psi4_qst_ts = QtWidgets.QLineEdit()
-            self.edit_psi4_qst_ts.setPlaceholderText("Optional file path or PyMOL selection/object (required for QST3-like)")
-            row_qst_ts.addWidget(self.edit_psi4_qst_ts, 1)
+            self.edit_psi4_qst_ts.setPlaceholderText("Optional TS guess file/selection (required for QST3)")
+            self.edit_psi4_qst_ts.setToolTip(
+                "Optional TS guess file path or PyMOL selection/object; required for QST3-like mode"
+            )
+            qst_sources_grid.addWidget(self.edit_psi4_qst_ts, 5, 0)
             self.btn_psi4_qst_ts_pick = QtWidgets.QPushButton("File...")
             self.btn_psi4_qst_ts_pick.clicked.connect(self._on_psi4_pick_qst_ts_file)
-            row_qst_ts.addWidget(self.btn_psi4_qst_ts_pick)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_ts_pick, 5, 1)
             self.btn_psi4_qst_ts_from_current = QtWidgets.QPushButton("Use Current")
             self.btn_psi4_qst_ts_from_current.clicked.connect(lambda: self._on_psi4_qst_set_from_current("ts"))
-            row_qst_ts.addWidget(self.btn_psi4_qst_ts_from_current)
-            reaction_controls_box.addLayout(row_qst_ts)
+            qst_sources_grid.addWidget(self.btn_psi4_qst_ts_from_current, 5, 2)
+            qst_sources_grid.setColumnStretch(0, 1)
+            reaction_controls_box.addLayout(qst_sources_grid)
             row_qst_weight = QtWidgets.QHBoxLayout()
             self.lbl_psi4_qst_ts_weight = QtWidgets.QLabel("TS guess weight")
             row_qst_weight.addWidget(self.lbl_psi4_qst_ts_weight)
@@ -27552,40 +28176,48 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_pcm.addWidget(self.cmb_psi4_solvent)
             row_pcm.addStretch(1)
             theory_box.addLayout(row_pcm)
-            row_irc = QtWidgets.QHBoxLayout()
+            row_irc = QtWidgets.QGridLayout()
+            row_irc.setHorizontalSpacing(8)
+            row_irc.setVerticalSpacing(6)
             self.lbl_psi4_irc = QtWidgets.QLabel("IRC")
-            row_irc.addWidget(self.lbl_psi4_irc)
+            row_irc.addWidget(self.lbl_psi4_irc, 0, 0)
             self.cmb_psi4_irc_direction = QtWidgets.QComboBox()
             self.cmb_psi4_irc_direction.addItem("Forward", "FORWARD")
             self.cmb_psi4_irc_direction.addItem("Backward", "BACKWARD")
             self.cmb_psi4_irc_direction.addItem("Both", "BOTH")
-            row_irc.addWidget(self.cmb_psi4_irc_direction)
-            row_irc.addWidget(QtWidgets.QLabel("Points"))
+            row_irc.addWidget(self.cmb_psi4_irc_direction, 0, 1, 1, 3)
+            self.lbl_psi4_irc_points = QtWidgets.QLabel("Points")
+            row_irc.addWidget(self.lbl_psi4_irc_points, 1, 0)
             self.spin_psi4_irc_points = QtWidgets.QSpinBox()
             self.spin_psi4_irc_points.setRange(4, 200)
             self.spin_psi4_irc_points.setValue(20)
-            row_irc.addWidget(self.spin_psi4_irc_points)
-            row_irc.addWidget(QtWidgets.QLabel("Step"))
+            row_irc.addWidget(self.spin_psi4_irc_points, 1, 1)
+            self.lbl_psi4_irc_step = QtWidgets.QLabel("Step")
+            row_irc.addWidget(self.lbl_psi4_irc_step, 1, 2)
             self.spin_psi4_irc_step = QtWidgets.QDoubleSpinBox()
             self.spin_psi4_irc_step.setDecimals(3)
             self.spin_psi4_irc_step.setRange(0.01, 2.00)
             self.spin_psi4_irc_step.setSingleStep(0.05)
             self.spin_psi4_irc_step.setValue(0.20)
-            row_irc.addWidget(self.spin_psi4_irc_step)
-            row_irc.addStretch(1)
+            row_irc.addWidget(self.spin_psi4_irc_step, 1, 3)
+            row_irc.setColumnStretch(1, 1)
+            row_irc.setColumnStretch(3, 1)
             reaction_controls_box.addLayout(row_irc)
-            row_esp = QtWidgets.QHBoxLayout()
+            row_esp = QtWidgets.QGridLayout()
+            row_esp.setHorizontalSpacing(8)
+            row_esp.setVerticalSpacing(6)
             self.lbl_psi4_esp = QtWidgets.QLabel("ESP fit")
-            row_esp.addWidget(self.lbl_psi4_esp)
-            row_esp.addWidget(QtWidgets.QLabel("Grid points/atom"))
+            row_esp.addWidget(self.lbl_psi4_esp, 0, 0)
+            self.lbl_psi4_esp_points = QtWidgets.QLabel("Grid points/atom")
+            row_esp.addWidget(self.lbl_psi4_esp_points, 0, 1)
             self.spin_psi4_esp_points = QtWidgets.QSpinBox()
             self.spin_psi4_esp_points.setRange(8, 240)
             self.spin_psi4_esp_points.setValue(36)
-            row_esp.addWidget(self.spin_psi4_esp_points)
+            row_esp.addWidget(self.spin_psi4_esp_points, 0, 2)
             self.cb_psi4_use_param_mol2 = QtWidgets.QCheckBox("Use parameterized MOL2 when available")
             self.cb_psi4_use_param_mol2.setChecked(True)
-            row_esp.addWidget(self.cb_psi4_use_param_mol2)
-            row_esp.addStretch(1)
+            row_esp.addWidget(self.cb_psi4_use_param_mol2, 1, 0, 1, 3)
+            row_esp.setColumnStretch(2, 1)
             reaction_controls_box.addLayout(row_esp)
             row_bin = QtWidgets.QHBoxLayout()
             row_bin.addWidget(QtWidgets.QLabel("psi4 executable"))
@@ -30198,27 +30830,38 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         for wname in (
             "lbl_psi4_irc",
             "cmb_psi4_irc_direction",
+            "lbl_psi4_irc_points",
             "spin_psi4_irc_points",
+            "lbl_psi4_irc_step",
             "spin_psi4_irc_step",
         ):
             try:
                 getattr(self, wname).setEnabled(irc_on)
+                getattr(self, wname).setVisible(irc_on)
             except Exception:
                 pass
         file_mode = (self._psi4_input_mode() == "file")
-        for wname in ("lbl_psi4_esp", "spin_psi4_esp_points", "cb_psi4_use_param_mol2"):
+        for wname in (
+            "lbl_psi4_esp",
+            "lbl_psi4_esp_points",
+            "spin_psi4_esp_points",
+            "cb_psi4_use_param_mol2",
+        ):
             try:
                 en = esp_on
                 if wname == "cb_psi4_use_param_mol2" and file_mode:
                     en = False
                 getattr(self, wname).setEnabled(en)
+                getattr(self, wname).setVisible(esp_on)
             except Exception:
                 pass
         qst_widgets = (
             "lbl_psi4_qst_note",
+            "lbl_psi4_qst_react",
             "edit_psi4_qst_react",
             "btn_psi4_qst_react_pick",
             "btn_psi4_qst_react_from_current",
+            "lbl_psi4_qst_prod",
             "edit_psi4_qst_prod",
             "btn_psi4_qst_prod_pick",
             "btn_psi4_qst_prod_from_current",
@@ -34561,6 +35204,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             os.makedirs(lig_dir, exist_ok=True)
             tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             out_sdf = os.path.join(lig_dir, f"ligand_edited_{tag}.sdf")
+            k = 2
+            while os.path.exists(out_sdf):      # two builds in the same second get distinct files
+                out_sdf = os.path.join(lig_dir, f"ligand_edited_{tag}_{k}.sdf")
+                k += 1
             w = Chem.SDWriter(out_sdf)
             w.write(work)
             w.close()
@@ -44234,6 +44881,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         out["confidence"] = self._dock_repeat_confidence_label(out.get("std"), out.get("ci_half"), n)
         return out
     def _dock_write_repeat_csv(self, job_dir, repeat_rows):
+        import csv
+
         rows = list(repeat_rows or [])
         if (not job_dir) or (not rows):
             return ""

@@ -48,12 +48,19 @@ def start_dialog_job(ctx, kind, start, is_done, collect, description="", on_canc
         return {"done": True, "result": result}
 
     def cancel():
-        if callable(on_cancel):
-            on_cancel()
-        if not finished["done"]:
+        stopped = on_cancel() if callable(on_cancel) else False
+        if finished["done"]:
+            return None
+        if stopped is True:
             finished["done"] = True
             _headless.take_messages(token)
             _headless.end(token)
+            return None
+        # Leonardo's task cannot be interrupted from here: stay headless (its message boxes must not pop up
+        # as modals) and keep polling until it ends; the job then reports "cancelled"
+        return {"keep_polling": True,
+                "note": "this Leonardo task cannot be interrupted; it finishes in the background and its "
+                        "result will be discarded"}
 
     return ctx.jobs.start(kind, poll, cancel=cancel, description=description)
 
@@ -104,6 +111,13 @@ def start_finalize_job(ctx, kind, start, finalize_attr, collect, busy_button="",
         if getattr(dlg, finalize_attr) is finalize:
             setattr(dlg, finalize_attr, original)
 
+    def cancel_submitted():
+        # a submitted task still has to reach its finalize: only nothing-pending jobs stop right away
+        if not captured.get("submitted", True) or "call" in captured:
+            restore()
+            return True
+        return False
+
     def wrapped_start():
         before = set(getattr(dlg, "_task_monitor_state", {}) or {})
         try:
@@ -131,7 +145,7 @@ def start_finalize_job(ctx, kind, start, finalize_attr, collect, busy_button="",
         return collect(captured.get("call"))
 
     return start_dialog_job(ctx, kind, wrapped_start, is_done, wrapped_collect, description=description,
-                            on_cancel=restore)
+                            on_cancel=cancel_submitted)
 
 
 def start_deferred_job(ctx, kind, run, collect, description=""):
@@ -148,6 +162,7 @@ def start_deferred_job(ctx, kind, run, collect, description=""):
         if outcome.get("cancelled"):          # cancelled before the main loop got to it
             outcome["done"] = True
             return
+        outcome["started"] = True
         try:
             run()
         except Exception as exc:
@@ -159,4 +174,12 @@ def start_deferred_job(ctx, kind, run, collect, description=""):
         QtCore.QTimer.singleShot(0, fire)
 
     return start_dialog_job(ctx, kind, start, lambda: outcome["done"], lambda: collect(outcome),
-                            description=description, on_cancel=lambda: outcome.update(cancelled=True))
+                            description=description, on_cancel=lambda: _cancel_deferred(outcome))
+
+
+def _cancel_deferred(outcome):
+    """True when the deferred handler had not started yet (it will be skipped), False once it runs."""
+    if outcome.get("started"):
+        return False
+    outcome["cancelled"] = True
+    return True

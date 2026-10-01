@@ -2,7 +2,7 @@
 
 from .. import presentation
 from ..registry import ToolError
-from ._dialogjob import start_dialog_job
+from ._dialogjob import start_finalize_job
 
 
 def _ca_rmsd(obj):
@@ -238,48 +238,19 @@ def _select_openmm_object(dlg, object, solvent, ph):
 
 
 def _openmm_job(ctx, kind, minimize_only, collect_result, description=""):
-    """Run Leonardo's OpenMM workflow as a job; ``collect_result(worker_result)`` builds the tool result."""
+    """Run Leonardo's OpenMM workflow as a job; ``collect_result(worker_result)`` builds the tool result.
+    start_finalize_job restores the dialog's finalize method on every path (setup error, cancel)."""
     dlg = ctx.dlg
-    captured = {}
-    original = dlg._openmm_finalize_worker_result
 
-    def finalize(launch, result):
-        try:
-            return original(launch, result)
-        finally:
-            captured["result"] = dict(result or {})
-            dlg._openmm_finalize_worker_result = original
-
-    dlg._openmm_finalize_worker_result = finalize
-
-    def start():
-        before = set(getattr(dlg, "_task_monitor_state", {}) or {})
-        dlg._run_openmm_workflow(minimize_only=bool(minimize_only))
-        after = set(getattr(dlg, "_task_monitor_state", {}) or {})
-        captured["submitted"] = bool(after - before)
-
-    def run_buttons_enabled():
-        btn = getattr(dlg, "btn_openmm_run", None)
-        try:
-            return btn is None or bool(btn.isEnabled())
-        except Exception:
-            return True
-
-    def is_done():
-        if "result" in captured:
-            return True
-        if not captured.get("submitted", True):
-            return True          # nothing was submitted (setup error): finished immediately
-        # a failed background task never reaches finalize; Leonardo re-enables the run buttons
-        return run_buttons_enabled()
-
-    def collect():
-        dlg._openmm_finalize_worker_result = original
-        res = captured.get("result")
+    def collect(call):
+        res = call.arg(1, "result") if call is not None else None
         if res is None:
             raise ToolError("OpenMM did not finish (see Leonardo's message)")
+        res = dict(res or {})
         if not res.get("ok", True) and res.get("error"):
             raise ToolError(str(res.get("error")))
         return collect_result(res)
 
-    return start_dialog_job(ctx, kind, start, is_done, collect, description=description)
+    return start_finalize_job(ctx, kind, lambda: dlg._run_openmm_workflow(minimize_only=bool(minimize_only)),
+                              "_openmm_finalize_worker_result", collect, busy_button="btn_openmm_run",
+                              description=description)

@@ -116,3 +116,49 @@ def test_real_mopac_qmmm_on_cytochrome_c(tmp_path):
     assert probe["region"]["qm_atom_count"] == 97                        # heme c 75 + His18/Met80 side chains with H
     assert probe["qmmm"]["heat_of_formation_kcal_mol"] < 0
     dlg.close()
+
+
+@pytest.mark.parametrize("family", ["amber14", "charmm36"])
+def test_two_heme_c_copies_share_one_placeholder_in_both_families(family):
+    import openmm as mm
+
+    pdb = app.PDBFile(os.path.join(DATA, "1HRC_full_nowat.pdb"))
+    m = app.Modeller(pdb.topology, pdb.positions)
+    shifted = [mm.Vec3(p.x + 6.0, p.y, p.z) for p in pdb.positions.value_in_unit(unit.nanometer)]
+    n_chains = len(list(pdb.topology.chains()))
+    m.add(pdb.topology, unit.Quantity(shifted, unit.nanometer))
+    for chain in list(m.topology.chains())[n_chains:]:
+        chain.id = "B"
+    if family == "charmm36":        # OpenMM's CHARMM36 has no ACE cap template (unrelated to this test)
+        m.delete([r for r in m.topology.residues() if r.name == "ACE"])
+    pos = [tuple(p.value_in_unit(unit.nanometer)) for p in m.positions]
+    plan = cl.resolve_components(m.topology, pos, family=family)
+    ren = {}
+    files = cl.prepare_modeller(m, plan, family, renames=ren)
+    qf, qv, keys, info = cl.install_qm_placeholders(m, plan, fetch_ccd=False, family=family)
+    assert sorted(keys) == [("A", "105", "HEC"), ("B", "105", "HEC")]
+    placeholders = [f for f in qf if "qm_placeholder" in f]
+    assert len(placeholders) == 1 and info[0]["template"] == info[1]["template"]      # one shared template
+    assert any("thioether_cys" in f for f in qf) == (family == "charmm36")
+    base = {"amber14": ("amber14-all.xml", "amber14/tip3p.xml"),
+            "charmm36": ("charmm36.xml", "charmm36/water.xml")}[family]
+    ff = app.ForceField(*base, *[f for f in files if f not in base], *qf)     # CHARMM 1-4 scales must agree
+    variants, _notes = cl.coordination_variants(m.topology, [tuple(p.value_in_unit(unit.nanometer))
+                                                             for p in m.positions])
+    for k, v in qv.items():
+        variants[k] = v
+    m.addHydrogens(ff, pH=7.4, variants=variants)
+    cl.restore_names(m.topology, ren)
+    system = ff.createSystem(m.topology, nonbondedMethod=app.NoCutoff)
+    assert system.getNumParticles() == m.topology.getNumAtoms()
+
+
+def test_different_qm_placeholders_load_together():
+    model_a = {"atoms": [("FE", "FE", None), ("S1", "S", None)], "bonds": [("FE", "S1")]}
+    model_b = {"atoms": [("FE1", "FE", None), ("O1", "O", None)], "bonds": [("FE1", "O1")]}
+    ff = app.ForceField()
+    import io
+
+    ff.loadFile(io.StringIO(cl.qm_placeholder_xml("SF4_QM", model_a)))
+    ff.loadFile(io.StringIO(cl.qm_placeholder_xml("FEO_QM", model_b)))       # no duplicate atom types
+    assert {"SF4_QM", "FEO_QM"} <= set(ff._templates)

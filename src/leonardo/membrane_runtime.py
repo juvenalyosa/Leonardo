@@ -132,8 +132,16 @@ def membrane_metrics(topology, positions_nm, box_nm, lipid="POPC", lipid_names=N
     out = {"lipid": lipid, "n_lipids": int(n_lipids)}
     if phos and box_nm is not None:
         z = np.array([p[2] for p in phos])
-        mid = float(np.median(z))
-        up, low = z[z > mid], z[z <= mid]
+        # leaflets split at the largest gap in z (not the median: leaflets can hold different numbers of
+        # lipids - asymmetric mixtures, molecules removed after packing)
+        zs = np.sort(z)
+        if len(zs) > 1:
+            k = int(np.argmax(np.diff(zs)))
+            split = 0.5 * (zs[k] + zs[k + 1])
+        else:
+            split = float(zs[0])
+        up, low = z[z > split], z[z <= split]
+        mid = 0.5 * (float(up.mean()) + float(low.mean())) if len(up) and len(low) else float(np.median(z))
         out["thickness_PP_nm"] = round(float(up.mean() - low.mean()), 3) if len(up) and len(low) else None
         box_area = float(box_nm[0] * box_nm[1])
         prot_area = _protein_cross_section_nm2(topology, positions_nm, mid, box_nm, lipid_names=lipid_names)
@@ -183,11 +191,13 @@ def _is_lipid_residue(res):
 
 def parse_lipid_spec(lipid, ratio=""):
     """'POPC:CHL1' + '3:1' -> ('POPC:CHL1', '3:1', ['POPC', 'CHL1']); '//' separates upper//lower leaflets."""
-    spec = str(lipid or "POPC").upper().replace(" ", "")
+    spec = re.sub(r"\s+", "", str(lipid or "POPC").upper())
+    if re.search(r"(?<!/)/(?!/)", spec):
+        raise ValueError("separate leaflets with '//' (upper//lower), mix lipids with ':'")
     names = [x for x in re.split(r"[:/]+", spec) if x]
     if not names:
         raise ValueError("empty lipid specification")
-    ratio = str(ratio or "").replace(" ", "")
+    ratio = re.sub(r"\s+", "", str(ratio or ""))
     if not ratio:
         ratio = "//".join(":".join("1" for _ in leaf.split(":")) for leaf in spec.split("//"))
     if [len(leaf.split(":")) for leaf in spec.split("//")] != [len(leaf.split(":")) for leaf in ratio.split("//")]:
@@ -226,7 +236,8 @@ _ION_NAMES = {"NA+": "NA", "CL-": "CL", "K+": "K", "SOD": "NA", "CLA": "CL", "PO
 
 
 def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm=1.0, water_nm=1.5,
-                       ionic_strength_molar=0.15, out_dir=".", nloop=20, nloop_all=100, seed=None, progress=None):
+                       ionic_strength_molar=0.15, out_dir=".", nloop=20, nloop_all=100, seed=None, progress=None,
+                       max_attempts=3):
     """
     Pack a (mixed) bilayer around the prepared, oriented solute (bilayer centre z=0, normal z) with
     PACKMOL-Memgen, add it to ``modeller`` with template bonds, then neutralize and add salt by replacing
@@ -241,8 +252,11 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
     spec, ratio, names = parse_lipid_spec(lipid, ratio)
     missing = [n for n in names if n not in forcefield._templates]
     if missing:
-        raise ValueError(f"no {family} template for {', '.join(missing)} (CHARMM lipid names, e.g. POPC, POPE, "
-                         "POPG, POPS, DOPC, DPPC, CHL1, PSM)")
+        common = ("POPC", "POPE", "POPG", "POPS", "POPA", "DOPC", "DOPE", "DOPS", "DPPC", "DMPC", "DLPC", "DSPC",
+                  "CHL1", "PSM", "SSM")
+        have = [n for n in common if n in forcefield._templates]
+        raise ValueError(f"no {family} template for {', '.join(missing)} (CHARMM lipid names; available here: "
+                         f"{', '.join(have)})")
     exe, env = _packmol_memgen()
     if exe is None:
         raise RuntimeError("PACKMOL-Memgen is not installed (conda install -c conda-forge ambertools)")
@@ -259,17 +273,51 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
                 "--dist", f"{10 * padding_nm:.1f}"]
     else:
         cmd += ["--distxy_fix", f"{10 * max(padding_nm, 3.0):.1f}"]
-    if seed is None:
-        cmd += ["--random"]
     t0 = time.time()
-    if callable(progress):
-        progress(f"packing {spec} ({ratio}) with PACKMOL-Memgen (minutes)")
-    run = subprocess.run(cmd, cwd=out_dir, env=env, capture_output=True, text=True)
-    if not os.path.isfile(out_pdb):
-        tail = (run.stdout + run.stderr)[-800:]
-        raise RuntimeError(f"PACKMOL-Memgen failed: {tail}")
-    packed = app.PDBFile(out_pdb)
-    top, pos = packed.topology, packed.positions.value_in_unit(unit.nanometer)
+    clashes, attempts = None, 0
+    for attempt in range(max(1, int(max_attempts))):
+        attempts = attempt + 1
+        run_cmd = cmd + (["--random"] if (seed is None or attempt > 0) else [])
+        if callable(progress):
+            progress(f"packing {spec} ({ratio}) with PACKMOL-Memgen (minutes)"
+                     + (f", attempt {attempts} (overlapping molecules in the previous one)" if attempt else ""))
+        for stale in (out_pdb, out_pdb + "_FORCED"):
+            if os.path.exists(stale):
+                os.remove(stale)
+        run = subprocess.run(run_cmd, cwd=out_dir, env=env, capture_output=True, text=True)
+        if not os.path.isfile(out_pdb):
+            tail = (run.stdout + run.stderr)[-800:]
+            raise RuntimeError(f"PACKMOL-Memgen failed: {tail}")
+        packed = app.PDBFile(out_pdb)
+        top, pos = packed.topology, packed.positions.value_in_unit(unit.nanometer)
+        # small or sterol-rich boxes can come out with overlapping (e.g. ring-pierced) molecules across the
+        # periodic boundary: minimization cannot undo those, so repack with another seed
+        pairs = _clash_pairs(top, np.array([tuple(p) for p in pos]))
+        clashes = len(pairs)
+        if clashes == 0:
+            break
+    removed_overlapping = []
+    if clashes:
+        # still overlapping (small or sterol-rich boxes): drop one molecule of each overlapping pair - water
+        # first, else the smaller one; never the solute (its copy is replaced below anyway)
+        residues = list(top.residues())
+        solute = {r.index for r in residues if r.name not in set(names) and r.name.upper() not in _WATER_NAMES}
+        drop = set()
+        for i, j in pairs:
+            if i in drop or j in drop:
+                continue
+            cand = [k for k in (i, j) if k not in solute]
+            if not cand:
+                continue
+            cand.sort(key=lambda k: (residues[k].name.upper() not in _WATER_NAMES, len(list(residues[k].atoms()))))
+            drop.add(cand[0])
+        removed_overlapping = sorted(residues[k].name for k in drop)
+        edit = app.Modeller(top, packed.positions)
+        edit.delete([residues[k] for k in drop])
+        top, packed_positions = edit.topology, edit.positions
+        pos = packed_positions.value_in_unit(unit.nanometer)
+    else:
+        packed_positions = packed.positions
     # PACKMOL-Memgen may re-centre the solute: map its copy back onto the prepared coordinates
     ref = [modeller.positions[a.index].value_in_unit(unit.nanometer) for a in modeller.topology.atoms()
            if a.name == "CA"]
@@ -282,7 +330,7 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
     elif ref:
         raise RuntimeError(f"PACKMOL-Memgen changed the solute ({len(got)} vs {len(ref)} C-alpha atoms)")
     lipid_names = set(names)
-    keep = app.Modeller(top, packed.positions)
+    keep = app.Modeller(top, packed_positions)
     keep.delete([r for r in top.residues() if r.name not in lipid_names and r.name.upper() not in _WATER_NAMES])
     ktop = keep.topology
     for res in ktop.residues():
@@ -309,13 +357,40 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
     kpos = [p + shift * unit.nanometer for p in keep.positions] if has_solute else keep.positions
     modeller.add(ktop, kpos)
     allpos = np.array([tuple(p) for p in modeller.positions.value_in_unit(unit.nanometer)])
+    # coordinate extents, as PACKMOL-Memgen's own tleap setup does: lipid tails reach past the packing
+    # regions, so a box from those regions makes tails overlap their periodic images. The small lateral
+    # gaps this leaves (area per lipid overestimated) close in the NPT equilibration.
     box = allpos.max(axis=0) - allpos.min(axis=0) + 0.1
     modeller.topology.setPeriodicBoxVectors([mm.Vec3(box[0], 0, 0), mm.Vec3(0, box[1], 0), mm.Vec3(0, 0, box[2])])
     ions = add_ions_by_water_replacement(modeller, forcefield, family, ionic_strength_molar, lipid_names,
                                          seed=seed)
     return {"lipid_spec": spec, "lipid_ratio": ratio, "lipid_residue_names": sorted(lipid_names),
+            "packing_attempts": attempts, "overlapping_pairs": int(clashes or 0),
+            "removed_overlapping": removed_overlapping,
             "counts": {k: v for k, v in counts.items() if k in lipid_names}, "n_waters": counts.get("HOH", 0),
-            "ions": ions, "packmol_seconds": round(time.time() - t0, 1)}
+            "ions": ions, "packmol_seconds": round(time.time() - t0, 1),
+            "packmol_converged": not os.path.exists(out_pdb + "_FORCED")}
+
+
+def _clash_pairs(topology, positions_nm, cutoff_nm=0.08):
+    """Residue-index pairs with atoms closer than ``cutoff_nm`` (hydrogens included: interlocked tails show up
+    as H-H overlaps), periodic in x/y/z with the box from the extents."""
+    from scipy.spatial import cKDTree
+
+    atoms = list(topology.atoms())
+    if not atoms:
+        return []
+    X = positions_nm[[a.index for a in atoms]].copy()
+    lo = X.min(axis=0)
+    box = X.max(axis=0) - lo + 0.1
+    X = X - lo
+    tree = cKDTree(np.mod(X, box), boxsize=box)
+    res = [a.residue.index for a in atoms]
+    return sorted({tuple(sorted((res[i], res[j]))) for i, j in tree.query_pairs(cutoff_nm) if res[i] != res[j]})
+
+
+def _severe_clashes(topology, positions_nm, cutoff_nm=0.08):
+    return len(_clash_pairs(topology, positions_nm, cutoff_nm))
 
 
 def lipid_residue_templates(topology, forcefield, lipid_names):
@@ -541,13 +616,24 @@ def build_membrane_system(pdb_path, lipid="POPC", family="amber14", ph=7.0, padd
     warnings = []
     if abs(charge - round(charge)) > 0.01:
         warnings.append(f"non-integer total charge {charge:.3f}")
-    if not math.isfinite(e1) or e1 > e0 + max(50.0, 0.02 * abs(e0)):
-        warnings.append("minimization was not stable")
+    if not math.isfinite(e1) or e1 > e0 + max(50.0, 0.02 * abs(e0)) or e1 > 0:
+        # a solvated system always minimizes to a negative potential energy: a positive one means overlaps
+        # the minimizer could not resolve
+        warnings.append("minimization was not stable" + (" (positive energy: unresolved overlaps)" if e1 > 0 else ""))
     apl, ref_apl = metrics.get("area_per_lipid_nm2"), metrics.get("reference_area_per_lipid_nm2")
+    removed = report.get("packing", {}).get("removed_overlapping") if mixture else None
+    if removed:
+        warnings.append(f"{len(removed)} molecule(s) removed because PACKMOL left them overlapping ("
+                        + ", ".join(sorted(set(removed))) + "): the box is small for this mixture; a larger "
+                        "padding gives a cleaner packing")
+    if mixture and not report.get("packing", {}).get("packmol_converged", True):
+        warnings.append("PACKMOL did not fully converge (a *_FORCED structure was used): check for clashes or "
+                        "rebuild with more loops/another seed; minimization may not remove every overlap")
     if mixture:
-        warnings.append("PACKMOL places lipids without pre-equilibration: equilibrate (equilibrate_membrane_system, "
-                        "several ns for sterol-rich mixtures) before production; no experimental area reference is "
-                        "used for mixtures")
+        warnings.append("PACKMOL places lipids without pre-equilibration and the box comes from the coordinate "
+                        "extents (small vacuum gaps at the lateral faces, area per lipid overestimated): equilibrate "
+                        "(equilibrate_membrane_system, several ns for sterol-rich mixtures) before production; no "
+                        "experimental area reference is used for mixtures")
     elif apl and ref_apl and abs(apl - ref_apl) / ref_apl > 0.15:
         warnings.append(f"area per lipid {apl} nm2 vs {ref_apl} experimental: expected right after insertion "
                         "(gaps next to the protein); equilibrate before production")

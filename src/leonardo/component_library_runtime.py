@@ -92,7 +92,9 @@ def forcefield_family_base_files(family):
 def load_library(path=None, user_path=None):
     """Curated aliases/metadata; the user file (same format) extends or overrides entries."""
     data = {"components": {}}
-    for p in (path or _DATA_FILE, user_path or _USER_FILE):
+    user_default = os.path.join(os.environ["LEONARDO_PARAMETERS_DIR"], "component_library.json") \
+        if os.environ.get("LEONARDO_PARAMETERS_DIR") else _USER_FILE
+    for p in (path or _DATA_FILE, user_path or user_default):
         if p and os.path.isfile(p):
             with open(p, encoding="utf-8") as fh:
                 extra = json.load(fh)
@@ -471,7 +473,14 @@ def resolve_components(topology, positions_nm, family="amber14", library=None, t
         if best != family:
             plan["warnings"].insert(0, f"{best} has parameters for cofactors/metals that {family} would drop or "
                                        f"approximate: build the whole system in {best} (force fields are not mixed)")
+    if family == "charmm36" and any(r.get("source") == "gaff" for r in plan["components"]):
+        plan["warnings"].append(GAFF_IN_CHARMM_WARNING)
     return plan
+
+
+GAFF_IN_CHARMM_WARNING = ("GAFF2 ligands in CHARMM36 get CHARMM's 1-4 scaling (electrostatics 1.0, LJ 1.0 instead of "
+                          "GAFF's 0.833/0.5): their torsional energetics are off. Use amber14 for these ligands "
+                          "(or CGenFF parameters), or treat CHARMM36 results for them as approximate")
 
 
 DEFICIT_SOURCES = {"metal", "unmatched", "modified_residue", "covalent", "covalent_metal"}
@@ -883,12 +892,34 @@ def prepare_modeller(modeller, plan, family=None, renames=None):
     return base + [f for f in extra_files if f not in base]
 
 
+_STANDARD_H_NAMES = None
+
+
+def _standard_hydrogen_residues():
+    """Residue names defined by OpenMM's own hydrogens.xml (never overridden)."""
+    global _STANDARD_H_NAMES
+    if _STANDARD_H_NAMES is None:
+        import xml.etree.ElementTree as ET
+
+        import openmm.app as app
+
+        path = os.path.join(os.path.dirname(app.__file__), "data", "hydrogens.xml")
+        _STANDARD_H_NAMES = {r.get("name") for r in ET.parse(path).getroot().iter("Residue")}
+    return _STANDARD_H_NAMES
+
+
 def register_hydrogen_definitions(entries):
-    """Load template-derived hydrogen definitions once; returns names skipped because of a conflict."""
+    """
+    Load template-derived hydrogen definitions (Modeller keeps them class-wide). A component name that
+    another family defined differently (e.g. TEA: a GLYCAM sugar in Amber, tetraethylammonium in
+    CHARMM) is re-registered for the current build; OpenMM's standard residues are never overridden.
+    Returns the standard-residue names skipped because of a conflict.
+    """
     import openmm.app as app
 
     app.Modeller._loadStandardHydrogenDefinitions()
     known = getattr(app.Modeller, "_residueHydrogens", {}) or {}
+    standard = _standard_hydrogen_residues()
     todo, conflicts = [], []
     for e in entries:
         have = known.get(e["name"])
@@ -897,7 +928,10 @@ def register_hydrogen_definitions(entries):
             continue
         names = {getattr(h, "name", None) for h in getattr(have, "hydrogens", [])}
         if names and names != {h for h, _p in e["hydrogens"]}:
-            conflicts.append(e["name"])
+            if e["name"] in standard:
+                conflicts.append(e["name"])
+            else:
+                todo.append(e)
     if todo:
         path = os.path.join(tempfile.gettempdir(), "leonardo_hdefs_" + "_".join(sorted(e["name"] for e in todo))[:80]
                             + ".xml")
@@ -919,14 +953,24 @@ def restore_names(topology, renames):
         res.name = info["resn"]
 
 
-def metal_sites(topology, positions_nm, cutoff_nm=COORDINATION_CUTOFF_NM):
-    """[(metal atom, ligand atom, distance_nm)] for N/O/S atoms of other residues around metal atoms."""
+# monovalent bulk ions (crystal or added by solvation): they diffuse, they are not metal sites
+BULK_ION_RESN = {"NA", "K", "LI", "RB", "CS", "SOD", "POT", "LIT", "CES", "NA+", "K+"}
+
+
+def metal_sites(topology, positions_nm, cutoff_nm=COORDINATION_CUTOFF_NM, skip_resn=(), include_water=False):
+    """[(metal atom, ligand atom, distance_nm)] for N/O/S atoms of other residues around metal atoms.
+    Water ligands, bulk monovalent ions and ``skip_resn`` residues (e.g. a metal slab) are left out, so
+    a solvated system does not get its ions pinned to their first-shell waters."""
     pos = positions_nm
-    metals = [a for a in topology.atoms() if _element_symbol(a) in METALS]
+    skip = {str(x).upper() for x in skip_resn or ()}
+    metals = [a for a in topology.atoms() if _element_symbol(a) in METALS
+              and str(a.residue.name).upper() not in BULK_ION_RESN | skip]
+    ligands = [a for a in topology.atoms() if _element_symbol(a) in ("N", "O", "S")
+               and str(a.residue.name).upper() not in (skip if include_water else WATER_RESN | skip)]
     out = []
     for m in metals:
-        for a in topology.atoms():
-            if a.residue is m.residue or _element_symbol(a) not in ("N", "O", "S"):
+        for a in ligands:
+            if a.residue is m.residue:
                 continue
             d = _dist(pos[m.index], pos[a.index])
             if d <= cutoff_nm:
@@ -955,7 +999,7 @@ def coordination_variants(topology, positions_nm):
     return variants, sorted(set(changed))
 
 
-def add_coordination_restraints(system, topology, positions_nm, k_kj_nm2=50000.0, tolerance_nm=0.02):
+def add_coordination_restraints(system, topology, positions_nm, k_kj_nm2=50000.0, tolerance_nm=0.02, skip_resn=()):
     """
     Keep metal sites intact without a bonded metal model: a flat-bottom harmonic restraint on every
     metal-ligand distance (crystal value +/- tolerance). Covers heme Fe-His/Cys/O2, Zn-Cys/His, Mg-phosphate...
@@ -963,12 +1007,13 @@ def add_coordination_restraints(system, topology, positions_nm, k_kj_nm2=50000.0
     """
     import openmm as mm
 
-    sites = metal_sites(topology, positions_nm)
+    sites = metal_sites(topology, positions_nm, skip_resn=skip_resn)
     if not sites:
         return []
-    force = mm.CustomBondForce("0.5*k*(max(0, r-r0-tol)^2 + max(0, r0-tol-r)^2)")
-    force.addGlobalParameter("k", float(k_kj_nm2))
-    force.addGlobalParameter("tol", float(tolerance_nm))
+    # parameter names must not clash with other restraint forces in the same Context (e.g. a global "k")
+    force = mm.CustomBondForce("0.5*leo_metal_k*(max(0, r-r0-leo_metal_tol)^2 + max(0, r0-leo_metal_tol-r)^2)")
+    force.addGlobalParameter("leo_metal_k", float(k_kj_nm2))
+    force.addGlobalParameter("leo_metal_tol", float(tolerance_nm))
     force.addPerBondParameter("r0")
     out = []
     for m, a, d in sites:
@@ -1305,7 +1350,11 @@ def install_gaff_components(modeller, plan, ph=7.4, forcefield="gaff-2.11", fetc
             info.append(dict(meta, resn=res.name, route=forcefield + " + AM1-BCC"))
     for res, mol, names, _meta in built:
         chain_id, res_id, resname = res.chain.id, res.id, res.name
-        modeller.delete([res])
+        # Modeller.delete rebuilds the topology: residue objects from before the previous delete are
+        # silently ignored, so look the residue up again in the current topology
+        current = next(r for r in modeller.topology.residues() if (r.chain.id, r.id, r.name) == (chain_id, res_id,
+                                                                                                    resname))
+        modeller.delete([current])
         top, pos = _ligand_topology(resname, chain_id, res_id, mol, names)
         modeller.add(top, pos)
     cache = os.path.join(_cache_dir(), f"{forcefield}_am1bcc_cache.json")
@@ -1386,7 +1435,43 @@ def _openff_molecule(mol):
     return off
 
 
-def build_capped_template(mol, cap_classes, resname, keep_names, external, forcefield="gaff-2.11", tag="cov"):
+def _residue_signature(xml):
+    """Atom names/elements and bonds of the (single) residue template in a ForceField XML string: two
+    copies of a component with the same signature can share one template (OpenMM refuses two
+    non-identical templates matching the same residue graph)."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml)
+    types = {t.get("name"): t.get("element") for t in root.iter("Type")}
+    res = next(root.iter("Residue"))
+    atoms = frozenset((a.get("name"), types.get(a.get("type"))) for a in res.iter("Atom"))
+    bonds = frozenset(frozenset((b.get("atomName1"), b.get("atomName2"))) for b in res.iter("Bond"))
+    ext = frozenset(e.get("atomName") for e in res.iter("ExternalBond"))
+    return atoms, bonds, ext
+
+
+class _TemplateRegistry:
+    """Per-build bookkeeping of generated templates: identical chemistry -> one shared template,
+    same residue name with different chemistry -> a numbered variant."""
+
+    def __init__(self):
+        self.rows = {}              # base name -> [(signature, template name)]
+
+    def lookup(self, base, xml):
+        sig = _residue_signature(xml)
+        rows = self.rows.setdefault(base, [])
+        for s, tname in rows:
+            if s == sig:
+                return tname, None
+        suffix = "" if not rows else str(len(rows) + 1)
+        return None, suffix
+
+    def add(self, base, xml, tname):
+        self.rows.setdefault(base, []).append((_residue_signature(xml), tname))
+
+
+def build_capped_template(mol, cap_classes, resname, keep_names, external, forcefield="gaff-2.11", tag="cov",
+                          suffix=""):
     """
     Generic capped-fragment template. ``mol``: protonated molecule with conformer = the residue of interest
     plus cap atoms standing in for the neighbouring protein atoms; ``cap_classes``: {cap atom index: protein
@@ -1443,8 +1528,8 @@ def build_capped_template(mol, cap_classes, resname, keep_names, external, force
                 hn += 1
             names[i] = f"H{hn}"
             used.add(names[i])
-    tname = f"{resname}_{tag.upper()}"[:12]
-    prefix = f"{tag}{resname}-"
+    tname = f"{resname}_{tag.upper()}"[:12] + suffix
+    prefix = f"{tag}{resname}{suffix}-"
     types_used = sorted({cls[i] for i in keep})
     lines = ["<ForceField>", " <AtomTypes>"]
     for c in types_used:
@@ -1522,7 +1607,7 @@ def build_capped_template(mol, cap_classes, resname, keep_names, external, force
 
 
 def build_cys_adduct_template(mol, n_lig, heavy_names, resname, sg_class="S", cb_class="2C", hb_class="H1",
-                              forcefield="gaff-2.11"):
+                              forcefield="gaff-2.11", suffix=""):
     """Covalent ligand on a Cys SG (see build_capped_template): cap S [n_lig] and C [n_lig+1] + methyl H."""
     s_idx, c_idx = n_lig, n_lig + 1
     cap = {s_idx: sg_class, c_idx: cb_class}
@@ -1533,7 +1618,7 @@ def build_cys_adduct_template(mol, n_lig, heavy_names, resname, sg_class="S", cb
     if len(attach) != 1:
         raise ValueError("the cap sulfur must bond exactly one ligand atom")
     xml, tname, info, names = build_capped_template(mol, cap, resname, dict(enumerate(heavy_names)), attach,
-                                                    forcefield=forcefield, tag="cys")
+                                                    forcefield=forcefield, tag="cys", suffix=suffix)
     info["attach_atom"] = names[attach[0]]
     info["charge_moved_to_attach_atom"] = round(info["charge_folded_from_caps"] + info["residual_charge_moved"], 4)
     info["names"] = [n for n in names.values() if n]
@@ -1560,8 +1645,9 @@ def install_covalent_cys_components(modeller, plan, ph=7.4):
     ff_types = base_ff._atomTypes
     sg_cls, cb_cls, hb_cls = (ff_types[cyx_types[n]].atomClass for n in ("SG", "CB", "HB2"))
     files, info, cys_residues = [], [], []
-    pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
+    registry = _TemplateRegistry()
     for row in rows:
+        pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]    # re-indexed per copy
         link = _cys_link(row)
         lig = next(r for r in modeller.topology.residues()
                    if (r.chain.id, r.id, r.name) == (row["chain"], row["resi"], row["resn"]))
@@ -1590,10 +1676,16 @@ def install_covalent_cys_components(modeller, plan, ph=7.4):
         except Exception:
             prot = Chem.AddHs(capped, addCoords=True)
         xml, tname, meta, all_names = build_cys_adduct_template(prot, n_lig, names, row["resn"], sg_cls, cb_cls, hb_cls)
-        path = os.path.join(_cache_dir(), f"covalent_{row['resn']}_{row['chain']}{row['resi']}.xml")
-        with open(path, "w") as fh:
-            fh.write(xml)
-        files.append(path)
+        shared, suffix = registry.lookup(("cys", row["resn"]), xml)
+        if suffix:
+            xml, tname, meta, all_names = build_cys_adduct_template(prot, n_lig, names, row["resn"], sg_cls, cb_cls,
+                                                                    hb_cls, suffix=suffix)
+        if shared is None:          # identical copies (homodimers) share the first copy's template
+            registry.add(("cys", row["resn"]), xml, tname)
+            path = os.path.join(_cache_dir(), f"covalent_{row['resn']}_{row['chain']}{row['resi']}.xml")
+            with open(path, "w") as fh:
+                fh.write(xml)
+            files.append(path)
         # replace the ligand by the capped model minus the cap, bonded to SG
         keep = [i for i, nm in enumerate(all_names) if nm is not None]
         top = app.Topology()
@@ -1807,33 +1899,62 @@ def complete_from_ccd(residue, positions_nm, ph=7.4, fetch=True, removed_leaving
     return {"atoms": atoms, "bonds": bonds, "charge": int(charge), "notes": notes, "has_metal": has_metal}
 
 
-def qm_placeholder_xml(resname, model, external_atoms=()):
-    """ForceField XML: atoms of a QM-region residue with zero charge, UFF Lennard-Jones and no bonded terms."""
+# 1-4 scaling of each family: every NonbondedForce tag loaded into one ForceField must agree
+FAMILY_14_SCALES = {"amber14": (0.833333, 0.5), "charmm36": (1.0, 1.0)}
+
+
+def nonbonded_xml_lines(family, lj_by_type):
+    """NonbondedForce (+ CHARMM LennardJonesForce) entries for extra atom types {type: (sigma nm, eps kJ/mol)},
+    charges taken from the residue templates. Amber: LJ in NonbondedForce. CHARMM36 in OpenMM puts LJ in a
+    LennardJonesForce (NonbondedForce epsilon 0), and every tag's 1-4 scales must match the family."""
+    from xml.sax.saxutils import quoteattr
+
+    c14, lj14 = FAMILY_14_SCALES.get(family, FAMILY_14_SCALES["amber14"])
+    lines = [f' <NonbondedForce coulomb14scale="{c14}" lj14scale="{lj14}">', '  <UseAttributeFromResidue name="charge"/>']
+    charmm = family == "charmm36"
+    for t, (sig, eps) in lj_by_type.items():
+        if charmm:
+            lines.append(f'  <Atom type={quoteattr(t)} sigma="1.0" epsilon="0.0"/>')
+        else:
+            lines.append(f'  <Atom type={quoteattr(t)} sigma="{sig:.5f}" epsilon="{eps:.6g}"/>')
+    lines.append(" </NonbondedForce>")
+    if charmm:
+        lines.append(' <LennardJonesForce lj14scale="1.0" useDispersionCorrection="False">')
+        for t, (sig, eps) in lj_by_type.items():
+            lines.append(f'  <Atom type={quoteattr(t)} sigma="{sig:.5f}" epsilon="{eps:.6g}"/>')
+        lines.append(" </LennardJonesForce>")
+    return lines
+
+
+def qm_placeholder_xml(resname, model, external_atoms=(), family="amber14"):
+    """ForceField XML: atoms of a QM-region residue with zero charge, UFF Lennard-Jones and no bonded terms.
+    Atom types are prefixed with the template name so several placeholders can be loaded together."""
     from xml.sax.saxutils import quoteattr
 
     elems = sorted({e for _n, e, _x in model["atoms"]})
     lines = ["<ForceField>", " <AtomTypes>"]
     from openmm.app import Element
 
+    tp = f"qmph{resname}-"
     for e in elems:
         mass = Element.getBySymbol(e.capitalize()).mass._value
-        lines.append(f'  <Type name={quoteattr("qmph-" + e)} class={quoteattr("qmph" + e)} element='
+        lines.append(f'  <Type name={quoteattr(tp + e)} class={quoteattr(tp + e)} element='
                      f'{quoteattr(e.capitalize())} mass="{mass:.4f}"/>')
     lines += [" </AtomTypes>", " <Residues>", f"  <Residue name={quoteattr(resname)}>"]
     for n, e, _x in model["atoms"]:
-        lines.append(f'   <Atom name={quoteattr(n)} type={quoteattr("qmph-" + e)} charge="0.0"/>')
+        lines.append(f'   <Atom name={quoteattr(n)} type={quoteattr(tp + e)} charge="0.0"/>')
     for a1, a2 in model["bonds"]:
         lines.append(f"   <Bond atomName1={quoteattr(a1)} atomName2={quoteattr(a2)}/>")
     for a in external_atoms:
         lines.append(f"   <ExternalBond atomName={quoteattr(a)}/>")
     lines += ["  </Residue>", " </Residues>",
-              ' <NonbondedForce coulomb14scale="0.833333" lj14scale="0.5">',
-              '  <UseAttributeFromResidue name="charge"/>']
+              ]
+    lj = {}
     for e in elems:
         x, d = UFF_LJ.get(e, (3.5, 0.1))
-        sigma = 0.1 * x / 2 ** (1.0 / 6.0)
-        lines.append(f'  <Atom type={quoteattr("qmph-" + e)} sigma="{sigma:.5f}" epsilon="{d * 4.184:.5f}"/>')
-    lines += [" </NonbondedForce>", "</ForceField>"]
+        lj[tp + e] = (0.1 * x / 2 ** (1.0 / 6.0), d * 4.184)
+    lines += nonbonded_xml_lines(family, lj)
+    lines += ["</ForceField>"]
     return "\n".join(lines) + "\n"
 
 
@@ -1868,7 +1989,7 @@ def plan_qm_region(topology, positions_nm, plan, ph=7.4, fetch_ccd=True, include
     rows += [r for r in plan["components"] if r.get("source") == "library" and r.get("category") == "cofactor"
              and any(_element_symbol(a) in METALS for res in topology.residues()
                      if (res.chain.id, res.id, res.name) == (r["chain"], r["resi"], r["resn"]) for a in res.atoms())]
-    sites_metal = metal_sites(topology, positions_nm)
+    sites_metal = metal_sites(topology, positions_nm, include_water=True)   # coordinated waters belong in QM
     if include_metal_ions:
         # catalytic/structural metal ions (Zn, Mg, Mn...) coordinated by the protein
         bound = {(m.residue.chain.id, m.residue.id, m.residue.name) for m, _a, _d in sites_metal
@@ -1964,9 +2085,11 @@ def install_qm_placeholders(modeller, plan, ph=7.4, fetch_ccd=True, family="ambe
     rows = [r for r in plan["components"] if r.get("source") in QM_PLACEHOLDER_SOURCES and not r.get("buildable")]
     if not rows:
         return [], {}, [], []
-    pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
     files, keys, info, cys_partners = [], [], [], set()
+    registry = _TemplateRegistry()
     for row in rows:
+        # every replacement below re-indexes the atoms: positions must be read again
+        pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
         res = next((r for r in modeller.topology.residues()
                     if (r.chain.id, r.id, r.name) == (row["chain"], row["resi"], row["resn"])), None)
         if res is None:
@@ -1984,11 +2107,19 @@ def install_qm_placeholders(modeller, plan, ph=7.4, fetch_ccd=True, family="ambe
                 external.setdefault(c["atom"], []).append(pos_nm[pa.index])
         model = complete_from_ccd(res, pos_nm, ph=ph, fetch=fetch_ccd, external=external)
         tname = f"{row['resn']}_QM"
-        xml = qm_placeholder_xml(tname, model, external_atoms=sorted(external))
-        path = os.path.join(_cache_dir(), f"qm_placeholder_{row['resn']}_{row['chain']}{row['resi']}.xml")
-        with open(path, "w") as fh:
-            fh.write(xml)
-        files.append(path)
+        xml = qm_placeholder_xml(tname, model, external_atoms=sorted(external), family=family)
+        shared, suffix = registry.lookup(("qm", row["resn"]), xml)
+        if suffix:
+            tname = f"{row['resn']}_QM{suffix}"
+            xml = qm_placeholder_xml(tname, model, external_atoms=sorted(external), family=family)
+        if shared is None:          # identical copies (e.g. the hemes of cytochrome c3) share one template
+            registry.add(("qm", row["resn"]), xml, tname)
+            path = os.path.join(_cache_dir(), f"qm_placeholder_{row['resn']}_{row['chain']}{row['resi']}.xml")
+            with open(path, "w") as fh:
+                fh.write(xml)
+            files.append(path)
+        else:
+            tname = shared
         top = app.Topology()
         chain = top.addChain(row["chain"])
         # the residue keeps its PDB name (selections, QM-region keys, outputs); OpenMM matches the
@@ -2023,7 +2154,38 @@ def install_qm_placeholders(modeller, plan, ph=7.4, fetch_ccd=True, family="ambe
                      "external_bonds": [f"{a}->{p.residue.name}{p.residue.id}:{p.name}" for a, p in partner_atoms]})
     variants = {r.index: "CYX" for r in modeller.topology.residues()
                 if (r.chain.id, r.id) in cys_partners and str(r.name).upper() in ("CYS", "CYX", "CYM")}
+    if variants and family == "charmm36":
+        # OpenMM's CHARMM36 has no Cys with a bond from SG to another residue (only the disulfide patch)
+        path = os.path.join(_cache_dir(), "charmm36_thioether_cys.xml")
+        with open(path, "w") as fh:
+            fh.write(charmm_thioether_cys_xml())
+        files.append(path)
     return files, variants, keys, info
+
+
+def charmm_thioether_cys_xml(name="CYSQ"):
+    """CHARMM36 Cys whose SG is bonded to another residue (heme c thioether, QM partner): the CYS
+    template without HG1, its charge moved to SG (neutral residue), an external bond on SG."""
+    from xml.sax.saxutils import quoteattr
+
+    import openmm.app as app
+
+    cys = app.ForceField("charmm36.xml")._templates["CYS"]
+    hg = next(i for i, a in enumerate(cys.atoms) if a.name == "HG1")
+    q_hg = cys.atoms[hg].parameters["charge"]
+    lines = ["<ForceField>", " <Residues>", f"  <Residue name={quoteattr(name)}>"]
+    for i, a in enumerate(cys.atoms):
+        if i == hg:
+            continue
+        q = a.parameters["charge"] + (q_hg if a.name == "SG" else 0.0)
+        lines.append(f"   <Atom name={quoteattr(a.name)} type={quoteattr(a.type)} charge=\"{q:.4f}\"/>")
+    for i, j in cys.bonds:
+        if hg not in (i, j):
+            lines.append(f"   <Bond atomName1={quoteattr(cys.atoms[i].name)} atomName2={quoteattr(cys.atoms[j].name)}/>")
+    for i in list(cys.externalBonds) + [next(k for k, a in enumerate(cys.atoms) if a.name == "SG")]:
+        lines.append(f"   <ExternalBond atomName={quoteattr(cys.atoms[i].name)}/>")
+    lines += ["  </Residue>", " </Residues>", "</ForceField>"]
+    return "\n".join(lines) + "\n"
 
 
 def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters=False, remove_resn=(),
@@ -2114,9 +2276,7 @@ def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters
         ff.registerTemplateGenerator(gen.generator)
         report["gaff_components"] = gaff_info
         if family != "amber14":
-            report.setdefault("notes", []).append(
-                "GAFF2 ligand parameters combined with CHARMM36: acceptable for screening, but CGenFF would be the "
-                "consistent choice for this family")
+            report.setdefault("notes", []).append(GAFF_IN_CHARMM_WARNING)
     variants, variant_notes = coordination_variants(
         modeller.topology, [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions])
     for idx, v in cov_variants.items():
@@ -2202,6 +2362,7 @@ def install_noncanonical_residues(modeller, plan, family="amber14", ph=7.4, rena
         return [], []
     bb = _backbone_classes(family)
     files, info = [], []
+    registry = _TemplateRegistry()
     for row in rows:
         pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
         key = (row["chain"], row["resi"], row["resn"])
@@ -2270,10 +2431,18 @@ def install_noncanonical_residues(modeller, plan, family="amber14", ph=7.4, rena
         keep_names = {i: a.name for a, i in idx.items()}
         external = [idx[ratoms["N"]], idx[ratoms["C"]]]
         xml, tname, meta, names = build_capped_template(prot, cap_classes, res.name, keep_names, external, tag="ncaa")
-        path = os.path.join(_cache_dir(), f"noncanonical_{res.name}_{res.chain.id}{res.id}.xml")
-        with open(path, "w") as fh:
-            fh.write(xml)
-        files.append(path)
+        shared, suffix = registry.lookup(("ncaa", res.name), xml)
+        if suffix:                  # same residue name, different chemistry (e.g. two kinds of modified Lys)
+            xml, tname, meta, names = build_capped_template(prot, cap_classes, res.name, keep_names, external,
+                                                            tag="ncaa", suffix=suffix)
+        if shared is None:
+            registry.add(("ncaa", res.name), xml, tname)
+            path = os.path.join(_cache_dir(), f"noncanonical_{res.name}_{res.chain.id}{res.id}.xml")
+            with open(path, "w") as fh:
+                fh.write(xml)
+            files.append(path)
+        else:
+            tname = shared
         original = res.name
         _replace_residue_in_place(modeller, res, prot, names, prev_c, next_n, new_name=tname)
         if renames is not None:

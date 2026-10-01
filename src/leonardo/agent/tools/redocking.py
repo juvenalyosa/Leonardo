@@ -7,6 +7,7 @@ import os
 import time
 
 from .. import presentation
+from ..jobs import POPEN_GROUP, stop_process
 from ..registry import ToolError
 from . import _headless
 
@@ -429,7 +430,7 @@ def register_mc(reg):
         py = os.path.join(sys.prefix, "bin", "python")
         log = open(os.path.join(work, "mc_log.txt"), "w")
         proc = subprocess.Popen([py if os.path.isfile(py) else sys.executable, mc.__file__, "mc_args.json"],
-                                cwd=work, stdout=log, stderr=subprocess.STDOUT)
+                                cwd=work, stdout=log, stderr=subprocess.STDOUT, **POPEN_GROUP)
 
         def poll():
             if proc.poll() is None:
@@ -470,8 +471,7 @@ def register_mc(reg):
                           f"{res['acceptance']:.0%}; site RMSD {min(rms):.2f}-{max(rms):.2f} Å (play the states).")}}
 
         def cancel():
-            if proc.poll() is None:
-                proc.kill()
+            stop_process(proc, log)
 
         return ctx.jobs.start("mc_ensemble", poll, cancel=cancel, description=f"Monte Carlo ensemble of {object}")
 

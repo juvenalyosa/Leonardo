@@ -147,6 +147,10 @@ def build_material(material="Au", kind="slab", facet="111", size_nm=(4.0, 4.0), 
         if facet not in (None, "", OXIDES[material], "111"):      # "111" = the generic default
             raise ValueError(f"{material} is built as the {OXIDES[material]} surface")
         return (_quartz_001 if material == "SiO2" else _rutile_110)(size_nm, layers)
+    if kind not in ("slab", "nanoparticle"):
+        raise ValueError("kind must be 'slab' or 'nanoparticle'")
+    if kind == "slab" and material != "graphene" and str(facet) not in ("111", "100", "110"):
+        raise ValueError(f"{material} slabs are built as the 111, 100 or 110 facet")
     if kind == "nanoparticle":
         if material == "graphene":
             raise ValueError("nanoparticles are for metals")
@@ -400,6 +404,13 @@ def build_protein_surface_system(pdb_path, material="Au", facet="111", layers=4,
 
     out_dir = out_dir or os.path.join(cl._cache_dir(), "materials", time.strftime("surf_%Y%m%d_%H%M%S"))
     os.makedirs(out_dir, exist_ok=True)
+    if family != "amber14":
+        # the substrate LJ sits in the NonbondedForce (Amber style); CHARMM36 in OpenMM keeps LJ in a separate
+        # LennardJonesForce with 1.0/1.0 1-4 scaling, so these substrate files do not combine with it
+        raise ValueError("protein-surface systems are built with amber14 (the substrate force fields here "
+                         "use Amber-style nonbonded terms)")
+    if material not in OXIDES and str(facet) not in ("111", "100", "110"):
+        raise ValueError(f"{material} slabs are built as the 111, 100 or 110 facet")
     if material in OXIDES:
         facet = OXIDES[material]
         if anchor_cys:
@@ -469,7 +480,9 @@ def build_protein_surface_system(pdb_path, material="Au", facet="111", layers=4,
         if i in mat_set or j in mat_set:
             system.removeConstraint(k)
     pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
-    report["metal_restraints"] = cl.add_coordination_restraints(system, modeller.topology, pos_nm)
+    mat_resn = {a.residue.name for a in modeller.topology.atoms() if a.index in mat_set}
+    report["metal_restraints"] = cl.add_coordination_restraints(system, modeller.topology, pos_nm,
+                                                                skip_resn=mat_resn)
     anchors = []
     if anchor_cys:
         anchors = _add_thiol_anchors(system, modeller.topology, pos_nm, anchor_cys, mat_idx)
@@ -534,10 +547,10 @@ def _add_thiol_anchors(system, topology, pos_nm, spec, mat_idx, r_lo=0.24, r_hi=
     if not sg:
         raise ValueError(f"no Cys SG in {spec!r} to anchor")
     M = np.array([pos_nm[i] for i in mat_idx])
-    force = mm.CustomBondForce("0.5*k*(max(0, r-rhi)^2 + max(0, rlo-r)^2)")
-    force.addGlobalParameter("k", k)
-    force.addGlobalParameter("rlo", r_lo)
-    force.addGlobalParameter("rhi", r_hi)
+    force = mm.CustomBondForce("0.5*leo_anchor_k*(max(0, r-leo_anchor_rhi)^2 + max(0, leo_anchor_rlo-r)^2)")
+    force.addGlobalParameter("leo_anchor_k", k)
+    force.addGlobalParameter("leo_anchor_rlo", r_lo)
+    force.addGlobalParameter("leo_anchor_rhi", r_hi)
     out = []
     pairs = []
     for a in sg:

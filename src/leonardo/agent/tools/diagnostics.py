@@ -8,6 +8,7 @@ import sys
 import time
 
 from .. import presentation
+from ..jobs import POPEN_GROUP, stop_process
 from ..registry import ToolError
 
 READINESS_WORKFLOWS = ["bioseq", "alphafold", "docking", "redocking", "virtual_screening", "lead_optimization",
@@ -219,7 +220,7 @@ def register(reg):
         env["PYTHONPATH"] = pkg_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         log_path = os.path.join(out_dir, "refine_log.txt")
         log = open(log_path, "w")
-        proc = subprocess.Popen(argv, cwd=out_dir, stdout=log, stderr=subprocess.STDOUT, env=env)
+        proc = subprocess.Popen(argv, cwd=out_dir, stdout=log, stderr=subprocess.STDOUT, env=env, **POPEN_GROUP)
 
         def poll():
             if proc.poll() is None:
@@ -236,8 +237,7 @@ def register(reg):
             return {"done": True, "result": _refine_result(summary, out_dir)}
 
         def cancel():
-            if proc.poll() is None:
-                proc.terminate()
+            stop_process(proc, log)
 
         return ctx.jobs.start("vib_refine", poll, cancel=cancel,
                               description=f"ligand FF vibrational refinement ({qm_engine})")

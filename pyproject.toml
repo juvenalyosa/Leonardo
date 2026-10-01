@@ -75,6 +75,7 @@ py-modules = [
   "task_monitor_runtime",
   "train_abfe_steering_policy",
   "trajectory_interaction_runtime",
+  "ui_layout_runtime",
   "validate_3ptb_ben_parameterization",
   "vs_runtime",
 ]
