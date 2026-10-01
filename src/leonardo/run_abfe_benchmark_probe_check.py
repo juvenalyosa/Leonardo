@@ -54,6 +54,7 @@ from .abfe_runtime import (
     build_abfe_steering_lambda_schedule,
     build_abfe_surface_detach_direction_payload,
     compute_runtime_pocket_descriptors,
+    configure_abfe_steering_cycles,
 )
 
 R_KJ_MOL_K = 0.008314462618
@@ -1146,6 +1147,9 @@ def main():
     ap.add_argument("--parmchk2", default=os.environ.get("PARMCHK2_BIN", "parmchk2"))
     ap.add_argument("--tleap", default=os.environ.get("TLEAP_BIN", "tleap"))
     ap.add_argument("--random-seed", type=int, default=20260312)
+    ap.add_argument("--steering-mode", choices=["pull_hold_return", "pull_hold"], default="pull_hold_return",
+                    help="pull_hold_return: exit + re-entry cycles; pull_hold: exit only")
+    ap.add_argument("--cycles", type=int, default=3, help="exit + re-entry cycles (pull_hold_return)")
     ap.add_argument("--energy-unit", choices=["kcal", "kj"], default="kcal")
     args = ap.parse_args()
 
@@ -1565,7 +1569,7 @@ def main():
     rot_bonds = int(Lipinski.NumRotatableBonds(Chem.RemoveHs(Chem.Mol(ligand_mol))))
     adaptive_state = build_abfe_adaptive_steering_state_payload(
         enabled=True,
-        steering_mode="pull_hold",
+        steering_mode=str(args.steering_mode),
         initial_pull_k_kj_nm2=float(steering_k_current),
         n_direction_candidates=int(len(steering_corridors)),
         ligand_heavy_atoms=int(lig_heavy.size),
@@ -1587,10 +1591,19 @@ def main():
     sim_ns = max(0.2, float(args.sim_ns))
     prod_steps = int(round((sim_ns * 1000.0) / timestep_ps))
     n_samples = max(1, prod_steps // stride)
-    lam_plan = build_abfe_steering_lambda_schedule(n_samples=int(n_samples), steering_mode="pull_hold", steering_enabled=True)
+    lam_plan = build_abfe_steering_lambda_schedule(
+        n_samples=int(n_samples), steering_mode=str(args.steering_mode), steering_enabled=True
+    )
     lam_schedule = np.asarray(lam_plan.get("lambda_schedule", []), dtype=float)
     if int(lam_schedule.size) != int(n_samples):
         lam_schedule = np.ones(int(n_samples), dtype=float)
+    adaptive_state = configure_abfe_steering_cycles(
+        adaptive_state,
+        n_cycles=int(max(1, int(args.cycles))),
+        n_samples=int(n_samples),
+        warmup_samples=int(lam_plan.get("n_warm", 0) or 0),
+    )
+    return_vec = None
 
     energies_total = []
     energies_lj = []
@@ -1715,6 +1728,19 @@ def main():
                 target_pull_vec = np.asarray((blend_vec / blend_norm) * pull_detach_dist_nm, dtype=float)
         elif bool(adaptive_state_pre.get("keep_pull_lambda_high_until_far_hold", False)) and bool(adaptive_state_pre.get("high_lambda_seen", False)):
             lam_runtime = 1.0
+        if bool(adaptive_state_pre.get("state_driven_lambda", False)):
+            if phase_pre in {"pull", "return", "bound_hold"}:
+                lam_runtime = float(adaptive_state_pre.get("cycle_lambda", 0.0) or 0.0)
+            if phase_pre == "return":
+                if return_vec is None:
+                    # straight line back from the current position (lam=1) to the bound pose (lam=0)
+                    cur = np.asarray([xyz_prev[int(r["particle"])] for r in steer_rows], dtype=float)
+                    ref = np.asarray([[float(r["x0"]), float(r["y0"]), float(r["z0"])] for r in steer_rows], dtype=float)
+                    disp = np.mean(cur - ref, axis=0) if cur.size else np.zeros(3)
+                    return_vec = disp if (np.all(np.isfinite(disp)) and float(np.linalg.norm(disp)) > 1.0e-3) else target_pull_vec
+                target_pull_vec = np.asarray(return_vec, dtype=float)
+            elif phase_pre != "bound_hold":
+                return_vec = None
         apply_pull_vector(target_pull_vec)
         sim.context.setParameter("lam", float(lam_runtime))
         sim.step(stride)
@@ -1979,6 +2005,17 @@ def main():
             "steering_corridor_count": int(len(steering_corridors)),
             "steering_switches_used": int(steering_switch_count),
             "far_hold_frames": int(np.sum(np.asarray(far_hold_stable_hist, dtype=bool))),
+            "steering_mode": str(args.steering_mode),
+            "steering_cycles_target": int((adaptive_state or {}).get("cycles_target", 1) or 1),
+            "steering_cycles_completed": int((adaptive_state or {}).get("cycles_completed", 0) or 0),
+        },
+        "steering_timeline": {
+            "time_ps": [float(v) for v in times_ps],
+            "phase": [str(v) for v in steering_phase_sample_hist],
+            "lambda": [float(v) for v in lam_hist],
+            "site_com_dist_a": [float(v) for v in rc_site_com],
+            "protein_min_dist_a": [float(v) for v in protein_min_dist],
+            "pull_k_kj_nm2": [float(v) for v in pull_k_hist],
         },
         "energetics": {
             "samples": int(len(arr_total)),

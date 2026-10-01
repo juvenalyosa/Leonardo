@@ -3671,6 +3671,79 @@ def build_abfe_steering_policy_state_payload(
     return out
 
 
+def configure_abfe_steering_cycles(adaptive_state=None, *, n_cycles=1, n_samples=0, warmup_samples=0):
+    """
+    Unbind/rebind cycles for the "pull_hold_return" mode.
+
+    The steering lambda is then driven by the state machine (``cycle_lambda``): it ramps
+    0 -> 1 while pulling out along the corridor/tunnel, holds while the ligand is
+    unbound, ramps 1 -> 0 on "return" with the pull force restored (so the ligand is
+    brought back into the site), and a cycle counts once the ligand has stayed bound for
+    ``rebound_target_samples``. After the last cycle the phase is "bound_hold" (lambda 0).
+    Other modes are returned unchanged (single pull, no return).
+    """
+    state = dict(adaptive_state or {})
+    mode = str(state.get("steering_mode", "pull_hold") or "pull_hold").strip().lower()
+    if (not bool(state.get("enabled", False))) or mode != "pull_hold_return":
+        state["state_driven_lambda"] = False
+        state["cycles_target"] = 1
+        state["cycles_completed"] = 0
+        return state
+    try:
+        cycles = int(n_cycles)
+    except Exception:
+        cycles = 1
+    cycles = int(np.clip(cycles, 1, 20))
+    try:
+        total = int(n_samples or 0)
+    except Exception:
+        total = 0
+    try:
+        warm = int(warmup_samples or 0)
+    except Exception:
+        warm = 0
+    total = max(0, total)
+    warm = int(np.clip(warm, 0, max(0, total - 1)))
+    per_cycle = float(max(1, total - warm)) / float(cycles) if total > 0 else 60.0
+    # ~22% of each cycle to pull out and ~22% to bring back; the rest is spent unbound
+    # (far hold / detached settle) and bound (rebound check)
+    ramp_samples = int(max(3, round(0.22 * per_cycle)))
+    state.update(
+        {
+            "state_driven_lambda": True,
+            "cycles_target": int(cycles),
+            "cycles_completed": 0,
+            "cycle_lambda": 0.0,
+            "cycle_lambda_step": float(1.0 / float(ramp_samples)),
+            "cycle_ramp_samples": int(ramp_samples),
+            "warmup_samples": int(warm),
+            "rebound_target_samples": int(max(4, round(0.08 * per_cycle))),
+            "rebound_since_sample": -1,
+            "return_timeout_samples": int(max(ramp_samples, round(0.20 * per_cycle))),
+            "return_zero_since_sample": -1,
+            "return_force_boosts": 0,
+        }
+    )
+    return state
+
+
+def _abfe_advance_cycle_lambda(state, sample_index):
+    """Per-sample lambda ramp of the state-driven (cycle) mode."""
+    phase = str(state.get("phase", "pull") or "pull").strip().lower()
+    lam = float(state.get("cycle_lambda", 0.0) or 0.0)
+    step = float(state.get("cycle_lambda_step", 0.1) or 0.1)
+    if phase in {"pull", "probe"} and int(sample_index) >= int(state.get("warmup_samples", 0) or 0):
+        lam = min(1.0, lam + step)
+    elif phase in {"far_hold", "detached_settle"}:
+        lam = 1.0
+    elif phase == "return":
+        lam = max(0.0, lam - step)
+    elif phase in {"bound_hold", "bound_settle"}:
+        lam = 0.0
+    state["cycle_lambda"] = float(np.clip(lam, 0.0, 1.0))
+    return state
+
+
 def build_abfe_adaptive_steering_update_decision(
     *,
     adaptive_state=None,
@@ -3714,6 +3787,25 @@ def build_abfe_adaptive_steering_update_decision(
         lam_f = 0.0
     if not np.isfinite(lam_f):
         lam_f = 0.0
+    if bool(state.get("state_driven_lambda", False)):
+        state = _abfe_advance_cycle_lambda(state, sidx)
+        if str(state.get("phase", "")).strip().lower() == "bound_hold":
+            return {
+                "ok": True,
+                "should_adapt": False,
+                "reason": "cycles_complete_bound_hold",
+                "update_pull_k": False,
+                "pull_k_kj_nm2": float(current_pull_k_kj_nm2),
+                "update_pull_distance_scale": False,
+                "pull_distance_scale": float(state.get("current_pull_distance_scale", 1.0) or 1.0),
+                "switch_direction": False,
+                "direction_index": int(current_direction_index or 0),
+                "phase": "bound_hold",
+                "hold_lambda_value": 0.0,
+                "far_hold_stable": False,
+                "notes": [],
+                "adaptive_state": dict(state),
+            }
     high_lambda_threshold = float(state.get("high_lambda_threshold", 0.70))
     state["high_lambda_seen"] = bool(state.get("high_lambda_seen", False) or (lam_f >= high_lambda_threshold))
 
@@ -3770,7 +3862,7 @@ def build_abfe_adaptive_steering_update_decision(
     }
 
     phase = str(state.get("phase", "pull") or "pull").strip().lower()
-    if phase not in {"bound_settle", "probe", "pull", "far_hold", "detached_settle", "return"}:
+    if phase not in {"bound_settle", "probe", "pull", "far_hold", "detached_settle", "return", "bound_hold"}:
         phase = "pull"
 
     try:
@@ -4071,8 +4163,15 @@ def build_abfe_adaptive_steering_update_decision(
                     out["update_pull_k"] = bool(new_k < current_k - 1.0e-6 or bool(out["update_pull_k"]))
                     out["hold_lambda_value"] = float(detached_lambda_value)
                     reason = "enter_detached_settle"
+                elif str(state.get("steering_mode", "pull_hold")) == "pull_hold_return":
+                    next_state["phase"] = "return"
+                    new_k = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+                    out["update_pull_k"] = bool(abs(new_k - current_k) > 1.0e-6)
+                    next_state["return_zero_since_sample"] = -1
+                    next_state["rebound_since_sample"] = -1
+                    reason = "far_hold_complete_enter_return"
                 else:
-                    next_state["phase"] = "return" if str(state.get("steering_mode", "pull_hold")) == "pull_hold_return" else "far_hold"
+                    next_state["phase"] = "far_hold"
                     reason = "far_hold_complete"
             else:
                 reason = "far_hold_stable"
@@ -4111,8 +4210,17 @@ def build_abfe_adaptive_steering_update_decision(
                 new_k = float(target_detached_k)
                 out["update_pull_k"] = bool(True)
             out["far_hold_stable"] = bool(detached_count >= detached_target and far_ready)
-            if detached_count >= detached_target:
-                next_state["phase"] = "return" if str(state.get("steering_mode", "pull_hold")) == "pull_hold_return" else "detached_settle"
+            if detached_count >= detached_target and str(state.get("steering_mode", "pull_hold")) == "pull_hold_return":
+                # bring the ligand back with the full pull force (the detached settle force is
+                # ~1% of it, too weak to move the ligand into the site)
+                next_state["phase"] = "return"
+                new_k = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+                out["update_pull_k"] = bool(abs(new_k - current_k) > 1.0e-6)
+                next_state["return_zero_since_sample"] = -1
+                next_state["rebound_since_sample"] = -1
+                reason = "detached_settle_complete_enter_return"
+            elif detached_count >= detached_target:
+                next_state["phase"] = "detached_settle"
                 reason = "detached_settle_complete"
             else:
                 reason = "detached_settle"
@@ -4138,14 +4246,79 @@ def build_abfe_adaptive_steering_update_decision(
         return out
 
     if phase == "return":
-        next_state["far_hold_count"] = int(far_hold_count)
-        next_state["detached_settle_count"] = int(detached_count)
         next_state["pull_surface_detach_active"] = False
-        out["phase"] = "return"
-        out["reason"] = "return_phase"
+        k_return = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+        if current_k < k_return - 1.0e-6 and int(state.get("return_force_boosts", 0) or 0) == 0:
+            new_k = float(k_return)
+            out["update_pull_k"] = True
+        lam_now = float(state.get("cycle_lambda", lam_f) or 0.0)
+        bound_contacts_needed = 0.5 * float(state.get("bound_min_contact_count_4a", 4) or 4)
+        bound_now = bool(
+            np.isfinite(latest_site)
+            and np.isfinite(latest_min)
+            and latest_site <= float(state.get("bound_site_com_threshold_a", 4.0))
+            and latest_min <= float(state.get("bound_max_min_dist_a", 3.5))
+            and ((not np.isfinite(latest_contacts)) or latest_contacts >= bound_contacts_needed)
+        )
+        reason = "return_ramp"
+        if lam_now <= 1.0e-6:
+            zero_since = int(state.get("return_zero_since_sample", -1))
+            if zero_since < 0:
+                zero_since = int(sidx)
+            next_state["return_zero_since_sample"] = int(zero_since)
+            if bound_now:
+                since = int(state.get("rebound_since_sample", -1))
+                if since < 0:
+                    since = int(sidx)
+                next_state["rebound_since_sample"] = int(since)
+                if (sidx - since) >= int(state.get("rebound_target_samples", 4) or 4):
+                    done = int(state.get("cycles_completed", 0) or 0) + 1
+                    next_state["cycles_completed"] = int(done)
+                    next_state["rebound_since_sample"] = -1
+                    next_state["return_zero_since_sample"] = -1
+                    next_state["return_force_boosts"] = 0
+                    if done < int(state.get("cycles_target", 1) or 1):
+                        # next unbind cycle from the bound pose
+                        next_state["phase"] = "pull"
+                        next_state["far_hold_count"] = 0
+                        next_state["detached_settle_count"] = 0
+                        next_state["far_hold_target_k_kj_nm2"] = np.nan
+                        next_state["stall_count"] = 0
+                        next_state["high_lambda_seen"] = False
+                        new_distance_scale = float(state.get("target_pull_distance_scale", new_distance_scale) or new_distance_scale)
+                        out["update_pull_distance_scale"] = bool(abs(new_distance_scale - current_distance_scale) > 1.0e-6)
+                        new_k = float(k_return)
+                        out["update_pull_k"] = bool(abs(new_k - current_k) > 1.0e-6)
+                        reason = "rebound_start_next_cycle"
+                    else:
+                        next_state["phase"] = "bound_hold"
+                        reason = "rebound_cycles_complete"
+                else:
+                    reason = "rebound_settling"
+            else:
+                next_state["rebound_since_sample"] = -1
+                timeout = int(state.get("return_timeout_samples", 30) or 30)
+                boosts = int(state.get("return_force_boosts", 0) or 0)
+                if (sidx - zero_since) >= timeout * (boosts + 1) and current_k < (k_max * 0.985):
+                    # the ligand does not find its way in: push harder toward the bound pose
+                    new_k = float(min(k_max, max(current_k + 200.0, current_k * 1.5)))
+                    out["update_pull_k"] = True
+                    next_state["return_force_boosts"] = int(boosts + 1)
+                    reason = "return_stalled_increase_force"
+                else:
+                    reason = "return_waiting_for_rebind"
+        next_state["phase"] = str(next_state.get("phase", "return"))
+        out["phase"] = str(next_state["phase"])
+        out["reason"] = str(reason)
+        out["hold_lambda_value"] = float(lam_now)
         out["pull_k_kj_nm2"] = float(new_k)
         out["pull_distance_scale"] = float(new_distance_scale)
         out["direction_index"] = int(new_dir)
+        out["should_adapt"] = bool(out["update_pull_k"] or out.get("update_pull_distance_scale", False))
+        if out["should_adapt"]:
+            next_state["adaptation_count"] = int(max(0, int(state.get("adaptation_count", 0))) + 1)
+        next_state["current_pull_k_kj_nm2"] = float(new_k)
+        next_state["current_pull_distance_scale"] = float(new_distance_scale)
         out["adaptive_state"] = dict(next_state)
         return out
 

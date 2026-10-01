@@ -157,6 +157,7 @@ try:
     from .abfe_runtime import ABFE_POCKET_DESCRIPTOR_COLS
     from .abfe_runtime import prepare_abfe_live_view_preflight as abfe_prepare_live_view_preflight
     from .abfe_runtime import build_abfe_steering_lambda_schedule as abfe_build_steering_lambda_schedule
+    from .abfe_runtime import configure_abfe_steering_cycles as abfe_configure_steering_cycles
     from .abfe_runtime import build_abfe_adaptive_steering_state_payload as abfe_build_adaptive_steering_state_payload
     from .abfe_runtime import build_abfe_adaptive_steering_update_decision as abfe_build_adaptive_steering_update_decision
     from .abfe_runtime import build_abfe_steering_policy_state_payload as abfe_build_steering_policy_state_payload
@@ -556,6 +557,7 @@ except Exception:
     from abfe_runtime import ABFE_POCKET_DESCRIPTOR_COLS
     from abfe_runtime import prepare_abfe_live_view_preflight as abfe_prepare_live_view_preflight
     from abfe_runtime import build_abfe_steering_lambda_schedule as abfe_build_steering_lambda_schedule
+    from abfe_runtime import configure_abfe_steering_cycles as abfe_configure_steering_cycles
     from abfe_runtime import build_abfe_adaptive_steering_state_payload as abfe_build_adaptive_steering_state_payload
     from abfe_runtime import build_abfe_adaptive_steering_update_decision as abfe_build_adaptive_steering_update_decision
     from abfe_runtime import build_abfe_steering_policy_state_payload as abfe_build_steering_policy_state_payload
@@ -6429,14 +6431,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_abfe_steer = QtWidgets.QHBoxLayout()
             row_abfe_steer.addWidget(QtWidgets.QLabel("ABFE steering mode"))
             self.cmb_abfe_steering_mode = QtWidgets.QComboBox()
-            self.cmb_abfe_steering_mode.addItem("Pull + Hold (Recommended)", "pull_hold")
-            self.cmb_abfe_steering_mode.addItem("Pull + Hold + Return", "pull_hold_return")
+            self.cmb_abfe_steering_mode.addItem("Exit + Re-entry Cycles (Recommended)", "pull_hold_return")
+            self.cmb_abfe_steering_mode.addItem("Pull + Hold (exit only)", "pull_hold")
+            self.cmb_abfe_steering_mode.setToolTip(
+                "Exit + Re-entry: the ligand is pulled out along the tunnel, held unbound, then brought back "
+                "into the site with the pull force restored, for the number of cycles set. Pull + Hold only exits."
+            )
             self.cmb_abfe_steering_mode.currentIndexChanged.connect(
                 lambda _i: self._on_abfe_steering_mode_changed(
                     self.cmb_abfe_steering_mode.currentData(), source="traj"
                 )
             )
             row_abfe_steer.addWidget(self.cmb_abfe_steering_mode)
+            row_abfe_steer.addWidget(QtWidgets.QLabel("Cycles"))
+            self.spin_abfe_steering_cycles = QtWidgets.QSpinBox()
+            self.spin_abfe_steering_cycles.setRange(1, 10)
+            self.spin_abfe_steering_cycles.setValue(3)
+            self.spin_abfe_steering_cycles.setToolTip("Exit + re-entry cycles per replica (Exit + Re-entry mode).")
+            self.spin_abfe_steering_cycles.valueChanged.connect(
+                lambda v: self._set_abfe_steering_cycles(int(v), source="traj")
+            )
+            row_abfe_steer.addWidget(self.spin_abfe_steering_cycles)
             row_abfe_steer.addStretch(1)
             vbox.addLayout(row_abfe_steer)
             row_abfe_policy = QtWidgets.QHBoxLayout()
@@ -14068,8 +14083,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 continue
         try:
-            mode = str(getattr(self, "_settings", {}).get("abfe_steering_mode", "pull_hold") or "pull_hold").strip().lower()
-            return mode if mode in allowed else "pull_hold"
+            mode = str(getattr(self, "_settings", {}).get("abfe_steering_mode", "pull_hold_return") or "pull_hold_return").strip().lower()
+            return mode if mode in allowed else "pull_hold_return"
         except Exception:
             return "pull_hold"
     def _abfe_policy_mode(self, source=None):
@@ -14132,6 +14147,41 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return float(max(2.0, min(12.0, float(getattr(self, "_settings", {}).get("abfe_guide_tunnel_radius_a", 3.5)))))
         except Exception:
             return 3.5
+    def _abfe_steering_cycles(self, source=None):
+        attr_pairs = [("spin_abfe_steering_cycles", "traj"), ("spin_pose_abfe_steering_cycles", "dock")]
+        if source == "dock":
+            attr_pairs = [("spin_pose_abfe_steering_cycles", "dock"), ("spin_abfe_steering_cycles", "traj")]
+        for attr, _src in attr_pairs:
+            sp = getattr(self, attr, None)
+            if sp is not None:
+                try:
+                    return int(max(1, min(10, int(sp.value()))))
+                except Exception:
+                    continue
+        try:
+            return int(max(1, min(10, int(getattr(self, "_settings", {}).get("abfe_steering_cycles", 3)))))
+        except Exception:
+            return 3
+    def _set_abfe_steering_cycles(self, cycles, source=None):
+        try:
+            n = int(max(1, min(10, int(cycles))))
+        except Exception:
+            n = 3
+        for attr, src in (("spin_abfe_steering_cycles", "traj"), ("spin_pose_abfe_steering_cycles", "dock")):
+            sp = getattr(self, attr, None)
+            if sp is None or source == src:
+                continue
+            try:
+                sp.blockSignals(True)
+                sp.setValue(n)
+                sp.blockSignals(False)
+            except Exception:
+                pass
+        try:
+            if hasattr(self, "_settings"):
+                self._settings["abfe_steering_cycles"] = n
+        except Exception:
+            pass
     def _set_abfe_guide_tunnel_enabled(self, enabled, source=None):
         en = bool(enabled)
         for attr, src in (("cb_abfe_guide_tunnel", "traj"), ("cb_pose_abfe_guide_tunnel", "dock")):
@@ -20182,8 +20232,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_pose_steer.setVerticalSpacing(8)
             row_pose_steer.addWidget(QtWidgets.QLabel("ABFE steering mode"), 0, 0)
             self.cmb_pose_abfe_steering_mode = QtWidgets.QComboBox()
-            self.cmb_pose_abfe_steering_mode.addItem("Pull + Hold (Recommended)", "pull_hold")
-            self.cmb_pose_abfe_steering_mode.addItem("Pull + Hold + Return", "pull_hold_return")
+            self.cmb_pose_abfe_steering_mode.addItem("Exit + Re-entry Cycles (Recommended)", "pull_hold_return")
+            self.cmb_pose_abfe_steering_mode.addItem("Pull + Hold (exit only)", "pull_hold")
+            self.cmb_pose_abfe_steering_mode.setToolTip(
+                "Exit + Re-entry: the ligand is pulled out along the tunnel, held unbound, then brought back "
+                "into the site with the pull force restored, for the number of cycles set. Pull + Hold only exits."
+            )
             self.cmb_pose_abfe_steering_mode.currentIndexChanged.connect(
                 lambda _i: self._on_abfe_steering_mode_changed(
                     self.cmb_pose_abfe_steering_mode.currentData(), source="dock"
@@ -20243,6 +20297,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 lambda v: self._on_abfe_guide_tunnel_radius_changed(float(v), source="dock")
             )
             row_pose_steer.addWidget(self.spin_pose_abfe_guide_tunnel_radius, 2, 3)
+            row_pose_steer.addWidget(QtWidgets.QLabel("Exit + re-entry cycles"), 3, 0)
+            self.spin_pose_abfe_steering_cycles = QtWidgets.QSpinBox()
+            self.spin_pose_abfe_steering_cycles.setRange(1, 10)
+            self.spin_pose_abfe_steering_cycles.setValue(3)
+            self.spin_pose_abfe_steering_cycles.setToolTip("Exit + re-entry cycles per replica (Exit + Re-entry mode).")
+            self.spin_pose_abfe_steering_cycles.valueChanged.connect(
+                lambda v: self._set_abfe_steering_cycles(int(v), source="dock")
+            )
+            row_pose_steer.addWidget(self.spin_pose_abfe_steering_cycles, 3, 1)
             for _col in range(4):
                 row_pose_steer.setColumnStretch(_col, 1)
             dbox.addLayout(row_pose_steer)
@@ -48245,6 +48308,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         guide_tunnel_enabled=True,
         guide_tunnel_radius_a=3.5,
         guide_tunnel_k_kj_nm2=650.0,
+        steering_cycles=3,
     ):
         """
         ABFE-lite MD approximation (whole-protein mode only):
@@ -49595,6 +49659,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             lam_schedule = np.asarray(lam_plan.get("lambda_schedule", []), dtype=float)
             if int(lam_schedule.size) != int(n_samples):
                 lam_schedule = np.zeros(int(n_samples), dtype=float)
+            if bias_force is not None:
+                # "pull_hold_return": unbind/rebind cycles with the lambda driven by the state machine
+                steering_adaptive_state = abfe_configure_steering_cycles(
+                    dict(steering_adaptive_state or {}),
+                    n_cycles=int(max(1, int(steering_cycles or 1))),
+                    n_samples=int(n_samples),
+                    warmup_samples=int(lam_plan.get("n_warm", 0) or 0),
+                )
+            return_vec_nm = None
             pd_plan = abfe_build_md_progress_dialog_plan(
                 n_samples=int(n_samples),
                 bias_enabled=bool(bias_force is not None),
@@ -49765,6 +49838,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             and bool(adaptive_state_pre.get("high_lambda_seen", False))
                         ):
                             lam_value_runtime = 1.0
+                        if bool(adaptive_state_pre.get("state_driven_lambda", False)):
+                            if phase_pre in {"pull", "return", "bound_hold"}:
+                                lam_value_runtime = float(adaptive_state_pre.get("cycle_lambda", 0.0) or 0.0)
+                            if phase_pre == "return":
+                                if return_vec_nm is None:
+                                    # bring the ligand back along a straight line from where it is:
+                                    # at lam=1 the target is its current position, at lam=0 the bound pose
+                                    rows_now = list(pull_particle_rows or [])
+                                    cur = np.asarray([xyz_runtime_prev[int(r.get("particle", 0))] for r in rows_now], dtype=float)
+                                    ref = np.asarray([[float(r.get("x0", 0.0)), float(r.get("y0", 0.0)), float(r.get("z0", 0.0))] for r in rows_now], dtype=float)
+                                    disp = np.mean(cur - ref, axis=0) if cur.size else np.zeros(3)
+                                    return_vec_nm = (
+                                        np.asarray(disp, dtype=float)
+                                        if np.all(np.isfinite(disp)) and float(np.linalg.norm(disp)) > 1.0e-3
+                                        else np.asarray(target_pull_vec_nm, dtype=float)
+                                    )
+                                target_pull_vec_nm = np.asarray(return_vec_nm, dtype=float)
+                            elif phase_pre != "bound_hold":
+                                return_vec_nm = None
                         _abfe_apply_bias_vector_live(target_pull_vec_nm)
                         context.setParameter("lam", float(lam_value_runtime))
                     except Exception:
@@ -50496,6 +50588,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 replica_index=int(replica_index),
                 replica_count=int(replica_count),
             )
+            if isinstance(result, dict):
+                result["steering_cycles_target"] = int((steering_adaptive_state or {}).get("cycles_target", 1) or 1)
+                result["steering_cycles_completed"] = int((steering_adaptive_state or {}).get("cycles_completed", 0) or 0)
             return result
         except Exception as e:
             print(f"ABFE-lite local MD failed: {e}")
@@ -51076,6 +51171,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         policy_mode = str(self._abfe_policy_mode(source=source) or "heuristic")
         guide_tunnel_enabled = bool(self._abfe_guide_tunnel_enabled(source=source))
         guide_tunnel_radius_a = float(self._abfe_guide_tunnel_radius_a(source=source))
+        steering_cycles = int(self._abfe_steering_cycles(source=source))
         try:
             replica_seed0 = int(getattr(self, "_settings", {}).get("abfe_replica_seed0", 20260311))
         except Exception:
@@ -51103,6 +51199,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 guide_tunnel_enabled=bool(guide_tunnel_enabled),
                 guide_tunnel_radius_a=float(guide_tunnel_radius_a),
                 guide_tunnel_k_kj_nm2=650.0,
+                steering_cycles=int(steering_cycles),
             )
             if rep_data:
                 replica_results.append(rep_data)
@@ -55358,7 +55455,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "abfe_keep_scene_visible": False,
             "abfe_surface_transparency": 0.55,
             "abfe_surface_color_mode": "rainbow_resi",
-            "abfe_steering_mode": "pull_hold",
+            "abfe_steering_mode": "pull_hold_return",
+            "abfe_steering_cycles": 3,
             "abfe_policy_mode": "heuristic",
             "abfe_guide_tunnel_enabled": True,
             "abfe_guide_tunnel_radius_a": 3.5,
@@ -55440,7 +55538,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._set_abfe_keep_scene_visible(bool(s.get("abfe_keep_scene_visible", False)))
             self._set_abfe_surface_alpha(float(s.get("abfe_surface_transparency", 0.55)))
             self._set_abfe_surface_color_mode(str(s.get("abfe_surface_color_mode", "rainbow_resi")))
-            self._set_abfe_steering_mode(str(s.get("abfe_steering_mode", "pull_hold")))
+            # settings saved before exit/re-entry cycles existed carry "pull_hold" only because it was the
+            # default then; they move to the new default once (the cycles key marks newer settings)
+            saved_mode = str(s.get("abfe_steering_mode", "pull_hold_return"))
+            if "abfe_steering_cycles" not in s:
+                saved_mode = "pull_hold_return"
+            self._set_abfe_steering_mode(saved_mode)
+            self._set_abfe_steering_cycles(int(s.get("abfe_steering_cycles", 3) or 3))
             self._set_abfe_policy_mode(str(s.get("abfe_policy_mode", "heuristic")))
             self._set_abfe_guide_tunnel_enabled(bool(s.get("abfe_guide_tunnel_enabled", True)))
             self._set_abfe_guide_tunnel_radius_a(float(s.get("abfe_guide_tunnel_radius_a", 3.5)))
@@ -55622,6 +55726,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 data["abfe_guide_tunnel_radius_a"] = float(
                     getattr(self, "_settings", {}).get("abfe_guide_tunnel_radius_a", 3.5)
                 )
+            data["abfe_steering_cycles"] = int(self._abfe_steering_cycles())
             data["style_overrides"] = self._settings.get("style_overrides", {}) if hasattr(self, "_settings") else {}
             data["show_angle_labels"] = (
                 bool(self.show_angle_labels_cb.isChecked()) if hasattr(self, "show_angle_labels_cb") else False
