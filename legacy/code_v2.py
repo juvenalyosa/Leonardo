@@ -70,6 +70,7 @@ try:
     from .alphafold_runtime import af_write_json
     from .bioseq_runtime import BIOSEQ_ANALYSIS_CATALOG
     from .bioseq_runtime import BIOSEQ_QUESTION_MAP
+    from .bioseq_runtime import align_residue_index_map as bioseq_align_residue_index_map
     from .bioseq_runtime import build_external_tool_urls as bioseq_build_external_tool_urls
     from .bioseq_runtime import build_motif_summary_lines as bioseq_build_motif_summary_lines
     from .bioseq_runtime import build_simulation_readiness_report as bioseq_build_simulation_readiness_report
@@ -470,6 +471,7 @@ except Exception:
     from alphafold_runtime import af_write_json
     from bioseq_runtime import BIOSEQ_ANALYSIS_CATALOG
     from bioseq_runtime import BIOSEQ_QUESTION_MAP
+    from bioseq_runtime import align_residue_index_map as bioseq_align_residue_index_map
     from bioseq_runtime import build_external_tool_urls as bioseq_build_external_tool_urls
     from bioseq_runtime import build_motif_summary_lines as bioseq_build_motif_summary_lines
     from bioseq_runtime import build_simulation_readiness_report as bioseq_build_simulation_readiness_report
@@ -26834,30 +26836,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 f"({int(vals.get('start', 0) or 0)}-{int(vals.get('end', 0) or 0)})."
             )
     def _bioseq_align_sequence_index_map(self, seq_a, seq_b):
-        a = str(seq_a or "").strip().upper()
-        b = str(seq_b or "").strip().upper()
-        out = {}
-        if (not a) or (not b):
-            return out
         try:
-            from Bio import pairwise2
-            alns = pairwise2.align.globalms(a, b, 2.0, -1.0, -10.0, -0.5, one_alignment_only=True)
-            if not alns:
-                return out
-            aln_a, aln_b = str(alns[0][0]), str(alns[0][1])
-            ia = 0
-            ib = 0
-            for ca, cb in zip(aln_a, aln_b):
-                if ca != "-":
-                    ia += 1
-                if cb != "-":
-                    ib += 1
-                if ca != "-" and cb != "-":
-                    out[int(ia)] = int(ib)
+            return dict(bioseq_align_residue_index_map(seq_a, seq_b).get("map", {}) or {})
         except Exception:
-            out = {}
-        return out
+            return {}
     def _bioseq_build_seq_index_to_resi_map(self, seq_clean, obj_name, chain_id):
+        """Sequence index (1-based) -> PDB residue label ("184", "184A", "-3")."""
         seq = str(seq_clean or "").strip()
         n = int(len(seq))
         if n <= 0:
@@ -26865,13 +26849,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         out = {}
         meta = dict(getattr(self, "_bioseq_sequence_meta", {}) or {})
         idx_to_resi = list(meta.get("index_to_resi", []) or [])
-        for i, rv in enumerate(idx_to_resi, start=1):
-            if i > n:
-                break
-            try:
-                out[i] = int(rv)
-            except Exception:
-                continue
+        if len(idx_to_resi) == n:
+            out = {i: str(rv) for i, rv in enumerate(idx_to_resi, start=1)}
         ch = self._normalize_chain_id(chain_id)
         data = {}
         try:
@@ -26880,47 +26859,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             data = dict((self._bioseq_chain_data or {}).get(ch, {}) or {})
         except Exception:
             data = {}
-        positions = [int(x) for x in list(data.get("positions", []) or [])]
+        labels = [str(x) for x in list(data.get("residue_labels", []) or data.get("positions", []) or [])]
         observed_seq = bioseq_clean_sequence(str(data.get("observed_seq", "") or ""))
-        if positions and observed_seq:
+        if labels and observed_seq and len(labels) == len(observed_seq):
             if seq == observed_seq:
-                for i in range(min(n, len(positions))):
-                    out[int(i + 1)] = int(positions[i])
+                out = {i: labels[i - 1] for i in range(1, n + 1)}
             else:
-                off = seq.find(observed_seq)
-                if off >= 0:
-                    for i in range(min(len(observed_seq), len(positions))):
-                        out[int(off + i + 1)] = int(positions[i])
-                else:
-                    off_obs = observed_seq.find(seq)
-                    if off_obs >= 0:
-                        for i in range(min(n, len(positions) - off_obs)):
-                            out[int(i + 1)] = int(positions[off_obs + i])
-                    else:
-                        amap = self._bioseq_align_sequence_index_map(seq, observed_seq)
-                        for ii, jj in list(amap.items()):
-                            try:
-                                if 1 <= int(jj) <= len(positions):
-                                    out[int(ii)] = int(positions[int(jj) - 1])
-                            except Exception:
-                                continue
-        start_guess = None
-        for cand in (
-            meta.get("sequence_start", None),
-            data.get("start", None),
-            1,
-        ):
+                # full/RCSB/modeler sequence vs observed chain: align (gaps, tags, mutations)
+                for ii, jj in self._bioseq_align_sequence_index_map(seq, observed_seq).items():
+                    if 1 <= int(jj) <= len(labels):
+                        out[int(ii)] = labels[int(jj) - 1]
+        if out:
+            return out
+        start_guess = 1
+        for cand in (meta.get("sequence_start", None), data.get("start", None)):
             try:
                 start_guess = int(cand)
                 break
-            except Exception:
+            except (TypeError, ValueError):
                 continue
-        if start_guess is None:
-            start_guess = 1
-        for i in range(1, n + 1):
-            if i not in out:
-                out[i] = int(start_guess + i - 1)
-        return out
+        return {i: str(start_guess + i - 1) for i in range(1, n + 1)}
     def _bioseq_chain_selection_expr(self, obj_name, chain_id):
         obj = str(obj_name or "").strip()
         if not obj:
@@ -26932,6 +26890,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             sel += f' and chain "{ch_esc}"'
         return sel
     def _bioseq_residue_ranges_for_seq_range(self, seq_start, seq_end, idx_to_resi):
+        """PDB residue labels (in chain order) covered by sequence positions seq_start..seq_end."""
         try:
             a = int(seq_start or 0)
             b = int(seq_end or 0)
@@ -26941,48 +26900,42 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return []
         if b < a:
             a, b = b, a
-        resi = []
+        out = []
         for i in range(a, b + 1):
-            try:
-                rv = int(idx_to_resi.get(i))
-            except Exception:
-                rv = None
-            if rv is not None:
-                resi.append(rv)
-        if not resi:
-            return []
-        uniq = sorted(set(int(x) for x in resi))
-        ranges = []
-        s = uniq[0]
-        e = uniq[0]
-        for x in uniq[1:]:
-            if int(x) == int(e) + 1:
-                e = int(x)
-            else:
-                ranges.append((int(s), int(e)))
-                s = int(x)
-                e = int(x)
-        ranges.append((int(s), int(e)))
-        return ranges
-    def _bioseq_color_residue_ranges(self, obj_name, chain_id, ranges, color_name):
-        if not ranges:
-            return
-        resi_parts = []
-        for a, b in list(ranges or []):
-            try:
-                aa = int(a)
-                bb = int(b)
-            except Exception:
+            lbl = idx_to_resi.get(i)
+            if lbl is not None and str(lbl) not in out:
+                out.append(str(lbl))
+        return out
+    def _bioseq_resi_expression(self, labels):
+        # plain numbers collapse to ranges; insertion codes (184A) and negatives stay explicit
+        parts = []
+        run = []
+
+        def _flush():
+            if run:
+                parts.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+                run.clear()
+
+        for lbl in list(labels or []):
+            txt = str(lbl).strip()
+            if re.fullmatch(r"\d+", txt):
+                if run and int(txt) != run[-1] + 1:
+                    _flush()
+                run.append(int(txt))
                 continue
-            if bb < aa:
-                aa, bb = bb, aa
-            resi_parts.append(f"{aa}-{bb}" if aa != bb else str(aa))
-        if not resi_parts:
+            _flush()
+            if txt:
+                parts.append(txt.replace("-", "\\-"))
+        _flush()
+        return "+".join(parts)
+    def _bioseq_color_residue_ranges(self, obj_name, chain_id, ranges, color_name):
+        resi_expr = self._bioseq_resi_expression(ranges)
+        if not resi_expr:
             return
         base_sel = self._bioseq_chain_selection_expr(obj_name, chain_id)
         if not base_sel:
             return
-        target_sel = f"{base_sel} and resi {'+'.join(resi_parts)}"
+        target_sel = f"{base_sel} and resi {resi_expr}"
         try:
             cmd.color(str(color_name or "cyan"), target_sel)
         except Exception:
@@ -27270,7 +27223,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "object": obj,
             "chain": ch,
             "sequence_start": int(data.get("start", 1) or 1),
-            "index_to_resi": [int(x) for x in list(data.get("positions", []) or [])],
+            "index_to_resi": [str(x) for x in list(data.get("residue_labels", []) or data.get("positions", []) or [])],
         }
         if not self._bioseq_set_sequence_text(
             seq,
@@ -27757,6 +27710,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     local_motifs=list(rep.get("motifs", []) or []),
                     uniprot_summary=dict(rep.get("uniprot", {}) or {}),
                     max_items=60,
+                    motif_total=rep.get("motif_total"),
                 )
                 or []
             )
@@ -27823,7 +27777,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Suggested structured core for first simulations: "
             f"{int(core.get('start', 1) or 1)}-{int(core.get('end', len(seq)) or len(seq))}"
         )
-        lines.append(f"Simple motif hits: {len(motifs)}")
+        motif_total = int(rep.get("motif_total", len(motifs)) or len(motifs))
+        lines.append(
+            f"Simple motif hits: {motif_total}"
+            + (f" (table shows the {len(motifs)} most specific)" if motif_total > len(motifs) else "")
+        )
         for m in list(motifs[:12]):
             lines.append(
                 f"  - {str(m.get('motif', 'motif'))}: "
@@ -27843,6 +27801,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 + (f" | {protein}" if protein else "")
                 + (f" | {organism}" if organism else "")
             )
+            if str(uniprot.get("warning", "") or "").strip():
+                lines.append("  WARNING: " + str(uniprot.get("warning")).strip())
             if features:
                 for feat in list(features[:20]):
                     lines.append(self._bioseq_format_uniprot_feature_line(feat))
@@ -27878,7 +27838,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._bioseq_populate_question_table(answers=answers)
         if hasattr(self, "lbl_bioseq_status"):
             self.lbl_bioseq_status.setText(
-                f"Local sequence analysis complete ({len(seq)} aa). TM={len(tm_segments)} | motifs={len(motifs)}."
+                f"Local sequence analysis complete ({len(seq)} aa). TM={len(tm_segments)} | motifs={motif_total}."
             )
         self._bioseq_show_motif_summary_popup()
     def _bioseq_run_msa_conservation(self):
