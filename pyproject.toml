@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "leonardo-pymol-suite"
-version = "0.2.0a5"
+version = "0.2.0a6"
 description = "PyMOL-based structural bioinformatics workflow suite for molecular modeling, docking, simulation, and quantum workflow orchestration."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,6 +21,10 @@ leonardo-readiness = "leonardo.report_scientific_readiness:main"
 package-dir = {"" = "legacy", "leonardo" = "src/leonardo", "leonardo_benchmarks" = "benchmarks"}
 packages = [
   "leonardo",
+  "leonardo.agent",
+  "leonardo.agent.providers",
+  "leonardo.agent.tools",
+  "leonardo.agent.ui",
   "leonardo_benchmarks",
   "leonardo_benchmarks.abfe",
   "leonardo_benchmarks.abfe.ptb3_ben",
@@ -34,20 +38,28 @@ py-modules = [
   "calibrate_abfe_group_compact",
   "code_v2",
   "compare_abfe_vs_docking",
+  "component_library_runtime",
   "config",
   "dock_runtime",
+  "druglike_runtime",
   "genmodels",
+  "hardware_runtime",
   "interaction_runtime",
   "interaction_typing_runtime",
   "leadopt_runtime",
   "ligand_canvas_runtime",
+  "ligand_sketcher_runtime",
   "ligand_vib_refine_runtime",
+  "materials_runtime",
+  "mc_ensemble_runtime",
+  "membrane_runtime",
   "md_prepare_and_run_3ptb",
   "md_prepare_and_run_3ptb_bound",
   "modeler_runtime",
   "mutator",
   "openmm_dynamics_runtime",
   "openmm_qmmm_runtime",
+  "pka_runtime",
   "psi4_cluster_runtime",
   "psi4_runtime",
   "qmmm_mopac_runtime",
@@ -63,6 +75,7 @@ py-modules = [
   "task_monitor_runtime",
   "train_abfe_steering_policy",
   "trajectory_interaction_runtime",
+  "ui_layout_runtime",
   "validate_3ptb_ben_parameterization",
   "vs_runtime",
 ]
@@ -75,7 +88,7 @@ py-modules = [
 "share/leonardo/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19" = ["assets/jsme/deferredjs/4277561D0E87B89F4DFCCC3A712D5B19/*.js"]
 
 [tool.setuptools.package-data]
-leonardo = ["abfe_deploy_models.json"]
+leonardo = ["abfe_deploy_models.json", "pka_calibration.json", "component_library.json"]
 
 [tool.black]
 line-length = 120

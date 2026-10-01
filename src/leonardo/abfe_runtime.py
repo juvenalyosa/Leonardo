@@ -7148,6 +7148,8 @@ def build_abfe_free_energy_report_payload(
     reweight_confidence_note="",
     reweight_confidence_ok=False,
     dg_selected=np.nan,
+    dg_selected_state=np.nan,
+    dg_selected_standard=np.nan,
     kd_selected_m=np.nan,
     p_kd_selected=np.nan,
     selected_estimator="gated_off",
@@ -7257,6 +7259,10 @@ def build_abfe_free_energy_report_payload(
                 f" | ΔG(app,std)={float(dg_selected):.3f} kJ/mol | "
                 f"Kd(app)={float(kd_selected_m):.3e} M | pKd={float(p_kd_selected):.2f}"
             )
+        if bool(reweight_confidence_ok) and np.isfinite(float(dg_selected_state)):
+            selected_line += f" | ΔG(state)={float(dg_selected_state):.3f} kJ/mol"
+            if np.isfinite(float(dg_selected_standard)):
+                selected_line += f" | ΔG(standard)={float(dg_selected_standard):.3f} kJ/mol"
         est_kind_txt = str(estimate_kind or "").strip()
         prod_rel_txt = str(production_reliability or "").strip()
         if est_kind_txt:

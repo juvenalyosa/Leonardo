@@ -613,7 +613,7 @@ def parse_mopac_vibrational_aux_text(aux_text):
         mat = np.asarray(raw_modes[: int(ncart * ncart)], dtype=float).reshape((ncart, ncart))
         picked = []
         for idx in list(pos_idx):
-            col = np.asarray(mat[:, int(idx)], dtype=float).reshape((nat, 3))
+            col = np.asarray(mat[int(idx), :], dtype=float).reshape((nat, 3))   # one mode per AUX row
             picked.append(col)
         if picked:
             mode_cart = np.asarray(picked, dtype=float)

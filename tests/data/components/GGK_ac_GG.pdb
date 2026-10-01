@@ -1,0 +1,59 @@
+ATOM      1  N   GLY A   1      -1.784   2.980   4.102  1.00  0.00           N  
+ATOM      2  CA  GLY A   1      -2.270   2.407   2.837  1.00  0.00           C  
+ATOM      3  C   GLY A   1      -1.339   2.784   1.680  1.00  0.00           C  
+ATOM      4  O   GLY A   1      -0.161   3.105   1.844  1.00  0.00           O  
+ATOM      5  N   GLY A   2      -1.912   2.697   0.435  1.00  0.00           N  
+ATOM      6  CA  GLY A   2      -1.142   2.958  -0.771  1.00  0.00           C  
+ATOM      7  C   GLY A   2      -0.335   1.719  -1.165  1.00  0.00           C  
+ATOM      8  O   GLY A   2      -0.598   1.048  -2.159  1.00  0.00           O  
+ATOM      9  N   ALY A   3       0.711   1.424  -0.310  1.00  0.00           N  
+ATOM     10  CA  ALY A   3       1.229   0.060  -0.151  1.00  0.00           C  
+ATOM     11  C   ALY A   3       1.765  -0.617  -1.435  1.00  0.00           C  
+ATOM     12  O   ALY A   3       1.851  -1.839  -1.571  1.00  0.00           O  
+ATOM     13  CB  ALY A   3       0.311  -0.857   0.682  1.00  0.00           C  
+ATOM     14  CG  ALY A   3      -1.079  -1.089   0.087  1.00  0.00           C  
+ATOM     15  CD  ALY A   3      -1.897  -2.101   0.892  1.00  0.00           C  
+ATOM     16  CE  ALY A   3      -3.352  -2.154   0.415  1.00  0.00           C  
+ATOM     17  NZ  ALY A   3      -4.267  -1.493   1.329  1.00  0.00           N  
+ATOM     18  CH  ALY A   3      -4.481  -0.135   1.357  1.00  0.00           C  
+ATOM     19  OH  ALY A   3      -3.889   0.683   0.657  1.00  0.00           O  
+ATOM     20  CH3 ALY A   3      -5.499   0.290   2.382  1.00  0.00           C  
+ATOM     21  N   GLY A   4       2.328   0.255  -2.342  1.00  0.00           N  
+ATOM     22  CA  GLY A   4       2.837  -0.197  -3.623  1.00  0.00           C  
+ATOM     23  C   GLY A   4       4.260  -0.741  -3.468  1.00  0.00           C  
+ATOM     24  O   GLY A   4       5.250  -0.129  -3.861  1.00  0.00           O  
+ATOM     25  N   GLY A   5       4.327  -1.962  -2.829  1.00  0.00           N  
+ATOM     26  CA  GLY A   5       5.595  -2.464  -2.337  1.00  0.00           C  
+ATOM     27  C   GLY A   5       5.896  -1.903  -0.954  1.00  0.00           C  
+ATOM     28  O   GLY A   5       5.122  -1.333  -0.199  1.00  0.00           O  
+ATOM     29  OXT GLY A   5       7.166  -2.145  -0.566  1.00  0.00           O  
+CONECT    1    2
+CONECT    2    1    3
+CONECT    3    2    4    4    5
+CONECT    4    3    3
+CONECT    5    3    6
+CONECT    6    5    7
+CONECT    7    6    8    8    9
+CONECT    8    7    7
+CONECT    9    7   10
+CONECT   10    9   11   13
+CONECT   11   10   12   12   21
+CONECT   12   11   11
+CONECT   13   10   14
+CONECT   14   13   15
+CONECT   15   14   16
+CONECT   16   15   17
+CONECT   17   16   18
+CONECT   18   17   19   19   20
+CONECT   19   18   18
+CONECT   20   18
+CONECT   21   11   22
+CONECT   22   21   23
+CONECT   23   22   24   24   25
+CONECT   24   23   23
+CONECT   25   23   26
+CONECT   26   25   27
+CONECT   27   26   28   28   29
+CONECT   28   27   27
+CONECT   29   27
+END

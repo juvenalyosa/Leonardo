@@ -6801,7 +6801,8 @@ def test_redock_runtime_rows_and_state_helpers():
     assert int(len(best_rows)) == 2
     assert str(best_rows[0]["system"]) == "WT"
     assert str(best_rows[0]["system_member"]) == "WT_model_002"
-    assert float(best_rows[0]["rmsd_ref"]) == 1.2
+    # the top-scored pose, not the one closest to the crystal
+    assert float(best_rows[0]["rmsd_ref"]) == 2.4 and float(best_rows[0]["affinity"]) == -8.0
     assert str(best_rows[1]["system"]) == "Mutant"
     assert str(best_rows[1]["system_member"]) == "Mutant_model_001"
     assert float(best_rows[1]["affinity"]) == -8.9
@@ -6822,12 +6823,12 @@ def test_redock_runtime_best_pose_for_member_helper():
 
     best_exact = best_pose_for_member(rows, "WT", "WT_model_001")
     assert isinstance(best_exact, dict)
-    assert float(best_exact["rmsd_ref"]) == 1.2
-    assert float(best_exact["affinity"]) == -7.6
+    assert float(best_exact["rmsd_ref"]) == 2.0            # top-scored pose of the member
+    assert float(best_exact["affinity"]) == -8.0
 
     best_fallback = best_pose_for_member(rows, "WT", "WT_model_999")
     assert isinstance(best_fallback, dict)
-    assert float(best_fallback["rmsd_ref"]) == 1.2
+    assert float(best_fallback["affinity"]) == -9.1         # top-scored WT pose
 
     best_aff_only = best_pose_for_member(rows, "WT", "WT_model_002")
     assert isinstance(best_aff_only, dict)
@@ -6852,14 +6853,14 @@ def test_redock_runtime_build_state_row_map_helper():
     )
     assert int(len(payload["rows_label"])) == 3
     fallback = dict(payload["fallback"] or {})
-    assert float(fallback["rmsd_ref"]) == 1.1
+    assert float(fallback["affinity"]) == -8.7              # top-scored WT pose
 
     row_by_state = dict(payload["row_by_state"] or {})
     assert set(row_by_state.keys()) == {1, 2, 3, 4}
-    assert float(row_by_state[2]["rmsd_ref"]) == 1.1
+    assert float(row_by_state[2]["rmsd_ref"]) == 2.0        # top-scored pose of state 2
     assert str(row_by_state[1]["system_member"]) == "WT_model_002"
-    assert float(row_by_state[3]["rmsd_ref"]) == 1.1
-    assert float(row_by_state[4]["rmsd_ref"]) == 1.1
+    assert float(row_by_state[3]["affinity"]) == -8.7
+    assert float(row_by_state[4]["affinity"]) == -8.7
 
     payload_empty = build_redocking_state_row_map(
         rows=rows,
@@ -6930,7 +6931,7 @@ def test_redock_runtime_build_state_row_map_can_avoid_fallback_pose_duplication(
     row_by_state = dict(payload.get("row_by_state", {}) or {})
     assert set(row_by_state.keys()) == {1, 2, 3}
     assert str(row_by_state[1]["pose_object"]) == "pose_mut_001"
-    assert int(row_by_state[1]["state"]) == 6
+    assert int(row_by_state[1]["state"]) == 2            # top-scored pose (-7.9) of the member
     assert str(row_by_state[2]["pose_object"]) == ""
     assert str(row_by_state[2]["system_member"]) == "Mutant_model_002"
     assert str(row_by_state[3]["pose_object"]) == ""
@@ -7966,8 +7967,9 @@ def test_redock_runtime_reference_grid_size_helper():
         max_edge=24.0,
     )
     assert payload["ok"] is True
-    assert payload["base_size"] == [10.0, 15.0, 24.0]
-    assert payload["size"] == [10.0, 15.0, 24.0]
+    # padding on each side; the 24 A cap never cuts the 30 A ligand (span + 1 A per side)
+    assert payload["base_size"] == [11.0, 18.0, 32.0]
+    assert payload["size"] == [11.0, 18.0, 32.0]
     assert payload["size_delta"] == [0.0, 0.0, 0.0]
 
     payload_adj = build_redocking_reference_grid_size(
@@ -7980,8 +7982,9 @@ def test_redock_runtime_reference_grid_size_helper():
         final_max_edge=40.0,
     )
     assert payload_adj["ok"] is True
-    assert payload_adj["base_size"] == [10.0, 15.0, 24.0]
-    assert payload_adj["size"] == [12.0, 11.0, 34.0]
+    assert payload_adj["base_size"] == [11.0, 18.0, 32.0]
+    # a manual shrink stops at the ligand plus 1 A per side (y: 12 + 2)
+    assert payload_adj["size"] == [13.0, 14.0, 40.0]
 
     payload_bad = build_redocking_reference_grid_size(span=("bad",))
     assert payload_bad["ok"] is False
@@ -8823,8 +8826,9 @@ def test_redock_runtime_aggregate_label_runs_and_csv(tmp_path):
     assert payload["ensemble_mode"] is True
     assert int(payload["ensemble_members"]) == 2
     assert int(payload["repeat_count"]) == 2
-    assert int(payload["repeat_best"]) == 2
+    assert int(payload["repeat_best"]) == 1                  # better docking score (-8.1 vs -7.3)
     assert int(payload["repeat_stats_affinity"]["n"]) == 2
+    assert int(payload["top1_success"]["n_success"]) == 2 and int(payload["top1_success"]["n"]) == 2
     assert int(payload["repeat_stats_rmsd"]["n"]) == 2
     assert str(payload["receptor_object"]) == "wt_rec"
     assert os.path.isfile(str(payload["repeat_csv"]))
@@ -8839,6 +8843,7 @@ def test_redock_runtime_aggregate_label_runs_and_csv(tmp_path):
         hdr = fh.readline().strip()
     assert "seed" in hdr
     assert "model_member" not in hdr
+    assert "top1_rmsd_a" in hdr and "min_rmsd_all_poses_a" in hdr
 
 
 def test_redock_runtime_aggregate_label_runs_runtime_helper(tmp_path):
@@ -11133,6 +11138,21 @@ def test_redock_runtime_strip_residue_from_structure_file_helper(tmp_path):
     assert "BEN B 123" not in txt_any_chain
     assert "ALA A 124" in txt_any_chain
 
+    # receptor preparation renumbered the ligand: removed by residue name instead of kept in the site
+    out_renum = tmp_path / "rec_out_renumbered.pdb"
+    removed_renum = strip_redocking_residue_from_structure_file(
+        in_file=str(in_pdb),
+        out_file=str(out_renum),
+        chain="A",
+        resi="1",
+        resn="BEN",
+    )
+    assert int(removed_renum) == 3
+    assert "BEN" not in out_renum.read_text(encoding="utf-8")
+    assert int(strip_redocking_residue_from_structure_file(
+        in_file=str(in_pdb), out_file=str(out_renum), chain="A", resi="1", resn="BEN", fallback_by_resn=False,
+    )) == 0
+
     missing = strip_redocking_residue_from_structure_file(
         in_file=str(tmp_path / "missing.pdb"),
         out_file=str(tmp_path / "no_out.pdb"),
@@ -11520,6 +11540,25 @@ def test_redock_runtime_rmsd_and_row_builder_helpers(tmp_path):
     assert int(len(vals_fail)) == 2
     assert "bad sdf parse" in str(warns[0])
 
+    # the display converter writes the SDF but rejects it (RDKit cannot sanitize the Open Babel
+    # re-perception of a charged ligand): the RMSD is still computed from that file
+    def _convert_written_but_rejected(src, dst):
+        _ = src
+        with open(dst, "w", encoding="utf-8") as fh:
+            fh.write("$$$$\n")
+        return False
+
+    vals_rejected = compute_redocking_rmsd_values_for_repeat(
+        out_pose=str(out_pose_pdbqt),
+        poses_count=1,
+        has_rdkit=True,
+        ref_mol=object(),
+        convert_pdbqt_to_sdf_fn=_convert_written_but_rejected,
+        load_pose_mols_fn=lambda _f: [object()],
+        best_rmsd_fn=lambda _ref, _mol: 0.5,
+    )
+    assert float(vals_rejected[0]) == 0.5
+
     direct_sdf = tmp_path / "direct.sdf"
     direct_sdf.write_text("$$$$\n", encoding="utf-8")
     vals_sdf = compute_redocking_rmsd_values_for_repeat(
@@ -11585,9 +11624,9 @@ def test_redock_runtime_build_run_debug_line():
     assert "repeat_success=4" in txt
     assert "best_repeat=2" in txt
     assert "poses=30" in txt
-    assert "best_mode=3" in txt
-    assert "best_aff=-8.100" in txt
-    assert "best_rmsd=1.25" in txt
+    assert "top1_mode=3" in txt
+    assert "top1_aff=-8.100" in txt
+    assert "top1_rmsd=1.25" in txt
     assert "aff_conf=high" in txt
     assert "rms_conf=moderate" in txt
     assert "flex_enabled=True" in txt
@@ -11616,8 +11655,8 @@ def test_redock_runtime_build_run_debug_line():
         flex_info={},
     )
     assert "best_repeat=n/a" in txt2
-    assert "best_mode=n/a" in txt2
-    assert "best_rmsd=n/a" in txt2
+    assert "top1_mode=n/a" in txt2
+    assert "top1_rmsd=n/a" in txt2
     assert "source=mut_rec" in txt2
 
 
@@ -12421,13 +12460,28 @@ def test_redock_runtime_prepare_runtime_systems_context_helper():
         params={"repeats": 3, "seed0": 77},
         use_modeler_ensemble=False,
         align_to_ref=False,
-        ref_obj="ref_obj",
+        ref_obj="wt_rec",                    # docking into the reference object itself
     )
     assert payload_plain["ok"] is True
     assert int(payload_plain["params"]["repeats"]) == 3
     assert int(payload_plain["params"]["seed0"]) == 77
     assert payload_plain["runtime_systems"] == [("WT", "wt_rec", "wt_rec", "WT_model_001")]
     assert "Alignment step: disabled." in list(payload_plain.get("align_notes", []))
+
+    # another object with alignment off: box and crystal reference are in the reference frame,
+    # so the alignment is forced on
+    forced = prepare_redocking_runtime_systems_context(
+        systems=[("WT", "wt_rec")],
+        params={"repeats": 3, "seed0": 77},
+        use_modeler_ensemble=False,
+        align_to_ref=False,
+        ref_obj="ref_obj",
+        align_receptor_to_reference_fn=lambda ref, rec, system_label="": {
+            "ok": True, "object": f"{rec}_ali", "rmsd": 0.8, "created": True, "method": "kabsch"},
+    )
+    assert forced["ok"] is True
+    assert forced["runtime_systems"][0][1] == "wt_rec_ali"
+    assert any("forced ON" in n for n in forced.get("align_notes", []))
 
     def _collect(label, rec_obj):
         return {
@@ -13154,8 +13208,13 @@ def test_redock_runtime_repeat_selection(tmp_path):
     assert int(payload["best_repeat_id"]) == 3
     assert float(payload["best_repeat"]["rmsd_ref"]) == 1.2
     assert float(payload["best_repeat"]["affinity"]) == -9.0
-    assert is_better_repeat({"rmsd_ref": 1.0, "affinity": -6.0}, {"rmsd_ref": 2.0, "affinity": -10.0}) is True
+    # the repeat with the better top-scored pose wins, whatever its RMSD
+    assert is_better_repeat({"rmsd_ref": 1.0, "affinity": -6.0}, {"rmsd_ref": 2.0, "affinity": -10.0}) is False
+    assert is_better_repeat({"rmsd_ref": 3.0, "affinity": -10.0}, {"rmsd_ref": 1.0, "affinity": -6.0}) is True
+    assert is_better_repeat({"rmsd_ref": 1.0, "affinity": -8.0}, {"rmsd_ref": 2.0, "affinity": -8.0}) is True
     assert pick_best_pose_row(payload["best_rows"]) is not None
+    meta = {int(r["repeat"]): r for r in payload["repeat_rows"]}
+    assert float(meta[1]["best_rmsd"]) == 2.4 and float(meta[1]["min_rmsd_all_poses"]) == 2.4
 
 
 def test_redock_runtime_repeat_selection_falls_back_to_stdout_scores_and_sets_out_flex(tmp_path):
@@ -13333,8 +13392,8 @@ def test_redock_runtime_comparison_and_summary_helpers():
     assert any("Reference ligand atoms: 28" in ln for ln in lines)
     assert any("Local site QC:" in ln for ln in lines)
     assert any("Site QC:" in ln for ln in lines)
-    assert any("Reported RMSD values below are ligand-pose RMSD" in ln for ln in lines)
-    assert any("WT: median affinity=" in ln and "ligand RMSD=" in ln for ln in lines)
+    assert any("RMSD of the top-scored pose to the crystal reference ligand" in ln for ln in lines)
+    assert any("WT: median affinity=" in ln and "top-1 ligand RMSD=" in ln for ln in lines)
     assert any("Verdict" in ln for ln in lines)
 
     run_map_multi = {"WT": wt, "Mutant_001": mut, "Mutant_002": mut}
@@ -13701,7 +13760,7 @@ def test_dock_runtime_build_meeko_receptor_input_args():
 
 def test_dock_runtime_build_smina_flexres_spec():
     assert build_smina_flexres_spec([{"chain": "A", "resi": "10"}, {"chain": "B", "resi": "23"}]) == "A:10,B:23"
-    assert build_smina_flexres_spec([{"chain": "A", "resi": "221A"}]) == "A:221A"
+    assert build_smina_flexres_spec([{"chain": "A", "resi": "221A"}]) == "A:221:A"
 
 
 def test_redock_runtime_parse_flexres_spec_normalizes_insertion_code_formats():
@@ -13957,5 +14016,5 @@ def test_package_import_is_lazy_and_does_not_require_pymol(monkeypatch):
     monkeypatch.syspath_prepend(str(os.path.dirname(os.path.dirname(__file__))))
     sys.modules.pop("ProtLigInteract", None)
     pkg = importlib.import_module("ProtLigInteract")
-    assert getattr(pkg, "__version__", None) == "0.2.0a5"
+    assert getattr(pkg, "__version__", None) == "0.2.0a6"
     assert callable(getattr(pkg, "__init_plugin__", None))
