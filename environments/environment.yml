@@ -42,6 +42,8 @@ dependencies:
 
   # QM and visualization stack
   - psi4=1.9.*
+  - simple-dftd3        # s-dftd3: -D3/-D3BJ dispersion for DFT in Psi4
+  - dftd3-python
   - mopac
   - libint=2.9.*
   - pcmsolver=1.2.3
@@ -77,6 +79,12 @@ dependencies:
       - "opencv-python==4.11.0.86"       # 4.13 requires NumPy 2 on Python 3.11 and breaks the RDKit ABI
       - "opencv-contrib-python==4.11.0.86"
       - "mediapipe>=0.10.0,<0.10.10"    # 0.10.10+ forces numpy>=2 which breaks pandas/prody
+      # AI assistant (natural-language control of Leonardo's tools)
+      - "anthropic>=1.8"                 # Claude Messages API
+      - "openai>=2.0"                    # OpenAI Responses API
+      - "mcp>=1.27,<2"                   # Leonardo tools as an MCP server (2.x changed the server/client API)
+      - keyring                          # API keys in the system keychain
+      - jsonschema                       # tool-argument validation
 
 # Notes:
 # - MODELLER requires a valid license key in your environment.

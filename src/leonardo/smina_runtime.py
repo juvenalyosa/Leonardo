@@ -142,12 +142,37 @@ def _estimate_flex_autobox_min(cmdline, default_min=10.0, cap=26.0):
     return float(min(float(cap), float(target)))
 
 
+def _expand_flex_size_cmdline(cmdline, delta=6.0, max_edge=60.0):
+    """Grow an explicit --size_x/y/z box so flexible side chains fit (Leonardo passes
+    center/size, not --autobox_ligand). Returns (cmdline, new_sizes) or (None, None)."""
+    out = list(cmdline or [])
+    sizes = []
+    for key in ("--size_x", "--size_y", "--size_z"):
+        if key not in out:
+            return None, None
+        idx = out.index(key)
+        try:
+            cur = float(out[idx + 1])
+        except (IndexError, ValueError):
+            return None, None
+        new = min(float(max_edge), cur + float(delta))
+        sizes.append((idx, cur, new))
+    if all(new <= cur + 1.0e-6 for _idx, cur, new in sizes):
+        return None, None
+    for idx, _cur, new in sizes:
+        out[idx + 1] = f"{new:.4f}"
+    return out, [new for _idx, _cur, new in sizes]
+
+
 def _expand_flex_autobox_cmdline(cmdline, min_autobox_add=10.0, delta=6.0, max_autobox_add=26.0):
     cmd = list(cmdline or [])
     if ("--flex" not in cmd) and ("--flexres" not in cmd):
         return None, None
     if "--autobox_ligand" not in cmd:
-        return None, None
+        retry, sizes = _expand_flex_size_cmdline(cmd, delta=float(delta))
+        if retry is None:
+            return None, None
+        return retry, "box " + "x".join(f"{v:.1f}" for v in sizes)
     out = list(cmd)
     target_min = _estimate_flex_autobox_min(out, default_min=float(min_autobox_add), cap=float(max_autobox_add))
     new_add = float(target_min)
@@ -254,7 +279,8 @@ def run_smina_repeats(
     repeats = int(max(1, n_repeats))
     base_seed = int(seed0 or 0)
     cmd_base = list(base_cmd or [])
-    root_dir = str(job_dir or "")
+    # smina runs with cwd=rep_dir; relative --out/--log paths would resolve twice
+    root_dir = os.path.abspath(str(job_dir or "."))
 
     repeat_rows = []
     best_repeat = None
@@ -286,15 +312,17 @@ def run_smina_repeats(
                 if retry_cmdline:
                     attempt_idx += 1
                     cmdline = list(retry_cmdline)
-                    retry_steps.append(f"{float(retry_add):.3f}")
+                    retry_steps.append(retry_add if isinstance(retry_add, str) else f"autobox_add={float(retry_add):.3f}")
                     continue
             break
         retry_note = ""
         if retry_steps:
-            retry_note = f" Auto-retried with autobox_add={','.join(retry_steps)}."
+            retry_note = f" Auto-retried with {', '.join(retry_steps)}."
+        used_seed = re.search(r"Using random seed:\s*(-?\d+)", combined_text or "")
         rec = {
             "repeat": int(rep),
-            "seed": int(seed_val),
+            # the seed smina really used (it draws a random one when none is given)
+            "seed": int(used_seed.group(1)) if used_seed else int(seed_val),
             "ok": False,
             "best_affinity": float("nan"),
             "n_poses": 0,

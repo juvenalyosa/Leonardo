@@ -8,7 +8,7 @@ Leonardo is a PyMOL workbench for structural bioinformatics, docking,
 molecular dynamics, quantum chemistry, and reproducible protein–ligand
 workflows.
 
-Current version: **0.2.0a5** (`2026-07-08-r5`)<br>
+Current version: **0.2.0a6** (`2026-10-01-r1`)<br>
 Status: **pre-release for testing and manuscript verification**
 
 ## What you need

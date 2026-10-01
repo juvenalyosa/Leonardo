@@ -14,6 +14,42 @@ def _runtime_float(value, default=None):
     return val if val == val and val not in (float("inf"), float("-inf")) else default
 
 
+# Residues whose atoms are never metals or halogens: their atom names start with a
+# one-letter element (" CA " is an alpha carbon, " HG " a hydrogen, " NA " a nitrogen).
+STANDARD_POLYMER_RESIDUES = frozenset(
+    "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL "
+    "HID HIE HIP HSD HSE HSP CYX CYM ASH GLH LYN ACE NME NH2 "
+    "DA DC DG DT DU A C G U".split()
+)
+TWO_LETTER_ELEMENTS = ("CL", "BR", "NA", "MG", "ZN", "FE", "MN", "CO", "NI", "CU", "CA", "CD", "HG", "SE", "LI")
+
+
+def pdb_atom_element(atom_name, resn=""):
+    """
+    Element of a PDB/PDBQT atom from its name field, following the PDB alignment rule.
+
+    ``atom_name`` should be the raw 4-character field (columns 13-16): two-letter
+    elements start in column 13 (``"CA  "`` calcium), one-letter elements in column 14
+    (``" CA "`` alpha carbon). Atoms of standard residues are always one-letter
+    elements. A stripped name is ambiguous; it is read as a two-letter element only
+    when the name is exactly that element and the residue is not a standard one.
+    """
+    raw_name = str(atom_name or "")
+    letters = re.sub(r"[^A-Za-z]", "", raw_name.strip()).upper()
+    if not letters:
+        return "C"
+    if str(resn or "").strip().upper() in STANDARD_POLYMER_RESIDUES:
+        return letters[0]
+    two = letters[:2]
+    if two in TWO_LETTER_ELEMENTS:
+        if len(raw_name) >= 4:
+            if raw_name[0] not in " 0123456789":
+                return two
+        elif letters == two:
+            return two
+    return letters[0]
+
+
 def _first_existing(candidates):
     for cand in candidates:
         if not cand:
@@ -260,7 +296,20 @@ def build_meeko_receptor_input_args(structure_path):
 
 
 def build_smina_flexres_spec(residues):
-    return str(build_meeko_flexres_spec(residues) or "")
+    """smina --flexres list: ``chain:resid`` or ``chain:resid:icode`` (``A:188A`` makes smina
+    abort with "bad lexical cast"; it must be ``A:188:A``)."""
+    rows = [dict(r or {}) for r in list(residues or []) if isinstance(r, dict)]
+    parts = []
+    for row in rows:
+        ch = str(row.get("chain", "") or "").strip()
+        rs = "".join(str(row.get("resi", "") or "").split(":")).strip()
+        m = re.fullmatch(r"(-?\d+)([A-Za-z]?)", rs)
+        if not m:
+            continue
+        tok = f"{ch}:{m.group(1)}" + (f":{m.group(2).upper()}" if m.group(2) else "")
+        if tok not in parts:
+            parts.append(tok)
+    return ",".join(parts)
 
 
 def smina_supports_native_flexres(smina_bin, run_command=None, timeout=60):

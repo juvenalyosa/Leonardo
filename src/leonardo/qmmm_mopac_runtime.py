@@ -1057,9 +1057,10 @@ def parse_mopac_aux_text(aux_text):
             ncart = int(3 * nat)
             nmode = int(min(signed.size, raw_modes.size // ncart))
             if nmode > 0:
-                mode_mat = np.asarray(raw_modes[: int(ncart * nmode)], dtype=float).reshape((ncart, nmode))
+                # the AUX file holds one mode per row (the vibrations first)
+                mode_mat = np.asarray(raw_modes[: int(ncart * nmode)], dtype=float).reshape((nmode, ncart))
                 out["normal_modes_cart"] = np.asarray(
-                    [mode_mat[:, i].reshape((nat, 3)) for i in range(nmode)],
+                    [mode_mat[i].reshape((nat, 3)) for i in range(nmode)],
                     dtype=float,
                 )
     thermo = {}

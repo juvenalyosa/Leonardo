@@ -1771,14 +1771,25 @@ def _normalize_target_token(s):
 
 
 def _ridge_predict_single(values, model, feature_cols=None):
-    med = np.asarray(model.get("med", []), dtype=float)
-    mu = np.asarray(model.get("mu", []), dtype=float)
-    sd = np.asarray(model.get("sd", []), dtype=float)
-    w = np.asarray(model.get("w", []), dtype=float)
-    y_mean = float(model.get("y_mean", np.nan))
-    if med.size == 0 or mu.size == 0 or sd.size == 0 or w.size == 0 or (not np.isfinite(y_mean)):
+    if not isinstance(model, dict):
         return np.nan, []
-    vals = np.asarray(values, dtype=float).reshape(-1)
+    try:
+        med = np.asarray(model.get("med", []), dtype=float)
+        mu = np.asarray(model.get("mu", []), dtype=float)
+        sd = np.asarray(model.get("sd", []), dtype=float)
+        w = np.asarray(model.get("w", []), dtype=float)
+        y_mean = float(model.get("y_mean", np.nan))
+        vals = np.asarray(values, dtype=float).reshape(-1).copy()
+    except (TypeError, ValueError, OverflowError):
+        return np.nan, []
+    arrays = (med, mu, sd, w)
+    if (
+        med.size == 0
+        or any(arr.ndim != 1 or arr.size != med.size for arr in arrays)
+        or any(not np.all(np.isfinite(arr)) for arr in arrays)
+        or not np.isfinite(y_mean)
+    ):
+        return np.nan, []
     if vals.size < med.size:
         vals = np.concatenate([vals, med[vals.size :]], axis=0)
     elif vals.size > med.size:
@@ -1810,10 +1821,23 @@ def _load_abfe_runtime_deploy():
         try:
             with open(pp, "r", encoding="utf-8") as fh:
                 obj = json.load(fh)
-            if isinstance(obj, dict) and isinstance(obj.get("ridge_compact_weighted", {}), dict):
-                _ABFE_RUNTIME_DEPLOY_CACHE = obj
-                _ABFE_RUNTIME_DEPLOY_SOURCE = pp
-                return _ABFE_RUNTIME_DEPLOY_CACHE
+            if not isinstance(obj, dict):
+                continue
+            compact = obj.get("ridge_compact_weighted")
+            if not isinstance(compact, dict):
+                continue
+            cols = compact.get("feature_cols")
+            if not isinstance(cols, list) or not cols or not all(isinstance(c, str) and c.strip() for c in cols):
+                continue
+            med = np.asarray(compact.get("med", []), dtype=float)
+            if med.ndim != 1 or med.size != len(cols):
+                continue
+            predicted, _ = _ridge_predict_single(med, compact, feature_cols=cols)
+            if not np.isfinite(predicted):
+                continue
+            _ABFE_RUNTIME_DEPLOY_CACHE = obj
+            _ABFE_RUNTIME_DEPLOY_SOURCE = pp
+            return _ABFE_RUNTIME_DEPLOY_CACHE
         except Exception:
             continue
     _ABFE_RUNTIME_DEPLOY_CACHE = {}
@@ -1879,23 +1903,29 @@ def predict_abfe_runtime_calibrated_dg(feature_map, target_hint="", endpoint_gro
     mode_used = "compact_unknown"
     target_used = ""
     targetaware_model = deploy.get("ridge_targetaware_weighted", {})
-    ta_cols = list(targetaware_model.get("feature_cols", compact_cols))
-    target_order = [str(t) for t in targetaware_model.get("target_order", []) if str(t).strip()]
+    if not isinstance(targetaware_model, dict):
+        targetaware_model = {}
+    ta_cols_raw = targetaware_model.get("feature_cols", compact_cols)
+    ta_cols = list(ta_cols_raw) if isinstance(ta_cols_raw, (list, tuple)) else []
+    target_order_raw = targetaware_model.get("target_order", [])
+    target_order = [str(t) for t in target_order_raw if str(t).strip()] if isinstance(target_order_raw, (list, tuple)) else []
+    ta_weights = targetaware_model.get("w", [])
     ta_can = (
-        isinstance(targetaware_model, dict)
-        and len(ta_cols) > 0
+        len(ta_cols) > 0
+        and all(isinstance(c, str) and c.strip() for c in ta_cols)
         and len(target_order) > 0
-        and len(targetaware_model.get("w", [])) >= (len(ta_cols) + len(target_order))
+        and isinstance(ta_weights, (list, tuple))
+        and len(ta_weights) == (len(ta_cols) + len(target_order))
     )
     hint_raw = str(target_hint or "").strip()
     hint_norm = _normalize_target_token(hint_raw)
     target_lookup = {_normalize_target_token(t): t for t in target_order}
-    target_used = str(target_lookup.get(hint_norm, ""))
-    if ta_can and target_used:
+    matched_target = str(target_lookup.get(hint_norm, ""))
+    if ta_can and matched_target:
         ta_vals = np.array([_safe_float(fmap.get(c, np.nan)) for c in ta_cols], dtype=float)
         onehot = np.zeros(len(target_order), dtype=float)
         try:
-            onehot[target_order.index(target_used)] = 1.0
+            onehot[target_order.index(matched_target)] = 1.0
         except Exception:
             onehot[:] = 0.0
         ta_feat_cols = list(ta_cols) + [f"target::{t}" for t in target_order]
@@ -1905,6 +1935,7 @@ def predict_abfe_runtime_calibrated_dg(feature_map, target_hint="", endpoint_gro
             dg_final = float(dg_ta)
             missing_final = [m for m in missing_ta if not str(m).startswith("target::")]
             mode_used = "targetaware_panel"
+            target_used = matched_target
     endpoint_offset_kj = 0.0
     endpoint_group_txt = str(endpoint_group or "").strip().lower()
     if mode_used.startswith("compact") and endpoint_group_txt:
@@ -6314,8 +6345,9 @@ def build_abfe_post_sampling_metrics(
         if stable_unbound_phase_mask is not None and stable_unbound_phase_mask.size == unbound_mask.size:
             unbound_mask = np.logical_and(unbound_mask, stable_unbound_phase_mask)
     else:
-        bound_mask = finite_min & (dist_arr <= bound_cutoff_a)
-        unbound_mask = np.logical_and(finite_min, np.logical_not(bound_mask))
+        distance_state_mask = np.logical_and(finite_min, fe_base)
+        bound_mask = distance_state_mask & (dist_arr <= bound_cutoff_a)
+        unbound_mask = np.logical_and(distance_state_mask, np.logical_not(bound_mask))
     intermediate_mask = np.logical_and(fe_base, np.logical_not(np.logical_or(bound_mask, unbound_mask)))
 
     lam_has = bool(lam_arr.size == bound_mask.size and np.any(np.isfinite(lam_arr)))
@@ -6943,6 +6975,8 @@ def build_abfe_free_energy_report_payload(
     reweight_confidence_note="",
     reweight_confidence_ok=False,
     dg_selected=np.nan,
+    dg_selected_state=np.nan,
+    dg_selected_standard=np.nan,
     kd_selected_m=np.nan,
     p_kd_selected=np.nan,
     selected_estimator="gated_off",
@@ -7052,6 +7086,10 @@ def build_abfe_free_energy_report_payload(
                 f" | ΔG(app,std)={float(dg_selected):.3f} kJ/mol | "
                 f"Kd(app)={float(kd_selected_m):.3e} M | pKd={float(p_kd_selected):.2f}"
             )
+        if bool(reweight_confidence_ok) and np.isfinite(float(dg_selected_state)):
+            selected_line += f" | ΔG(state)={float(dg_selected_state):.3f} kJ/mol"
+            if np.isfinite(float(dg_selected_standard)):
+                selected_line += f" | ΔG(standard)={float(dg_selected_standard):.3f} kJ/mol"
         est_kind_txt = str(estimate_kind or "").strip()
         prod_rel_txt = str(production_reliability or "").strip()
         if est_kind_txt:
@@ -7367,6 +7405,9 @@ def build_abfe_replica_aggregate_payload(
     n_boot=300,
 ):
     rows = []
+    replica_inputs = list(replica_results or [])
+    accepted_replicas = []
+    accepted_positions = []
     total_chunks = []
     dist_chunks = []
     coul_chunks = []
@@ -7410,14 +7451,22 @@ def build_abfe_replica_aggregate_payload(
         out["span"] = float(out["max"] - out["min"])
         return out
 
-    for rep_pos, raw in enumerate(list(replica_results or []), start=1):
+    for rep_pos, raw in enumerate(replica_inputs, start=1):
         rep = dict(raw or {})
-        total_valid = np.asarray(rep.get("total_valid", []), dtype=float)
+        total_valid = _abfe_float_series(rep.get("total_valid"))
         if total_valid.size <= 0:
             continue
-        distance_valid = np.asarray(rep.get("distance_valid", []), dtype=float)
+        distance_valid = _abfe_float_series(rep.get("distance_valid"))
         if distance_valid.size == 0:
-            distance_valid = np.asarray(rep.get("min_valid", []), dtype=float)
+            distance_valid = _abfe_float_series(rep.get("min_valid"))
+        # Align within each replica before concatenating. Padding only after
+        # concatenation shifts the next replica's observables onto this one.
+        distance_valid = _abfe_float_series(distance_valid, n=total_valid.size)
+        rep["distance_valid"] = distance_valid
+        for key in ("coul_valid", "bias_valid", "rescored_total_valid", "ligand_internal_valid"):
+            rep[key] = _abfe_float_series(rep.get(key), n=total_valid.size)
+        for key in ("bound_valid_mask", "unbound_valid_mask"):
+            rep[key] = _abfe_bool_series(rep.get(key), n=total_valid.size, fill=False)
         bound_cutoff_a = _safe_float(rep.get("bound_cutoff_a", np.nan))
         rep_n_bound = int(rep.get("n_bound", 0) or 0)
         rep_n_unbound = int(rep.get("n_unbound", 0) or 0)
@@ -7449,6 +7498,8 @@ def build_abfe_replica_aggregate_payload(
         )
         if not bool(numeric.get("ok", False)):
             continue
+        accepted_replicas.append(rep)
+        accepted_positions.append(rep_pos - 1)
         rows.append(
             {
                 "replica_index": int(rep.get("replica_index", rep_pos) or rep_pos),
@@ -7521,13 +7572,13 @@ def build_abfe_replica_aggregate_payload(
             run_cum_rows.append(np.asarray(run_cum_i[:min_len], dtype=float))
 
     rep_count = int(len(rows))
-    req_count = int(max(rep_count, int(requested_replica_count or rep_count)))
+    req_count = int(max(len(replica_inputs), int(requested_replica_count or 0)))
     if rep_count <= 0:
         return {
             "ok": False,
             "reason": "no_replicas",
             "replica_count": 0,
-            "requested_replica_count": int(max(0, int(requested_replica_count or 0))),
+            "requested_replica_count": int(req_count),
             "replica_rows": [],
         }
 
@@ -7535,8 +7586,8 @@ def build_abfe_replica_aggregate_payload(
     concat_dist = np.concatenate(dist_chunks, axis=0) if dist_chunks else np.asarray([], dtype=float)
     concat_coul = np.concatenate(coul_chunks, axis=0) if coul_chunks else np.asarray([], dtype=float)
     concat_bias = np.concatenate(bias_chunks, axis=0) if bias_chunks else np.asarray([], dtype=float)
-    concat_rescored = np.concatenate(rescored_chunks, axis=0) if rescored_chunks and all(arr.size > 0 for arr in rescored_chunks) else np.asarray([], dtype=float)
-    concat_ligand_internal = np.concatenate(ligand_internal_chunks, axis=0) if ligand_internal_chunks and all(arr.size > 0 for arr in ligand_internal_chunks) else np.asarray([], dtype=float)
+    concat_rescored = np.concatenate(rescored_chunks, axis=0) if rescored_chunks else np.asarray([], dtype=float)
+    concat_ligand_internal = np.concatenate(ligand_internal_chunks, axis=0) if ligand_internal_chunks else np.asarray([], dtype=float)
     concat_bound = np.concatenate(bound_chunks, axis=0) if bound_chunks else np.asarray([], dtype=bool)
     concat_unbound = np.concatenate(unbound_chunks, axis=0) if unbound_chunks else np.asarray([], dtype=bool)
     pooled_numeric = build_abfe_free_energy_numeric_payload(
@@ -7545,7 +7596,7 @@ def build_abfe_replica_aggregate_payload(
         total_valid=np.asarray(concat_total, dtype=float),
         rescored_total_valid=np.asarray(concat_rescored, dtype=float),
         ligand_internal_valid=np.asarray(concat_ligand_internal, dtype=float),
-        rescored_energy_label=str(next((str(rep.get("rescored_energy_label", "") or "") for rep in list(replica_results or []) if str(rep.get("rescored_energy_label", "") or "").strip()), "")),
+        rescored_energy_label=str(next((str(rep.get("rescored_energy_label", "") or "") for rep in accepted_replicas if str(rep.get("rescored_energy_label", "") or "").strip()), "")),
         distance_valid=np.asarray(concat_dist, dtype=float),
         coul_valid=np.asarray(concat_coul, dtype=float),
         bound_valid_mask=np.asarray(concat_bound, dtype=bool),
@@ -7553,11 +7604,11 @@ def build_abfe_replica_aggregate_payload(
         bound_cutoff_a=float(np.nanmean(bound_cutoff_vals)) if bound_cutoff_vals else np.nan,
         n_bound=int(n_bound_total),
         n_dist_valid=int(n_dist_valid_total),
-        n_bound_raw=int(sum(int(rep.get("n_bound_raw", rep.get("n_bound", 0) or 0)) for rep in list(replica_results or []))),
-        n_unbound_raw=int(sum(int(rep.get("n_unbound_raw", rep.get("n_unbound", 0) or 0)) for rep in list(replica_results or []))),
-        n_bound_hold=int(sum(int(rep.get("n_bound_hold", rep.get("n_bound", 0) or 0)) for rep in list(replica_results or []))),
-        n_unbound_hold=int(sum(int(rep.get("n_unbound_hold", rep.get("n_unbound", 0) or 0)) for rep in list(replica_results or []))),
-        estimator_window_mode=("hold_only" if all(str((rep or {}).get("estimator_window_mode", "state_fallback") or "state_fallback") == "hold_only" for rep in list(replica_results or []) if dict(rep or {})) else "state_fallback"),
+        n_bound_raw=int(sum(int(rep.get("n_bound_raw", rep.get("n_bound", 0) or 0)) for rep in accepted_replicas)),
+        n_unbound_raw=int(sum(int(rep.get("n_unbound_raw", rep.get("n_unbound", 0) or 0)) for rep in accepted_replicas)),
+        n_bound_hold=int(sum(int(rep.get("n_bound_hold", rep.get("n_bound", 0) or 0)) for rep in accepted_replicas)),
+        n_unbound_hold=int(sum(int(rep.get("n_unbound_hold", rep.get("n_unbound", 0) or 0)) for rep in accepted_replicas)),
+        estimator_window_mode=("hold_only" if all(str(rep.get("estimator_window_mode", "state_fallback") or "state_fallback") == "hold_only" for rep in accepted_replicas) else "state_fallback"),
         use_count_fraction=bool(n_dist_valid_total > 0),
         temperature_k=float(temperature_k),
         v_eff_nm3=float(np.nanmean(v_eff_vals)) if v_eff_vals else np.nan,
@@ -7586,7 +7637,6 @@ def build_abfe_replica_aggregate_payload(
         if bool(r.get("reweight_confidence_ok", False)) and np.isfinite(_safe_float(r.get("dg_selected_kj", np.nan)))
     ]
     dg_selected_stats = _stats([r.get("dg_selected_kj", np.nan) for r in selected_rows])
-    kd_selected_stats = _stats([r.get("kd_selected_m", np.nan) for r in selected_rows])
     exp_arr = np.asarray([r.get("dg_exp", np.nan) for r in rows], dtype=float)
     exp_finite = exp_arr[np.isfinite(exp_arr)]
     if exp_finite.size >= 2:
@@ -7701,7 +7751,10 @@ def build_abfe_replica_aggregate_payload(
         else:
             selected_estimator = "replica_aggregate_mixed_selected_estimates"
         dg_selected_summary = float(dg_selected_stats["mean"]) if np.isfinite(dg_selected_stats["mean"]) else np.nan
-        kd_selected_summary = float(kd_selected_stats["mean"]) if np.isfinite(kd_selected_stats["mean"]) else np.nan
+        # Report the Kd corresponding to the aggregated DeltaG. Averaging Kd
+        # separately breaks DeltaG = RT ln(Kd / 1 M) for nonidentical replicas.
+        if np.isfinite(dg_selected_summary) and np.isfinite(kbt) and kbt > 0.0:
+            kd_selected_summary = float(np.exp(np.clip(dg_selected_summary / kbt, -700.0, 700.0)))
         if np.isfinite(kd_selected_summary) and kd_selected_summary > 0.0:
             p_kd_selected_summary = float(-np.log10(max(kd_selected_summary, 1.0e-300)))
         if (
@@ -7727,7 +7780,7 @@ def build_abfe_replica_aggregate_payload(
         "replica_count": int(rep_count),
         "requested_replica_count": int(req_count),
         "failed_replica_count": int(max(req_count - rep_count, 0)),
-        "primary_replica_index": int(primary_idx),
+        "primary_replica_index": int(accepted_positions[primary_idx]),
         "dg_exp_mean": float(exp_stats["mean"]) if np.isfinite(exp_stats["mean"]) else np.nan,
         "dg_exp_std": float(exp_stats["std"]) if np.isfinite(exp_stats["std"]) else np.nan,
         "dg_exp_sem": float(exp_stats["sem"]) if np.isfinite(exp_stats["sem"]) else np.nan,
@@ -7798,7 +7851,7 @@ def build_abfe_replica_aggregate_payload(
         "reason": "ready",
         "replica_count": int(rep_count),
         "requested_replica_count": int(req_count),
-        "primary_replica_index": int(primary_idx),
+        "primary_replica_index": int(accepted_positions[primary_idx]),
         "replica_rows": list(rows),
         "summary": dict(summary),
         "pooled_numeric": dict(pooled_numeric or {}),

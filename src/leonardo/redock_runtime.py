@@ -60,29 +60,47 @@ def pick_best_pose_row(rows):
     )
 
 
+REDOCK_SUCCESS_RMSD_A = 2.0
+
+
+def pick_top_scored_pose_row(rows):
+    """
+    The pose a redocking run actually predicts: best docking score (lowest affinity),
+    ties by mode rank. Pose recovery is judged on this pose (top-1 RMSD <= 2 A); the
+    lowest-RMSD pose among all modes (pick_best_pose_row) needs the crystal answer to be
+    picked and is only a sampling measure.
+    """
+    rows_local = [r for r in list(rows or []) if isinstance(r, dict)]
+    if not rows_local:
+        return None
+
+    def _key(r):
+        aff = _safe_float(r.get("affinity", float("inf")), default=float("inf"))
+        mode = _safe_float(r.get("mode", float("inf")), default=float("inf"))
+        return (aff if isfinite(aff) else float("inf"), mode if isfinite(mode) else float("inf"))
+
+    return min(rows_local, key=_key)
+
+
 def is_better_repeat(new_best, cur_best, eps=1.0e-6):
+    """Repeat comparison on the top-scored pose: better docking score, then lower RMSD."""
     if new_best is None:
         return False
     if cur_best is None:
         return True
-    nr = _safe_float((new_best or {}).get("rmsd_ref", float("nan")))
     na = _safe_float((new_best or {}).get("affinity", float("nan")))
-    cr = _safe_float((cur_best or {}).get("rmsd_ref", float("nan")))
     ca = _safe_float((cur_best or {}).get("affinity", float("nan")))
-
-    n_has_r = isfinite(nr)
-    c_has_r = isfinite(cr)
-    if n_has_r and (not c_has_r):
+    if isfinite(na) and not isfinite(ca):
         return True
-    if c_has_r and (not n_has_r):
+    if isfinite(ca) and not isfinite(na):
         return False
-    if n_has_r and c_has_r:
-        if nr < (cr - float(eps)):
-            return True
-        if abs(nr - cr) <= float(eps) and na < ca:
-            return True
-        return False
-    return na < ca
+    if isfinite(na) and isfinite(ca) and abs(na - ca) > float(eps):
+        return na < ca
+    nr = _safe_float((new_best or {}).get("rmsd_ref", float("nan")))
+    cr = _safe_float((cur_best or {}).get("rmsd_ref", float("nan")))
+    if isfinite(nr) and isfinite(cr):
+        return nr < (cr - float(eps))
+    return isfinite(nr) and not isfinite(cr)
 
 
 def format_failed_repeats_tail(repeat_rows, max_rows=3, max_chars=220):
@@ -437,17 +455,29 @@ def _expand_redocking_flex_autobox_cmdline(cmdline, min_autobox_add=10.0, delta=
     return out, float(new_add)
 
 
-def strip_redocking_residue_from_structure_file(in_file, out_file, chain, resi, resn):
+def strip_redocking_residue_from_structure_file(in_file, out_file, chain, resi, resn, fallback_by_resn=True):
     """
     Remove a residue (typically reference ligand) from prepared receptor files (PDB/PDBQT).
     Returns number of removed ATOM/HETATM records.
+
+    If no record matches chain/resi/resn (receptor preparation renumbered or re-chained the
+    ligand) but records of that residue name are present, they are removed by name, so the
+    ligand is never docked into a site that still holds the crystal ligand.
     """
+    removed = _strip_redocking_residue_records(in_file, out_file, chain, resi, resn)
+    if removed == 0 and bool(fallback_by_resn) and str(resn or "").strip():
+        removed = _strip_redocking_residue_records(in_file, out_file, "", None, resn)
+    return int(removed)
+
+
+def _strip_redocking_residue_records(in_file, out_file, chain, resi, resn):
+    """resi=None matches any residue number (by residue name, and chain if given)."""
     inp = str(in_file or "").strip()
     outp = str(out_file or "").strip()
     if (not inp) or (not os.path.isfile(inp)) or (not outp):
         return 0
     resn_u = str(resn or "").strip().upper()
-    resi_s = str(resi or "").strip()
+    resi_s = str(resi or "").strip() if resi is not None else ""
     chain_s = str(chain or "").strip()
     removed = 0
     lines_out = []
@@ -465,7 +495,11 @@ def strip_redocking_residue_from_structure_file(in_file, out_file, chain, resi, 
                         l_resn = str(parts[3]).strip().upper() if len(parts) > 3 else ""
                         l_chain = str(parts[4]).strip() if len(parts) > 4 else ""
                         l_resi = str(parts[5]).strip() if len(parts) > 5 else ""
-                    same = bool(l_resn == resn_u and l_resi == resi_s and ((not chain_s) or (l_chain == chain_s)))
+                    same = bool(
+                        l_resn == resn_u
+                        and (resi is None or l_resi == resi_s)
+                        and ((not chain_s) or (l_chain == chain_s))
+                    )
                     if same:
                         removed += 1
                         continue
@@ -2134,6 +2168,105 @@ def compute_redocking_rmsd_no_fit(ref_mol, pose_mol, atom_map, *, min_pairs=3):
     return float((float(sse) / float(n)) ** 0.5)
 
 
+def redocking_heavy_atom_skeleton(mol):
+    """
+    Heavy-atom graph of a molecule for pose RMSD: elements and connectivity only (every
+    bond single, no charges, no aromaticity, no sanitization), with its coordinates.
+
+    Docked poses come back through PDBQT, which carries no bond orders; Open Babel's
+    re-perception then gives wrong valences (benzamidinium became a cyclohexane with a
+    five-valent N) and a sanitized molecule could not be built, so every RMSD was NaN.
+    Matching on the skeleton does not depend on bond orders or protonation.
+    Returns (skeleton_mol, coordinates) or (None, None).
+    """
+    try:
+        from rdkit import Chem
+    except Exception:
+        return None, None
+    if mol is None:
+        return None, None
+    try:
+        conf = mol.GetConformer()
+    except Exception:
+        return None, None
+    heavy = [a.GetIdx() for a in mol.GetAtoms() if a.GetAtomicNum() > 1]
+    if len(heavy) < 1:
+        return None, None
+    new_index = {old: i for i, old in enumerate(heavy)}
+    rw = Chem.RWMol()
+    for old in heavy:
+        atom = Chem.Atom(int(mol.GetAtomWithIdx(old).GetAtomicNum()))
+        atom.SetNoImplicit(True)
+        rw.AddAtom(atom)
+    for bond in mol.GetBonds():
+        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        if a in new_index and b in new_index:
+            rw.AddBond(new_index[a], new_index[b], Chem.BondType.SINGLE)
+    skel = rw.GetMol()
+    try:
+        frags = Chem.GetMolFrags(skel)
+    except Exception:
+        frags = ()
+    if len(frags) > 1:
+        # largest heavy-atom fragment only (counter-ions, stray atoms of a pose file)
+        keep = sorted(max(frags, key=len))
+        heavy = [heavy[i] for i in keep]
+        return redocking_heavy_atom_skeleton(_redocking_submol(mol, heavy))
+    try:
+        skel.UpdatePropertyCache(strict=False)
+        Chem.FastFindRings(skel)
+    except Exception:
+        return None, None
+    coords = []
+    for old in heavy:
+        pos = conf.GetAtomPosition(int(old))
+        coords.append((float(pos.x), float(pos.y), float(pos.z)))
+    return skel, coords
+
+
+def _redocking_submol(mol, atom_indices):
+    """Copy of ``mol`` restricted to ``atom_indices`` (with their bonds and coordinates)."""
+    from rdkit import Chem
+
+    keep = set(int(i) for i in atom_indices)
+    rw = Chem.RWMol(mol)
+    for idx in sorted((a.GetIdx() for a in mol.GetAtoms() if a.GetIdx() not in keep), reverse=True):
+        rw.RemoveAtom(idx)
+    return rw.GetMol()
+
+
+def compute_redocking_graph_rmsd(ref_mol, pose_mol, *, max_maps=1_000_000):
+    """
+    Symmetry-corrected heavy-atom RMSD without superposition, over every graph
+    isomorphism between the two heavy-atom skeletons (see redocking_heavy_atom_skeleton).
+    NaN when the skeletons differ (different atom count or connectivity).
+    """
+    ref_skel, ref_xyz = redocking_heavy_atom_skeleton(ref_mol)
+    pose_skel, pose_xyz = redocking_heavy_atom_skeleton(pose_mol)
+    if ref_skel is None or pose_skel is None or len(ref_xyz) != len(pose_xyz):
+        return float("nan")
+    if ref_skel.GetNumBonds() != pose_skel.GetNumBonds():
+        return float("nan")
+    try:
+        matches = ref_skel.GetSubstructMatches(
+            pose_skel, uniquify=False, useChirality=False, maxMatches=int(max(1, max_maps))
+        )
+    except Exception:
+        return float("nan")
+    best = float("inf")
+    n = len(pose_xyz)
+    for match in matches:
+        if len(match) != n:
+            continue
+        sse = 0.0
+        for p_idx, r_idx in enumerate(match):
+            px, py, pz = pose_xyz[p_idx]
+            rx, ry, rz = ref_xyz[int(r_idx)]
+            sse += (px - rx) ** 2 + (py - ry) ** 2 + (pz - rz) ** 2
+        best = min(best, (sse / float(n)) ** 0.5)
+    return float(best) if isfinite(best) else float("nan")
+
+
 def resolve_redocking_best_rmsd(
     *,
     has_rdkit=True,
@@ -2148,6 +2281,13 @@ def resolve_redocking_best_rmsd(
     nan_value = float("nan")
     if (not bool(has_rdkit)) or (ref_mol is None) or (pose_mol is None):
         return nan_value
+    graph_rmsd = nan_value
+    try:
+        graph_rmsd = float(compute_redocking_graph_rmsd(ref_mol, pose_mol))
+    except Exception:
+        graph_rmsd = nan_value
+    if isfinite(graph_rmsd):
+        return float(graph_rmsd)
     if (not callable(prepare_rmsd_mol_fn)) or (not callable(candidate_atom_maps_fn)):
         return nan_value
     if not callable(compute_rmsd_no_fit_fn):
@@ -3786,6 +3926,12 @@ def compute_redocking_rmsd_values_for_repeat(
                 can_eval = bool(convert_pdbqt_to_sdf_fn(pose_file, pose_sdf))
             except Exception:
                 can_eval = False
+            # The converter rejects files RDKit cannot sanitize (fine for display), but PDBQT has no
+            # bond orders, so a charged ligand re-perceived by Open Babel often cannot be (the 3PTB
+            # benzamidinium came back with a four-bonded neutral N): every RMSD was NaN. The RMSD only
+            # needs elements, connectivity and coordinates (compute_redocking_graph_rmsd).
+            if (not can_eval) and os.path.isfile(pose_sdf) and os.path.getsize(pose_sdf) > 0:
+                can_eval = True
     elif pose_file.lower().endswith(".sdf"):
         pose_sdf = pose_file
         can_eval = True
@@ -4200,6 +4346,16 @@ def prepare_redocking_runtime_systems_context(
     if site_qc_requested and (not align_requested):
         align_requested = True
         align_notes.append("Alignment step was forced ON for local pocket consistency QC.")
+    if (not align_requested) and str(ref_obj or "").strip() and any(
+        str(rec) != str(ref_obj) for _lab, rec, _src, _mem in list(input_systems or [])
+    ):
+        # the search box and the crystal reference are in the reference frame: a receptor from
+        # another object docked in its own frame would give a wrong box and a meaningless RMSD
+        align_requested = True
+        align_notes.append(
+            "Alignment step was forced ON: some receptors are not the reference object, and the search box "
+            "and crystal reference are in the reference frame."
+        )
 
     runtime_systems = []
     site_qc_notes = []
@@ -5135,54 +5291,13 @@ def best_pose_for_member(rows, label, member_tag):
                 candidates.append(dict(row))
     if not candidates:
         return None
-    best = pick_best_pose_row(candidates)
+    best = pick_top_scored_pose_row(candidates)
     return dict(best) if isinstance(best, dict) else None
 
 
 def _is_better_state_row(new_row, cur_row):
-    if cur_row is None:
-        return True
-    if new_row is None:
-        return False
-    try:
-        nr = float((new_row or {}).get("rmsd_ref", float("nan")))
-    except Exception:
-        nr = float("nan")
-    try:
-        cr = float((cur_row or {}).get("rmsd_ref", float("nan")))
-    except Exception:
-        cr = float("nan")
-    try:
-        na = float((new_row or {}).get("affinity", float("nan")))
-    except Exception:
-        na = float("nan")
-    try:
-        ca = float((cur_row or {}).get("affinity", float("nan")))
-    except Exception:
-        ca = float("nan")
-
-    new_r_ok = bool(isfinite(nr))
-    cur_r_ok = bool(isfinite(cr))
-    if new_r_ok and (not cur_r_ok):
-        return True
-    if cur_r_ok and (not new_r_ok):
-        return False
-    if new_r_ok and cur_r_ok:
-        if nr < cr:
-            return True
-        if nr > cr:
-            return False
-
-    new_a_ok = bool(isfinite(na))
-    cur_a_ok = bool(isfinite(ca))
-    if new_a_ok and (not cur_a_ok):
-        return True
-    if cur_a_ok and (not new_a_ok):
-        return False
-    if new_a_ok and cur_a_ok:
-        return na < ca
-    return False
-
+    """Row shown for a trajectory state: the top-scored pose (see is_better_repeat)."""
+    return bool(is_better_repeat(new_row, cur_row))
 
 def build_redocking_state_row_map(
     *,
@@ -5213,7 +5328,7 @@ def build_redocking_state_row_map(
             "row_by_state": {},
         }
 
-    pick_fn = pick_best_pose_row_fn if callable(pick_best_pose_row_fn) else pick_best_pose_row
+    pick_fn = pick_best_pose_row_fn if callable(pick_best_pose_row_fn) else pick_top_scored_pose_row
     resolve_fn = resolve_state_for_member_fn if callable(resolve_state_for_member_fn) else resolve_state_for_member
     best_member_fn = best_pose_for_member_fn if callable(best_pose_for_member_fn) else best_pose_for_member
 
@@ -5546,7 +5661,7 @@ def rows_best_per_member(rows):
         grouped.setdefault((str(sys_name), str(member)), []).append(rr)
     out = []
     for _key, grp in grouped.items():
-        best = pick_best_pose_row(grp)
+        best = pick_top_scored_pose_row(grp)
         if isinstance(best, dict):
             out.append(dict(best))
 
@@ -6468,6 +6583,9 @@ def resolve_redocking_reference_grid_warning_message(
     }
 
 
+REDOCK_BOX_MIN_MARGIN_A = 1.0
+
+
 def build_redocking_reference_grid_size(
     span,
     *,
@@ -6530,9 +6648,13 @@ def build_redocking_reference_grid_size(
     base_size = []
     out_size = []
     for idx in range(3):
-        raw_edge = max(0.0, float(span_vals[idx])) + float(pad)
-        base_edge = _clip(raw_edge, base_lo, base_hi)
-        final_edge = _clip(float(base_edge) + float(delta_vals[idx]), final_lo, final_hi)
+        span_i = max(0.0, float(span_vals[idx]))
+        # padding on each side of the ligand (the box is centred on the ligand's bounding box);
+        # no edge limit may leave less than 1 A around the crystal ligand
+        cover = span_i + 2.0 * REDOCK_BOX_MIN_MARGIN_A
+        raw_edge = span_i + 2.0 * float(pad)
+        base_edge = _clip(raw_edge, base_lo, max(base_hi, cover))
+        final_edge = _clip(float(base_edge) + float(delta_vals[idx]), max(final_lo, cover), max(final_hi, cover))
         base_size.append(float(base_edge))
         out_size.append(float(final_edge))
 
@@ -7905,8 +8027,9 @@ def write_redocking_repeat_stats_csv(csv_path, repeat_rows_meta, include_member_
                 "model_member",
                 "receptor_object",
                 "ok",
-                "best_affinity_kcal",
-                "best_rmsd_a",
+                "top1_affinity_kcal",
+                "top1_rmsd_a",
+                "min_rmsd_all_poses_a",
                 "n_poses",
                 "job_dir",
                 "pose_file",
@@ -7918,8 +8041,9 @@ def write_redocking_repeat_stats_csv(csv_path, repeat_rows_meta, include_member_
                 "repeat",
                 "seed",
                 "ok",
-                "best_affinity_kcal",
-                "best_rmsd_a",
+                "top1_affinity_kcal",
+                "top1_rmsd_a",
+                "min_rmsd_all_poses_a",
                 "n_poses",
                 "pose_file",
                 "log_file",
@@ -7941,8 +8065,12 @@ def write_redocking_repeat_stats_csv(csv_path, repeat_rows_meta, include_member_
                 row_out = {
                     "repeat": int(rr.get("repeat", 0) or 0),
                     "ok": bool(rr.get("ok", False)),
-                    "best_affinity_kcal": (f"{ba:.6f}" if isfinite(ba) else ""),
-                    "best_rmsd_a": (f"{br:.6f}" if isfinite(br) else ""),
+                    "top1_affinity_kcal": (f"{ba:.6f}" if isfinite(ba) else ""),
+                    "top1_rmsd_a": (f"{br:.6f}" if isfinite(br) else ""),
+                    "min_rmsd_all_poses_a": (
+                        f"{_safe_float(rr.get('min_rmsd_all_poses', float('nan'))):.6f}"
+                        if isfinite(_safe_float(rr.get("min_rmsd_all_poses", float("nan")))) else ""
+                    ),
                     "n_poses": int(rr.get("n_poses", 0) or 0),
                     "pose_file": str(rr.get("pose_file", "") or ""),
                     "log_file": str(rr.get("log_file", "") or ""),
@@ -8015,12 +8143,27 @@ def summarize_redocking_repeat_rows(
     rms_stats = _repeat_stats(rms_samples)
     finite_aff = [float(v) for v in list(aff_samples or []) if isfinite(float(v))]
     affinity_zero_plateau = bool(len(finite_aff) >= 2 and all(abs(float(v)) <= 1.0e-6 for v in finite_aff))
+    # best_affinity/best_rmsd of a repeat are its top-scored pose: success = top-1 RMSD <= 2 A
+    n_success = int(sum(1 for v in rms_samples if float(v) <= REDOCK_SUCCESS_RMSD_A))
+    min_samples = []
+    for rr in rows:
+        if bool(rr.get("ok", False)):
+            mv = _safe_float(rr.get("min_rmsd_all_poses", float("nan")))
+            if isfinite(mv):
+                min_samples.append(float(mv))
     return {
         "aff_samples": list(aff_samples),
         "rms_samples": list(rms_samples),
         "aff_stats": dict(aff_stats or {}),
         "rms_stats": dict(rms_stats or {}),
         "affinity_zero_plateau": bool(affinity_zero_plateau),
+        "top1_success": {
+            "threshold_a": float(REDOCK_SUCCESS_RMSD_A),
+            "n_success": int(n_success),
+            "n": int(len(rms_samples)),
+            "rate": (float(n_success) / float(len(rms_samples))) if rms_samples else float("nan"),
+        },
+        "min_rmsd_all_poses_median": float(_median_finite(min_samples)) if min_samples else float("nan"),
     }
 
 
@@ -8055,6 +8198,8 @@ def prepare_redocking_repeat_outputs(
         "repeat_stats_rmsd": dict(rms_stats or {}),
         "affinity_zero_plateau": bool(affinity_zero_plateau),
         "repeat_csv": str(repeat_csv or ""),
+        "top1_success": dict(repeat_summary.get("top1_success", {}) or {}),
+        "min_rmsd_all_poses_median": float(repeat_summary.get("min_rmsd_all_poses_median", float("nan"))),
     }
 
 
@@ -8094,9 +8239,9 @@ def build_redocking_run_debug_line(
         f"removed_ref_atoms={int(removed_ref_atoms or 0)}, repeats={int(repeats or 0)}, "
         f"repeat_success={int((aff_stats or {}).get('n', 0) or 0)}, "
         f"best_repeat={best_repeat_id if best_repeat_id is not None else 'n/a'}, poses={int(pose_count or 0)}, "
-        f"best_mode={best.get('mode', 'n/a') if best else 'n/a'}, "
-        f"best_aff={best_aff:.3f}, "
-        f"best_rmsd={best_rms_txt}, "
+        f"top1_mode={best.get('mode', 'n/a') if best else 'n/a'}, "
+        f"top1_aff={best_aff:.3f}, "
+        f"top1_rmsd={best_rms_txt}, "
         f"aff_ci=({(aff_stats or {}).get('ci_low')},{(aff_stats or {}).get('ci_high')}), "
         f"aff_conf={(aff_stats or {}).get('confidence')}, "
         f"rms_ci=({(rms_stats or {}).get('ci_low')},{(rms_stats or {}).get('ci_high')}), "
@@ -8126,9 +8271,13 @@ def build_redocking_single_run_payload(
     repeat_best=None,
     repeat_count=1,
     affinity_zero_plateau=False,
+    top1_success=None,
+    min_rmsd_all_poses_median=float("nan"),
 ):
     return {
         "ok": True,
+        "top1_success": dict(top1_success or {}),
+        "min_rmsd_all_poses_median": float(min_rmsd_all_poses_median),
         "rows": list(rows or []),
         "best": (dict(best_row or {}) if isinstance(best_row, dict) else best_row),
         "job_dir": str(job_dir or ""),
@@ -8175,7 +8324,7 @@ def compose_redocking_single_run_outcome(
     flex_info=None,
 ):
     rows = list(best_rows or [])
-    best = pick_best_pose_row(rows)
+    best = pick_top_scored_pose_row(rows)
     repeat_outputs = prepare_redocking_repeat_outputs(
         repeat_rows_meta=repeat_rows_meta,
         repeat_statistics_fn=repeat_statistics_fn,
@@ -8225,6 +8374,8 @@ def compose_redocking_single_run_outcome(
         repeat_best=best_repeat_id,
         repeat_count=n_repeats,
         affinity_zero_plateau=bool(affinity_zero_plateau),
+        top1_success=dict(repeat_outputs.get("top1_success", {}) or {}),
+        min_rmsd_all_poses_median=float(repeat_outputs.get("min_rmsd_all_poses_median", float("nan"))),
     )
     return {
         "debug_line": str(debug_line),
@@ -8265,7 +8416,7 @@ def aggregate_label_runs(
         all_rows.extend(rows_i)
         best_i = rr.get("best")
         if not isinstance(best_i, dict):
-            best_i = pick_best_pose_row(rows_i)
+            best_i = pick_top_scored_pose_row(rows_i)
         if is_better_repeat(best_i, best_repeat):
             best_repeat = dict(best_i or {})
             best_repeat_id = int(i)
@@ -8294,6 +8445,9 @@ def aggregate_label_runs(
                 "ok": True,
                 "best_affinity": float(best_aff),
                 "best_rmsd": float(best_rms),
+                "min_rmsd_all_poses": float(
+                    _safe_float((pick_best_pose_row(rows_i) or {}).get("rmsd_ref", float("nan")))
+                ),
                 "n_poses": int(len(rows_i)),
                 "pose_file": str(rep_rows[0].get("pose_file", "") if rep_rows else ""),
                 "log_file": str(rep_rows[0].get("log_file", "") if rep_rows else ""),
@@ -8304,7 +8458,7 @@ def aggregate_label_runs(
             }
         )
 
-    best_row = pick_best_pose_row(all_rows)
+    best_row = pick_top_scored_pose_row(all_rows)
     out_csv = ""
     wk = str(workspace_dir or "").strip()
     if wk:
@@ -8352,6 +8506,8 @@ def aggregate_label_runs(
         "repeat_best": int(best_repeat_id) if best_repeat_id is not None else None,
         "repeat_count": int(len(repeat_rows_meta)),
         "affinity_zero_plateau": bool(affinity_zero_plateau),
+        "top1_success": dict(repeat_outputs.get("top1_success", {}) or {}),
+        "min_rmsd_all_poses_median": float(repeat_outputs.get("min_rmsd_all_poses_median", float("nan"))),
         "ensemble_mode": True,
         "ensemble_members": int(len(runs)),
         "member_runs": list(runs),
@@ -8686,7 +8842,20 @@ def stats_for_label(run_info):
         "best_rms": float(b_rms) if isfinite(b_rms) else float("nan"),
         "n_aff": int(n_aff),
         "n_rms": int(n_rms),
+        "top1_success": dict(rr.get("top1_success", {}) or {}),
+        "min_rmsd_all_poses_median": float(_safe_float(rr.get("min_rmsd_all_poses_median", float("nan")))),
     }
+
+
+def _format_top1_success(stats):
+    succ = dict((stats or {}).get("top1_success", {}) or {})
+    n = int(succ.get("n", 0) or 0)
+    txt = (f"top-1 success (RMSD <= {float(succ.get('threshold_a', REDOCK_SUCCESS_RMSD_A)):.1f} A) "
+           f"{int(succ.get('n_success', 0) or 0)}/{n}") if n else "top-1 success n/a"
+    low = _safe_float((stats or {}).get("min_rmsd_all_poses_median", float("nan")))
+    if isfinite(low):
+        txt += f"; lowest RMSD among all modes (sampling, median) {low:.2f} A"
+    return txt
 
 
 def compare_wt_mutant(wt_run, mut_run):
@@ -8895,7 +9064,11 @@ def build_redocking_summary_lines(
         )
         for note in [str(x) for x in list(site_qc_notes or []) if str(x or "").strip()]:
             lines.append(f"Site QC: {note}")
-    lines.append("Reported RMSD values below are ligand-pose RMSD to the crystal reference ligand; site QC RMSD is only a preparation check.")
+    lines.append(
+        "Reported RMSD values are heavy-atom, symmetry-corrected ligand RMSD of the top-scored pose to the "
+        "crystal reference ligand (no superposition); success = top-1 RMSD <= 2 A. Site QC RMSD is only a "
+        "preparation check."
+    )
     if bool(use_modeler_ensemble):
         mut_total = int(sum(int(ec.get(lbl, 0) or 0) for lbl in list(mut_labels or [])) or 0)
         if mut_total > 0:
@@ -8913,8 +9086,9 @@ def build_redocking_summary_lines(
     if wt_run:
         lines.append(
             f"WT: {str(wt_stats.get('aff_metric_label', 'best-pose'))} affinity={_fmt_value(wt_stats.get('aff'), 3, ' kcal/mol')} (n={int(wt_stats.get('n_aff', 0))}), "
-            f"{str(wt_stats.get('rms_metric_label', 'best-pose'))} ligand RMSD={_fmt_value(wt_stats.get('rms'), 3, ' A')} (n={int(wt_stats.get('n_rms', 0))}), "
-            f"best ligand RMSD={_fmt_value(wt_stats.get('best_rms'), 3, ' A')}"
+            f"{str(wt_stats.get('rms_metric_label', 'best-pose'))} top-1 ligand RMSD={_fmt_value(wt_stats.get('rms'), 3, ' A')} (n={int(wt_stats.get('n_rms', 0))}), "
+            f"best-scored pose RMSD={_fmt_value(wt_stats.get('best_rms'), 3, ' A')}; "
+            f"{_format_top1_success(wt_stats)}"
         )
     if mut_labels:
         for lab in list(mut_labels or []):
@@ -8924,8 +9098,9 @@ def build_redocking_summary_lines(
             mut_stats = stats_for_label(mut_run)
             lines.append(
                 f"{lab}: {str(mut_stats.get('aff_metric_label', 'best-pose'))} affinity={_fmt_value(mut_stats.get('aff'), 3, ' kcal/mol')} (n={int(mut_stats.get('n_aff', 0))}), "
-                f"{str(mut_stats.get('rms_metric_label', 'best-pose'))} ligand RMSD={_fmt_value(mut_stats.get('rms'), 3, ' A')} (n={int(mut_stats.get('n_rms', 0))}), "
-                f"best ligand RMSD={_fmt_value(mut_stats.get('best_rms'), 3, ' A')}"
+                f"{str(mut_stats.get('rms_metric_label', 'best-pose'))} top-1 ligand RMSD={_fmt_value(mut_stats.get('rms'), 3, ' A')} (n={int(mut_stats.get('n_rms', 0))}), "
+                f"best-scored pose RMSD={_fmt_value(mut_stats.get('best_rms'), 3, ' A')}; "
+                f"{_format_top1_success(mut_stats)}"
             )
             if wt_run:
                 d_aff = float(mut_stats.get("aff", float("nan"))) - float(wt_stats.get("aff", float("nan")))
@@ -9054,9 +9229,11 @@ def run_redocking_repeats(
             repeat_rows_meta.append(rec_meta)
             continue
 
-        rep_best = pick_best_pose_row(rows_i)
+        rep_best = pick_top_scored_pose_row(rows_i)
         rec_meta["ok"] = True
         rec_meta["n_poses"] = int(len(rows_i))
+        lowest = pick_best_pose_row(rows_i)
+        rec_meta["min_rmsd_all_poses"] = float(_safe_float((lowest or {}).get("rmsd_ref", float("nan"))))
         if rep_best is not None:
             try:
                 rec_meta["best_affinity"] = float((rep_best or {}).get("affinity", float("nan")))

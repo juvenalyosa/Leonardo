@@ -606,13 +606,13 @@ def build_pymol_cluster_selection(
             core = ""
         else:
             seed = f"({obj_scope}) and index {'+'.join(str(i) for i in idxs)}"
-            core = f"({obj_scope}) and (within {rad:.3f} of ({seed}))"
+            core = f"({obj_scope}) within {rad:.3f} of ({seed})"          # 'within' is binary: A within r of B
     else:
         seed = seed_expr or "sele"
         low = seed.lower()
         explicit = ("model " in low) or ("obj " in low) or ("sele" in low) or ("all" == low)
         seed_sel = str(seed) if explicit or not obj else f"({obj_scope}) and ({seed})"
-        core = f"({obj_scope}) and (within {rad:.3f} of ({seed_sel}))"
+        core = f"({obj_scope}) within {rad:.3f} of ({seed_sel})"
     if core and water_filter:
         core = f"({core}){water_filter}"
     final_sel = f"byres ({core})" if (core and bool(expand_residues)) else str(core)

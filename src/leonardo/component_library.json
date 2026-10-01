@@ -1,0 +1,331 @@
+{
+  "about": "PDB chemical-component codes -> force-field residue templates. Unlisted residues are still matched by heavy-atom graph against every installed template. Users extend this in ~/.leonardo/parameters/component_library.json with the same format.",
+  "components": {
+    "HEM": {
+      "category": "cofactor",
+      "description": "heme b (protoporphyrin IX + Fe)",
+      "templates": {
+        "charmm36": [
+          "HEME"
+        ]
+      },
+      "notes": "Fe-His/Cys coordination bonds are not part of this template; axial ligands interact through nonbonded terms unless a heme patch is applied."
+    },
+    "HEME": {
+      "category": "cofactor",
+      "description": "heme b",
+      "templates": {
+        "charmm36": [
+          "HEME"
+        ]
+      }
+    },
+    "NAD": {
+      "category": "cofactor",
+      "description": "NAD+",
+      "templates": {
+        "charmm36": [
+          "NAD"
+        ]
+      }
+    },
+    "NAI": {
+      "category": "cofactor",
+      "description": "NADH",
+      "templates": {
+        "charmm36": [
+          "NADH",
+          "NAI"
+        ]
+      }
+    },
+    "NAP": {
+      "category": "cofactor",
+      "description": "NADP+",
+      "templates": {
+        "charmm36": [
+          "NADP",
+          "NAP"
+        ]
+      }
+    },
+    "NDP": {
+      "category": "cofactor",
+      "description": "NADPH",
+      "templates": {
+        "charmm36": [
+          "NDPH",
+          "NDP"
+        ]
+      }
+    },
+    "ATP": {
+      "category": "nucleotide",
+      "description": "adenosine triphosphate",
+      "templates": {
+        "charmm36": [
+          "ATP"
+        ]
+      }
+    },
+    "ADP": {
+      "category": "nucleotide",
+      "description": "adenosine diphosphate",
+      "templates": {
+        "charmm36": [
+          "ADP"
+        ]
+      }
+    },
+    "AMP": {
+      "category": "nucleotide",
+      "description": "adenosine monophosphate",
+      "templates": {
+        "charmm36": [
+          "AMP"
+        ]
+      }
+    },
+    "SAH": {
+      "category": "cofactor",
+      "description": "S-adenosyl-homocysteine",
+      "templates": {
+        "charmm36": [
+          "SAH"
+        ]
+      }
+    },
+    "CLR": {
+      "category": "lipid",
+      "description": "cholesterol",
+      "templates": {
+        "charmm36": [
+          "CHL1",
+          "CHOL"
+        ],
+        "amber14": [
+          "CHL"
+        ]
+      }
+    },
+    "CHL": {
+      "category": "lipid",
+      "description": "cholesterol",
+      "templates": {
+        "charmm36": [
+          "CHL1"
+        ],
+        "amber14": [
+          "CHL"
+        ]
+      }
+    },
+    "OXY": {
+      "category": "small molecule",
+      "description": "dioxygen",
+      "templates": {
+        "charmm36": [
+          "O2"
+        ]
+      }
+    },
+    "ZN": {
+      "category": "ion",
+      "description": "Zn2+",
+      "templates": {
+        "charmm36": [
+          "ZN2"
+        ],
+        "amber14": [
+          "ZN"
+        ]
+      }
+    },
+    "MG": {
+      "category": "ion",
+      "description": "Mg2+",
+      "templates": {
+        "charmm36": [
+          "MG"
+        ],
+        "amber14": [
+          "MG"
+        ]
+      }
+    },
+    "CA": {
+      "category": "ion",
+      "description": "Ca2+",
+      "templates": {
+        "charmm36": [
+          "CAL"
+        ],
+        "amber14": [
+          "CA"
+        ]
+      }
+    },
+    "NA": {
+      "category": "ion",
+      "description": "Na+",
+      "templates": {
+        "charmm36": [
+          "SOD"
+        ],
+        "amber14": [
+          "NA"
+        ]
+      }
+    },
+    "K": {
+      "category": "ion",
+      "description": "K+",
+      "templates": {
+        "charmm36": [
+          "POT"
+        ],
+        "amber14": [
+          "K"
+        ]
+      }
+    },
+    "CL": {
+      "category": "ion",
+      "description": "Cl-",
+      "templates": {
+        "charmm36": [
+          "CLA"
+        ],
+        "amber14": [
+          "CL"
+        ]
+      }
+    },
+    "CD": {
+      "category": "ion",
+      "description": "Cd2+",
+      "templates": {
+        "charmm36": [
+          "CD2"
+        ]
+      }
+    },
+    "LI": {
+      "category": "ion",
+      "description": "Li+",
+      "templates": {
+        "charmm36": [
+          "LIT"
+        ],
+        "amber14": [
+          "LI"
+        ]
+      }
+    },
+    "MN": {
+      "category": "ion",
+      "description": "Mn2+",
+      "templates": {
+        "amber14": [
+          "MN"
+        ]
+      }
+    },
+    "FE2": {
+      "category": "ion",
+      "description": "Fe2+",
+      "templates": {
+        "amber14": [
+          "FE2"
+        ]
+      }
+    },
+    "FE": {
+      "category": "ion",
+      "description": "Fe3+",
+      "templates": {
+        "amber14": [
+          "FE"
+        ]
+      }
+    },
+    "CU": {
+      "category": "ion",
+      "description": "Cu2+",
+      "templates": {
+        "amber14": [
+          "CU"
+        ]
+      }
+    },
+    "SO4": {
+      "category": "buffer",
+      "description": "sulfate (crystallization additive)",
+      "notes": "usually removed before MD"
+    },
+    "GOL": {
+      "category": "buffer",
+      "description": "glycerol (crystallization additive)",
+      "notes": "usually removed before MD"
+    },
+    "EDO": {
+      "category": "buffer",
+      "description": "ethylene glycol (crystallization additive)",
+      "notes": "usually removed before MD"
+    },
+    "PEG": {
+      "category": "buffer",
+      "description": "PEG fragment (crystallization additive)",
+      "notes": "usually removed before MD"
+    },
+    "SEP": {
+      "category": "modified residue",
+      "description": "phosphoserine (dianionic at pH 7)",
+      "templates": {
+        "charmm36": [
+          "SER-SP2"
+        ],
+        "amber14": [
+          "SEP"
+        ]
+      }
+    },
+    "TPO": {
+      "category": "modified residue",
+      "description": "phosphothreonine (dianionic at pH 7)",
+      "templates": {
+        "amber14": [
+          "TPO"
+        ]
+      },
+      "notes": "OpenMM's CHARMM36 has no phosphothreonine patch: use Amber (phosaa14SB)."
+    },
+    "PTR": {
+      "category": "modified residue",
+      "description": "phosphotyrosine (dianionic at pH 7)",
+      "templates": {
+        "charmm36": [
+          "TYR-TP2"
+        ],
+        "amber14": [
+          "PTR"
+        ]
+      }
+    },
+    "HEC": {
+      "category": "cofactor",
+      "description": "heme c (thioether-linked to two Cys)",
+      "notes": "not interchangeable with HEME: c-type heme is covalently bound (thioethers) and has saturated CAB/CAC; it needs its own template"
+    },
+    "HEA": {
+      "category": "cofactor",
+      "description": "heme a",
+      "notes": "not interchangeable with HEME: c-type heme is covalently bound (thioethers) and has saturated CAB/CAC; it needs its own template"
+    },
+    "HEB": {
+      "category": "cofactor",
+      "description": "heme b variant",
+      "notes": "not interchangeable with HEME: c-type heme is covalently bound (thioethers) and has saturated CAB/CAC; it needs its own template"
+    }
+  }
+}
