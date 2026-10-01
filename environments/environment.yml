@@ -82,7 +82,7 @@ dependencies:
       # AI assistant (natural-language control of Leonardo's tools)
       - "anthropic>=1.8"                 # Claude Messages API
       - "openai>=2.0"                    # OpenAI Responses API
-      - "mcp>=1.27"                      # Leonardo tools as an MCP server
+      - "mcp>=1.27,<2"                   # Leonardo tools as an MCP server (2.x changed the server/client API)
       - keyring                          # API keys in the system keychain
       - jsonschema                       # tool-argument validation
 

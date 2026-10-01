@@ -113,7 +113,7 @@ def _rutile_110(size_nm, layers):
 
     r = crystal(["Ti", "O"], basis=[(0, 0, 0), (0.3053, 0.3053, 0)], spacegroup=136,
                 cellpar=[4.594, 4.594, 2.959, 90, 90, 90])
-    slab = surface(r, (1, 1, 0), max(1, int(layers)), vacuum=0.0, periodic=False)
+    slab = surface(r, (1, 1, 0), max(1, int(layers)), vacuum=None, periodic=False)
     cell = slab.cell.lengths()
     nx = max(1, int(math.ceil(size_nm[0] * 10 / cell[0])))
     ny = max(1, int(math.ceil(size_nm[1] * 10 / cell[1])))
@@ -177,7 +177,7 @@ def build_material(material="Au", kind="slab", facet="111", size_nm=(4.0, 4.0), 
         ny = max(2, int(math.ceil(size_nm[1] * 10 / cell_1[1])))
         if str(facet) == "111" and ny % 2:
             ny += 1                                  # orthogonal fcc111 needs an even repeat along y
-        atoms = fn(material, size=(nx, ny, int(layers)), a=a, orthogonal=True, vacuum=0.0)
+        atoms = fn(material, size=(nx, ny, int(layers)), a=a, orthogonal=True, vacuum=None)
     pos = atoms.get_positions() / 10.0
     pos[:, 2] -= pos[:, 2].max()                     # top layer at z = 0
     cell = atoms.cell.lengths() / 10.0
