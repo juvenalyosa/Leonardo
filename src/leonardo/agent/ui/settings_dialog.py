@@ -165,7 +165,7 @@ class AssistantSettingsDialog(QtWidgets.QDialog):
         self.cmb_effort.setCurrentIndex(max(0, idx))
         idx = self.cmb_policy.findData(s.get("approval_policy", "heavy"))
         self.cmb_policy.setCurrentIndex(max(0, idx))
-        self.spin_calls.setValue(int(s.get("max_tool_calls", 60)))
+        self.spin_calls.setValue(int(s.get("max_tool_calls", 300)))
         self.cb_mcp.setChecked(bool(s.get("mcp_server_enabled", False)))
         self.spin_port.setValue(int(s.get("mcp_server_port", 8765)))
         self._update_snippet()

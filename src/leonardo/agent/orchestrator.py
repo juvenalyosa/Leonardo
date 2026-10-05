@@ -172,7 +172,7 @@ def _as_openai(tool):
 
 
 class AgentSession:
-    def __init__(self, provider, registry, ui, execute, approval_policy="heavy", max_tool_calls=60,
+    def __init__(self, provider, registry, ui, execute, approval_policy="heavy", max_tool_calls=300,
                  poll_interval=1.0):
         self.provider = provider
         self.registry = registry
