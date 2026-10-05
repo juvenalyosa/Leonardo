@@ -141,7 +141,7 @@ class AssistantController(QtCore.QObject):
                 policy = self.settings.get("approval_policy", "heavy")
                 self.session.approval_policy = policy if policy in APPROVAL_POLICIES else "heavy"
                 self.session.needs_confirmation = APPROVAL_POLICIES[self.session.approval_policy]
-                self.session.max_tool_calls = int(self.settings.get("max_tool_calls", 60))
+                self.session.max_tool_calls = int(self.settings.get("max_tool_calls", 300))
 
     def open_pipelines(self):
         """Pipeline library: the chosen pipeline and molecules become a request for the assistant."""
@@ -194,7 +194,7 @@ class AssistantController(QtCore.QObject):
         if policy not in APPROVAL_POLICIES:
             policy = "heavy"
         return AgentSession(provider, self.registry, self.adapter, execute=self.mcp_client.call_tool,
-                            approval_policy=policy, max_tool_calls=int(self.settings.get("max_tool_calls", 60)))
+                            approval_policy=policy, max_tool_calls=int(self.settings.get("max_tool_calls", 300)))
 
     def new_chat(self):
         if self.worker is not None and self.worker.isRunning():

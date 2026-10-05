@@ -33,7 +33,7 @@ DEFAULTS = {
     "model_openai": "",
     "effort": "high",
     "approval_policy": "heavy",       # see registry.APPROVAL_POLICIES
-    "max_tool_calls": 60,
+    "max_tool_calls": 300,            # pipelines need many calls; the settings dialog allows 5-400
     "mcp_server_enabled": False,
     "mcp_server_port": 8765,
 }
@@ -51,6 +51,8 @@ def load_settings(path=None):
             saved = json.load(fh)
         if isinstance(saved, dict):
             data.update({k: v for k, v in saved.items() if k in DEFAULTS})
+            if saved.get("max_tool_calls") == 60:        # the old default, too small for pipelines
+                data["max_tool_calls"] = DEFAULTS["max_tool_calls"]
     except (OSError, ValueError):
         pass
     return data
