@@ -45,6 +45,9 @@ jobs:
           bash Leonardo-Installer-*/install-leonardo-linux.sh --yes
 
       - name: Check the installation
+        timeout-minutes: 20
+        env:
+          LEONARDO_NO_DIALOG: "1"
         run: |
           set -e
           CONDA="$RUNNER_TEMP/miniforge3/bin/conda"

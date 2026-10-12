@@ -295,7 +295,14 @@ CONDA="$CONDA"
 ENV_NAME="$ENV_NAME"
 EOF
 cat >> "$BIN_DIR/leonardo-modeller-license" <<'EOF'
-message() {     # message TEXT : a dialog when possible, else the terminal
+use_dialogs() {  # dialogs only when started from the app/menu entry (no terminal, not the installer)
+  [[ -z "${LEONARDO_NO_DIALOG:-}" && ! -t 0 && ! -t 1 ]]
+}
+message() {     # message TEXT : a dialog when started from the app, else the terminal
+  if ! use_dialogs; then
+    echo "$1"
+    return
+  fi
   if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"$1\" buttons {\"OK\"} default button 1 with title \"Leonardo\"" >/dev/null 2>&1 && return
   elif command -v zenity >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
@@ -306,9 +313,9 @@ message() {     # message TEXT : a dialog when possible, else the terminal
 key="${1:-}"
 if [[ -z "$key" ]]; then
   prompt="Paste your MODELLER license key.\n\nFree academic keys: https://salilab.org/modeller/registration.html"
-  if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
+  if use_dialogs && [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
     key="$(osascript -e "text returned of (display dialog \"$prompt\" default answer \"\" with title \"Leonardo - MODELLER license\")" 2>/dev/null || true)"
-  elif command -v zenity >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+  elif use_dialogs && command -v zenity >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
     key="$(zenity --entry --title="Leonardo - MODELLER license" --text="$(printf '%b' "$prompt")" 2>/dev/null || true)"
   else
     printf '%b\n' "$prompt"
@@ -332,7 +339,7 @@ chmod +x "$BIN_DIR/leonardo" "$BIN_DIR/leonardo-modeller-license"
 
 if [[ -n "$MODELLER_KEY" ]]; then
   step "Activating MODELLER"
-  "$BIN_DIR/leonardo-modeller-license" "$MODELLER_KEY" || warn "MODELLER did not accept the key; run 'Leonardo MODELLER License' later."
+  LEONARDO_NO_DIALOG=1 "$BIN_DIR/leonardo-modeller-license" "$MODELLER_KEY" || warn "MODELLER did not accept the key; run 'Leonardo MODELLER License' later."
 fi
 
 # ------------------------------------------------------------------ 6. PyMOL plugin
