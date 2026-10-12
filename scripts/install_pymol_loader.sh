@@ -6,6 +6,8 @@ set -euo pipefail
 # from the Leonardo conda environment and open Plugins > Leonardo.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# the end-user installer points the loader at a stable path (~/.leonardo/app) that survives updates
+ROOT_DIR="${LEONARDO_LOADER_ROOT:-$ROOT_DIR}"
 STARTUP_DIR="${PYMOL_STARTUP_DIR:-$HOME/.pymol/startup}"
 LOADER_PATH="$STARTUP_DIR/leonardo.py"
 QUIET=0
@@ -87,7 +89,8 @@ LEONARDO_ROOT = "$py_root"
 
 try:
     legacy_root = os.path.join(LEONARDO_ROOT, "legacy")
-    for source_root in (legacy_root, LEONARDO_ROOT):
+    src_root = os.path.join(LEONARDO_ROOT, "src")          # the leonardo package (legacy/ modules import it)
+    for source_root in (LEONARDO_ROOT, src_root, legacy_root):
         if os.path.isdir(source_root) and source_root not in sys.path:
             sys.path.insert(0, source_root)
     import ProtLigInteract

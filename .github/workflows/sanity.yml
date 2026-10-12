@@ -55,6 +55,9 @@ jobs:
           bash -n scripts/launch_leonardo.sh
           bash -n installers/linux/install_leonardo_linux.sh
           bash -n installers/macos/install_leonardo_macos.sh
+          bash -n installers/install_leonardo.sh
+          bash -n "installers/Install-Leonardo-macOS.command"
+          bash -n scripts/build_installer_bundle.sh
           ./scripts/install_leonardo.sh --check-only --skip-zip --no-pymol-loader
           ./scripts/build_leonardo_zip.sh
 

@@ -11,52 +11,37 @@ workflows.
 Current version: **0.2.0a7** (`2026-10-01-r2`)<br>
 Status: **pre-release for testing and manuscript verification**
 
-## What you need
+## Install (end users)
 
-- macOS or Linux; Windows 11 is supported through WSL2/WSLg
-- Git
-- Conda, Miniforge, Mambaforge, or Miniconda
-- Enough disk space for the scientific Conda environments
+Download **`Leonardo-Installer-<version>.zip`** from the release page, unzip it and:
 
-An NVIDIA GPU is optional. CPU execution is supported.
+- **macOS:** double-click `Install Leonardo (macOS).command` (the first time: right-click > Open).
+- **Linux:** in that folder run `bash install-leonardo-linux.sh`.
 
-Leonardo uses two environments:
+It installs everything (conda, PyMOL, OpenMM, AmberTools, Psi4, MOPAC, MODELLER, ...), asks for
+the MODELLER license key, and creates a **Leonardo** app/menu entry. Step-by-step guide in
+English and Spanish: [docs/INSTALL.md](docs/INSTALL.md).
 
-- `protliginteract-full`: required PyMOL and scientific runtime
-- `protliginteract-optional`: optional ColabFold and machine-learning tools
+## Install (developers)
 
-Always launch Leonardo from `protliginteract-full`.
+Requirements: macOS or Linux (Windows 11 through WSL2/WSLg), Git, about 10 GB of disk.
+An NVIDIA GPU is optional; CPU execution is supported.
 
-## Install
-
-Authenticate with GitHub first because this repository is private, then clone
-and enter the repository:
+Authenticate with GitHub first because this repository is private, then clone it and run the
+same installer on your working copy (it installs Miniforge if no conda is found):
 
 ```bash
 git clone https://github.com/juvenalyosa/Leonardo.git
 cd Leonardo
+bash installers/install_leonardo.sh
 ```
 
-Run the installer:
+Leonardo uses `protliginteract-full` (required) and, for local ColabFold and ML tools,
+`protliginteract-optional`. The previous developer workflow (editable install, smoke tests and
+`dist/Leonardo.zip`) is still available:
 
 ```bash
-./scripts/install_leonardo.sh
-```
-
-The installer creates or updates the main Conda environment, installs Leonardo
-in editable mode, registers its PyMOL startup loader, runs smoke checks, and
-builds `dist/Leonardo.zip`.
-
-Install the optional environment when local ColabFold or ML tools are needed:
-
-```bash
-./scripts/install_leonardo.sh --with-optional
-```
-
-Recreate both environments from scratch:
-
-```bash
-./scripts/install_leonardo.sh --recreate --with-optional
+./scripts/install_leonardo.sh                 # add --with-optional / --recreate as needed
 ```
 
 ## Launch

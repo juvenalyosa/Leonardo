@@ -1,0 +1,77 @@
+name: Installer end-to-end
+
+# Installs Leonardo from scratch with the user installer bundle on clean machines
+# (Linux x86_64, macOS Apple Silicon, macOS Intel), exactly as an end user would.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'installers/**'
+      - 'environments/**'
+      - 'scripts/build_installer_bundle.sh'
+      - 'scripts/install_envs.sh'
+      - 'scripts/install_pymol_loader.sh'
+      - '.github/workflows/installer-e2e.yml'
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux desktop libraries PyMOL needs
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 libxrender1
+
+      - name: Build the installer bundle
+        run: bash scripts/build_installer_bundle.sh
+
+      - name: Install as an end user (no conda on PATH)
+        env:
+          LEONARDO_CONDA_PREFIX: ${{ runner.temp }}/miniforge3
+        run: |
+          cd "$RUNNER_TEMP"
+          unzip -q "$GITHUB_WORKSPACE"/dist/Leonardo-Installer-*.zip
+          # hide the runner's own conda so the installer has to fetch Miniforge, like on a new laptop
+          export PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -i conda | paste -sd: -)"
+          unset CONDA CONDA_PREFIX CONDA_EXE
+          bash Leonardo-Installer-*/install-leonardo-linux.sh --yes
+
+      - name: Check the installation
+        run: |
+          set -e
+          CONDA="$RUNNER_TEMP/miniforge3/bin/conda"
+          test -x "$HOME/.leonardo/bin/leonardo"
+          test -f "$HOME/.pymol/startup/leonardo.py"
+          "$CONDA" run -n protliginteract-full python -c "import gemmi, networkx, psutil, openmm, rdkit, pymol, psi4, ase, mcp, anthropic; print('imports OK')"
+          for tool in obabel smina fpocket psi4 mopac antechamber tleap packmol-memgen blastp hmmscan clustalo mafft; do
+            "$CONDA" run -n protliginteract-full which "$tool"
+          done
+          # the PyMOL loader imports Leonardo (the menu itself needs a display)
+          "$CONDA" run -n protliginteract-full pymol -cq "$HOME/.pymol/startup/leonardo.py" 2>&1 | tee loader.log
+          grep -q "LOADED VERSION" loader.log
+          # MODELLER license helper: a dummy key must be written and then rejected by MODELLER
+          if "$HOME/.leonardo/bin/leonardo-modeller-license" DUMMYKEY; then echo "dummy key accepted?"; exit 1; fi
+          "$CONDA" run -n protliginteract-full python -c "import glob,sys; c=glob.glob(sys.prefix+'/lib/modeller-*/modlib/modeller/config.py')[0]; assert 'DUMMYKEY' in open(c).read(); print('license written')"
+          if [ "$RUNNER_OS" = "macOS" ]; then test -x "$HOME/Applications/Leonardo.app/Contents/MacOS/launcher"; else test -f "$HOME/.local/share/applications/leonardo.desktop"; fi
+
+      - name: Smoke tests in the installed copy
+        run: |
+          cd "$HOME/.leonardo/app"
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$RUNNER_TEMP/miniforge3/bin/conda" run -n protliginteract-full \
+            python -m pytest -q -p no:cacheprovider tests/test_component_library_runtime.py tests/test_materials_runtime.py \
+            -k "not mopac" -x
+
+      - name: Upload the install log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-log-${{ matrix.os }}
+          path: ~/.leonardo/install_logs/

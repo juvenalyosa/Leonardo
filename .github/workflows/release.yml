@@ -20,6 +20,18 @@ jobs:
           chmod +x ./scripts/build_leonardo_zip.sh
           ./scripts/build_leonardo_zip.sh Leonardo.zip
 
+      - name: Stamp the installers with this release
+        run: |
+          set -e
+          for f in install_leonardo.sh Install-Leonardo-macOS.command; do
+            sed "s/@LEONARDO_VERSION@/${GITHUB_REF_NAME}/" "installers/$f" > "dist/$f"
+            chmod +x "dist/$f"
+          done
+          grep -q "LEONARDO_VERSION_DEFAULT=\"${GITHUB_REF_NAME}\"" dist/install_leonardo.sh
+
+      - name: Build the installer bundle (macOS + Linux)
+        run: bash scripts/build_installer_bundle.sh
+
       - name: Write release manifest
         run: |
           set -e
@@ -33,6 +45,10 @@ jobs:
             files: |
               dist/Leonardo.zip
               dist/Leonardo.zip.sha256
+              dist/install_leonardo.sh
+              dist/Install-Leonardo-macOS.command
+              dist/Leonardo-Installer-*.zip
+              dist/Leonardo-Installer-*.zip.sha256
               dist/release_manifest.csv
               draft/manuscript/main.pdf
               draft/results/artifact_manifest.csv
