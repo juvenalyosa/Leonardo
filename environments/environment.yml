@@ -32,7 +32,7 @@ dependencies:
   - pdbfixer
   - mdanalysis>=2.10,<3
   - pymbar
-  - ambertools=23.*    # tleap/antechamber/sqm + PACKMOL-Memgen (lipid mixtures); 23.x is the tested series
+  - ambertools          # tleap/antechamber/sqm + PACKMOL-Memgen (lipid mixtures)
   - mdtraj
   - cvxpy
   - ecos
@@ -53,11 +53,11 @@ dependencies:
   - qcelemental>=0.28,<1.0
   - qcengine>=0.30,<1.0
   - ase                 # QM/MM geometry drivers: L-BFGS, dimer TS search, vibrations
-  - pymol-open-source=3.0.*
+  - pymol-open-source
   - pyqtwebengine
 
   # Homology modeling
-  - modeller=10.*      # needs a free academic license key (installer asks for it)
+  - modeller            # needs a free academic license key (installer asks for it)
 
   # Bioinformatics sequence analysis (local CLI support for sequence workflows)
   - blast
