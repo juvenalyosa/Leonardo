@@ -867,8 +867,8 @@ try:
 except ImportError:
     from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
 # Literal aliases are retained for legacy packaging/version inspections.
-PLUGIN_VERSION = "0.2.0a7"
-PLUGIN_BUILD = "2026-10-01-r2"
+PLUGIN_VERSION = "0.2.0a8"
+PLUGIN_BUILD = "2026-10-12-r1"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
