@@ -81,5 +81,5 @@ if [[ "$(uname -s)" == "Darwin" && -z "${PROTLIGINTERACT_OPENMM_PLATFORM:-}" ]];
   export PROTLIGINTERACT_OPENMM_PLATFORM=CPU
 fi
 
-export PYTHONPATH="$ROOT_DIR/legacy:$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$ROOT_DIR/legacy:$ROOT_DIR/src:$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 exec conda run -n "$env_name" --no-capture-output pymol "$@"
