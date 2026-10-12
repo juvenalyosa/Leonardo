@@ -33,6 +33,67 @@ Status: **pre-release for testing and manuscript verification**
 
 ---
 
+## What's inside
+
+Leonardo puts established scientific programs behind one window in PyMOL, and behind one AI
+assistant. Each area below works from the Leonardo window or by asking the assistant.
+
+| Area | What you can do | Engines |
+|---|---|---|
+| **Structures & sequences** | Fetch from RCSB or the AlphaFold DB, compare structures, analyze sequences, motifs, conservation and multiple alignments, map UniProt positions | Biopython, BLAST, HMMER, Clustal Omega, MAFFT |
+| **Protein modeling** | Homology models, mutants, gap repair, terminal extensions; AlphaFold/ColabFold predictions (local GPU or Google Colab) and AlphaFold 3 inputs for proteins with ligands, DNA or RNA | MODELLER, ColabFold, AlphaFold 3 |
+| **Ligands** | Draw molecules in the 2D editor, import SMILES, files or PubChem, predict pKa and protonation, build 3D, parameterize for MD | RDKit, Open Babel, Meeko, AmberTools (GAFF2/AM1-BCC) |
+| **Pockets & docking** | Find pockets, dock, analyze interactions, redock to validate, run virtual screening and lead optimization | fpocket, smina/Vina, ProLIF |
+| **Molecular dynamics** | Solvate, minimize and simulate; analyze RMSD, RMSF, interaction occupancy and energies; set up umbrella sampling and metadynamics; estimate binding with ABFE-lite | OpenMM, MDAnalysis, MDTraj, pymbar |
+| **Complex systems** | Automatic parameters for cofactors (heme, NAD, ATP), metal sites, modified and phosphorylated residues, and ligands bound to Cys, Lys or Ser; validated builds with charge and stability checks | CHARMM36, Amber ff14SB/phosaa/lipid17/GLYCAM, GAFF2, PDB Chemical Component Dictionary |
+| **Membranes** | Orient membrane proteins (OPM or predicted helices), embed them in single lipids or mixtures (POPC:cholesterol, POPE:POPG, asymmetric leaflets), equilibrate with a membrane barostat | OpenMM, PACKMOL-Memgen |
+| **Materials** | Metal surfaces and nanoparticles (Au, Ag, Pt, Pd, Cu, Ni, Al, Pb), graphene, hydroxylated silica; proteins placed on them with a chosen site facing the solution; QM clusters cut from the interface | ASE, INTERFACE-FF, ClayFF |
+| **Quantum chemistry** | Optimizations, frequencies, IR and UV-vis spectra, orbitals, electrostatic surfaces, transition states (QST2/QST3) and IRC reaction paths, animated with their orbitals | Psi4 (DFT/HF), MOPAC (PM7) |
+| **QM/MM** | Reactions inside enzymes: QM regions around active sites and metal centers, single points, optimizations, relaxed scans, transition states | MOPAC PM7 + OpenMM |
+| **Workflow** | Projects, publication figures, readiness checks for each module, reusable pipelines that rerun a protocol on new molecules | — |
+
+---
+
+## The AI assistant
+
+Leonardo's assistant is **one AI agent**: a single conversation with a large language model of
+your choice, either Anthropic Claude or OpenAI, using your own API key. It works only through
+**114 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
+terminal, no file-system access and no code execution, so it can do only what those tools do.
+
+**How it works.** It first looks at what is loaded, then writes a short **plan** and waits for
+you to approve it. Only then does it run the steps, showing a card for each one. Every tool has a
+permission level:
+- **Run without asking:** reading the scene and changing the view.
+- **Run after you approve the plan:** quick calculations.
+- **Confirmed with you each time:** long calculations (docking, MD, QM).
+- **Always asked, under any policy:** anything that deletes or overwrites.
+
+You choose the policy in Settings. Long calculations run in the background: the assistant follows
+them, reports progress, and you can cancel them at any time. Before heavy runs it estimates the
+time on your computer. Results come with quality checks, for example a transition state with two
+imaginary frequencies or an overheated simulation. A finished protocol can be saved as a
+**pipeline** and rerun on new molecules. Leonardo can also expose its tools as an **MCP server**,
+so other AI applications can drive it, with the same confirmations.
+
+**What it can do:** fetch and prepare structures; build mutants and models; dock, simulate and
+analyze; build systems with cofactors, membranes or materials; run quantum-chemistry and QM/MM
+calculations; explain the results in your language.
+
+**What it cannot do:**
+- Anything outside its tools: it cannot run arbitrary programs, edit files or browse the web.
+- Invent parameters a method does not have. For example, it will not make up force-field values
+  for TiO2.
+- Turn a docking score into a binding free energy, or produce production free-energy profiles.
+  Enhanced sampling is set up but not run to convergence.
+- Work offline: the model runs in the cloud, so it needs an internet connection and an API key,
+  and each request costs API credits.
+- Replace your judgment. Language models can misread a request or choose a poor default; that is
+  why it shows a plan, asks before heavy or destructive steps, and reports every number as the
+  tools return it.
+
+---
+
 ## Install in 3 steps
 
 1. **Download** `Leonardo-Installer-<version>.zip` from the
