@@ -19,6 +19,9 @@ dependencies:
   - matplotlib
   - scikit-learn
   - rdkit>=2023.09
+  - networkx            # residue-graph template matching (component library)
+  - psutil              # memory/CPU guards for long jobs
+  - gemmi               # PDB chemical-component (CCD) files for cofactors and modified residues
 
   # MD / ABFE / force-field workflows
   - openmm>=8.2
@@ -29,7 +32,7 @@ dependencies:
   - pdbfixer
   - mdanalysis>=2.10,<3
   - pymbar
-  - ambertools
+  - ambertools          # tleap/antechamber/sqm + PACKMOL-Memgen (lipid mixtures)
   - mdtraj
   - cvxpy
   - ecos
@@ -54,7 +57,7 @@ dependencies:
   - pyqtwebengine
 
   # Homology modeling
-  - modeller
+  - modeller            # needs a free academic license key (installer asks for it)
 
   # Bioinformatics sequence analysis (local CLI support for sequence workflows)
   - blast
