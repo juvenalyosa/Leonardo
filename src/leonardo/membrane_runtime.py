@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import time
 
@@ -237,7 +238,7 @@ _ION_NAMES = {"NA+": "NA", "CL-": "CL", "K+": "K", "SOD": "NA", "CLA": "CL", "PO
 
 def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm=1.0, water_nm=1.5,
                        ionic_strength_molar=0.15, out_dir=".", nloop=20, nloop_all=100, seed=None, progress=None,
-                       max_attempts=3):
+                       max_attempts=2):
     """
     Pack a (mixed) bilayer around the prepared, oriented solute (bilayer centre z=0, normal z) with
     PACKMOL-Memgen, add it to ``modeller`` with template bonds, then neutralize and add salt by replacing
@@ -266,8 +267,7 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
     out_pdb = os.path.join(out_dir, "packmol_bilayer.pdb")
     has_solute = any(True for _ in modeller.topology.atoms())
     cmd = [exe, "--lipids", spec, "--ratio", ratio, "--dist_wat", f"{10 * water_nm:.1f}", "--nocounter",
-           "--charmm", "--overwrite", "--noprogress", "--nloop", str(max(10, int(nloop))),
-           "--nloop_all", str(max(10, int(nloop_all))), "-o", out_pdb]
+           "--charmm", "--overwrite", "--noprogress", "-o", out_pdb]
     if has_solute:
         cmd += ["--pdb", solute, "--preoriented", "--notprotonate", "--nottrim", "--keepligs",
                 "--dist", f"{10 * padding_nm:.1f}"]
@@ -275,12 +275,22 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
         cmd += ["--distxy_fix", f"{10 * max(padding_nm, 3.0):.1f}"]
     t0 = time.time()
     clashes, attempts = None, 0
+    best = None                                    # (clashes, saved PDB) of the cleanest attempt
     for attempt in range(max(1, int(max_attempts))):
         attempts = attempt + 1
-        run_cmd = cmd + (["--random"] if (seed is None or attempt > 0) else [])
+        # each retry gives PACKMOL more optimization loops and re-places badly packed molecules, which is
+        # what large proteins and sterol-rich mixtures need (a new seed alone rarely helps)
+        scale = attempt + 1
+        run_cmd = cmd + ["--nloop", str(max(10, int(nloop)) * scale),
+                         "--nloop_all", str(max(10, int(nloop_all)) * scale)]
+        if seed is None or attempt > 0:
+            run_cmd += ["--random"]
+        if attempt > 0:
+            run_cmd += ["--movebadrandom"]
         if callable(progress):
             progress(f"packing {spec} ({ratio}) with PACKMOL-Memgen (minutes)"
-                     + (f", attempt {attempts} (overlapping molecules in the previous one)" if attempt else ""))
+                     + (f", attempt {attempts} with {scale}x optimization loops (overlapping molecules in the "
+                        "previous one)" if attempt else ""))
         for stale in (out_pdb, out_pdb + "_FORCED"):
             if os.path.exists(stale):
                 os.remove(stale)
@@ -290,12 +300,32 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
             raise RuntimeError(f"PACKMOL-Memgen failed: {tail}")
         packed = app.PDBFile(out_pdb)
         top, pos = packed.topology, packed.positions.value_in_unit(unit.nanometer)
-        # small or sterol-rich boxes can come out with overlapping (e.g. ring-pierced) molecules across the
-        # periodic boundary: minimization cannot undo those, so repack with another seed
-        pairs = _clash_pairs(top, np.array([tuple(p) for p in pos]))
+        # PACKMOL often stops short of full convergence on large systems: hydrogen contacts are pushed apart
+        # later (soft push-off); heavy atoms inside each other (e.g. a tail through a sterol ring) are not,
+        # so those trigger a repack
+        pairs = _clash_pairs(top, np.array([tuple(p) for p in pos]), cutoff_nm=0.06, heavy_only=True)
         clashes = len(pairs)
+        if best is None or clashes < best[0]:
+            keep = os.path.join(out_dir, "packmol_bilayer_best.pdb")
+            shutil.copyfile(out_pdb, keep)
+            if os.path.exists(out_pdb + "_FORCED"):
+                shutil.copyfile(out_pdb + "_FORCED", keep + "_FORCED")
+            elif os.path.exists(keep + "_FORCED"):
+                os.remove(keep + "_FORCED")
+            best = (clashes, keep)
         if clashes == 0:
             break
+    if best is not None and best[0] < clashes:
+        # a later attempt was worse: go back to the cleanest packing
+        shutil.copyfile(best[1], out_pdb)
+        if os.path.exists(best[1] + "_FORCED"):
+            shutil.copyfile(best[1] + "_FORCED", out_pdb + "_FORCED")
+        elif os.path.exists(out_pdb + "_FORCED"):
+            os.remove(out_pdb + "_FORCED")
+        packed = app.PDBFile(out_pdb)
+        top, pos = packed.topology, packed.positions.value_in_unit(unit.nanometer)
+        pairs = _clash_pairs(top, np.array([tuple(p) for p in pos]), cutoff_nm=0.06, heavy_only=True)
+        clashes = len(pairs)
     removed_overlapping = []
     if clashes:
         # still overlapping (small or sterol-rich boxes): drop one molecule of each overlapping pair - water
@@ -372,12 +402,14 @@ def pack_lipid_mixture(modeller, forcefield, family, lipid, ratio="", padding_nm
             "packmol_converged": not os.path.exists(out_pdb + "_FORCED")}
 
 
-def _clash_pairs(topology, positions_nm, cutoff_nm=0.08):
-    """Residue-index pairs with atoms closer than ``cutoff_nm`` (hydrogens included: interlocked tails show up
-    as H-H overlaps), periodic in x/y/z with the box from the extents."""
+def _clash_pairs(topology, positions_nm, cutoff_nm=0.08, heavy_only=False):
+    """Residue-index pairs with atoms closer than ``cutoff_nm``, periodic in x/y/z with the box from the
+    extents. With ``heavy_only`` only non-hydrogen atoms count (true interpenetration, which minimization
+    cannot undo; H-H contacts are resolved by the soft push-off before minimization)."""
     from scipy.spatial import cKDTree
 
-    atoms = list(topology.atoms())
+    atoms = [a for a in topology.atoms()
+             if not heavy_only or (a.element is not None and a.element.symbol != "H")]
     if not atoms:
         return []
     X = positions_nm[[a.index for a in atoms]].copy()
@@ -387,6 +419,58 @@ def _clash_pairs(topology, positions_nm, cutoff_nm=0.08):
     tree = cKDTree(np.mod(X, box), boxsize=box)
     res = [a.residue.index for a in atoms]
     return sorted({tuple(sorted((res[i], res[j]))) for i, j in tree.query_pairs(cutoff_nm) if res[i] != res[j]})
+
+
+def soft_push_off(system, positions, max_iterations=2000, d0_nm=0.22, k_kj_nm2=20000.0):
+    """
+    Separate overlapping atoms before a real minimization: bonded terms are kept, every nonbonded force is
+    replaced by a capped repulsion k*(d0 - r)^2 for r < d0 (same exclusions). Bounded forces let the
+    minimizer untangle the near-coincident atoms PACKMOL can leave, which would otherwise give Lennard-Jones
+    energies of ~1e11 kJ/mol and stall the real minimization. Returns the new positions.
+    """
+    import openmm as mm
+    from openmm import unit
+
+    soft = mm.XmlSerializer.deserialize(mm.XmlSerializer.serialize(system))
+    exclusions = set()
+    for i in reversed(range(soft.getNumForces())):
+        f = soft.getForce(i)
+        if isinstance(f, mm.NonbondedForce):
+            for k in range(f.getNumExceptions()):
+                a, b, *_ = f.getExceptionParameters(k)
+                exclusions.add((min(a, b), max(a, b)))
+            soft.removeForce(i)
+        elif isinstance(f, mm.CustomNonbondedForce):
+            for k in range(f.getNumExclusions()):
+                a, b = f.getExclusionParticles(k)
+                exclusions.add((min(a, b), max(a, b)))
+            soft.removeForce(i)
+        elif isinstance(f, mm.CustomBondForce) and "^12" in f.getEnergyFunction():
+            soft.removeForce(i)                  # CHARMM LJ 1-4 pairs (Lennard-Jones, not bounded)
+    rep = mm.CustomNonbondedForce("k_soft*step(d_soft-r)*(d_soft-r)^2")
+    rep.addGlobalParameter("k_soft", float(k_kj_nm2))
+    rep.addGlobalParameter("d_soft", float(d0_nm))
+    rep.setNonbondedMethod(mm.CustomNonbondedForce.CutoffPeriodic)
+    rep.setCutoffDistance(float(d0_nm) + 0.05)
+    for _ in range(soft.getNumParticles()):
+        rep.addParticle([])
+    for a, b in exclusions:
+        rep.addExclusion(a, b)
+    soft.addForce(rep)
+    integ = mm.VerletIntegrator(0.001 * unit.picoseconds)
+    context = None
+    for plat in _platform_order():
+        try:
+            context = mm.Context(soft, integ, mm.Platform.getPlatformByName(plat))
+            break
+        except Exception:
+            integ = mm.VerletIntegrator(0.001 * unit.picoseconds)
+            continue
+    if context is None:
+        context = mm.Context(soft, integ)
+    context.setPositions(positions)
+    mm.LocalEnergyMinimizer.minimize(context, 10.0, int(max_iterations))
+    return context.getState(getPositions=True).getPositions()
 
 
 def _severe_clashes(topology, positions_nm, cutoff_nm=0.08):
@@ -586,6 +670,9 @@ def build_membrane_system(pdb_path, lipid="POPC", family="amber14", ph=7.0, padd
             charge = sum(force.getParticleParameters(i)[0].value_in_unit(unit.elementary_charge)
                          for i in range(system.getNumParticles()))
     report["total_charge"] = round(charge, 3)
+    if mixture:
+        emit("separating close contacts left by PACKMOL")
+        modeller.positions = soft_push_off(system, modeller.positions)
     emit("minimizing")
     integ = mm.LangevinMiddleIntegrator(303 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picoseconds)
     sim = _simulation(app, mm, modeller.topology, system, integ)
