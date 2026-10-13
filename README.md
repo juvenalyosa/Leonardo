@@ -353,6 +353,19 @@ See [Repository layout](docs/REPOSITORY_LAYOUT.md) and [Architecture](docs/ARCHI
 
 ---
 
+## How Leonardo was built
+
+Leonardo's modules and code were developed and optimized with
+[Claude](https://www.anthropic.com/claude) (Anthropic), used as an AI coding partner to write,
+refactor, optimize, test and review the code. The scientific design, the choice of methods and
+the validation against real systems are the author's. Every module is covered by the automated
+test suite and checked on real protein–ligand complexes before release.
+
+This is separate from Leonardo's built-in AI assistant, which can use Claude or OpenAI with
+your own API key.
+
+---
+
 ## Scientific and licensing notes
 
 Leonardo orchestrates established scientific engines; it does not replace method-specific
