@@ -33,6 +33,31 @@ Status: **pre-release for testing and manuscript verification**
 
 ---
 
+## Watch Leonardo in action
+
+Short films made with Leonardo from real calculations. Click a picture to watch it on YouTube.
+
+<table>
+  <tr>
+    <td width="50%"><a href="https://www.youtube.com/watch?v=AjtAbYOyZJE"><img src="docs/videos/01_molecular_docking.jpg" alt="Molecular docking"></a><br><b>Molecular docking</b>: a binding pocket, resolved (trypsin + benzamidine)</td>
+    <td width="50%"><a href="https://www.youtube.com/watch?v=Adxu2pmPr5I"><img src="docs/videos/02_dhla_reaction_qmmm.jpg" alt="QM/MM reaction"></a><br><b>QM/MM</b>: where two bonds exchange inside an enzyme (DhlA)</td>
+  </tr>
+  <tr>
+    <td><a href="https://www.youtube.com/watch?v=MRunzG1Ymns"><img src="docs/videos/03_molecular_dynamics.jpg" alt="Molecular dynamics"></a><br><b>Molecular dynamics</b>: inside a moving catalytic site (trypsin)</td>
+    <td><a href="https://www.youtube.com/watch?v=5bCGcdUVZ4E"><img src="docs/videos/04_mutation_protein_ligand.jpg" alt="Mutation and docking"></a><br><b>Mutations</b>: changing the recognition pocket (trypsin D189A)</td>
+  </tr>
+  <tr>
+    <td><a href="https://www.youtube.com/watch?v=keNN9XFTxdc"><img src="docs/videos/05_mutation_enzyme_reaction.jpg" alt="Mutation and QM/MM"></a><br><b>Mutations &amp; QM/MM</b>: reshaping the catalytic environment (DhlA W125A)</td>
+    <td><a href="https://www.youtube.com/watch?v=CBix_z8BFDQ"><img src="docs/videos/06_protein_stability_design.jpg" alt="Disulfide design"></a><br><b>Protein design</b>: a new covalent lock (protein G B1 disulfide)</td>
+  </tr>
+  <tr>
+    <td><a href="https://www.youtube.com/watch?v=KFHQW6kS2WM"><img src="docs/videos/07_protein_stability_multimutant.jpg" alt="Disulfide screening"></a><br><b>Protein design</b>: screening five disulfide designs</td>
+    <td></td>
+  </tr>
+</table>
+
+---
+
 ## What's inside
 
 Leonardo puts established scientific programs behind one window in PyMOL, and behind one AI
