@@ -31,7 +31,7 @@ FILMS = [
     ("07_protein_stability_multimutant", "Protein design", "Screening five disulfide designs", "protein G B1"),
     ("08_ensemble_redocking", "Ensemble redocking", "A pocket that breathes", "P450cam + camphor"),
 ]
-INTRO_S, CARD_S, OUTRO_S, FADE_S = 13.0, 2.5, 6.0, 0.4
+INTRO_S, CARD_S, OUTRO_S, FADE_S = 17.5, 2.5, 6.0, 0.4
 
 
 def duration(path):
@@ -126,23 +126,44 @@ def intro_frame(t, tiles):
         txt(cd, (80, 128), "LEONARDO · MOLECULAR FILMS", 18, TEAL, True)
         style.faded(layer, c, cap)
         style.faded(im, layer, act2)
-    # act 3 (9.8-13 s): the promise
-    act3 = ease((t - 9.8) / 0.6) * (1 - ease((t - 12.4) / 0.5))
+    # act 3 (9.8-17.5 s): what Leonardo is
+    act3 = ease((t - 9.8) / 0.6) * (1 - ease((t - 16.9) / 0.5))
     if act3 > 0:
         layer = Image.new("RGBA", (W, H))
         ld = ImageDraw.Draw(layer)
-        for j, line in enumerate(["Eight films.", "Real calculations."]):
-            w = ld.textbbox((0, 0), line, font=style.font(96, True))[2]
-            txt(ld, ((W - w) / 2, 340 + j * 120 + 20 * (1 - act3)), line, 96, INK if j == 0 else TEAL, True)
-        line = "Docking · QM/MM · Molecular dynamics · Mutations · Protein design · Ensemble redocking"
-        w = ld.textbbox((0, 0), line, font=style.font(24))[2]
-        txt(ld, ((W - w) / 2, 640), line, 24, MUTED)
+        txt(ld, (110, 215), "WHAT IS LEONARDO?", 22, TEAL, True)
+        for j, line in enumerate(["An AI lab partner", "for molecular modeling."]):
+            txt(ld, (102, 262 + j * 104 + 20 * (1 - act3)), line, 88, INK if j == 0 else TEAL, True)
+        steps = [("01", "Ask in plain language", "\u201cDock this ligand and check the\ncrystal pose.\u201d"),
+                 ("02", "It plans, you approve", "One AI agent writes a plan and\nwaits for your OK."),
+                 ("03", "Real science runs", "114 tools: docking, MD, QM/MM,\nmodeling, design."),
+                 ("04", "Every number checked", "Quality checks on every result.\nNothing invented.")]
+        for i, (num, head, body) in enumerate(steps):
+            a = ease((t - 10.8 - 0.6 * i) / 0.5)
+            if a <= 0:
+                continue
+            box = Image.new("RGBA", (W, H))
+            bd = ImageDraw.Draw(box)
+            x, y = 110 + i * 432, 560 + 30 * (1 - a)
+            bd.line((x, y, x + 380, y), fill=GOLD if i == 0 else LINE, width=3)
+            txt(bd, (x, y + 22), num, 22, GOLD, True)
+            txt(bd, (x + 46, y + 22), head, 26, INK, True)
+            for k, ln in enumerate(body.split("\n")):
+                txt(bd, (x, y + 68 + 32 * k), ln, 21, MUTED)
+            style.faded(layer, box, a)
+        tail = ease((t - 13.6) / 0.6)
+        if tail > 0:
+            c = Image.new("RGBA", (W, H))
+            cd = ImageDraw.Draw(c)
+            txt(cd, (110, 790), "Open source · inside PyMOL · macOS and Linux · Claude or OpenAI with your own key",
+                22, MUTED)
+            style.faded(layer, c, tail)
         style.faded(im, layer, act3)
     d = ImageDraw.Draw(im)
     if t > 3.4:
         hdr = Image.new("RGBA", (W, H))
         header(ImageDraw.Draw(hdr))
-        style.faded(im, hdr, ease((t - 3.4) / 0.6) * (1 - ease((t - 12.4) / 0.5)))
+        style.faded(im, hdr, ease((t - 3.4) / 0.6) * (1 - ease((t - 16.9) / 0.5)))
     bar = ease(t / INTRO_S)
     d.line((78, 1007, 78 + int(1764 * bar), 1007), fill=TEAL, width=3)
     return im.convert("RGB")
@@ -214,7 +235,7 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     tiles = tiles_from(src)
     if a.preview:
-        for t in (1.0, 2.8, 5.0, 7.5, 9.0, 11.0):
+        for t in (1.0, 7.5, 11.2, 12.4, 13.8):
             intro_frame(t, tiles).save(work / f"preview_intro_{t:04.1f}.png")
         card_frame(1.3, 7, tiles[7]).save(work / "preview_card.png")
         card_frame(1.3, 1, tiles[1]).save(work / "preview_card2.png")
