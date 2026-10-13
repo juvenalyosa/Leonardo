@@ -867,8 +867,8 @@ try:
 except ImportError:
     from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
 # Literal aliases are retained for legacy packaging/version inspections.
-PLUGIN_VERSION = "0.2.0a8"
-PLUGIN_BUILD = "2026-10-12-r1"
+PLUGIN_VERSION = "0.2.0a9"
+PLUGIN_BUILD = "2026-10-13-r1"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
@@ -19506,7 +19506,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         digest = hashlib.sha1(arr.tobytes()).hexdigest()
         return f"{int(arr.shape[0])}:{digest}"
     def _redock_mc_sample(self, pdb_in, out_dir, site_residues, n_structures, temperature_k, seed=1,
-                          progress_label=None):
+                          progress_label=None, exclude_hetero=(), ligand_obstacle=False):
         """Run the Monte Carlo side-chain sampler in a child process (the GUI keeps refreshing)."""
         import subprocess
         mod = self._modeler_import_module("mc_ensemble_runtime")
@@ -19515,7 +19515,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         os.makedirs(out_dir, exist_ok=True)
         args = {"pdb_in": str(pdb_in), "out_dir": str(out_dir), "n_structures": int(n_structures),
                 "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
-                "steps_per_structure": 15, "seed": int(seed), "platform": platform}
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform,
+                "exclude_hetero": [list(x) for x in exclude_hetero or []],
+                "ligand_obstacle": bool(ligand_obstacle)}
         args_path = os.path.join(out_dir, "mc_args.json")
         with open(args_path, "w") as fh:
             json.dump(args, fh)
@@ -19564,6 +19566,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         source_obj = str(receptor_obj or "").strip()
         out = {"ok": True, "used": False, "systems": [(label, source_obj, source_obj, f"{label}_model_001")],
                "created_objects": [], "note": "", "model_count": 1, "run_id": ""}
+        # why the ensemble was not used (read by the assistant, which must not report a rigid run as an ensemble)
+        self._redock_last_mc_ensemble_note = ""
         if not source_obj:
             return dict(out, ok=False, systems=[], model_count=0, note="Empty receptor object.")
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -19576,8 +19580,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if bp and os.path.isfile(bp):
                 best_pdb = bp
         if not best_pdb:
+            # the whole object: its cofactors/ions stay in place during sampling and in every member, so the
+            # HETATM choices (keep Zn, heme...) apply to the ensemble exactly as to the rigid receptor
             best_pdb = os.path.join(work, "best_model.pdb")
-            cmd.save(best_pdb, f"({source_obj}) and polymer", state=1)
+            cmd.save(best_pdb, f"({source_obj})", state=1)
         # binding site: residues around the reference ligand (same numbering in WT/mutant models)
         ref_obj = str(self.cmb_redock_reference_obj.currentText() or "").strip() if hasattr(self, "cmb_redock_reference_obj") else ""
         lig_sel = ""
@@ -19590,6 +19596,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             lig_sel = ""
         if not lig_sel or cmd.count_atoms(lig_sel) == 0:
             out["note"] = f"{label}: Monte Carlo ensemble needs the reference ligand to define the site; single receptor used."
+            self._redock_last_mc_ensemble_note = out["note"]
             return out
         radius = float(self.spin_redock_mc_radius.value()) if hasattr(self, "spin_redock_mc_radius") else 6.0
         space = {"site": set()}
@@ -19599,10 +19606,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         n = int(self.spin_redock_mc_n.value()) if hasattr(self, "spin_redock_mc_n") else 10
         temp = float(self.spin_redock_mc_temp.value()) if hasattr(self, "spin_redock_mc_temp") else 300.0
         self._append_debug_log(f"Redocking MC ensemble ({label}): {n} structures, T={temp} K, {len(site)} site residues")
+        # the ligand being redocked is not an obstacle: its pocket is what the side chains sample
+        exclude = [(ch, ri, rn)] if (ref_obj == source_obj and rn) else []
+        keep_space = bool(getattr(self, "cb_redock_mc_keep_ligand_space", None)
+                          and self.cb_redock_mc_keep_ligand_space.isChecked() and exclude)
         res = self._redock_mc_sample(best_pdb, work, site, n, temp,
-                                     progress_label=getattr(self, "lbl_redock_summary", None))
+                                     progress_label=getattr(self, "lbl_redock_summary", None),
+                                     exclude_hetero=exclude, ligand_obstacle=keep_space)
         if not bool(res.get("ok", False)):
             out["note"] = f"{label}: Monte Carlo sampling failed ({str(res.get('error', ''))[:200]}); single receptor used."
+            self._redock_last_mc_ensemble_note = out["note"]
             return out
         systems, created = [], []
         members = [{"path": best_pdb, "relative_energy_kj_mol": 0.0, "site_rmsd_to_start_A": 0.0}] + list(res.get("structures") or [])
@@ -19624,7 +19637,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "run_id": os.path.basename(work),
                     "note": (f"{label}: Monte Carlo ensemble active ({len(systems)} structures: best model + "
                              f"{len(systems) - 1} sampled at {temp:.0f} K, acceptance {res.get('acceptance')}, "
-                             f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A).")})
+                             f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A)."
+                             + (f" Warning: {res['warning']}." if res.get("warning") else ""))})
         return out
     def _redock_collect_modeler_ensemble_systems(self, system_label, receptor_obj):
         """Deprecated: MODELLER multi-model ensembles (use _redock_collect_mc_ensemble_systems)."""
@@ -20570,6 +20584,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.spin_redock_mc_radius.setValue(6.0)
             self.spin_redock_mc_radius.setToolTip("Residues within this distance of the reference ligand move")
             row_ensemble.addWidget(self.spin_redock_mc_radius)
+            self.cb_redock_mc_keep_ligand_space = QtWidgets.QCheckBox("Keep ligand space")
+            self.cb_redock_mc_keep_ligand_space.setChecked(False)
+            self.cb_redock_mc_keep_ligand_space.setToolTip(
+                "Holo-like ensemble: the reference ligand stays as a soft excluded volume while the side chains "
+                "are sampled, so they cannot close the empty pocket. Better for redocking that ligand; the "
+                "ensemble is biased toward it (leave off for apo-like conformations, e.g. cross-docking)."
+            )
+            row_ensemble.addWidget(self.cb_redock_mc_keep_ligand_space)
             row_ensemble.addStretch(1)
             qc_layout.addLayout(row_ensemble)
             row_site_qc = QtWidgets.QHBoxLayout()
@@ -22249,13 +22271,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     known = set(cmd.get_names("objects"))
                 except Exception:
                     known = set()
-                zoom_parts = []
-                if name in known:
-                    zoom_parts.append(f"({name})")
+                # the box is a CGO object, which atom selections cannot name ("Invalid selection name"):
+                # frame its centre pseudoatom with a buffer that covers the whole box
                 if center_obj in known:
-                    zoom_parts.append(f"({center_obj})")
-                if zoom_parts:
-                    cmd.zoom(" or ".join(zoom_parts), 8.0)
+                    half = 0.5 * max(float(v) for v in size) if size is not None else 8.0
+                    cmd.zoom(center_obj, half + 4.0)
         except Exception as e:
             self._append_debug_log(f"Redocking grid warning: {e}")
         self._update_redock_grid_box_label()
@@ -43191,6 +43211,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             notes.append("warning:" + lock_warn)
             self._append_debug_log(lock_warn)
 
+        def _hint_for(path):
+            return "" if os.path.abspath(str(path)) != os.path.abspath(original_source) else smi_hint
+
         def _load_qc_mol(path):
             if not HAS_RDKIT:
                 return None
@@ -43198,7 +43221,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if (not src_path) or src_path.lower().endswith(".pdbqt"):
                 return None
             try:
-                return self._dock_rdkit_load_molecule(src_path, smiles_hint=smi_hint)
+                return self._dock_rdkit_load_molecule(src_path, smiles_hint=_hint_for(src_path))
             except Exception:
                 return None
 
@@ -43299,7 +43322,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Prefer Meeko for ligand PDBQT generation (better bond-order/rotor handling).
         if (not preserve_charges) and self._vs_meeko_available() and HAS_RDKIT:
             try:
-                mol_meeko = self._dock_rdkit_load_molecule(source, smiles_hint=smi_hint)
+                # the cleaned SDF already carries the hint's bond orders plus the pH protonation;
+                # re-reading it through the (neutral) hint SMILES dropped both charge and 3D
+                mol_meeko = self._dock_rdkit_load_molecule(source, smiles_hint=_hint_for(source))
             except Exception:
                 mol_meeko = None
             if mol_meeko is not None:
@@ -44039,13 +44064,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     known = set(cmd.get_names("objects"))
                 except Exception:
                     known = set()
-                zoom_parts = []
-                if name in known:
-                    zoom_parts.append(f"({name})")
+                # the box is a CGO object, which atom selections cannot name ("Invalid selection name"):
+                # frame its centre pseudoatom with a buffer that covers the whole box
                 if center_obj in known:
-                    zoom_parts.append(f"({center_obj})")
-                if zoom_parts:
-                    cmd.zoom(" or ".join(zoom_parts), 8.0)
+                    half = 0.5 * max(float(v) for v in size) if size is not None else 8.0
+                    cmd.zoom(center_obj, half + 4.0)
         except Exception as e:
             print(f"Docking grid visualization warning: {e}")
     def _show_current_docking_grid(self, zoom=False):
@@ -44241,12 +44264,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             payload = self._fetch_json_url(url, timeout=int(timeout))
         except Exception:
             return ""
-        desc = dict(payload.get("rcsb_chem_comp_descriptor", {}) or {})
+        # the API spells the keys "SMILES_stereo" / "SMILES" (case and underscore matter): normalize them; the
+        # lookup used to find nothing, so crystal ligands were prepared without bond orders (benzamidine as a
+        # cyclohexane, camphor as borneol)
+        desc = {str(k).lower().replace("_", ""): v
+                for k, v in dict(payload.get("rcsb_chem_comp_descriptor", {}) or {}).items()}
         cands = [
             str(desc.get("smilesstereo", "") or "").strip(),
             str(desc.get("smiles", "") or "").strip(),
-            str(desc.get("inchi", "") or "").strip(),
         ]
+        # the deposited descriptors (CACTVS / OpenEye) as a fallback
+        for row in list(payload.get("pdbx_chem_comp_descriptor", []) or []):
+            if str(row.get("type", "")).upper().startswith("SMILES"):
+                cands.append(str(row.get("descriptor", "") or "").strip())
         for smi in cands:
             if not smi:
                 continue

@@ -239,6 +239,9 @@ def register(reg):
                                                          "single receptor)"},
                   "ensemble_temperature_K": {"type": "number", "minimum": 100, "maximum": 2000},
                   "ensemble_site_radius_A": {"type": "number", "minimum": 3, "maximum": 15},
+                  "ensemble_keep_ligand_space": {"type": "boolean", "description": (
+                      "holo-like ensemble: keep the crystal ligand's volume (soft) while sampling, so side chains "
+                      "do not close the pocket; better for redocking that ligand, biased toward it")},
                   "keep_hetero": _KEEP_HETERO,
                   "grid_size_A": dict(_XYZ, description="manual box edges x,y,z in A (2-120), as the GUI's "
                                                        "'Adjust grid box'; default: auto from the crystal ligand "
@@ -252,6 +255,7 @@ def register(reg):
     def run_redocking(ctx, object, ligand_chain="", ligand_resi="", ligand_resn="", exhaustiveness=16, repeats=3,
                       seed=1001, ph=7.4, mutant_object="", ensemble_structures=0, ensemble_temperature_K=300.0,
                       ensemble_site_radius_A=6.0, keep_hetero=None, grid_size_A=None, grid_padding_A=None,
+                      ensemble_keep_ligand_space=False,
                       grid_center_A=None):
         from pymol import cmd
 
@@ -302,9 +306,12 @@ def register(reg):
                     dlg.spin_redock_mc_n.setValue(int(ensemble_structures))
                     dlg.spin_redock_mc_temp.setValue(float(ensemble_temperature_K))
                     dlg.spin_redock_mc_radius.setValue(float(ensemble_site_radius_A))
+                    if hasattr(dlg, "cb_redock_mc_keep_ligand_space"):
+                        dlg.cb_redock_mc_keep_ligand_space.setChecked(bool(ensemble_keep_ligand_space))
             _apply_grid_box(dlg, object, grid_padding_A, grid_size_A)
             grid_box = _grid_box_info(dlg, object, grid_center_A)
             dlg._redock_last_mc_ensemble = {}
+            dlg._redock_last_mc_ensemble_note = ""
             dlg._redock_last_runs = {}
             dlg._redock_results = []
             dlg._redock_raw_results = []
@@ -350,11 +357,19 @@ def register(reg):
         ensemble = {}
         if ens:
             ensemble = {"structures": len(ens.get("members") or []), "acceptance": ens.get("acceptance"),
+                        "ligand_space_kept": bool(ens.get("ligand_space_kept")),
                         "temperature_K": ens.get("temperature_k"), "site_residues": ens.get("site_residues"),
                         "members": [{k: m.get(k) for k in ("relative_energy_kj_mol", "site_rmsd_to_start_A")}
                                     for m in ens.get("members") or []]}
             card += (f" Receptor ensemble: best model + {ensemble['structures'] - 1} Monte Carlo conformations "
                      f"({ens.get('temperature_k'):.0f} K).")
+            if ens.get("warning"):
+                ensemble["warning"] = ens["warning"]
+                card += f" Warning: {ens['warning']}."
+        elif int(ensemble_structures) > 0:
+            why = str(getattr(dlg, "_redock_last_mc_ensemble_note", "") or "the sampler did not run")
+            ensemble = {"used": False, "requested": int(ensemble_structures), "reason": why}
+            card += f" Warning: the receptor ensemble was NOT used ({why}); this is a single-receptor result."
         ranked = _ranked_poses(dlg)
         poses = [dict(_pose_summary(it), poses_available=sum(1 for o in ranked if (o["system"], o["member"])
                                                              == (it["system"], it["member"])))
@@ -392,10 +407,14 @@ def register_mc(reg):
                               "n_structures": {"type": "integer", "minimum": 1, "maximum": 200},
                               "temperature_K": {"type": "number", "minimum": 100, "maximum": 2000},
                               "radius_A": {"type": "number", "minimum": 3, "maximum": 15},
-                              "seed": {"type": "integer", "minimum": 1}},
+                              "seed": {"type": "integer", "minimum": 1},
+                              "keep_ligand_space": {"type": "boolean", "description": (
+                                  "keep the hetero groups of site_selection (the ligand) as a soft volume while "
+                                  "sampling: holo-like pockets that stay open for that ligand")}},
                "required": ["object", "site_selection"]},
               permission="compute_heavy", title="Monte Carlo ensemble")
-    def generate_mc_ensemble(ctx, object, site_selection, n_structures=10, temperature_K=300.0, radius_A=6.0, seed=1):
+    def generate_mc_ensemble(ctx, object, site_selection, n_structures=10, temperature_K=300.0, radius_A=6.0, seed=1,
+                             keep_ligand_space=False):
         import json
         import os
         import subprocess
@@ -420,11 +439,18 @@ def register_mc(reg):
         work = os.path.join(ctx.workspace("mc_ensembles"), time.strftime(f"{object}_%Y%m%d_%H%M%S"))
         os.makedirs(work, exist_ok=True)
         pdb_in = os.path.join(work, "input.pdb")
-        cmd.save(pdb_in, f"({object}) and polymer", state=1)
+        # the whole object: cofactors and ions stay fixed during sampling and are kept in every member
+        cmd.save(pdb_in, f"({object})", state=1)
+        # hetero groups that make up the site selection (typically the ligand) are the pocket, not obstacles
+        lig = {"het": set()}
+        cmd.iterate(f"({object}) and ({site_selection}) and hetatm and not resn HOH+WAT",
+                    "het.add((chain, resi, resn))", space=lig)
         platform = str((_profile(ctx).get("md_platform") or {}).get("name") or "CPU")
         args = {"pdb_in": pdb_in, "out_dir": work, "n_structures": int(n_structures),
                 "site_residues": [list(r) for r in site], "temperature_k": float(temperature_K),
-                "steps_per_structure": 15, "seed": int(seed), "platform": platform}
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform,
+                "exclude_hetero": [list(x) for x in sorted(lig["het"])],
+                "ligand_obstacle": bool(keep_ligand_space and lig["het"])}
         with open(os.path.join(work, "mc_args.json"), "w") as fh:
             json.dump(args, fh)
         py = os.path.join(sys.prefix, "bin", "python")
@@ -466,9 +492,11 @@ def register_mc(reg):
                 "members": [{k: s[k] for k in ("relative_energy_kj_mol", "site_rmsd_to_start_A", "path")}
                             for s in res["structures"]],
                 "method": res["method"], "scene": ctx.scene(f"Monte Carlo ensemble of {object}"),
+                "requested": res.get("requested", n_structures), "warning": res.get("warning", ""),
                 "_card": (f"**{len(res['structures'])} conformations** of the {object} site ({len(site)} residues) "
                           f"at {temperature_K:.0f} K on {res['platform']} in {res['seconds']} s; acceptance "
-                          f"{res['acceptance']:.0%}; site RMSD {min(rms):.2f}-{max(rms):.2f} Å (play the states).")}}
+                          f"{res['acceptance']:.0%}; site RMSD {min(rms):.2f}-{max(rms):.2f} Å (play the states)."
+                          + (f" Warning: {res['warning']}." if res.get("warning") else ""))}}
 
         def cancel():
             stop_process(proc, log)
