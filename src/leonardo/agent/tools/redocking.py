@@ -305,6 +305,7 @@ def register(reg):
             _apply_grid_box(dlg, object, grid_padding_A, grid_size_A)
             grid_box = _grid_box_info(dlg, object, grid_center_A)
             dlg._redock_last_mc_ensemble = {}
+            dlg._redock_last_mc_ensemble_note = ""
             dlg._redock_last_runs = {}
             dlg._redock_results = []
             dlg._redock_raw_results = []
@@ -355,6 +356,13 @@ def register(reg):
                                     for m in ens.get("members") or []]}
             card += (f" Receptor ensemble: best model + {ensemble['structures'] - 1} Monte Carlo conformations "
                      f"({ens.get('temperature_k'):.0f} K).")
+            if ens.get("warning"):
+                ensemble["warning"] = ens["warning"]
+                card += f" Warning: {ens['warning']}."
+        elif int(ensemble_structures) > 0:
+            why = str(getattr(dlg, "_redock_last_mc_ensemble_note", "") or "the sampler did not run")
+            ensemble = {"used": False, "requested": int(ensemble_structures), "reason": why}
+            card += f" Warning: the receptor ensemble was NOT used ({why}); this is a single-receptor result."
         ranked = _ranked_poses(dlg)
         poses = [dict(_pose_summary(it), poses_available=sum(1 for o in ranked if (o["system"], o["member"])
                                                              == (it["system"], it["member"])))
@@ -420,11 +428,17 @@ def register_mc(reg):
         work = os.path.join(ctx.workspace("mc_ensembles"), time.strftime(f"{object}_%Y%m%d_%H%M%S"))
         os.makedirs(work, exist_ok=True)
         pdb_in = os.path.join(work, "input.pdb")
-        cmd.save(pdb_in, f"({object}) and polymer", state=1)
+        # the whole object: cofactors and ions stay fixed during sampling and are kept in every member
+        cmd.save(pdb_in, f"({object})", state=1)
+        # hetero groups that make up the site selection (typically the ligand) are the pocket, not obstacles
+        lig = {"het": set()}
+        cmd.iterate(f"({object}) and ({site_selection}) and hetatm and not resn HOH+WAT",
+                    "het.add((chain, resi, resn))", space=lig)
         platform = str((_profile(ctx).get("md_platform") or {}).get("name") or "CPU")
         args = {"pdb_in": pdb_in, "out_dir": work, "n_structures": int(n_structures),
                 "site_residues": [list(r) for r in site], "temperature_k": float(temperature_K),
-                "steps_per_structure": 15, "seed": int(seed), "platform": platform}
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform,
+                "exclude_hetero": [list(x) for x in sorted(lig["het"])]}
         with open(os.path.join(work, "mc_args.json"), "w") as fh:
             json.dump(args, fh)
         py = os.path.join(sys.prefix, "bin", "python")
@@ -466,9 +480,11 @@ def register_mc(reg):
                 "members": [{k: s[k] for k in ("relative_energy_kj_mol", "site_rmsd_to_start_A", "path")}
                             for s in res["structures"]],
                 "method": res["method"], "scene": ctx.scene(f"Monte Carlo ensemble of {object}"),
+                "requested": res.get("requested", n_structures), "warning": res.get("warning", ""),
                 "_card": (f"**{len(res['structures'])} conformations** of the {object} site ({len(site)} residues) "
                           f"at {temperature_K:.0f} K on {res['platform']} in {res['seconds']} s; acceptance "
-                          f"{res['acceptance']:.0%}; site RMSD {min(rms):.2f}-{max(rms):.2f} Å (play the states).")}}
+                          f"{res['acceptance']:.0%}; site RMSD {min(rms):.2f}-{max(rms):.2f} Å (play the states)."
+                          + (f" Warning: {res['warning']}." if res.get("warning") else ""))}}
 
         def cancel():
             stop_process(proc, log)

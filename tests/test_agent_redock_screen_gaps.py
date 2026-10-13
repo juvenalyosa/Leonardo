@@ -155,6 +155,28 @@ def test_run_redocking_keep_hetero_and_grid_box(dlg):
     assert "manual delta" in dlg.lbl_redock_grid_box.text()
 
 
+def test_run_redocking_says_when_the_requested_ensemble_was_not_used(dlg):
+    ctx = AgentContext(dlg)
+
+    def fake_workflow():
+        # Leonardo fell back to the single receptor (e.g. the sampler failed) and left the reason
+        dlg._redock_last_mc_ensemble_note = "WT: Monte Carlo sampling failed (no template); single receptor used."
+        dlg._redock_last_runs = {"WT": {"ok": True, "best": {"mode": 1, "affinity": -9.1, "rmsd_ref": 0.8},
+                                        "top1_success": {"n_success": 1, "n": 1},
+                                        "repeat_rows": [{"repeat": 1, "seed": 1001, "best_affinity": -9.1,
+                                                         "best_rmsd": 0.8, "min_rmsd_all_poses": 0.5}]}}
+        dlg._redock_raw_results = RAW[:3]
+        dlg._populate_redocking_table(RAW[:3])
+
+    dlg._on_run_redocking_workflow = fake_workflow
+    out = build_registry(ctx).call("run_redocking", {
+        "object": "prot", "ligand_chain": "X", "ligand_resi": "900", "ligand_resn": "LIG",
+        "ensemble_structures": 3}, ctx)
+    assert out["receptor_ensemble"]["used"] is False and out["receptor_ensemble"]["requested"] == 3
+    assert "sampling failed" in out["receptor_ensemble"]["reason"]
+    assert "NOT used" in out["_card"] and "single-receptor result" in out["_card"]
+
+
 def test_run_redocking_padding_without_manual_size(dlg):
     ctx = AgentContext(dlg)
 

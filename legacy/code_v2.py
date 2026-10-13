@@ -19506,7 +19506,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         digest = hashlib.sha1(arr.tobytes()).hexdigest()
         return f"{int(arr.shape[0])}:{digest}"
     def _redock_mc_sample(self, pdb_in, out_dir, site_residues, n_structures, temperature_k, seed=1,
-                          progress_label=None):
+                          progress_label=None, exclude_hetero=()):
         """Run the Monte Carlo side-chain sampler in a child process (the GUI keeps refreshing)."""
         import subprocess
         mod = self._modeler_import_module("mc_ensemble_runtime")
@@ -19515,7 +19515,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         os.makedirs(out_dir, exist_ok=True)
         args = {"pdb_in": str(pdb_in), "out_dir": str(out_dir), "n_structures": int(n_structures),
                 "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
-                "steps_per_structure": 15, "seed": int(seed), "platform": platform}
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform,
+                "exclude_hetero": [list(x) for x in exclude_hetero or []]}
         args_path = os.path.join(out_dir, "mc_args.json")
         with open(args_path, "w") as fh:
             json.dump(args, fh)
@@ -19564,6 +19565,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         source_obj = str(receptor_obj or "").strip()
         out = {"ok": True, "used": False, "systems": [(label, source_obj, source_obj, f"{label}_model_001")],
                "created_objects": [], "note": "", "model_count": 1, "run_id": ""}
+        # why the ensemble was not used (read by the assistant, which must not report a rigid run as an ensemble)
+        self._redock_last_mc_ensemble_note = ""
         if not source_obj:
             return dict(out, ok=False, systems=[], model_count=0, note="Empty receptor object.")
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -19576,8 +19579,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if bp and os.path.isfile(bp):
                 best_pdb = bp
         if not best_pdb:
+            # the whole object: its cofactors/ions stay in place during sampling and in every member, so the
+            # HETATM choices (keep Zn, heme...) apply to the ensemble exactly as to the rigid receptor
             best_pdb = os.path.join(work, "best_model.pdb")
-            cmd.save(best_pdb, f"({source_obj}) and polymer", state=1)
+            cmd.save(best_pdb, f"({source_obj})", state=1)
         # binding site: residues around the reference ligand (same numbering in WT/mutant models)
         ref_obj = str(self.cmb_redock_reference_obj.currentText() or "").strip() if hasattr(self, "cmb_redock_reference_obj") else ""
         lig_sel = ""
@@ -19590,6 +19595,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             lig_sel = ""
         if not lig_sel or cmd.count_atoms(lig_sel) == 0:
             out["note"] = f"{label}: Monte Carlo ensemble needs the reference ligand to define the site; single receptor used."
+            self._redock_last_mc_ensemble_note = out["note"]
             return out
         radius = float(self.spin_redock_mc_radius.value()) if hasattr(self, "spin_redock_mc_radius") else 6.0
         space = {"site": set()}
@@ -19599,10 +19605,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         n = int(self.spin_redock_mc_n.value()) if hasattr(self, "spin_redock_mc_n") else 10
         temp = float(self.spin_redock_mc_temp.value()) if hasattr(self, "spin_redock_mc_temp") else 300.0
         self._append_debug_log(f"Redocking MC ensemble ({label}): {n} structures, T={temp} K, {len(site)} site residues")
+        # the ligand being redocked is not an obstacle: its pocket is what the side chains sample
+        exclude = [(ch, ri, rn)] if (ref_obj == source_obj and rn) else []
         res = self._redock_mc_sample(best_pdb, work, site, n, temp,
-                                     progress_label=getattr(self, "lbl_redock_summary", None))
+                                     progress_label=getattr(self, "lbl_redock_summary", None),
+                                     exclude_hetero=exclude)
         if not bool(res.get("ok", False)):
             out["note"] = f"{label}: Monte Carlo sampling failed ({str(res.get('error', ''))[:200]}); single receptor used."
+            self._redock_last_mc_ensemble_note = out["note"]
             return out
         systems, created = [], []
         members = [{"path": best_pdb, "relative_energy_kj_mol": 0.0, "site_rmsd_to_start_A": 0.0}] + list(res.get("structures") or [])
@@ -19624,7 +19634,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "run_id": os.path.basename(work),
                     "note": (f"{label}: Monte Carlo ensemble active ({len(systems)} structures: best model + "
                              f"{len(systems) - 1} sampled at {temp:.0f} K, acceptance {res.get('acceptance')}, "
-                             f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A).")})
+                             f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A)."
+                             + (f" Warning: {res['warning']}." if res.get("warning") else ""))})
         return out
     def _redock_collect_modeler_ensemble_systems(self, system_label, receptor_obj):
         """Deprecated: MODELLER multi-model ensembles (use _redock_collect_mc_ensemble_systems)."""
@@ -22249,13 +22260,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     known = set(cmd.get_names("objects"))
                 except Exception:
                     known = set()
-                zoom_parts = []
-                if name in known:
-                    zoom_parts.append(f"({name})")
+                # the box is a CGO object, which atom selections cannot name ("Invalid selection name"):
+                # frame its centre pseudoatom with a buffer that covers the whole box
                 if center_obj in known:
-                    zoom_parts.append(f"({center_obj})")
-                if zoom_parts:
-                    cmd.zoom(" or ".join(zoom_parts), 8.0)
+                    half = 0.5 * max(float(v) for v in size) if size is not None else 8.0
+                    cmd.zoom(center_obj, half + 4.0)
         except Exception as e:
             self._append_debug_log(f"Redocking grid warning: {e}")
         self._update_redock_grid_box_label()
@@ -44039,13 +44048,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     known = set(cmd.get_names("objects"))
                 except Exception:
                     known = set()
-                zoom_parts = []
-                if name in known:
-                    zoom_parts.append(f"({name})")
+                # the box is a CGO object, which atom selections cannot name ("Invalid selection name"):
+                # frame its centre pseudoatom with a buffer that covers the whole box
                 if center_obj in known:
-                    zoom_parts.append(f"({center_obj})")
-                if zoom_parts:
-                    cmd.zoom(" or ".join(zoom_parts), 8.0)
+                    half = 0.5 * max(float(v) for v in size) if size is not None else 8.0
+                    cmd.zoom(center_obj, half + 4.0)
         except Exception as e:
             print(f"Docking grid visualization warning: {e}")
     def _show_current_docking_grid(self, zoom=False):
