@@ -102,6 +102,10 @@ def site_residues_near(pdb_path, ligand_xyz_ang, radius_ang):
 _WATER = {"HOH", "WAT", "H2O", "DOD", "TIP", "TIP3", "SOL"}
 OBSTACLE_SIGMA_NM = 0.30         # cofactor/ion atoms held fixed: excluded volume for the moving side chains
 OBSTACLE_EPS_KJ = 0.40
+# "holo" option: the reference ligand as a softer, smaller excluded volume - side chains can still touch and
+# rearrange around it, but they cannot collapse into the empty pocket
+LIGAND_SIGMA_NM = 0.25
+LIGAND_EPS_KJ = 0.20
 
 
 def _hetero_records(pdb_path, exclude=(), drop_from_lines=()):
@@ -126,33 +130,53 @@ def _hetero_records(pdb_path, exclude=(), drop_from_lines=()):
     return lines, atoms
 
 
-def _obstacle_xml(elements):
+def _obstacle_xml(kinds):
+    """Single-atom templates for obstacle atoms; ``kinds`` = [(tag, element)], tag 'OBS' (cofactor/ion) or
+    'LIG' (soft reference-ligand volume)."""
     from openmm.app import Element
 
+    params = {"OBS": (OBSTACLE_SIGMA_NM, OBSTACLE_EPS_KJ), "LIG": (LIGAND_SIGMA_NM, LIGAND_EPS_KJ)}
     out = ["<ForceField>", " <AtomTypes>"]
-    for el in elements:
+    for tag, el in kinds:
         mass = Element.getBySymbol(el).mass._value
-        out.append(f'  <Type name="mcobs-{el}" class="mcobs{el}" element="{el}" mass="{mass:.3f}"/>')
+        out.append(f'  <Type name="mc{tag}-{el}" class="mc{tag}{el}" element="{el}" mass="{mass:.3f}"/>')
     out += [" </AtomTypes>", " <Residues>"]
-    for el in elements:
-        out.append(f'  <Residue name="OBS_{el}"><Atom name="{el.upper()}" type="mcobs-{el}"/></Residue>')
+    for tag, el in kinds:
+        out.append(f'  <Residue name="{tag}_{el}"><Atom name="{el.upper()}" type="mc{tag}-{el}"/></Residue>')
     out += [" </Residues>", ' <NonbondedForce coulomb14scale="0.833333" lj14scale="0.5">']
-    for el in elements:
-        out.append(f'  <Atom type="mcobs-{el}" charge="0" sigma="{OBSTACLE_SIGMA_NM}" epsilon="{OBSTACLE_EPS_KJ}"/>')
+    for tag, el in kinds:
+        sig, eps = params[tag]
+        out.append(f'  <Atom type="mc{tag}-{el}" charge="0" sigma="{sig}" epsilon="{eps}"/>')
     out += [" </NonbondedForce>", "</ForceField>"]
     return "\n".join(out) + "\n"
+
+
+def _residue_atoms(pdb_path, residues):
+    """[(element, xyz_nm)] heavy atoms of the given (chain, resi, resn) residues."""
+    want = {(str(c).strip(), str(r).strip(), str(n).strip().upper()) for c, r, n in (residues or [])}
+    atoms = []
+    with open(pdb_path) as fh:
+        for ln in fh:
+            if ln.startswith(("ATOM", "HETATM")) and (ln[21].strip(), ln[22:27].strip(),
+                                                       ln[17:20].strip().upper()) in want:
+                el = (ln[76:78].strip() or ln[12:16].strip()[:1]).capitalize()
+                if el not in ("H", "D", ""):
+                    atoms.append((el, [float(ln[30:38]) / 10, float(ln[38:46]) / 10, float(ln[46:54]) / 10]))
+    return atoms
 
 
 def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temperature_k=300.0,
                     steps_per_structure=20, step_deg=40.0, rotamer_jump_prob=0.3, seed=1, platform="",
                     burn_in=None, max_steps=None, progress=print, exclude_hetero=(), keep_hetero_records=True,
-                    reproducible=False):
+                    reproducible=False, ligand_obstacle=False):
     """
     Monte Carlo receptor ensemble (see the module docstring). Hetero groups of ``pdb_in`` (cofactors,
     metal ions; not waters and not ``exclude_hetero`` = [(chain, resi, resn)], e.g. the ligand being
     redocked) stay fixed during sampling as uncharged excluded-volume atoms, so side chains do not
     collapse into their space, and their original records are written back into every member
     (``keep_hetero_records``) so the receptor preparation keeps or strips them as for the rigid run.
+    ``ligand_obstacle`` keeps the space of the ``exclude_hetero`` residues (the reference ligand) as a soft
+    excluded volume: a "holo-like" ensemble whose pockets stay open for that ligand (biased toward it).
     """
     import io
 
@@ -215,21 +239,25 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
         ox = np.array([x for _el, x in obstacles])
         dmin = np.min(np.linalg.norm(ox[:, None, :] - px[None, :, :], axis=2), axis=1)
         obstacles = [o for o, d in zip(obstacles, dmin) if d > 0.1]
-    if obstacles:
-        elements = sorted({el for el, _x in obstacles})
-        ff.loadFile(io.StringIO(_obstacle_xml(elements)))
+    ligand_atoms = _residue_atoms(pdb_in, exclude_hetero) if ligand_obstacle else []
+    placed = [("OBS", el, x) for el, x in obstacles] + [("LIG", el, x) for el, x in ligand_atoms]
+    if placed:
+        kinds = sorted({(tag, el) for tag, el, _x in placed})
+        ff.loadFile(io.StringIO(_obstacle_xml(kinds)))
         otop = app.Topology()
         ochain = otop.addChain("Z")
-        for el, _x in obstacles:
-            ores = otop.addResidue(f"OBS_{el}", ochain)
+        for tag, el, _x in placed:
+            ores = otop.addResidue(f"{tag}_{el}", ochain)
             otop.addAtom(el.upper(), app.Element.getBySymbol(el), ores)
         mod = app.Modeller(prot_top, prot_pos)
-        mod.add(otop, unit.Quantity([mm.Vec3(*x) for _el, x in obstacles], unit.nanometer))
+        mod.add(otop, unit.Quantity([mm.Vec3(*x) for _tag, _el, x in placed], unit.nanometer))
         top, pos0 = mod.topology, mod.positions
     else:
         top, pos0 = prot_top, prot_pos
+    # obstacle residues are single atoms: name the template, since OBS_C and LIG_C match the same graph
+    templates = {r: r.name for r in top.residues() if r.name.startswith(("OBS_", "LIG_"))}
     system = ff.createSystem(top, nonbondedMethod=app.CutoffNonPeriodic, nonbondedCutoff=1.2 * unit.nanometer,
-                             constraints=None)
+                             constraints=None, residueTemplates=templates)
     # PyMOL gives a blank chain as '' and OpenMM as ' ': compare stripped
     wanted = {(str(c).strip(), str(r).strip()) for c, r in (site_residues or [])}
     bonds = [(b.atom1.index, b.atom2.index) for b in top.bonds()]
@@ -341,6 +369,7 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
               "start_energy_kj_mol": round(e_start, 2), "steps": step, "acceptance": round(accepted / max(1, step), 3),
               "moves": len(moves), "site_residues": sorted({m["residue"] for m in moves}),
               "fixed_hetero_atoms": len(obstacles), "replaced_nonstandard": replaced,
+              "ligand_space_kept": bool(ligand_atoms), "ligand_obstacle_atoms": len(ligand_atoms),
               "movable_atoms": len(movable), "temperature_k": float(temperature_k), "platform": plat.getName(),
               "reproducible": bool(reproducible),
               "seconds": round(time.time() - t0, 1),

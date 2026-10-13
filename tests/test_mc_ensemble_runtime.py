@@ -98,3 +98,23 @@ def test_hetero_records_skip_waters_excluded_and_in_chain_residues(tmp_path):
                                       drop_from_lines=[("A", "7", "MSE")])
     assert [a[0] for a in atoms] == ["Zn"] and np.allclose(atoms[0][1], [0.1, 0.2, 0.3])
     assert len(lines) == 3 and not any("MSE" in ln for ln in lines)
+
+
+def test_holo_option_keeps_the_ligand_space_as_a_soft_obstacle(ubiquitin_variant, tmp_path):
+    pdb, site, zn = ubiquitin_variant
+    # a two-carbon "ligand" next to the site; the free MSE also gives carbon obstacles (OBS_C next to LIG_C)
+    lig = [zn + np.array([2.0, 0.0, 0.0]), zn + np.array([3.4, 0.0, 0.0])]
+    holo = tmp_path / "holo.pdb"
+    body = open(pdb).read().replace("END\n", "")
+    for i, x in enumerate(lig):
+        body += f"HETATM{9990 + i:5d}  C{i + 1}  LIG A 960    {x[0]:8.3f}{x[1]:8.3f}{x[2]:8.3f}  1.00 20.00           C\n"
+    holo.write_text(body + "END\n")
+    res = mc.sample_ensemble(str(holo), str(tmp_path / "out"), n_structures=2, site_residues=site,
+                             steps_per_structure=3, temperature_k=600.0, seed=5, platform="CPU", reproducible=True,
+                             progress=lambda *_: None, exclude_hetero=[("A", "960", "LIG")], ligand_obstacle=True)
+    assert res["ok"] and res["produced"] == 2
+    assert res["ligand_space_kept"] and res["ligand_obstacle_atoms"] == 2
+    assert res["fixed_hetero_atoms"] == 1 + 8                            # the ligand is not a cofactor obstacle
+    for member in res["structures"]:
+        lines = [ln for ln in open(member["path"]) if ln.startswith("HETATM") and ln[17:20] == "LIG"]
+        assert len(lines) == 2 and np.allclose(_xyz(lines[0]), lig[0], atol=1e-3)

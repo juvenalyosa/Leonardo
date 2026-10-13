@@ -239,6 +239,9 @@ def register(reg):
                                                          "single receptor)"},
                   "ensemble_temperature_K": {"type": "number", "minimum": 100, "maximum": 2000},
                   "ensemble_site_radius_A": {"type": "number", "minimum": 3, "maximum": 15},
+                  "ensemble_keep_ligand_space": {"type": "boolean", "description": (
+                      "holo-like ensemble: keep the crystal ligand's volume (soft) while sampling, so side chains "
+                      "do not close the pocket; better for redocking that ligand, biased toward it")},
                   "keep_hetero": _KEEP_HETERO,
                   "grid_size_A": dict(_XYZ, description="manual box edges x,y,z in A (2-120), as the GUI's "
                                                        "'Adjust grid box'; default: auto from the crystal ligand "
@@ -252,6 +255,7 @@ def register(reg):
     def run_redocking(ctx, object, ligand_chain="", ligand_resi="", ligand_resn="", exhaustiveness=16, repeats=3,
                       seed=1001, ph=7.4, mutant_object="", ensemble_structures=0, ensemble_temperature_K=300.0,
                       ensemble_site_radius_A=6.0, keep_hetero=None, grid_size_A=None, grid_padding_A=None,
+                      ensemble_keep_ligand_space=False,
                       grid_center_A=None):
         from pymol import cmd
 
@@ -302,6 +306,8 @@ def register(reg):
                     dlg.spin_redock_mc_n.setValue(int(ensemble_structures))
                     dlg.spin_redock_mc_temp.setValue(float(ensemble_temperature_K))
                     dlg.spin_redock_mc_radius.setValue(float(ensemble_site_radius_A))
+                    if hasattr(dlg, "cb_redock_mc_keep_ligand_space"):
+                        dlg.cb_redock_mc_keep_ligand_space.setChecked(bool(ensemble_keep_ligand_space))
             _apply_grid_box(dlg, object, grid_padding_A, grid_size_A)
             grid_box = _grid_box_info(dlg, object, grid_center_A)
             dlg._redock_last_mc_ensemble = {}
@@ -351,6 +357,7 @@ def register(reg):
         ensemble = {}
         if ens:
             ensemble = {"structures": len(ens.get("members") or []), "acceptance": ens.get("acceptance"),
+                        "ligand_space_kept": bool(ens.get("ligand_space_kept")),
                         "temperature_K": ens.get("temperature_k"), "site_residues": ens.get("site_residues"),
                         "members": [{k: m.get(k) for k in ("relative_energy_kj_mol", "site_rmsd_to_start_A")}
                                     for m in ens.get("members") or []]}
@@ -400,10 +407,14 @@ def register_mc(reg):
                               "n_structures": {"type": "integer", "minimum": 1, "maximum": 200},
                               "temperature_K": {"type": "number", "minimum": 100, "maximum": 2000},
                               "radius_A": {"type": "number", "minimum": 3, "maximum": 15},
-                              "seed": {"type": "integer", "minimum": 1}},
+                              "seed": {"type": "integer", "minimum": 1},
+                              "keep_ligand_space": {"type": "boolean", "description": (
+                                  "keep the hetero groups of site_selection (the ligand) as a soft volume while "
+                                  "sampling: holo-like pockets that stay open for that ligand")}},
                "required": ["object", "site_selection"]},
               permission="compute_heavy", title="Monte Carlo ensemble")
-    def generate_mc_ensemble(ctx, object, site_selection, n_structures=10, temperature_K=300.0, radius_A=6.0, seed=1):
+    def generate_mc_ensemble(ctx, object, site_selection, n_structures=10, temperature_K=300.0, radius_A=6.0, seed=1,
+                             keep_ligand_space=False):
         import json
         import os
         import subprocess
@@ -438,7 +449,8 @@ def register_mc(reg):
         args = {"pdb_in": pdb_in, "out_dir": work, "n_structures": int(n_structures),
                 "site_residues": [list(r) for r in site], "temperature_k": float(temperature_K),
                 "steps_per_structure": 15, "seed": int(seed), "platform": platform,
-                "exclude_hetero": [list(x) for x in sorted(lig["het"])]}
+                "exclude_hetero": [list(x) for x in sorted(lig["het"])],
+                "ligand_obstacle": bool(keep_ligand_space and lig["het"])}
         with open(os.path.join(work, "mc_args.json"), "w") as fh:
             json.dump(args, fh)
         py = os.path.join(sys.prefix, "bin", "python")
