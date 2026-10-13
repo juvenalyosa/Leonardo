@@ -186,7 +186,7 @@ def setup(c, data):
         v[15] = max(0.1, -v[11] - 90)
         v[16] = -v[11] + 90
     fe = c.get_coords("heme and elem Fe")[0]
-    yaw0, pitch0 = clear_angle(close, coords, pose_xyz)
+    yaw0, pitch0 = clear_angle(close, coords, pose_xyz, c.get_coords("heme and not hydro"))
     print(f"camera: yaw {yaw0:+.0f}, pitch {pitch0:+.0f} keeps the side chains off the camphor", flush=True)
     return {"wide": wide, "close": close, "yaw0": yaw0, "pitch0": pitch0, "site": coords, "poses": pose_xyz, "fe": fe,
             "crystal_center": np.asarray(data["xtal"]).mean(axis=0)}
@@ -202,20 +202,23 @@ def screen_xy(view, xyz, yaw, pitch):
     return cam[:, :2]
 
 
-def clear_angle(view, site_coords, poses):
-    """Base camera turn that keeps every drawn side chain away (on screen) from the docked camphor during the
-    whole rocking orbit, for every member."""
+def clear_angle(view, site_coords, poses, heme):
+    """Base camera turn that keeps every drawn side chain and the heme away (on screen) from the docked camphor
+    during the whole rocking orbit, for every member; small pitches keep the heme edge-on."""
     best = None
-    for yaw in range(-60, 61, 10):
-        for pitch in range(-30, 31, 10):
-            worst = 9e9
+    for yaw in range(-180, 180, 15):
+        for pitch in (-12, -6, 0, 6, 12):
+            overlaps, worst = 0, 9e9
             for rock in (-22, -11, 0, 11, 22):
                 for site, lig in zip(site_coords, poses):
-                    a = screen_xy(view, site, yaw + rock, pitch)
+                    a = screen_xy(view, np.vstack([site, heme]), yaw + rock, pitch)
                     b = screen_xy(view, lig, yaw + rock, pitch)
-                    worst = min(worst, float(np.min(np.linalg.norm(a[:, None] - b[None], axis=2))))
-            if best is None or worst > best[0] + 1e-6:
-                best = (worst, yaw, pitch)
+                    d = np.linalg.norm(a[:, None] - b[None], axis=2)
+                    overlaps += int((d < 1.5).sum())
+                    worst = min(worst, float(d.min()))
+            score = (overlaps, -worst)
+            if best is None or score < best[0]:
+                best = (score, yaw, pitch)
     return float(best[1]), float(best[2])
 
 
@@ -246,8 +249,9 @@ def shot(seconds, scene):
     elif seconds < T_CONF:
         p = e((seconds - T_DIVE) / (T_CONF - T_DIVE))
         view = wide * (1 - p) + close * p
-        yaw = (scene["yaw0"] + 22) * p
-        pitch = scene["pitch0"] * p
+        turn = e((p - 0.35) / 0.65)          # turn once the camera is centred on the pocket
+        yaw = (scene["yaw0"] + 22) * turn
+        pitch = scene["pitch0"] * turn
         objs = ["heme", "site"]
         info["phase"] = "dive"
         info["push"] = p
@@ -386,7 +390,12 @@ def compose(molecule, plot, info, seconds, panel=None):
     py = int(125 + 115 * analysis)
     mol = molecule.resize((int(MW * scale), int(MH * scale)), Image.Resampling.LANCZOS)
     mol_layer = Image.new("RGBA", (W, H), (255, 255, 255, 0))
-    mol_layer.paste(mol, (px, py))
+    edge = np.ones(mol.size[0])
+    ramp = max(1, int(140 * scale))
+    edge[:ramp] = np.linspace(0, 1, ramp)
+    edge[-ramp:] = np.linspace(1, 0, ramp)
+    mask = Image.fromarray((np.tile(edge, (mol.size[1], 1)) * 255).astype(np.uint8))
+    mol_layer.paste(mol, (px, py), mask)
     style.faded(im, mol_layer, 1 - max(panel_on, end_on))
     d = ImageDraw.Draw(im)
     txt(d, (78, 42), "L E O N A R D O", 25, bold=True)
@@ -522,7 +531,7 @@ def render(preview=False, no_encode=False, start=0, stop=None):
     folder.mkdir(parents=True, exist_ok=True)
     scratch = folder / f"worker_{os.getpid()}"
     scratch.mkdir(exist_ok=True)
-    marks = [0.5, 5.0, 10.0, 14.0, 19.0, 21.0, 32.0, 33.2, 35.5, 48.0, 50.0, 58.0, 64.0]
+    marks = [0.5, 10.0, 12.0, 14.0, 19.0, 33.2, 41.0, 46.0, 49.0, 58.0, 64.0]
     targets = [int(s * FPS) for s in marks] if preview else range(start, stop or FRAMES)
     plots, panels = {}, {}
     started = time.perf_counter()
