@@ -162,3 +162,15 @@ def test_a_product_that_is_not_a_minimum_is_rejected_before_the_path(tmp_path):
     # "did not give a first-order saddle point"
     assert not out["ok"] and "no stable product" in out["error"]
     assert "path" not in out and "ts" not in out
+
+
+def test_neb_does_not_climb_a_band_without_an_interior_maximum(tmp_path):
+    """A downhill band (product far below, no barrier between) must not send a climbing image up the slope."""
+    model = ProtonTransfer(tmp_path)
+    react = model.xyz_ref[model.qm].copy()
+    react[1] = [1.5, 0.0, 0.0]                     # start at the saddle region: the band runs downhill only
+    prod = model.xyz_ref[model.qm].copy()
+    prod[1] = [3.0 - R0, 0.0, 0.0]
+    out = P.neb_path(model, react, prod, n_images=5, steps=120)
+    assert not out["climbing"]
+    assert max(out["energies_kj_mol"]) <= out["energies_kj_mol"][0] + 1.0

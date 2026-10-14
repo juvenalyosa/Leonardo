@@ -144,7 +144,9 @@ def neb_path(model, reactant_xyz, product_xyz, n_images=9, fmax_kj_mol_ang=5.0, 
     for k in range(int(n_images)):
         images.append(_atoms(model, reactant_xyz, tag=f"neb/image_{k + 1:02d}"))
     images.append(_atoms(model, product_xyz, tag="neb/p"))
-    neb = NEB(images, k=float(spring_ev_ang2), climb=True, remove_rotation_and_translation=False,
+    # climbing is switched on only once a plain band has settled and shows an interior maximum: a climbing image
+    # started on the interpolated band (or on a band without a barrier) runs up the slope instead
+    neb = NEB(images, k=float(spring_ev_ang2), climb=False, remove_rotation_and_translation=False,
               method="improvedtangent")
     try:
         neb.interpolate(method="idpp", mic=False)
@@ -156,14 +158,23 @@ def neb_path(model, reactant_xyz, product_xyz, n_images=9, fmax_kj_mol_ang=5.0, 
             pos[model.fixed] = np.asarray(reactant_xyz)[model.fixed]
             img.set_positions(pos)
     opt = FIRE(neb, logfile=os.path.join(model.workdir, "neb.log"))
-    converged = bool(opt.run(fmax=fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=int(steps)))
+    plain_steps = max(1, int(steps) // 3)
+    opt.run(fmax=2.0 * fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=plain_steps)
+    used = int(opt.get_number_of_steps())
+    band = [float(img.get_potential_energy()) for img in images[1:-1]]
+    ends = (float(images[0].get_potential_energy()), float(images[-1].get_potential_energy()))
+    if band and max(band) > max(ends):                     # an interior maximum: refine it by climbing
+        neb.climb = True
+        opt = FIRE(neb, logfile=os.path.join(model.workdir, "neb_climb.log"))
+    converged = bool(opt.run(fmax=fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=max(1, int(steps) - used)))
+    used += int(opt.get_number_of_steps())
     frames = [img.get_positions().copy() for img in images]
     energies = []
     for k, xyz in enumerate(frames):
         e, _f, terms = model.evaluate(xyz, tag=f"neb/final_{k:02d}")
         energies.append(float(terms["energy_kj_mol"]))
     return {"frames": frames, "energies_kj_mol": energies, "converged": converged,
-            "steps": int(opt.get_number_of_steps()), "climbing_image": int(np.argmax(energies))}
+            "steps": used, "climbing": bool(neb.climb), "climbing_image": int(np.argmax(energies))}
 
 
 def _masses(model):
