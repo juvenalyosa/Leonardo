@@ -177,6 +177,50 @@ def test_run_redocking_says_when_the_requested_ensemble_was_not_used(dlg):
     assert "NOT used" in out["_card"] and "single-receptor result" in out["_card"]
 
 
+def test_run_redocking_resolves_a_partial_ligand_residue(dlg):
+    """resi without resn (or resn without resi) names the crystal ligand: it was ignored for an
+    auto-detected one (resi alone) or failed in Leonardo's form (resn alone)."""
+    from pymol import cmd
+
+    cmd.pseudoatom("prot", name="C1", resn="LIG", resi="-5", chain="Y", elem="C", pos=[9.0, 9.0, 9.0], hetatm=1)
+    cmd.pseudoatom("prot", name="C1", resn="ACT", resi="901", chain="X", elem="C", pos=[7.0, 0.0, 0.0], hetatm=1)
+    ctx = AgentContext(dlg)
+    seen = []
+
+    def fake_workflow():
+        seen.append(dlg._redock_get_reference_fields())
+        dlg._redock_last_runs = {"WT": {"ok": True, "best": {"mode": 1, "affinity": -6.0},
+                                        "top1_success": {"n_success": 0, "n": 0},
+                                        "repeat_rows": [{"repeat": 1, "seed": 1001, "best_affinity": -6.0,
+                                                         "best_rmsd": float("nan")}]}}
+
+    dlg._on_run_redocking_workflow = fake_workflow
+    reg = build_registry(ctx)
+    out = reg.call("run_redocking", {"object": "prot", "ligand_chain": "Y", "ligand_resi": "-5"}, ctx)
+    assert seen[-1] == ("Y", "-5", "LIG")
+    assert out["crystal_ligand"] == {"chain": "Y", "resi": "-5", "resn": "LIG"}
+    # no "RMSD top-1 nan" when the poses could not be matched to the crystal ligand
+    assert "nan" not in out["_card"] and "RMSD unavailable" in out["_card"]
+    reg.call("run_redocking", {"object": "prot", "ligand_resn": "ACT"}, ctx)
+    assert seen[-1] == ("X", "901", "ACT")
+    with pytest.raises(ToolError, match="no residue"):
+        reg.call("run_redocking", {"object": "prot", "ligand_resn": "XYZ"}, ctx)
+
+
+def test_residue_selection_is_one_residue():
+    from pymol import cmd
+
+    from leonardo.agent.tools.docking import _residue_selection
+
+    cmd.reinitialize()
+    for chain, resi, x in (("A", "-5", 0.0), ("A", "3", 2.0), ("B", "-5", 4.0), ("", "-5", 6.0)):
+        cmd.pseudoatom("c", name="C1", resn="LIG", resi=resi, chain=chain, elem="C", pos=[x, 0.0, 0.0], hetatm=1)
+    assert cmd.count_atoms(_residue_selection("c", "A", "-5", "LIG")) == 1       # not resi 3, not chain B
+    assert cmd.count_atoms(_residue_selection("c", "", "-5", "LIG")) == 1        # blank chain id
+    assert cmd.count_atoms(_residue_selection("c", None, "-5", "LIG")) == 3      # any chain
+    cmd.reinitialize()
+
+
 def test_run_redocking_padding_without_manual_size(dlg):
     ctx = AgentContext(dlg)
 
