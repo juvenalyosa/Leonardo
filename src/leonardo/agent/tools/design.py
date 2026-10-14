@@ -35,6 +35,10 @@ def register(reg):
             raise ToolError(f"no object named {object!r}; call list_objects")
         if cmd.count_atoms(f"({object}) and polymer.protein and name CA") < 10:
             raise ToolError(f"{object} has no protein chain to design")
+        chains = cmd.get_chains(f"({object}) and polymer.protein")
+        if chain and chain not in chains:
+            # the design would find no residue pair and report "no compatible geometry" as a result
+            raise ToolError(f"{object} has no protein chain {chain!r} (chains: {', '.join(chains) or 'none'})")
         path = _save_object(ctx, object, sub="design")
         workdir = os.path.join(ctx.workspace("design"), time.strftime(f"{object}_disulfides_%Y%m%d_%H%M%S"))
         args = {"pdb": path, "out_dir": workdir, "chain": chain, "max_candidates": int(max_candidates),

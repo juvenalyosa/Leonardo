@@ -2561,7 +2561,8 @@ def build_and_validate(pdb_path, family="amber14", ph=7.0, keep_waters=False, re
         sim = app.Simulation(modeller.topology, system, integ)
     sim.context.setPositions(modeller.positions)
     e0 = sim.context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
-    sim.minimizeEnergy(maxIterations=int(minimize_steps))
+    if int(minimize_steps) > 0:              # OpenMM reads maxIterations=0 as "until converged"
+        sim.minimizeEnergy(maxIterations=int(minimize_steps))
     state = sim.context.getState(getEnergy=True, getPositions=True)
     e1 = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
     # an infinite/NaN start (two atoms placed on top of each other) is fine if minimization fixes it

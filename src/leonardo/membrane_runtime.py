@@ -791,10 +791,12 @@ def equilibrate_membrane(pdb_path, system_xml, out_dir, stages_ps=(50, 50, 100),
     sim.context.setVelocitiesToTemperature(temperature_k * unit.kelvin)
     os.makedirs(out_dir, exist_ok=True)
     dcd = os.path.join(out_dir, "membrane_equilibration.dcd")
-    sim.reporters.append(app.DCDReporter(dcd, max(1, int(report_every_ps * 1000 / timestep_fs))))
+    # a run shorter than one report interval would leave an empty trajectory (the tool then cannot load it)
+    total_steps = sum(int(ps * 1000 / timestep_fs) for ps in stages_ps)
+    every = max(1, min(int(report_every_ps * 1000 / timestep_fs), total_steps))
+    sim.reporters.append(app.DCDReporter(dcd, every))
     rows = []
     lipid = lipid_label or next((r.name for r in pdb.topology.residues() if _is_lipid_residue(r)), "POPC")
-    every = max(1, int(report_every_ps * 1000 / timestep_fs))
     for stage, (ps, k) in enumerate(zip(stages_ps, restraint_k), start=1):
         sim.context.setParameter("k_rest", float(k))
         n = int(ps * 1000 / timestep_fs)

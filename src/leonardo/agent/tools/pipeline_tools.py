@@ -86,6 +86,8 @@ def register(reg):
             steps, vals = P.instantiate(P.load(name), values or {})
         except (FileNotFoundError, ValueError) as exc:
             raise ToolError(str(exc)) from exc
+        if int(from_step) > len(steps):
+            raise ToolError(f"the pipeline has {len(steps)} step(s); from_step={from_step} is past the end")
         return {"name": name, "values": vals, "steps": steps[int(from_step) - 1:],
                 "note": "run these tool calls in order; {{step:N.key}} refers to a result of step N"}
 

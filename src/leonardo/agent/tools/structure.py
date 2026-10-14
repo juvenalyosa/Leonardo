@@ -16,12 +16,10 @@ def _cmd():
 
 def _object_summary(obj):
     cmd = _cmd()
-    chains = cmd.get_chains(obj)
-    n_res = {}
-    for ch in chains:
-        space = {"res": set()}
-        cmd.iterate(f"({obj}) and polymer and chain {ch} and name CA", "res.add(resi)", space=space)
-        n_res[ch or "-"] = len(space["res"])
+    # one pass grouped by chain: "chain " with a blank chain id selects atoms of other objects
+    space = {"res": {ch or "-": set() for ch in cmd.get_chains(obj)}}
+    cmd.iterate(f"({obj}) and polymer and name CA", "res.setdefault(chain or '-', set()).add(resi)", space=space)
+    n_res = {ch: len(v) for ch, v in space["res"].items()}
     ligands = []
     space = {"seen": {}}
     cmd.iterate(f"({obj}) and not polymer and not resn {_WATER}",
@@ -67,6 +65,18 @@ def _object_name(name):
 
     safe = re.sub(r"[^A-Za-z0-9_.+-]", "_", str(name).strip()) or "obj"
     return ("_" + safe) if safe[0] in "+-." else safe
+
+
+def _free_name(name):
+    """``name``, or ``name_2``, ``name_3``... when an object of that name exists: cmd.load into an existing
+    object appends the file as a new state (PDB) or fails (mmCIF), and must never replace the user's object."""
+    existing = set(_cmd().get_names("all"))
+    if name not in existing:
+        return name
+    k = 2
+    while f"{name}_{k}" in existing:
+        k += 1
+    return f"{name}_{k}"
 
 
 def register(reg):
@@ -117,12 +127,13 @@ def register(reg):
         if not path or not os.path.isfile(path):
             raise ToolError(str(payload.get("error") or "download failed"))
         # PyMOL renames objects with spaces or symbols: use the name it will really have
-        name = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
+        base = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
 
         def load():
             from .. import presentation
 
             cmd = _cmd()
+            name = _free_name(base)          # on the main thread, where the scene is read
             cmd.load(path, name)
             if remove_waters:
                 cmd.remove(f"({name}) and resn {_WATER}")
@@ -160,7 +171,7 @@ def register(reg):
                                                      ".pdbqt", ".xyz"):
             raise ToolError("unsupported file type")
         cmd = _cmd()
-        name = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
+        name = _free_name(_object_name(object_name or os.path.splitext(os.path.basename(path))[0]))
         cmd.load(path, name)
         presentation.apply_house_style()
         if cmd.count_atoms(f"({name}) and polymer"):

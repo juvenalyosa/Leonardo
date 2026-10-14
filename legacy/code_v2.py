@@ -10609,6 +10609,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             notes.append(
                 f"OpenMM input prepared: atoms={atom_count}, ligand_conect={int(composed.get('conect_count', 0) or 0)}"
             )
+            if composed.get("added_oxt"):
+                notes.append("Added the missing C-terminal OXT to " + ", ".join(composed["added_oxt"][:8]))
+            if composed.get("renamed_atoms"):
+                notes.append("Gave unique atom names to " + ", ".join(composed["renamed_atoms"][:8])
+                             + " (repeated names would merge atoms in OpenMM)")
             return {"ok": True, "notes": list(notes)}
         except Exception as e:
             return {"ok": False, "error": f"Failed building OpenMM input PDB: {e}", "notes": list(notes)}
@@ -54956,9 +54961,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         # Resolve color from type overrides or color name
         if isinstance(color_or_type, str) and color_or_type in COLOR_MAP:
             cname = self._type_color_name(color_or_type)
-            rgb = cmd.get_color_tuple(cname)
         else:
             cname = color_or_type if isinstance(color_or_type, str) else None
+        if cname and str(cname).startswith("#"):
+            # COLOR_MAP holds "#RRGGBB" values (not PyMOL color names: "Unknown color", then yellow)
+            rgb = _hex_to_rgb(cname)
+        else:
             rgb = cmd.get_color_tuple(cname) if cname else color_or_type
         if not rgb:
             rgb = (1.0, 1.0, 0.0)
@@ -55481,7 +55489,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 # Recreate discs if interaction has ring info
                 inter = self.interactions[rid]
                 inter_type_group = f"Interactions.{inter['type'].replace(' ', '_')}"
-                ring_color = COLOR_MAP.get(inter["type"], "yellow")
+                # the type, as when the discs are first drawn: _make_ring_disc resolves its (overridden)
+                # color; a "#RRGGBB" string is no PyMOL color name and fell back to yellow
+                ring_color = inter["type"] if inter.get("type") in COLOR_MAP else "yellow"
                 if "prot_ring" in inter:
                     r = inter["prot_ring"]
                     self._make_ring_disc(

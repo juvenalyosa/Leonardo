@@ -299,7 +299,9 @@ def _local_mutant(ctx, object, mutations, chain, name, seed):
     def coords(obj, sel):
         rows = {}
         space = {"rows": rows}
-        cmd.iterate_state(1, f"({obj}) and not ({sel})", "rows[(chain, resi, resn, name)] = (x, y, z)", space=space)
+        # the mutant was built from the first alternate location only (_save_object)
+        cmd.iterate_state(1, f"({obj}) and not ({sel}) and not alt B+C+D", "rows[(chain, resi, resn, name)] = (x, y, z)",
+                          space=space)
         return rows
     mutated_sel = " or ".join(f"(chain {c} and resi {r})" for c, r in keys)
     a, b = coords(object, mutated_sel), coords(name, mutated_sel)
@@ -537,6 +539,11 @@ def register(reg):
         for sel in (mobile, target):
             if cmd.count_atoms(f"({sel}) and polymer and name CA") == 0:
                 raise ToolError(f"no protein Cα atoms in {sel!r}")
+        shared = set(cmd.get_object_list(f"({mobile})") or []) & set(cmd.get_object_list(f"({target})") or [])
+        if shared:
+            # the fit moves whole objects: one object cannot be superposed on itself (or on a part of itself)
+            raise ToolError(f"mobile and target are both in {', '.join(sorted(shared))}; superpose two different "
+                            "objects (make a copy of a chain first)")
         mob_ca, tgt_ca = f"({mobile}) and polymer and name CA", f"({target}) and polymer and name CA"
         if method == "cealign":
             fit = cmd.cealign(tgt_ca, mob_ca)
@@ -717,16 +724,28 @@ def register(reg):
         gap = dict(modeler_runtime.modeler_gap_fill_sequence(entry, full, fill_termini=bool(fill_termini)) or {})
         if not gap.get("ok"):
             raise ToolError(f"the sequence does not match the structure: {gap.get('error') or gap}")
-        if not (int(gap.get("filled", 0)) + int(gap.get("filled_n_term", 0)) + int(gap.get("filled_c_term", 0))):
-            return {"object": object, "chain": chain, "filled": 0,
-                    "_card": f"Chain {chain} of {object} has no missing residues to fill."}
+        # "filled" counts every built residue, the terminal extensions included (filled_n/c_term are its share)
+        n_fill = int(gap.get("filled", 0))
+        if not n_fill:
+            out = {"object": object, "chain": chain, "filled": 0,
+                   "_card": f"Chain {chain} of {object} has no missing residues to fill."}
+            if not fill_termini:
+                ends = modeler_runtime.modeler_gap_fill_sequence(entry, full, fill_termini=True)
+                n_term, c_term = int(ends.get("filled_n_term", 0)), int(ends.get("filled_c_term", 0))
+                if n_term or c_term:
+                    out["missing_termini"] = {"n_term": n_term, "c_term": c_term}
+                    out["_card"] = (f"Chain {chain} of {object} has no internal gap, but {n_term} N-terminal and "
+                                    f"{c_term} C-terminal residue(s) of the sequence are missing; "
+                                    "fill_termini=true builds them.")
+            return out
         name = re.sub(r"[^A-Za-z0-9_]", "_", name or f"{object}_repaired")[:60]
         if name in _cmd().get_names("objects"):
             raise ToolError(f"an object named {name!r} already exists")
         code, path = _stage_self_template(ctx, object, chain)
         seq = str(gap["sequence"]).replace("X", "A")
-        n_fill = int(gap.get("filled", 0)) + int(gap.get("filled_n_term", 0)) + int(gap.get("filled_c_term", 0))
         extra = {"source": object, "chain": chain, "residues_filled": n_fill,
+                 "terminal_residues_added": {"n_term": int(gap.get("filled_n_term", 0)),
+                                             "c_term": int(gap.get("filled_c_term", 0))},
                  "gaps_before": entry.get("internal_gaps"),
                  "identity_to_reference": gap.get("identity"), "coverage": gap.get("coverage")}
         return _start_modeller(ctx, name, seq, [code], labels=[None if x is None else str(x) for x in gap.get("residue_labels") or []],

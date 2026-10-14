@@ -161,7 +161,9 @@ def build_from_history(name, description="", parameters=None, first=1, last=None
                 args[k] = "{{" + k + "}}"
         out_steps.append({"tool": s["tool"], "args": args})
         for key, val in (s.get("result") or {}).items():
-            if isinstance(val, str) and len(val) >= 4 and not any(val == p for p in params.values()):
+            # short object names ('wt', 'ubq') are links too, or a re-run with another molecule would work on the
+            # old object; _substitute replaces 2-character names only where an argument is exactly that name
+            if isinstance(val, str) and len(val) >= 2 and not any(val == p for p in params.values()):
                 produced.append((val, "{{step:%d.%s}}" % (i, key)))
     return {"name": str(name), "slug": slug(name), "description": str(description or ""),
             "created": datetime.datetime.now().isoformat(timespec="seconds"), "format": 1,
@@ -204,7 +206,7 @@ def load(name_or_path):
         p = os.path.abspath(os.path.expanduser(str(p)))
         if os.path.isfile(p):
             data = json.load(open(p))
-            if not isinstance(data.get("steps"), list):
+            if not isinstance(data, dict) or not isinstance(data.get("steps"), list):
                 raise ValueError(f"{p} is not a Leonardo pipeline")
             return data
     names = [p["name"] for p in list_all()]

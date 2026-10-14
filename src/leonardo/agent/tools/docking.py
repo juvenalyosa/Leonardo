@@ -14,12 +14,25 @@ def _cmd():
     return cmd
 
 
+def _residue_selection(obj, chain, resi, resn):
+    """PyMOL selection of exactly one residue: chain-qualified ('chain ""' for a blank chain id) and
+    with a negative residue number escaped ("resi -5" alone is the range up to 5). chain=None: any chain."""
+    resi = str(resi).strip()
+    parts = [f"({obj})", f"resn {str(resn).strip()}", "resi " + ("\\" + resi if resi.startswith("-") else resi)]
+    if chain is not None:
+        chain = str(chain).strip()
+        parts.append(f"chain {chain}" if chain else 'chain ""')
+    return " and ".join(parts)
+
+
 def _ligand_residue(cmd, obj, chain="", resi="", resn=""):
     """(chain, resi, resn) of the ligand residue in ``obj`` matching the given fields; all empty when none
     is given (Leonardo then auto-detects the ligand of ``obj``). Leonardo's ligand resolver needs both
     resi and resn, else it auto-detects and the given field is ignored."""
     chain, resi, resn = str(chain or "").strip(), str(resi or "").strip(), str(resn or "").strip()
     if not resi and not resn:
+        if chain:          # it would be dropped for an auto-detected ligand, possibly in another chain
+            raise ToolError("ligand_chain alone does not name a residue: give ligand_resi or ligand_resn too")
         return "", "", ""
     parts = [f"({obj})"]
     if resn:
@@ -140,12 +153,16 @@ def register(reg):
                 dlg.ligand_chain.setText(lig_c)
                 dlg.ligand_resi.setText(lig_i)
                 dlg.ligand_resn.setText(lig_n)
-                label = f"{object} {ligand_resn}{ligand_resi}"
+                label = f"{object} {lig_n} {lig_c}{lig_i}".rstrip()
             else:
                 raise ToolError("give pose_rank or object (+ ligand residue)")
             dlg.interactions = []          # a handler that returns early must not leave the last complex's
             dlg._on_calc_interactions()
             interactions = list(getattr(dlg, "interactions", []) or [])
+            if object and pose_rank is None and not lig_n:
+                li = getattr(dlg, "ligand_info", None)       # the ligand Leonardo auto-detected
+                if isinstance(li, (list, tuple)) and len(li) >= 3 and li[2]:
+                    label = f"{object} {li[2]} {li[0]}{li[1]}"
             try:
                 dlg._on_redraw_visible_types()
             except Exception:
@@ -161,8 +178,11 @@ def register(reg):
             li = getattr(dlg, "ligand_info", None)     # Leonardo keeps (chain, resi, resn)
             if isinstance(li, dict):
                 li = (li.get("chain", ""), li.get("resi", ""), li.get("resn", ""))
-            lig = (f"({obj}) and resn {li[2]} and resi {li[1]}" if isinstance(li, (list, tuple)) and len(li) >= 3
-                   and li[2] else f"({obj}) and not polymer and not resn HOH+WAT and not elem Ca+Mg+Zn+Na+Cl+K")
+            lig = f"({obj}) and not polymer and not resn HOH+WAT and not elem Ca+Mg+Zn+Na+Cl+K"
+            if isinstance(li, (list, tuple)) and len(li) >= 3 and li[2]:
+                # the analyzed residue only (another chain's copy or "resi -5" ranges must not join it)
+                one = _residue_selection(obj, li[0], li[1], li[2])
+                lig = one if cmd.count_atoms(one) else _residue_selection(obj, None, li[1], li[2])
             if cmd.count_atoms(lig):
                 presentation.declutter(keep=[obj] + [n for n in cmd.get_names("objects") if n.startswith(("int", "lbl_"))])
                 if obj.startswith("dock_complex"):

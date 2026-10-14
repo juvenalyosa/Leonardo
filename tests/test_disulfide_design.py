@@ -22,6 +22,19 @@ def test_candidates_have_disulfide_compatible_geometry_and_exclude_gly_pro():
     assert scores == sorted(scores)
 
 
+def test_candidates_skip_bonded_cysteines_and_insertion_codes():
+    # trypsin 3PTB: six native disulfides and chymotrypsin numbering (184A, 188A, 221A). Before, the candidates
+    # included L163C/C182C (C182 is bonded to C168: the build fails, "1 S atom too many") and A221A pairs
+    # (PDBFixer cannot address 221A: "invalid literal for int()"; with 221 next to it the number is ambiguous)
+    trypsin = os.path.join(os.path.dirname(PGA), "..", "01_molecular_docking", "3PTB.pdb")
+    cands = D.find_candidates(trypsin, max_candidates=500)
+    assert len(cands) > 20
+    used = {(c, i) for cand in cands for c, i, _n in cand["residues"]}
+    for bonded in ("22", "157", "42", "58", "128", "232", "136", "201", "168", "182", "191", "220"):
+        assert ("A", bonded) not in used
+    assert not used & {("A", "221A"), ("A", "221"), ("A", "184"), ("A", "184A"), ("A", "188"), ("A", "188A")}
+
+
 def test_filters_follow_natural_disulfide_geometry():
     good = {"ss_A": 2.05, "css_deg": [104.0, 105.0], "chi3_deg": -88.0, "ca_rmsd_A": 0.2}
     assert D.passes(good)[0]
@@ -45,6 +58,17 @@ def test_k10c_e56c_refines_to_a_good_disulfide(tmp_path):
     assert ok and 1.95 <= geom["ss_A"] <= 2.15 and 65 <= abs(geom["chi3_deg"]) <= 115 and geom["ca_rmsd_A"] < 0.7
     text = open(tmp_path / "k10c_e56c.pdb").read()
     assert "CYX" in text or "CONECT" in text
+
+
+def test_a_protein_without_chain_ids_can_be_designed(tmp_path):
+    # blank chain: '' in the candidates, ' ' in OpenMM. Was: KeyError "Cannot find chain  residue 10" for every design
+    pytest.importorskip("pdbfixer")
+    blank = tmp_path / "1pga_blank.pdb"
+    blank.write_text("".join(ln[:21] + " " + ln[22:] if ln.startswith(("ATOM", "HETATM")) else ln
+                             for ln in open(PGA)))
+    assert any(c["residues"] == [["", "10", "LYS"], ["", "56", "GLU"]] for c in D.find_candidates(str(blank), max_candidates=50))
+    geom = D.build_design(str(blank), [["", "10", "LYS"], ["", "56", "GLU"]], str(tmp_path / "d.pdb"), max_iterations=300)
+    assert 1.8 <= geom["ss_A"] <= 2.3
 
 
 def test_tools_expose_disulfide_design_and_the_reaction_path_operation():

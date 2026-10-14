@@ -32,10 +32,10 @@ give the same statistics, so this pack checks averages within tolerances set fro
 | Mean Cα RMSF | 0.66 Å | 0.03 | 0.60–0.73 Å | ±0.12 Å |
 | Ser195 OG – His57 NE2, mean | 3.98 Å | 0.16 | 3.78–4.23 Å | ±0.5 Å |
 | Same distance, standard deviation | 0.46 Å | 0.04 | 0.40–0.51 Å | ±0.15 Å |
-| Frames with that distance ≤ 3.5 Å | 17% | 9 | 6–30% | ±26 points |
+| Frames with that distance ≤ 3.5 Å | 22% (12 runs) | 11 | 6–44% | ±33 points |
 
-Tolerances are about three standard deviations of the 8 runs. An earlier version with tolerances from only 3
-runs was too tight: a fourth run fell just outside.
+Tolerances are about three standard deviations of the runs. They were widened twice as more runs came in. With
+3 runs a fourth fell just outside, and the H-bond fraction, the noisiest number here, needed 12 runs: one gave 44%.
 
 The film's scripted run (12 ps, CPU) gave 4.02 ± 0.37 Å for the same distance, consistent with this range.
 100 ps in implicit solvent is a short relaxation, not converged sampling.

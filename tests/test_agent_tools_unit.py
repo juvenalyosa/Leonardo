@@ -107,3 +107,110 @@ def test_out_of_range_values_are_reported_not_clamped():
     set_value(Dlg, "spin", 20)
     assert Dlg.spin.value() == 20
     assert "rgba(31, 58, 110, 0.12)" in pill_style("#1F3A6E")
+
+
+def test_redrawn_ring_discs_keep_the_interaction_color():
+    """The interaction colors are '#RRGGBB' strings: _make_ring_disc passed them to cmd.get_color_tuple
+    ('Unknown color') and every pi-stacking / T-shaped / cation-pi disc was drawn yellow."""
+    from pymol import cmd
+
+    d = _dummy("_refresh_ring_discs", "_make_ring_disc", "_type_color_name")
+    d._settings = {}
+    ring = {"centroid": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 1.5}
+    d.interactions = [{"type": "Pi-Pi Stacking", "prot_ring": ring, "ligand_ring": ring}]
+    d._selected_ids = [0]
+    cmd.reinitialize()
+    try:
+        d._refresh_ring_discs()
+        cgo = cmd.get_session()["names"]
+        disc = next(n for n in cgo if n and n[0] == "intRingDiscProt_0")
+        rgb = disc[5][2][0][0][1][8:11]          # CYLINDER x1 y1 z1 x2 y2 z2 r | r1 g1 b1 ...
+        assert [round(v, 3) for v in rgb] == [round(v, 3) for v in code_v2._hex_to_rgb("#F6A83E")]
+    finally:
+        cmd.reinitialize()
+
+
+def trajectory_build_selected_trace_payload(rid):
+    """Stands in for code_v2's function (interaction_distribution spies on the dialog's module)."""
+    return {"occupancy_pct": 50.0, "distance_mean": 2.9, "n_frames": 4, "rid": rid}
+
+
+class _TrajDlg:
+    loaded_object = ""
+
+    def _on_compute_reference_interactions(self):
+        mk = [("Hydrogen Bond", "ASP", "A", "189"), ("Hydrophobic", "LEU", "A", "768"),
+              ("Van der Waals", "MET", "B", "769")]
+        self.interactions = [{"type": t, "prot_res": f"{n} {c}{r}", "prot_resn": n, "prot_chain": c, "prot_resi": r,
+                              "prot_atom": "X", "lig_atom": "Y", "distance": 3.0} for t, n, c, r in mk]
+
+    def _run_selected_interaction_distribution(self):
+        trajectory_build_selected_trace_payload(self._last_clicked_rid)
+
+
+def test_interaction_distribution_finds_the_residue_as_documented():
+    """The description's example ('ASP189') never matched Leonardo's 'ASP A189'; 'A76' matched 'LEU A768'."""
+    from pymol import cmd
+
+    from leonardo.agent.registry import ToolError
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.pseudoatom("traj", pos=[0.0, 0.0, 0.0])
+    dlg = _TrajDlg()
+    ctx = AgentContext(dlg)
+    reg = build_registry(ctx)
+    try:
+        for name, rid in (("ASP189", 0), ("asp 189", 0), ("A:768", 1), ("MET B769", 2), ("B:MET769", 2)):
+            out = reg.call("interaction_distribution", {"object": "traj", "residue": name}, ctx)
+            assert dlg._last_clicked_rid == rid, name
+            assert out["frames"] == 4
+        for wrong in ("A76", "ASP18", "B:189"):
+            with pytest.raises(ToolError, match="no interaction"):
+                reg.call("interaction_distribution", {"object": "traj", "residue": wrong}, ctx)
+    finally:
+        cmd.reinitialize()
+
+
+def test_show_lead_optimization_hit_returns_the_interactions_it_computed(monkeypatch):
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    monkeypatch.setattr("leonardo.agent.presentation.save_step_scene", lambda *a, **k: {"scene": "s"})
+    monkeypatch.setattr("leonardo.agent.presentation.focus", lambda *a, **k: None)
+
+    class Dlg:
+        _leadopt_results = [{"name": "a1", "smiles": "CCO"}, {"name": "a2", "smiles": "CCN"}]
+
+        def _on_leadopt_compute_interactions_selected(self):
+            self.loaded_object = "leadopt_complex_rank1"
+            self.interactions = [{"type": "Hydrogen Bond", "prot_res": "MET A769", "distance": 2.9},
+                                 {"type": "Hydrophobic", "prot_res": "LEU A694", "distance": 3.7}]
+
+    ctx = AgentContext(Dlg())
+    out = build_registry(ctx).call("show_lead_optimization_hit", {"rank": 1}, ctx)
+    assert out["interactions_total"] == 2
+    assert out["interactions_by_type"] == {"Hydrogen Bond": 1, "Hydrophobic": 1}
+    assert out["closest"][0] == {"type": "Hydrogen Bond", "residue": "MET A769", "distance_A": 2.9}
+
+
+def test_describe_object_counts_only_its_own_residues_for_a_blank_chain():
+    """'chain  and name CA' (blank chain id) selected the alpha carbons of every other object: an MD/SDF
+    structure without chain ids was reported with the residues of the whole session."""
+    from pymol import cmd
+
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.fab("ACDEFGHIK", "other", chain="A")
+    cmd.fab("GAG", "nochain", chain="A")
+    cmd.alter("nochain", "chain=''")
+    cmd.pseudoatom("lig", name="C1", resn="UNK", resi="0", elem="C", pos=[30.0, 0.0, 0.0], hetatm=1)
+    cmd.alter("lig", "chain=''")
+    ctx = AgentContext()
+    reg = build_registry(ctx)
+    try:
+        assert reg.call("describe_object", {"object": "nochain"}, ctx)["chains"] == {"-": 3}
+        assert reg.call("describe_object", {"object": "other"}, ctx)["chains"] == {"A": 9}
+        assert reg.call("describe_object", {"object": "lig"}, ctx)["chains"] == {"-": 0}
+    finally:
+        cmd.reinitialize()

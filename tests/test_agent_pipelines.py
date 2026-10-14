@@ -172,6 +172,18 @@ def test_short_and_numeric_parameters_are_substituted_precisely():
     assert a2["n"] == "{{n}}" and a2["x"] == 10 and a2["ph"] == "{{ph}}"
 
 
+def test_short_object_names_become_step_links():
+    """Objects named 'ubq' or 'wt' (under 4 characters) stayed literal: a re-run with another molecule worked on
+    the old object."""
+    P.record("load_structure_file", {"path": "/data/1UBQ.pdb", "object_name": "ubq"}, {"object": "ubq"})
+    P.record("model_mutant", {"object": "ubq", "mutations": ["K48R"], "method": "local"}, {"object": "wt"})
+    P.record("align_structures", {"mobile": "wt", "target": "ubq and chain A"}, {})
+    steps = P.build_from_history("m", parameters={"structure_file": "/data/1UBQ.pdb"})["steps"]
+    assert steps[1]["args"]["object"] == "{{step:1.object}}"
+    assert steps[2]["args"] == {"mobile": "{{step:2.object}}", "target": "{{step:1.object}} and chain A"}
+    assert steps[0]["args"] == {"path": "{{structure_file}}", "object_name": "ubq"}
+
+
 def test_resume_from_step_reuses_the_earlier_results():
     log = []
     reg = _registry(log)
@@ -297,3 +309,16 @@ def test_update_pipeline_numeric_parameter_replaces_only_its_argument():
     assert P.load("dock")["steps"][0]["args"] == {"object": "A", "exhaustiveness": 8, "num_modes": 8}
     out = reg.call("update_pipeline", {"name": "dock", "add_parameter": {"exhaustiveness": 8}}, None)
     assert out["steps"][0]["args"] == {"object": "A", "exhaustiveness": "{{exhaustiveness}}", "num_modes": 8}
+
+
+def test_import_of_a_non_pipeline_json_and_run_past_the_end_are_clear_errors(tmp_path):
+    """A JSON list crashed import_pipeline with AttributeError; an external run_pipeline with from_step past
+    the end returned an empty step list as if there were nothing to do."""
+    reg = _registry([])
+    bad = tmp_path / "list.json"
+    bad.write_text("[1, 2]")
+    with pytest.raises(ToolError, match="is not a Leonardo pipeline"):
+        reg.call("import_pipeline", {"path": str(bad)}, None)
+    _saved_md(reg)
+    with pytest.raises(ToolError, match="past the end"):
+        reg.call("run_pipeline", {"name": "md", "from_step": 99}, None)

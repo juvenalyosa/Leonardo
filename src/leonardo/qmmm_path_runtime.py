@@ -113,7 +113,8 @@ def _optimize(model, qm_xyz, restraints=(), fmax_kj_mol_ang=2.0, steps=400, tag=
     xyz = atoms.get_positions().copy()
     e, f, terms = model.evaluate(xyz, tag=f"{tag}/final")
     return {"qm_xyz": xyz, "energy_kj_mol": float(terms["energy_kj_mol"]), "converged": converged,
-            "steps": int(opt.get_number_of_steps())}
+            "steps": int(opt.get_number_of_steps()),
+            "max_force_kj_mol_ang": float(np.max(np.linalg.norm(np.asarray(f, dtype=float), axis=1)) / 10.0)}
 
 
 def build_product(model, reactant_xyz, form_bonds, break_bonds, k_kj_mol_ang2=2000.0, stages=4, fmax_kj_mol_ang=2.0,
@@ -143,7 +144,9 @@ def neb_path(model, reactant_xyz, product_xyz, n_images=9, fmax_kj_mol_ang=5.0, 
     for k in range(int(n_images)):
         images.append(_atoms(model, reactant_xyz, tag=f"neb/image_{k + 1:02d}"))
     images.append(_atoms(model, product_xyz, tag="neb/p"))
-    neb = NEB(images, k=float(spring_ev_ang2), climb=True, remove_rotation_and_translation=False,
+    # climbing is switched on only once a plain band has settled and shows an interior maximum: a climbing image
+    # started on the interpolated band (or on a band without a barrier) runs up the slope instead
+    neb = NEB(images, k=float(spring_ev_ang2), climb=False, remove_rotation_and_translation=False,
               method="improvedtangent")
     try:
         neb.interpolate(method="idpp", mic=False)
@@ -155,14 +158,23 @@ def neb_path(model, reactant_xyz, product_xyz, n_images=9, fmax_kj_mol_ang=5.0, 
             pos[model.fixed] = np.asarray(reactant_xyz)[model.fixed]
             img.set_positions(pos)
     opt = FIRE(neb, logfile=os.path.join(model.workdir, "neb.log"))
-    converged = bool(opt.run(fmax=fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=int(steps)))
+    plain_steps = max(1, int(steps) // 3)
+    opt.run(fmax=2.0 * fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=plain_steps)
+    used = int(opt.get_number_of_steps())
+    band = [float(img.get_potential_energy()) for img in images[1:-1]]
+    ends = (float(images[0].get_potential_energy()), float(images[-1].get_potential_energy()))
+    if band and max(band) > max(ends):                     # an interior maximum: refine it by climbing
+        neb.climb = True
+        opt = FIRE(neb, logfile=os.path.join(model.workdir, "neb_climb.log"))
+    converged = bool(opt.run(fmax=fmax_kj_mol_ang / KJ_MOL_PER_EV, steps=max(1, int(steps) - used)))
+    used += int(opt.get_number_of_steps())
     frames = [img.get_positions().copy() for img in images]
     energies = []
     for k, xyz in enumerate(frames):
         e, _f, terms = model.evaluate(xyz, tag=f"neb/final_{k:02d}")
         energies.append(float(terms["energy_kj_mol"]))
     return {"frames": frames, "energies_kj_mol": energies, "converged": converged,
-            "steps": int(opt.get_number_of_steps()), "climbing_image": int(np.argmax(energies))}
+            "steps": used, "climbing": bool(neb.climb), "climbing_image": int(np.argmax(energies))}
 
 
 def _masses(model):
@@ -193,12 +205,17 @@ def irc(model, ts_xyz, mode, step_amu_ang=0.05, max_steps=200, fmax_kj_mol_ang=2
         e = float(terms["energy_kj_mol"])
         rows.append({"s_amu_ang": s, "energy_kj_mol": e, "qm_xyz": xyz.copy()})
         n = 0
+        f_peak = 0.0
         while n < int(max_steps):
             f = np.asarray(f, dtype=float) / 10.0                   # kJ/mol/Angstrom
             if model.fixed:
                 f[model.fixed] = 0.0
-            if float(np.max(np.linalg.norm(f, axis=1))) < float(fmax_kj_mol_ang):
-                break                                               # reached the valley floor
+            f_max = float(np.max(np.linalg.norm(f, axis=1)))
+            # reached the valley floor: small forces once they have passed their maximum (a broad, flat saddle
+            # also has small forces next to the transition state, where the descent has only just begun)
+            if f_max < float(fmax_kj_mol_ang) and f_max < f_peak:
+                break
+            f_peak = max(f_peak, f_max)
             g_mw = f / sqrt_m                                       # mass-weighted force (descent direction)
             norm = float(np.linalg.norm(g_mw))
             if norm < 1.0e-12:
@@ -238,12 +255,20 @@ def reaction_path(model, form_bonds, break_bonds, n_images=9, fmax_kj_mol_ang=2.
     out = {"ok": False, "form_bonds": form_bonds, "break_bonds": break_bonds}
     react = _optimize(model, model.xyz_ref[model.qm], (), fmax_kj_mol_ang=fmax_kj_mol_ang, tag="reactant")
     out["reactant"] = {"energy_kj_mol": react["energy_kj_mol"], "converged": react["converged"],
+                       "max_force_kj_mol_ang": react["max_force_kj_mol_ang"],
                        "check": bond_states(model, react["qm_xyz"], form_bonds, break_bonds)}
     if not out["reactant"]["check"]["reactant_like"]:
         out["error"] = "the optimized starting structure is not a reactant for the given bonds"
         return out
     prod = build_product(model, react["qm_xyz"], form_bonds, break_bonds, fmax_kj_mol_ang=fmax_kj_mol_ang)
-    out["product"] = {"energy_kj_mol": prod["energy_kj_mol"], "converged": prod["converged"], "check": prod["check"]}
+    out["product"] = {"energy_kj_mol": prod["energy_kj_mol"], "converged": prod["converged"],
+                      "max_force_kj_mol_ang": prod["max_force_kj_mol_ang"], "check": prod["check"]}
+    if not prod["converged"] and prod["max_force_kj_mol_ang"] > 5.0 * float(fmax_kj_mol_ang):
+        # the bond distances alone do not make a minimum: on a slope with no product well the optimizer stalls
+        # with the bonds "formed", and the path, TS and IRC would then be searched towards a point that is not one
+        out["error"] = (f"no stable product with the requested bonds: its optimization stopped on a slope (residual "
+                        f"force {prod['max_force_kj_mol_ang']:.1f} kJ/mol/A), not at a minimum")
+        return out
     if not prod["check"]["product_like"]:
         out["error"] = "no stable product with the requested bonds: it relaxed back or to another structure"
         return out
