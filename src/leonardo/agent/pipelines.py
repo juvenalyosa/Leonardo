@@ -174,15 +174,23 @@ def path_for(name):
     return os.path.join(LIB_DIR, slug(name) + ".json")
 
 
-def save(pipeline, export_path=""):
+def save(pipeline, export_path="", overwrite=True):
+    """Write the pipeline to the library (and export_path). overwrite=False: FileExistsError, nothing written,
+    when either file already exists."""
     os.makedirs(LIB_DIR, exist_ok=True)
     path = path_for(pipeline["name"])
-    with open(path, "w") as fh:
-        json.dump(pipeline, fh, indent=1)
+    ep = ""
     if export_path:
         ep = os.path.abspath(os.path.expanduser(export_path))
         if os.path.isdir(ep):
             ep = os.path.join(ep, slug(pipeline["name"]) + ".json")
+    if not overwrite:
+        for target in (path, ep):
+            if target and os.path.exists(target):
+                raise FileExistsError(target)
+    with open(path, "w") as fh:
+        json.dump(pipeline, fh, indent=1)
+    if ep:
         with open(ep, "w") as fh:
             json.dump(pipeline, fh, indent=1)
         return path, ep
