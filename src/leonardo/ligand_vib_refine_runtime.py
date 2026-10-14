@@ -607,7 +607,8 @@ def parse_mopac_vibrational_aux_text(aux_text):
     signed = np.asarray(raw_freq[pos_idx], dtype=float).reshape(-1) if pos_idx.size else np.zeros((0,), dtype=float)
     freq_real = np.where(signed < 0.0, 0.0, signed)
     freq_imag = np.where(signed < 0.0, -signed, 0.0)
-    ir_rel = np.asarray(raw_ir[pos_idx], dtype=float).reshape(-1) if (pos_idx.size and raw_ir.size > int(np.max(pos_idx))) else np.zeros((freq_real.size,), dtype=float)
+    # VIB._T_DIP is the transition dipole; the IR intensity goes as its square (as |dmu|^2 on the MM side)
+    ir_rel = np.square(np.asarray(raw_ir[pos_idx], dtype=float).reshape(-1)) if (pos_idx.size and raw_ir.size > int(np.max(pos_idx))) else np.zeros((freq_real.size,), dtype=float)
     mode_cart = np.zeros((0, 0, 0), dtype=float)
     ncart = int(3 * nat)
     if int(raw_modes.size) >= int(ncart * ncart) and pos_idx.size:

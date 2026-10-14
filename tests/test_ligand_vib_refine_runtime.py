@@ -417,7 +417,8 @@ NORMAL_MODES[081]=
     assert parsed["optimized_coords_ang"].shape == (3, 3)
     assert np.allclose(parsed["freq_cm_real"], np.asarray([1406.50, 2807.52, 2863.37]))
     assert parsed["freq_cm_imag"].shape == (3,)
-    assert np.allclose(parsed["ir_intensity_rel"], np.asarray([0.522, 1.244, 0.391]))
+    # intensity = |transition dipole|^2 (the raw T_DIP values were used before)
+    assert np.allclose(parsed["ir_intensity_rel"], np.asarray([0.522, 1.244, 0.391]) ** 2)
 
 
 def test_mopac_vibrational_parse_keeps_imaginary_mode_of_a_saddle_point(tmp_path):
@@ -443,7 +444,7 @@ def test_mopac_vibrational_parse_keeps_imaginary_mode_of_a_saddle_point(tmp_path
     assert parsed["ok"] is True
     assert np.allclose(parsed["freq_cm_real"], [0.0, 2015.04, 2322.00])
     assert np.allclose(parsed["freq_cm_imag"], [1390.73, 0.0, 0.0])
-    assert np.allclose(parsed["ir_intensity_rel"], [0.300, 0.200, 0.100])
+    assert np.allclose(parsed["ir_intensity_rel"], [0.090, 0.040, 0.010])
     assert parsed["mode_cart_ang"].shape == (3, 3, 3)
 
     opt = {"parsed": parsed, "method": "PM7"}
