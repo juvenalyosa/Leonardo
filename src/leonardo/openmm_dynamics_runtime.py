@@ -1153,10 +1153,11 @@ def _rmsd_nm(mobile, reference):
     ref_c = ref - ref.mean(axis=0)
     cov = mob_c.T @ ref_c
     u, _s, vt = np.linalg.svd(cov)
-    rot = vt.T @ u.T
+    # rows are points: the rotation that maps mob_c onto ref_c acts from the right as u @ vt
+    rot = u @ vt
     if np.linalg.det(rot) < 0.0:
-        vt[-1, :] *= -1.0
-        rot = vt.T @ u.T
+        u[:, -1] *= -1.0
+        rot = u @ vt
     aligned = mob_c @ rot
     diff = aligned - ref_c
     return float(np.sqrt(np.mean(np.sum(diff * diff, axis=1))))

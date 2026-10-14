@@ -248,3 +248,29 @@ def test_openmm_alanine_cv_suite_smoke_plots_all_presets(tmp_path):
     assert (tmp_path / "alanine_cv" / "alanine_cv_all_presets_histograms.png").is_file()
     for path in out["plot_paths"]["by_type_timeseries"].values():
         assert os.path.isfile(path)
+
+
+def test_rmsd_cv_is_zero_for_a_rigidly_rotated_copy():
+    # the backbone_rmsd CV superposes before measuring: a rotated + translated copy has RMSD 0, and a
+    # distorted copy keeps exactly its own RMSD
+    import math
+
+    import numpy as np
+
+    from openmm_dynamics_runtime import _rmsd_nm
+
+    rng = np.random.default_rng(7)
+    ref = rng.normal(size=(12, 3))
+    a, b = math.radians(50.0), math.radians(-35.0)
+    rz = np.array([[math.cos(a), -math.sin(a), 0.0], [math.sin(a), math.cos(a), 0.0], [0.0, 0.0, 1.0]])
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, math.cos(b), -math.sin(b)], [0.0, math.sin(b), math.cos(b)]])
+    rot = rz @ rx
+    moved = ref @ rot.T + np.array([0.4, -1.1, 2.0])
+    assert _rmsd_nm(moved, ref) < 1e-9
+    assert _rmsd_nm(ref, moved) < 1e-9
+    noise = rng.normal(scale=0.05, size=ref.shape)
+    noise -= noise.mean(axis=0)
+    expected = float(np.sqrt(np.mean(np.sum(noise * noise, axis=1))))
+    assert _rmsd_nm((ref + noise) @ rot.T, ref) <= expected + 1e-9
+    # a mirror image cannot be superposed by a proper rotation
+    assert _rmsd_nm(ref * np.array([1.0, 1.0, -1.0]), ref) > 0.1
