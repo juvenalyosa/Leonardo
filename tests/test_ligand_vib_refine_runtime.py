@@ -421,6 +421,18 @@ NORMAL_MODES[081]=
     assert np.allclose(parsed["ir_intensity_rel"], np.asarray([0.522, 1.244, 0.391]) ** 2)
 
 
+def test_psi4_stationary_runs_an_open_shell_molecule_with_an_unrestricted_reference(tmp_path):
+    # OH radical (doublet), HF/STO-3G: a few seconds. Without UHF Psi4 stops: "RHF reference is only for singlets".
+    pytest.importorskip("psi4")
+    import ligand_vib_refine_runtime as L
+
+    atoms = [{"element": "O", "x": 0.0, "y": 0.0, "z": 0.0}, {"element": "H", "x": 0.97, "y": 0.0, "z": 0.0}]
+    res = L._run_psi4_stationary_from_atoms(atoms, str(tmp_path), method="hf", basis="sto-3g", multiplicity=2,
+                                            run_frequency=False, threads=1, memory_gb=1)
+    assert res["ok"] is True, res.get("error")
+    assert res["multiplicity"] == 2 and res["energy_opt_hartree"] < -74.0
+
+
 def test_mopac_vibrational_parse_keeps_imaginary_mode_of_a_saddle_point(tmp_path):
     # Real MOPAC 23 "PM7 FORCE AUX" output at the HCN <-> HNC transition state: one imaginary mode
     # (-1390.73) among the 3N-6 vibrations, followed by the six translations/rotations.

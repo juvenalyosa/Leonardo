@@ -15,6 +15,7 @@ from .psi4_runtime import (
     psi4_guess_multiplicity_from_atoms,
     psi4_load_vib_data,  # noqa: F401 - compatibility re-export
     psi4_prepare_ir_spectrum,  # noqa: F401 - compatibility re-export
+    psi4_reference_for_multiplicity,
 )
 
 AVOGADRO = 6.02214076e23
@@ -846,6 +847,10 @@ def _run_psi4_stationary_from_atoms(
                 "d_convergence": 1.0e-8,
                 "write_trajectory": True,
             }
+            # Psi4's default RHF/RKS stops on any non-singlet ("RHF reference is only for singlets")
+            reference = psi4_reference_for_multiplicity(method, multiplicity=int(max(1, multiplicity)))
+            if reference:
+                opts["reference"] = reference
             if bool(cartesian):
                 # Retry flat/problematic systems in Cartesian coordinates if redundant internals fail.
                 opts["opt_coordinates"] = "cartesian"
