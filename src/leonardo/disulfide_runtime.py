@@ -6,7 +6,7 @@ disulfide geometry, and estimate how much the new cross-link stiffens the protei
    not Gly/Pro, with Calpha–Calpha 4.0–7.5 A and Cbeta–Cbeta 3.2–5.2 A, ranked by closeness to the typical
    5.6 A / 3.8 A of natural disulfides. The window is wider than natural disulfides (4.4–6.8 / 3.45–4.5 A) on
    purpose: a pair slightly outside often forms a good disulfide after the restrained relaxation, and the strict
-   geometry filters of step 3 decide.
+   geometry filters of step 3 decide. Cys already in a disulfide and residues with insertion codes are skipped.
 2. Build: both residues become Cys (PDBFixer), the S–S bond is added to the topology (CYX) and the model is
    minimized with Amber14 in implicit solvent while every backbone heavy atom is restrained to its original
    position (side chains are free). Seeded, hydrogens placed on the Reference platform and minimized on the CPU
@@ -61,13 +61,32 @@ def _residues(pdb_path):
     return out
 
 
+def _unusable(all_res):
+    """Residues a design cannot use: a Cys already in a disulfide (its SG would get a second S–S bond), and residues
+    whose number is shared through an insertion code (PDBFixer addresses residues by chain and number only)."""
+    sg = [(c, i, x["SG"]) for c, i, n, x in all_res if n == "CYS" and "SG" in x]
+    bad = {(c, i) for c, i, p in sg for c2, i2, q in sg if (c, i) != (c2, i2) and np.linalg.norm(p - q) < 2.5}
+    count = {}
+    for c, i, _n, _x in all_res:
+        count[(c, i.rstrip(_ICODES))] = count.get((c, i.rstrip(_ICODES)), 0) + 1
+    bad |= {(c, i) for c, i, _n, _x in all_res if count[(c, i.rstrip(_ICODES))] > 1 or i != i.rstrip(_ICODES)}
+    return bad
+
+
+_ICODES = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
 def find_candidates(pdb_path, chain="", min_separation=3, max_candidates=20):
-    res = [r for r in _residues(pdb_path) if not chain or r[0] == chain]
+    all_res = _residues(pdb_path)
+    bad = _unusable(all_res)
+    res = [r for r in all_res if not chain or r[0] == chain]
     cands = []
     for a in range(len(res)):
         for b in range(a + 1, len(res)):
             (ca_, ia, na, xa), (cb_, ib, nb, xb) = res[a], res[b]
             if na in _SKIP or nb in _SKIP or not all(k in x for x in (xa, xb) for k in ("CA", "CB")):
+                continue
+            if (ca_, ia) in bad or (cb_, ib) in bad:
                 continue
             if na == "CYS" and nb == "CYS":
                 continue                                  # already a (possible) disulfide
