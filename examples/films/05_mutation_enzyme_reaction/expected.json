@@ -26,13 +26,13 @@
    "path": "2.barrier_kj_mol",
    "kind": "abs",
    "tol": 2.0,
-   "value": 33.83327
+   "value": 33.8132
   },
   "wt_reaction_energy_kj_mol": {
    "path": "2.reaction_energy_kj_mol",
    "kind": "abs",
    "tol": 4.0,
-   "value": -101.07969
+   "value": -101.1073
   },
   "w125a_ok": {
    "path": "4.ok",
@@ -59,13 +59,13 @@
    "path": "4.barrier_kj_mol",
    "kind": "abs",
    "tol": 2.0,
-   "value": 43.15791
+   "value": 43.18184
   },
   "w125a_reaction_energy_kj_mol": {
    "path": "4.reaction_energy_kj_mol",
    "kind": "abs",
    "tol": 4.0,
-   "value": -81.7119
+   "value": -81.70387
   },
   "mutant_max_shift_outside_A": {
    "path": "3.max_shift_outside_mutation_A",
@@ -78,7 +78,7 @@
   "python": "3.11.14",
   "platform": "macOS-26.6.2-arm64-arm-64bit",
   "machine": "arm64",
-  "date": "2026-10-14T13:18:54",
+  "date": "2026-10-14T14:50:00",
   "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
   "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
   "openmm": "8.4",

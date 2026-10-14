@@ -188,27 +188,35 @@ def irc(model, ts_xyz, mode, step_amu_ang=0.05, max_steps=200, fmax_kj_mol_ang=2
         xyz = np.asarray(ts_xyz, dtype=float) + sign * float(initial_step_ang) * mode
         s = float(initial_step_ang) * float(np.linalg.norm(sqrt_m * mode))
         rows = []
-        prev_e = None
-        for n in range(int(max_steps)):
-            _e, f, terms = model.evaluate(xyz, tag=f"irc/{label}_{n:03d}")
-            e = float(terms["energy_kj_mol"])
-            if prev_e is not None and e > prev_e + 1.0e-3:          # stepped past the valley floor: stop before it
-                break
-            rows.append({"s_amu_ang": s, "energy_kj_mol": e, "qm_xyz": xyz.copy()})
+        step = float(step_amu_ang)
+        _e, f, terms = model.evaluate(xyz, tag=f"irc/{label}_000")
+        e = float(terms["energy_kj_mol"])
+        rows.append({"s_amu_ang": s, "energy_kj_mol": e, "qm_xyz": xyz.copy()})
+        n = 0
+        while n < int(max_steps):
             f = np.asarray(f, dtype=float) / 10.0                   # kJ/mol/Angstrom
             if model.fixed:
                 f[model.fixed] = 0.0
-            fmax = float(np.max(np.linalg.norm(f, axis=1)))
-            if fmax < float(fmax_kj_mol_ang):
-                break
-            prev_e = e
+            if float(np.max(np.linalg.norm(f, axis=1))) < float(fmax_kj_mol_ang):
+                break                                               # reached the valley floor
             g_mw = f / sqrt_m                                       # mass-weighted force (descent direction)
             norm = float(np.linalg.norm(g_mw))
             if norm < 1.0e-12:
                 break
-            dq = float(step_amu_ang) * g_mw / norm                  # step of fixed mass-weighted length
-            xyz = xyz + dq / sqrt_m
-            s += float(step_amu_ang)
+            trial = xyz + (step * g_mw / norm) / sqrt_m             # step of fixed mass-weighted length
+            n += 1
+            _e, f_new, terms = model.evaluate(trial, tag=f"irc/{label}_{n:03d}")
+            e_new = float(terms["energy_kj_mol"])
+            if e_new > e + 1.0e-3:
+                # overshoot across the valley (or SCF noise on a flat stretch): halve the step and retry
+                step *= 0.5
+                if step < 0.01 * float(step_amu_ang):
+                    break
+                continue
+            xyz, e, f = trial, e_new, f_new
+            s += step
+            rows.append({"s_amu_ang": s, "energy_kj_mol": e, "qm_xyz": xyz.copy()})
+            step = min(float(step_amu_ang), step * 1.5)              # recover the step length after a cut
         end = _optimize(model, rows[-1]["qm_xyz"], (), fmax_kj_mol_ang=fmax_kj_mol_ang, steps=400,
                         tag=f"irc/{label}_min")
         branches[label] = {"rows": rows, "minimum": end}
@@ -277,6 +285,22 @@ def reaction_path(model, form_bonds, break_bonds, n_images=9, fmax_kj_mol_ang=2.
                    for r in path["path"]), key=lambda r: r["s_amu_ang"])
     out["irc"] = {"connects_reactant_and_product": connects, "reactant_end": ends[r_side], "product_end": ends[p_side],
                   "n_points": len(rows), "rows": rows}
+    # the IRC geometries from the reactant end to the product end (for animations and analysis), completed at both
+    # ends by the optimized minima the IRC leads to (where the valley is too flat for steepest descent to finish)
+    frames = sorted(((flip * r["s_amu_ang"], r["qm_xyz"], r["energy_kj_mol"]) for r in path["path"]),
+                    key=lambda t: t[0])
+    sqrt_m = np.sqrt(_masses(model))[:, None]
+    for side, at_start in ((r_side, True), (p_side, False)):
+        mini = path[f"{side}_minimum"]
+        edge = frames[0] if at_start else frames[-1]
+        gap = float(np.linalg.norm(sqrt_m * (np.asarray(mini["qm_xyz"]) - np.asarray(edge[1]))))
+        if gap > 1.0e-6:
+            point = (edge[0] - gap if at_start else edge[0] + gap, np.asarray(mini["qm_xyz"]),
+                     float(mini["energy_kj_mol"]))
+            frames = [point] + frames if at_start else frames + [point]
+    out["irc_frames"] = {"s_amu_ang": [f[0] for f in frames], "qm_xyz": [np.asarray(f[1]) for f in frames],
+                         "energy_rel_reactant_kj_mol": [f[2] - e_r_irc for f in frames],
+                         "ts_index": int(np.argmin([abs(f[0]) for f in frames]))}
     out.update({
         "ok": connects,
         "barrier_kj_mol": e_ts - e_r_irc, "reverse_barrier_kj_mol": e_ts - e_p_irc,

@@ -26,8 +26,8 @@ It takes about 5 minutes on a laptop. It needs no API key.
 3. The transition state is refined, and its frequencies must show exactly one imaginary mode.
 4. The IRC from the transition state must connect that reactant to that product.
 
-**Model:** MOPAC PM7 for the dichloroethane and the Asp124 side chain (charge −1), embedded in the fixed Amber14
-protein.
+**Model:** MOPAC PM7 for the dichloroethane and the whole Asp124 residue (20 atoms, charge −1), embedded in
+the fixed Amber14 protein.
 
 **The mutant is built locally:** only residue 125 is rebuilt, and every other atom keeps its exact position,
 substrate and crystal waters included. The two QM/MM environments therefore differ only at the mutation. An
@@ -39,12 +39,12 @@ went wrong: chloride left without the C–O bond forming.
 
 | | Wild type | W125A |
 |---|---|---|
-| Barrier (from the IRC reactant minimum) | 33.8 kJ/mol = **8.09 kcal/mol** | 43.2 kJ/mol = **10.32 kcal/mol** |
+| Barrier (from the IRC reactant minimum) | 33.8 kJ/mol = **8.08 kcal/mol** | 43.2 kJ/mol = **10.32 kcal/mol** |
 | Transition state | one imaginary mode, 404i cm⁻¹ | one imaginary mode, 425i cm⁻¹ |
 | IRC connects reactant and product | yes | yes |
 | Reaction energy | −101.1 kJ/mol | −81.7 kJ/mol |
 
-Removing Trp125, part of the halide-binding site, **raises the barrier by 2.2 kcal/mol** and makes the reaction
+Removing Trp125, part of the halide-binding site, **raises the barrier by 2.24 kcal/mol** and makes the reaction
 less exothermic. Losing the stabilization of the leaving chloride gives exactly this effect. The film's scripted
 run gave 8.41 → 11.13 kcal/mol. These are potential energies with the protein fixed, not free energies.
 

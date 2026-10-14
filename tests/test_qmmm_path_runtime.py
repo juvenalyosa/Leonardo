@@ -82,3 +82,20 @@ def test_a_start_that_is_not_the_reactant_is_reported(tmp_path):
     model = ProtonTransfer(tmp_path)
     out = P.reaction_path(model, form_bonds=[(0, 1)], break_bonds=[(1, 2)])     # bonds given the wrong way round
     assert not out["ok"] and "not a reactant" in out["error"]
+
+
+def test_irc_frames_run_from_reactant_through_the_saddle_to_product(result):
+    frames = result["irc_frames"]
+    k = frames["ts_index"]
+    e = frames["energy_rel_reactant_kj_mol"]
+    assert len(frames["qm_xyz"]) == len(e) == len(frames["s_amu_ang"]) and 0 < k < len(e) - 1
+    assert abs(e[k] - result["barrier_kj_mol"]) < 1.0 and abs(e[0]) < 1.0
+    h_first, h_last = frames["qm_xyz"][0][1], frames["qm_xyz"][-1][1]
+    assert h_first[0] < 1.5 < h_last[0]          # the proton starts on oxygen A and ends on oxygen C
+
+
+def test_irc_follows_the_path_with_many_points_not_a_jump_to_the_minima(result):
+    rows = result["irc"]["rows"]
+    assert len(rows) >= 15
+    s = [r["s_amu_ang"] for r in rows]
+    assert max(abs(b - a) for a, b in zip(s, s[1:])) <= 0.051     # no step longer than the IRC step

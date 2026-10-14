@@ -107,7 +107,8 @@ def _angle(a, b, c):
     return float(np.degrees(np.arccos(np.clip(np.dot(u, v) / (np.linalg.norm(u) * np.linalg.norm(v)), -1, 1))))
 
 
-def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, max_iterations=3000):
+def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, max_iterations=3000,
+                 snapshots_every=0):
     """Both residues -> Cys, S–S bond, restrained Amber14/OBC2 minimization. Returns the refined geometry."""
     import openmm as mm
     from openmm import app, unit
@@ -156,7 +157,19 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     except Exception:
         ctx = mm.Context(system, mm.VerletIntegrator(0.001), platform)
     ctx.setPositions(start)
-    mm.LocalEnergyMinimizer.minimize(ctx, 1.0, int(max_iterations))
+    snapshots = []
+    if int(snapshots_every) > 0:
+        # a reporter only watches the minimizer: the path and the final structure are the same as without it
+        class _Snapshots(mm.MinimizationReporter):
+            def report(self, iteration, x, grad, args):
+                if iteration % int(snapshots_every) == 0:
+                    snapshots.append((int(iteration), np.array(x, dtype=float).reshape((-1, 3)) * 10.0,
+                                      float(args["system energy"]) if "system energy" in args else float("nan")))
+                return False
+
+        mm.LocalEnergyMinimizer.minimize(ctx, 1.0, int(max_iterations), _Snapshots())
+    else:
+        mm.LocalEnergyMinimizer.minimize(ctx, 1.0, int(max_iterations))
     state = ctx.getState(getPositions=True, getEnergy=True)
     xyz = np.array(state.getPositions(asNumpy=True).value_in_unit(unit.angstrom))
     x0 = np.array([[v.value_in_unit(unit.angstrom) for v in p] for p in start])
@@ -174,6 +187,12 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
             "chi3_deg": _torsion(g["cb1"], g["sg1"], g["sg2"], g["cb2"]),
             "ca_rmsd_A": ca_rmsd, "model_pdb": out_pdb,
             "minimized_energy_kj_mol": float(state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole))}
+    if snapshots:
+        geom["snapshots"] = {"iteration": [s_[0] for s_ in snapshots], "xyz_A": [s_[1] for s_ in snapshots],
+                             "energy_kj_mol": [s_[2] for s_ in snapshots], "start_xyz_A": x0,
+                             "final_xyz_A": xyz,
+                             "atoms": [(a.residue.chain.id, str(a.residue.id), a.residue.name, a.name,
+                                        a.element.symbol if a.element else "") for a in modeller.topology.atoms()]}
     return geom
 
 
@@ -187,24 +206,33 @@ def passes(geom, filters=FILTERS):
     return all(checks.values()), checks
 
 
-def gnm_rigidity(ca_xyz, pair, cutoff=GNM_CUTOFF_A, ss_spring=SS_SPRING):
-    """Gaussian network model with and without an extra spring between residues ``pair`` (indices into ca_xyz).
-    Returns the relative motion of the pair, <(dR_i - dR_j)^2>, and per-residue mean-square fluctuations."""
+def gnm_network(ca_xyz, pair, cutoff=GNM_CUTOFF_A, ss_spring=SS_SPRING):
+    """Kirchhoff matrices and covariances (pseudo-inverses) of the Calpha Gaussian network without and with an
+    extra spring between residues ``pair`` (indices into ca_xyz)."""
     x = np.asarray(ca_xyz, dtype=float)
     d = np.linalg.norm(x[:, None] - x[None], axis=2)
     contact = ((d < float(cutoff)) & (d > 0)).astype(float)
 
-    def solve(extra):
+    def kirchhoff(extra):
         k = -contact.copy()
         i, j = pair
         k[i, j] -= extra
         k[j, i] -= extra
         np.fill_diagonal(k, 0.0)
         np.fill_diagonal(k, -k.sum(axis=1))
-        g = np.linalg.pinv(k)                         # one zero mode (rigid translation) is projected out
-        return g
+        return k
 
-    g0, g1 = solve(0.0), solve(float(ss_spring))
+    k0, k1 = kirchhoff(0.0), kirchhoff(float(ss_spring))
+    # one zero mode (rigid translation) is projected out by the pseudo-inverse
+    return {"kirchhoff_original": k0, "kirchhoff_design": k1, "covariance_original": np.linalg.pinv(k0),
+            "covariance_design": np.linalg.pinv(k1)}
+
+
+def gnm_rigidity(ca_xyz, pair, cutoff=GNM_CUTOFF_A, ss_spring=SS_SPRING):
+    """Gaussian network model with and without an extra spring between residues ``pair`` (indices into ca_xyz).
+    Returns the relative motion of the pair, <(dR_i - dR_j)^2>, and per-residue mean-square fluctuations."""
+    net = gnm_network(ca_xyz, pair, cutoff, ss_spring)
+    g0, g1 = net["covariance_original"], net["covariance_design"]
     i, j = pair
     rel0 = g0[i, i] + g0[j, j] - 2 * g0[i, j]
     rel1 = g1[i, i] + g1[j, j] - 2 * g1[i, j]
@@ -213,6 +241,7 @@ def gnm_rigidity(ca_xyz, pair, cutoff=GNM_CUTOFF_A, ss_spring=SS_SPRING):
             "mean_fluctuation_change_pct": float(100.0 * (np.mean(np.sqrt(fl1)) - np.mean(np.sqrt(fl0)))
                                                  / np.mean(np.sqrt(fl0))),
             "per_residue_fluctuation_ratio": [float(v) for v in np.sqrt(fl1 / fl0)],
+            "pair_variance_original": float(rel0), "pair_variance_design": float(rel1),
             "cutoff_A": float(cutoff), "ss_spring": float(ss_spring)}
 
 

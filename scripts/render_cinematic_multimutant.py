@@ -186,7 +186,9 @@ def showcase(data,t,plots,preview=False):
         txt(d,(x,849),label,16,TEAL,True);txt(d,(x-4,880),value,54,bold=True)
         width=d.textbbox((0,0),value,font=style.font(54,True))[2];txt(d,(x+width+6,903),unit,24,MUTED)
     txt(d,(87,965),f'SAVED MINIMIZATION BATCH  {idx:02d} / 30',17,MUTED)
-    status='FINAL SCREEN: RETAINED · ALL FOUR CHECKS PASS' if row['passed_geometry_filter'] else 'FINAL SCREEN: NOT RETAINED · TORSION OUTSIDE WINDOW'
+    status=('FINAL SCREEN: PASSES · ALL FOUR CHECKS' if row['passed_geometry_filter'] else
+            'FINAL SCREEN: FAILS · '+' AND '.join(n for n,ok in zip(['S–S DISTANCE','C–S–S ANGLES','TORSION','Cα SHIFT'],
+                                                                    row['geometry_checks']) if not ok)+' OUTSIDE WINDOW')
     txt(d,(1091,917),status,17,GOLD if row['passed_geometry_filter'] else '#A07565',True)
     txt(d,(1091,953),'Window for |χ3|: 65–115°',19,MUTED)
     footer(im,t,'Amber14 / OBC-II · restrained minimization · saved structures, not a dynamics trajectory')
@@ -199,10 +201,14 @@ def showcase(data,t,plots,preview=False):
 def selection(data,t,matrix,preview=False):
     im=base(t,'03 / COMPARE · THE COMPLETE STRUCTURAL SCREEN','');d=ImageDraw.Draw(im)
     headline(d,'','A good bond length is only the beginning.')
-    txt(d,(81,235),'All five retain similar backbone geometry. One passes every check.',24,MUTED)
+    n_pass=sum(r['passed_geometry_filter'] for r in data['mutants'])
+    count={1:'One passes',2:'Two pass',3:'Three pass',4:'Four pass',5:'All five pass'}.get(n_pass,'None passes')
+    txt(d,(81,235),f'All five retain similar backbone geometry. {count} every check.',24,MUTED)
     im.paste(matrix.resize((1315,664),Image.Resampling.LANCZOS),(505,287))
     model=fit(asset('wide_4.png',True),(436,468));im.paste(model,(85+(436-model.width)//2,331+(468-model.height)//2))
-    d=ImageDraw.Draw(im);txt(d,(87,824),'K10C/E56C',36,bold=True);txt(d,(89,879),'01 / 05  RETAINED',20,GOLD,True)
+    chosen=data['mutants'][-1]
+    tag=f'SELECTED · {n_pass} OF 05 PASS' if n_pass>1 else '01 / 05  RETAINED'
+    d=ImageDraw.Draw(im);txt(d,(87,824),chosen['label'],36,bold=True);txt(d,(89,879),tag,20,GOLD,True)
     footer(im,t,'Selection applies to structural compatibility · experimental stabilization has not been measured')
     return im
 
@@ -214,14 +220,15 @@ def finalist(data,t,mobility,preview=False):
     im.paste(soften(mol,top=25,bottom=30),(32,264))
     d=ImageDraw.Draw(im);d.rectangle((1050,238,1920,999),fill='white')
     headline(d,'','One connection. A change in local motion.')
-    txt(d,(85,259),'K10C/E56C · CONTACT-NETWORK VIEW',18,GOLD,True)
+    txt(d,(85,259),f"{data['mutants'][-1]['label']} · CONTACT-NETWORK VIEW",18,GOLD,True)
     txt(d,(1090,277),'The selected design, quantified.',28,bold=True)
     txt(d,(1090,322),'Gaussian network · conditional prediction',20,MUTED)
     im.paste(mobility.resize((805,574),Image.Resampling.LANCZOS),(1047,348))
     d=ImageDraw.Draw(im);d.rectangle((0,835,1048,999),fill='white')
     txt(d,(86,852),'LOCAL RELATIVE RMS MOTION',17,TEAL,True)
     chosen=data['mutants'][-1]
-    txt(d,(78,878),f'−{chosen["local_rms_reduction_percent"]:.0f}%',71,bold=True);txt(d,(320,923),'between residues 10 and 56',24,MUTED)
+    txt(d,(78,878),f'−{chosen["local_rms_reduction_percent"]:.0f}%',71,bold=True)
+    txt(d,(320,923),f'between residues {chosen["pair"][0]} and {chosen["pair"][1]}',24,MUTED)
     txt(d,(86,969),f'Whole-domain RMS reduction: {chosen["global_rms_reduction_percent"]:.2f}% in the same model',20,MUTED)
     txt(d,(1090,950),'7.5 Å contacts · additional spring stiffness 10×',18,MUTED)
     footer(im,t,'Harmonic rigidity prediction · neither folding ΔΔG nor a measured increase in thermal stability')
@@ -233,14 +240,17 @@ def outro(data,t,preview=False):
     mol=asset('wide_4.png',True);size=int(640+20*ease((t-44)/4));mol=fit(mol,(size,650));im.paste(mol,(1170+(650-mol.width)//2,270+(650-mol.height)//2))
     d=ImageDraw.Draw(im)
     txt(d,(78,287),'Explore more.',76,bold=True);txt(d,(78,383),'Choose with evidence.',76,bold=True)
-    txt(d,(85,515),'FIVE DESIGNS. ONE STRUCTURAL CANDIDATE.',21,TEAL,True)
-    txt(d,(83,563),'K10C/E56C',45,bold=True)
+    n_pass=sum(r['passed_geometry_filter'] for r in data['mutants'])
+    txt(d,(85,515),'FIVE DESIGNS. ONE STRUCTURAL CANDIDATE.' if n_pass<=1 else
+        f'FIVE DESIGNS. {n_pass} PASS. THE BEST |χ3| IS SELECTED.',21,TEAL,True)
+    txt(d,(83,563),data['mutants'][-1]['label'],45,bold=True)
     txt(d,(86,633),'A proposed molecular lock for the GB1 fold.',26,MUTED)
     for q,row in enumerate(data['mutants']):
         x=87+q*204;color=GOLD if q==4 else '#A7BCC3'
         d.line((x,752,x+169,752),fill=color,width=3 if q==4 else 1)
         txt(d,(x,774),row['label'],20,color,True)
-        txt(d,(x,812),'RETAINED' if q==4 else 'SCREENED',14,color)
+        txt(d,(x,812),('SELECTED' if n_pass>1 else 'RETAINED') if q==4 else
+            ('PASSES' if row['passed_geometry_filter'] and n_pass>1 else 'SCREENED'),14,color)
     txt(d,(87,906),'LEONARDO  /  MOLECULAR DESIGN, MADE VISIBLE',22,bold=True)
     footer(im,t,'A computational proposal for experimental testing · five structures, comparative plots and reproducible data')
     return im
@@ -249,7 +259,16 @@ def outro(data,t,preview=False):
 def render(preview=False,start=0,stop=FRAMES):
     FOLDER.mkdir(exist_ok=True);data=load();plots=[torsion_plot(data,q) for q in range(5)];matrix=matrix_plot(data)
     # Same normalization and model as the previously verified single-candidate film.
-    mobility=single.plot(single.load())
+    chosen=data['mutants'][-1]
+    if 'pair_variance_original' in chosen:
+        # the selected design's own network model (same normalization as the single-design film)
+        net={'resids':np.arange(1,len(data['reference']['mobility'])+1),'original_mobility':data['reference']['mobility'],
+             'design_mobility':chosen['network']['mobility']}
+        mobility=single.plot({'network':net,'residue_pair':chosen['pair'],
+                              'pair_variance_original':chosen['pair_variance_original'],
+                              'pair_variance_design':chosen['pair_variance_design']})
+    else:
+        mobility=single.plot(single.load())
     frames=PREVIEW if preview else range(start,min(stop,FRAMES));started=time.perf_counter()
     for f in frames:
         dest=FOLDER/f'frame_{f:05d}.png'
