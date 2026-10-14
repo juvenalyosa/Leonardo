@@ -402,7 +402,9 @@ def register(reg):
 
             syms, xyz, formal = _molecule_from_selection(selection)
             q = int(formal if charge is None else charge)
-            mult = int(multiplicity or 1)
+            # a radical (odd electron count) cannot be a singlet: Psi4 rejects the molecule outright
+            n_el = sum(qmviz._Z.get(s, 0) for s in syms) - q
+            mult = int(multiplicity or (2 if n_el % 2 else 1))
             geometry = f"{q} {mult}\n" + "\n".join(f"{s} {x:.6f} {y:.6f} {z:.6f}" for s, (x, y, z) in zip(syms, xyz)) \
                 + "\nsymmetry c1\nno_reorient\nno_com\n"
             workdir = os.path.join(ctx.workspace("tddft"), time.strftime("uv_%Y%m%d_%H%M%S"))

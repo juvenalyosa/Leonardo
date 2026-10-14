@@ -5,6 +5,10 @@ import numpy as np
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+QtWidgets = pytest.importorskip("pymol.Qt").QtWidgets
+
+from leonardo.agent.tools import AgentContext, build_registry, mopac, qmanalysis  # noqa: E402
+from leonardo.agent.tools import psi4 as psi4_tool  # noqa: E402
 from leonardo.openmm_qmmm_runtime import add_missing_terminal_oxt, compose_openmm_input_pdb  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(__file__), "data", "components")
@@ -47,3 +51,78 @@ def test_oxt_not_duplicated_and_caps_and_ligands_left_alone():
     assert add_missing_terminal_oxt(capped)[1] == []
     ligand = ["HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C"]
     assert add_missing_terminal_oxt(ligand)[1] == []
+
+
+# ------------------------------------------------------------------ Psi4 charge / multiplicity
+@pytest.fixture(scope="module")
+def dialog(tmp_path_factory):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    import code_v2
+    from pymol import cmd
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    cmd.reinitialize()
+    folder = tmp_path_factory.mktemp("mols")
+    for name, smi in (("acetate", "CC(=O)[O-]"), ("methyl", "[CH3]"), ("ethanol", "CCO"), ("ammonium", "[NH4+]")):
+        mol = Chem.AddHs(Chem.MolFromSmiles(smi))
+        AllChem.EmbedMolecule(mol, randomSeed=7)
+        Chem.MolToMolFile(mol, str(folder / f"{name}.sdf"))
+        cmd.load(str(folder / f"{name}.sdf"), name)
+    dlg = code_v2.ProtLigInteractDialog()
+    work = str(tmp_path_factory.mktemp("ws"))
+    dlg._dock_workspace_dir = lambda: work
+    dlg._save_settings = lambda *a, **k: None
+    dlg._on_psi4_run = lambda *a, **k: None          # the widgets are what Leonardo's run reads
+    app.processEvents()
+    yield dlg
+    dlg.close()
+
+
+def _psi4_spin(dialog, **args):
+    ctx = AgentContext(dialog)
+    build_registry(ctx).call("run_psi4", dict({"operation": "energy", "method": "hf", "basis": "sto-3g"}, **args), ctx)
+    auto = dialog.cb_psi4_auto_spin.isChecked()
+    if auto:      # what Leonardo's run would use with auto charge/multiplicity on
+        atoms, _sel, _fb = dialog._psi4_collect_atoms_from_active_selection(state=1)
+        return dialog._psi4_auto_charge_multiplicity(atoms=atoms, quiet=True)[:2]
+    return dialog.spin_psi4_charge.value(), dialog.spin_psi4_mult.value()
+
+
+def test_psi4_charge_and_multiplicity_from_the_molecule_not_the_last_job(dialog):
+    assert _psi4_spin(dialog, object="ammonium", charge=1, multiplicity=1) == (1, 1)
+    # before: auto mode reused the +1 left in the spin box -> ethanol ran as a cation radical (1, 2)
+    assert _psi4_spin(dialog, object="ethanol") == (0, 1)
+    assert _psi4_spin(dialog, object="acetate") == (-1, 1)          # formal charge of the SDF; before (0, 2)
+    assert _psi4_spin(dialog, object="methyl") == (0, 2)
+    assert _psi4_spin(dialog, object="acetate", charge=-1) == (-1, 1)
+
+
+def test_psi4_orbital_energies_of_an_open_shell_job(tmp_path):
+    (tmp_path / "psi4_run.out").write_text(
+        "    Alpha Occupied:\n\n       1A    -11.005535     2A     -0.904490\n       5A     -0.356248\n\n"
+        "    Alpha Virtual:\n\n       6A      0.626225     7A      0.765629\n\n"
+        "    Beta Occupied:\n\n       1A    -10.974161     4A     -0.520292\n\n"
+        "    Beta Virtual:\n\n       5A      0.334958\n\n    Final Occupation by Irrep:\n")
+    e = psi4_tool._orbital_energies(str(tmp_path))          # before: {} (only "Doubly Occupied" was read)
+    assert e["homo_hartree"] == -0.356248 and e["lumo_hartree"] == 0.626225
+
+
+# ------------------------------------------------------------------ open-shell UV-vis
+@pytest.mark.skipif(not mopac.mopac_executable(), reason="MOPAC not installed")
+def test_mopac_radical_with_uv_keeps_its_results(tmp_path):
+    coords = [[0.0, 0.0, 0.0], [1.08, 0.0, 0.0], [-0.54, 0.935, 0.0], [-0.54, -0.935, 0.0]]
+    res = mopac.run_mopac_job(mopac.mopac_executable(), str(tmp_path), ["C", "H", "H", "H"], coords, "PM7", 0, 2,
+                              None, False, False, True, 6, {})
+    # before: "UHF and RHF cannot both be used" from the CIS step failed the whole job
+    assert res["open_shell"] and "uv_states" not in res and "closed-shell" in res["uv_note"]
+
+
+def test_tddft_on_a_radical_selection_uses_a_doublet(dialog, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(qmanalysis, "_psi4_child_job", lambda ctx, kind, workdir, args, collect, desc: seen.update(args))
+    ctx = AgentContext(dialog)
+    build_registry(ctx).call("run_uv_spectrum", {"selection": "methyl", "basis": "sto-3g", "states": 2}, ctx)
+    assert seen["geometry"].startswith("0 2\n")          # before: "0 1", which Psi4 rejects
+    build_registry(ctx).call("run_uv_spectrum", {"selection": "acetate", "basis": "sto-3g", "states": 2}, ctx)
+    assert seen["geometry"].startswith("-1 1\n")

@@ -30,6 +30,23 @@ def _check_dispersion(method):
                         "dispersion) or the functional without the -D suffix.")
 
 
+def _selection_charge_electrons(selection):
+    """(sum of PyMOL formal charges, neutral electron count) of a selection; (0, None) when it cannot be read."""
+    from pymol import cmd
+
+    from .qmviz import _Z
+
+    try:
+        atoms = cmd.get_model(str(selection)).atom if selection else []
+    except Exception:
+        atoms = []
+    if not atoms:
+        return 0, None
+    charge = int(round(sum(float(getattr(a, "formal_charge", 0) or 0) for a in atoms)))
+    z = [_Z.get(str(a.symbol).strip().capitalize(), 0) for a in atoms]
+    return charge, (sum(z) if all(z) else None)
+
+
 def register(reg):
     register_cluster(reg)
 
@@ -107,10 +124,16 @@ def register(reg):
         set_combo(dlg, "cmb_psi4_operation", operation)
         set_combo(dlg, "cmb_psi4_method", method)
         set_combo(dlg, "cmb_psi4_basis", basis)
-        explicit_spin = charge is not None or multiplicity is not None
+        # Leonardo's auto charge/multiplicity reads no formal charges from a PyMOL selection: it falls back to
+        # the charge spin box, i.e. whatever the previous job used (ethanol after NH4+ ran as a +1 doublet,
+        # acetate as a neutral radical). The charge always comes from the call or the formal charges here.
+        q, n_el = _selection_charge_electrons(dlg._psi4_current_selection() if not qst else reactant)
+        charge = q if charge is None else int(charge)
+        if multiplicity is None and n_el is not None:
+            multiplicity = 1 if (n_el - int(charge)) % 2 == 0 else 2
+        explicit_spin = multiplicity is not None
         set_value(dlg, "cb_psi4_auto_spin", not explicit_spin)
-        if charge is not None:
-            set_value(dlg, "spin_psi4_charge", int(charge))
+        set_value(dlg, "spin_psi4_charge", int(charge))
         if multiplicity is not None:
             set_value(dlg, "spin_psi4_mult", int(multiplicity))
         set_value(dlg, "cb_psi4_pcm", bool(solvent))
@@ -232,14 +255,18 @@ def _orbital_energies(job_dir):
     except Exception:
         return {}
     k = text.rfind("Doubly Occupied:")
-    if k < 0:
-        return {}
+    open_shell = k < 0
+    if open_shell:
+        # UHF/UKS: "Alpha Occupied:", "Alpha Virtual:", then the Beta blocks; the alpha set holds the SOMO
+        k = text.rfind("Alpha Occupied:")
+        if k < 0:
+            return {}
     block = text[k:k + 20000]
     v = block.find("Virtual:")
     # labels are <n><irrep>: 1A in C1, but 3A1, 1B2, 2Ag, 1Ap... with symmetry
     lab = r"\d+[A-Za-z][A-Za-z0-9'\"]*\s+(-?\d+\.\d+)"
     occ = [float(x) for x in re.findall(lab, block[:v])]
-    end = block.find("Final Occupation", v)
+    end = block.find("Beta Occupied:" if open_shell else "Final Occupation", v)
     vir = [float(x) for x in re.findall(lab, block[v:end if end > 0 else None])]
     if not occ or not vir:
         return {}

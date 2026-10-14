@@ -222,7 +222,11 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
         if temps and h and s:
             j = int(np.argmin(np.abs(np.asarray(temps) - 298.0)))
             res["thermo_298K"] = {"heat_of_formation_kcal_mol": h[j], "entropy_cal_mol_K": s[j]}
-    if uv:
+    if uv and spin:
+        # MOPAC's CIS needs an RHF reference ("UHF and RHF cannot both be used"); the singlet-state parser
+        # would not apply to a doublet/triplet either: keep the open-shell results and say why
+        res["uv_note"] = "UV-vis (CIS) skipped: MOPAC's CIS needs a closed-shell (RHF) reference"
+    elif uv:
         progress["text"] = "excited states (CIS)"
         n_occ = res["homo_index"]
         n_orb = len(res["eigenvalues_ev"])
@@ -346,6 +350,9 @@ def register(reg):
                             "uv_note": f"{res['uv_active_space']}; semiempirical CIS: qualitative band positions"})
                 parts.append(f"strongest UV band {st[0]['wavelength_nm']} nm")
                 out.setdefault("_image", uvpng)
+            elif res.get("uv_note"):
+                out["uv_note"] = res["uv_note"]
+                parts.append(res["uv_note"])
             out["scene"] = ctx.scene(f"MOPAC {method}: {obj}")
             out["_card"] = "; ".join(parts) + "."
             return {"done": True, "result": out}
