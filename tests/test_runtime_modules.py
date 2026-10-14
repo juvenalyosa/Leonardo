@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import numpy as np
+import pytest
 
 import abfe_runtime
 from alphafold_runtime import af_collect_existing_dirs
@@ -4299,7 +4300,21 @@ def test_psi4_runtime_driver_plan_helpers():
     assert opts["options"]["irc_points"] == 4
     assert opts["options"]["irc_step_size"] == 0.01
     assert opts["freeze_atom_indices"] == [1, 3]
-    assert opts["options"]["frozen_cartesian"] == [1, 2, 3, 7, 8, 9]
+    # OptKing's FROZEN_CARTESIAN is a string of "atom xyz" pairs (the old [1, 2, 3, 7, 8, 9] list was rejected
+    # by psi4.set_options); the Cartesian indices stay available as freeze_cartesian.
+    assert opts["options"]["frozen_cartesian"] == "1 xyz 3 xyz"
+    assert opts["freeze_cartesian"] == [1, 2, 3, 7, 8, 9]
+
+
+def test_psi4_frozen_cartesian_option_is_accepted_by_psi4():
+    psi4 = pytest.importorskip("psi4")
+    opts = psi4_build_driver_options("optimize", "sto-3g", freeze_atom_indices=[1, 3])
+    psi4.core.clean_options()
+    try:
+        psi4.set_options({"frozen_cartesian": opts["options"]["frozen_cartesian"]})
+        assert psi4.core.get_option("OPTKING", "FROZEN_CARTESIAN").split() == ["1", "XYZ", "3", "XYZ"]
+    finally:
+        psi4.core.clean_options()
 
     both_opts = psi4_build_driver_options("irc", "sto-3g", irc_direction="BOTH", irc_points=8, irc_step=0.1)
     assert both_opts["irc_direction"] == "BOTH"
