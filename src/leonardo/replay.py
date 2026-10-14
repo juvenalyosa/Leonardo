@@ -177,6 +177,7 @@ def main(argv=None):
     ap.add_argument("pack")
     ap.add_argument("--keep", action="store_true", help="keep the working folder")
     ap.add_argument("--report", default="", help="write the report JSON here (default: <pack>/last_report.json)")
+    ap.add_argument("--dump", default="", help="also write every step's full result to this JSON file")
     a = ap.parse_args(argv)
     pack = os.path.abspath(a.pack)
     expected_path = os.path.join(pack, "expected.json")
@@ -188,6 +189,11 @@ def main(argv=None):
     finally:
         if not a.keep:
             shutil.rmtree(work, ignore_errors=True)
+        else:
+            print(f"working files kept in {work}")
+    if a.dump:
+        with open(a.dump, "w") as fh:
+            json.dump(_jsonable(results), fh, indent=1)
     rows, ok_all = [], True
     for name, metric in expected["metrics"].items():
         try:

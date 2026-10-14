@@ -1,0 +1,65 @@
+{
+ "description": "Reference values from a recorded run; tolerances from repeated runs (see README.md).",
+ "metrics": {
+  "mutant_best_dope": {
+   "path": "2.dope_scores.0.dope",
+   "kind": "abs",
+   "tol": 1.0,
+   "value": -23678.3
+  },
+  "mutant_rmsd_to_wt_A": {
+   "path": "2.rmsd_to_source_A",
+   "kind": "abs",
+   "tol": 0.05,
+   "value": 0.09
+  },
+  "wt_success": {
+   "path": "3.top1_success",
+   "kind": "exact",
+   "value": "3/3 repeats with RMSD <= 2 A"
+  },
+  "wt_median_score_kcal_mol": {
+   "path": "3.mutant_comparison.0.wt_affinity_kcal",
+   "kind": "abs",
+   "tol": 0.1,
+   "value": -6.11191
+  },
+  "wt_median_rmsd_A": {
+   "path": "3.mutant_comparison.0.wt_rmsd_a",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.38672
+  },
+  "d189a_median_score_kcal_mol": {
+   "path": "3.mutant_comparison.0.mut_affinity_kcal",
+   "kind": "abs",
+   "tol": 0.1,
+   "value": -5.36554
+  },
+  "d189a_median_rmsd_A": {
+   "path": "3.mutant_comparison.0.mut_rmsd_a",
+   "kind": "abs",
+   "tol": 0.3,
+   "value": 0.84493
+  },
+  "score_change_kcal_mol": {
+   "path": "3.mutant_comparison.0.delta_affinity_kcal",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.74636
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a9 (2026-10-13-r1)",
+  "python": "3.11.14",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-14T11:28:39",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ }
+}

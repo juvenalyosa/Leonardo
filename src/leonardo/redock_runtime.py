@@ -4309,8 +4309,10 @@ def prepare_redocking_runtime_systems_context(
     source_systems = list(systems or [])
 
     if modeler_mode:
+        # one docking run per ensemble member; a requested seed is kept so the run is repeatable (it used to
+        # be reset to 0 = a random seed every time)
         params_runtime["repeats"] = 1
-        params_runtime["seed0"] = 0
+        params_runtime["seed0"] = max(0, int(params_runtime.get("seed0", 0) or 0))
         if not callable(collect_modeler_ensemble_fn):
             return {
                 "ok": False,

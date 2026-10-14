@@ -58,7 +58,7 @@ Short films from real calculations with the open engines Leonardo uses (smina/Vi
 
 **Check the numbers yourself.** Films 01–07 were calculated with scripted runs of these engines; the same
 calculations are being redone through Leonardo's own tools and published as replay packs. The packs re-run
-without the AI and compare every value with the reference (films 01 and 08 so far):
+without the AI and compare every value with the reference (films 01, 03, 04 and 08 so far):
 `python -m leonardo.replay verify examples/films/01_molecular_docking`. See
 [Reproducing Leonardo's calculations](docs/REPRODUCIBILITY.md).
 
@@ -89,7 +89,7 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 
 Leonardo's assistant is **one AI agent**: a single conversation with a large language model of
 your choice, either Anthropic Claude or OpenAI, using your own API key. It works only through
-**114 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
+**115 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
 terminal, no file-system access and no code execution, so it can do only what those tools do.
 
 **How it works.** It first looks at what is loaded, then writes a short **plan** and waits for

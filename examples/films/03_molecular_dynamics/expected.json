@@ -1,0 +1,90 @@
+{
+ "description": "Reference values from a recorded run; MD trajectories are chaotic, so tolerances come from repeated runs (see README.md).",
+ "metrics": {
+  "frames": {
+   "path": "3.frames",
+   "kind": "exact",
+   "value": 500
+  },
+  "ca_rmsd_final_A": {
+   "path": "3.rmsd_final_A",
+   "kind": "abs",
+   "tol": 0.5,
+   "value": 1.29
+  },
+  "ca_rmsd_max_A": {
+   "path": "3.rmsd_max_A",
+   "kind": "abs",
+   "tol": 0.5,
+   "value": 1.32
+  },
+  "ca_rmsf_mean_A": {
+   "path": "3.rmsf_mean_A",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.66
+  },
+  "ser195_his57_mean_A": {
+   "path": "4.mean_A",
+   "kind": "abs",
+   "tol": 0.4,
+   "value": 3.819
+  },
+  "ser195_his57_sd_A": {
+   "path": "4.sd_A",
+   "kind": "abs",
+   "tol": 0.2,
+   "value": 0.436
+  },
+  "ser195_his57_hbond_fraction": {
+   "path": "4.fraction_within_cutoff",
+   "kind": "abs",
+   "tol": 0.25,
+   "value": 0.216
+  },
+  "fold_kept_max_rmsd_A": {
+   "path": "3.rmsd_max_A",
+   "kind": "max",
+   "value": 2.0
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a9 (2026-10-13-r1)",
+  "python": "3.11.14",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-14T11:32:07",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ },
+ "measured_spread_3_runs": {
+  "ca_rmsd_final_A": [
+   1.05,
+   1.31
+  ],
+  "ca_rmsd_max_A": [
+   1.32,
+   1.48
+  ],
+  "ca_rmsf_mean_A": [
+   0.66,
+   0.67
+  ],
+  "ser195_his57_mean_A": [
+   3.781,
+   4.054
+  ],
+  "ser195_his57_sd_A": [
+   0.436,
+   0.491
+  ],
+  "ser195_his57_hbond_fraction": [
+   0.144,
+   0.302
+  ]
+ }
+}
