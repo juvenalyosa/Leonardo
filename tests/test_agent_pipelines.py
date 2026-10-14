@@ -309,3 +309,16 @@ def test_update_pipeline_numeric_parameter_replaces_only_its_argument():
     assert P.load("dock")["steps"][0]["args"] == {"object": "A", "exhaustiveness": 8, "num_modes": 8}
     out = reg.call("update_pipeline", {"name": "dock", "add_parameter": {"exhaustiveness": 8}}, None)
     assert out["steps"][0]["args"] == {"object": "A", "exhaustiveness": "{{exhaustiveness}}", "num_modes": 8}
+
+
+def test_import_of_a_non_pipeline_json_and_run_past_the_end_are_clear_errors(tmp_path):
+    """A JSON list crashed import_pipeline with AttributeError; an external run_pipeline with from_step past
+    the end returned an empty step list as if there were nothing to do."""
+    reg = _registry([])
+    bad = tmp_path / "list.json"
+    bad.write_text("[1, 2]")
+    with pytest.raises(ToolError, match="is not a Leonardo pipeline"):
+        reg.call("import_pipeline", {"path": str(bad)}, None)
+    _saved_md(reg)
+    with pytest.raises(ToolError, match="past the end"):
+        reg.call("run_pipeline", {"name": "md", "from_step": 99}, None)

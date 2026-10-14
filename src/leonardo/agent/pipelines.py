@@ -206,7 +206,7 @@ def load(name_or_path):
         p = os.path.abspath(os.path.expanduser(str(p)))
         if os.path.isfile(p):
             data = json.load(open(p))
-            if not isinstance(data.get("steps"), list):
+            if not isinstance(data, dict) or not isinstance(data.get("steps"), list):
                 raise ValueError(f"{p} is not a Leonardo pipeline")
             return data
     names = [p["name"] for p in list_all()]
