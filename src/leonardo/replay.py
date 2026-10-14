@@ -32,19 +32,46 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 
 
 def _value_at(results, path):
-    """'2.repeats.0.top1_rmsd_A' -> results[2]['repeats'][0]['top1_rmsd_A'] (step numbers are 1-based)."""
-    parts = str(path).split(".")
-    cur = results[int(parts[0])]
-    for p in parts[1:]:
+    """'2.repeats.0.top1_rmsd_A' -> results[2]['repeats'][0]['top1_rmsd_A'] (step numbers are 1-based).
+    '*' collects a list ('2.poses.*.rmsd_A'); a suffix reduces it, independent of the list order:
+    '|max', '|min', '|mean', '|count', '|count_le:2.0', '|sorted'."""
+    path, _, reducer = str(path).partition("|")
+    parts = path.split(".")
+
+    def walk(cur, rest):
+        if not rest:
+            return [cur]
+        p, rest = rest[0], rest[1:]
+        if p == "*":
+            if not isinstance(cur, list):
+                raise KeyError(f"{path}: '*' needs a list")
+            return [v for item in cur for v in walk(item, rest)]
         if isinstance(cur, list):
-            cur = cur[int(p)]
-        elif isinstance(cur, dict):
+            return walk(cur[int(p)], rest)
+        if isinstance(cur, dict):
             if p not in cur:
                 raise KeyError(f"{path}: no '{p}'")
-            cur = cur[p]
-        else:
-            raise KeyError(f"{path}: cannot index {type(cur).__name__} with '{p}'")
-    return cur
+            return walk(cur[p], rest)
+        raise KeyError(f"{path}: cannot index {type(cur).__name__} with '{p}'")
+
+    values = walk(results[int(parts[0])], parts[1:])
+    if not reducer:
+        return values if "*" in parts else values[0]
+    name, _, arg = reducer.partition(":")
+    nums = [float(v) for v in values if v is not None]
+    if name == "max":
+        return max(nums)
+    if name == "min":
+        return min(nums)
+    if name == "mean":
+        return sum(nums) / len(nums)
+    if name == "count":
+        return len(values)
+    if name == "count_le":
+        return sum(1 for v in nums if v <= float(arg))
+    if name == "sorted":
+        return sorted(nums)
+    raise KeyError(f"{path}: unknown reducer '{reducer}'")
 
 
 def check(metric, observed):

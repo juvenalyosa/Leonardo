@@ -25,6 +25,24 @@ def test_value_paths_and_checks():
     assert replay.check({"kind": "max", "value": 2.0}, 1.2) and not replay.check({"kind": "max", "value": 2.0}, 2.5)
 
 
+def test_film08_pack_asks_for_a_reproducible_seeded_ensemble():
+    pipe = json.load(open(os.path.join(REPO, "examples", "films", "08_ensemble_redocking", "pipeline.json")))
+    args = pipe["steps"][1]["args"]
+    assert args["ensemble_structures"] == 3 and args["ensemble_seed"] == 1 and args["ensemble_reproducible"] is True
+    exp = json.load(open(os.path.join(REPO, "examples", "films", "08_ensemble_redocking", "expected.json")))
+    assert all(m.get("value") is not None for m in exp["metrics"].values())
+
+
+def test_redocking_tool_passes_the_ensemble_seed_and_reproducible_mode():
+    from leonardo.agent.registry import ToolRegistry
+    from leonardo.agent.tools import redocking
+
+    reg = ToolRegistry()
+    redocking.register(reg)
+    props = {s.name: s for s in reg.specs()}["run_redocking"].parameters["properties"]
+    assert props["ensemble_seed"]["type"] == "integer" and props["ensemble_reproducible"]["type"] == "boolean"
+
+
 def test_film01_pack_is_complete_and_seeded():
     pipe = json.load(open(os.path.join(PACK, "pipeline.json")))
     exp = json.load(open(os.path.join(PACK, "expected.json")))
@@ -45,3 +63,13 @@ def test_film01_pack_verifies(tmp_path):
                          capture_output=True, text=True, env=env, timeout=900)
     assert out.returncode == 0, out.stdout[-3000:] + out.stderr[-3000:]
     assert json.load(open(report))["ok"]
+
+
+def test_list_reducers_do_not_depend_on_order():
+    results = {2: {"poses": [{"rmsd_A": 0.6}, {"rmsd_A": 0.48}, {"rmsd_A": 12.4}]}}
+    assert replay._value_at(results, "2.poses.*.rmsd_A") == [0.6, 0.48, 12.4]
+    assert replay._value_at(results, "2.poses.*.rmsd_A|max") == 12.4
+    assert replay._value_at(results, "2.poses.*.rmsd_A|min") == 0.48
+    assert replay._value_at(results, "2.poses.*.rmsd_A|count_le:2.0") == 2
+    assert replay._value_at(results, "2.poses.*.rmsd_A|count") == 3
+    assert replay._value_at(results, "2.poses.*.rmsd_A|sorted") == [0.48, 0.6, 12.4]

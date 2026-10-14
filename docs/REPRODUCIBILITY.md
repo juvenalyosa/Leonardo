@@ -30,7 +30,8 @@ the reference, prints PASS or FAIL, and writes a report with your machine, Leona
 | Pack | Calculation | Status |
 |---|---|---|
 | [`examples/films/01_molecular_docking`](../examples/films/01_molecular_docking) | Trypsin + benzamidine redocking (smina/Vina) | Verified: same seed gives identical values; 8 other seeds stay within 0.002 Å and 0.006 kcal/mol |
-| Films 02–08 | QM/MM, molecular dynamics, mutations, protein design, ensemble redocking | Planned |
+| [`examples/films/08_ensemble_redocking`](../examples/films/08_ensemble_redocking) | P450cam + camphor, Monte Carlo receptor ensemble (heme kept) | Ensemble identical across runs; docking into the members within 0.01 Å and 0.004 kcal/mol (not yet bit-identical) |
+| Films 02–07 | QM/MM, molecular dynamics, mutations, protein design | Planned |
 
 ## What "the same result" means for each engine
 

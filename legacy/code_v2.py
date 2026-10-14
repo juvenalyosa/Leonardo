@@ -19517,7 +19517,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
                 "steps_per_structure": 15, "seed": int(seed), "platform": platform,
                 "exclude_hetero": [list(x) for x in exclude_hetero or []],
-                "ligand_obstacle": bool(ligand_obstacle)}
+                "ligand_obstacle": bool(ligand_obstacle),
+                # exactly repeatable chain (CPU, one thread): slower, for replay packs and audits
+                "reproducible": bool(getattr(self, "_redock_mc_reproducible", False))}
         args_path = os.path.join(out_dir, "mc_args.json")
         with open(args_path, "w") as fh:
             json.dump(args, fh)
@@ -19611,6 +19613,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         keep_space = bool(getattr(self, "cb_redock_mc_keep_ligand_space", None)
                           and self.cb_redock_mc_keep_ligand_space.isChecked() and exclude)
         res = self._redock_mc_sample(best_pdb, work, site, n, temp,
+                                     seed=int(getattr(self, "_redock_mc_seed", 1) or 1),
                                      progress_label=getattr(self, "lbl_redock_summary", None),
                                      exclude_hetero=exclude, ligand_obstacle=keep_space)
         if not bool(res.get("ok", False)):
