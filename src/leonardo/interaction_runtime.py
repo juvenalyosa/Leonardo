@@ -25,6 +25,9 @@ INTERACTION_GEOMETRY_CRITERIA = {
     "h_bond_dist": 4.1,
     "h_bond_angle": 100.0,
     "h_bond_ha_dist": 2.8,
+    # donor-acceptor cutoff when the donor hydrogen is unknown (crystal structures):
+    # PyMOL's polar-contact distance.  PLIP's 4.1 A needs the D-H...A angle to be safe.
+    "h_bond_heavy_dist": 3.6,
     "salt_bridge_dist": 5.5,
     "hydrophobic_dist": 4.0,
     "pi_pi_dist": 5.5,
@@ -149,17 +152,36 @@ INTERACTION_TYPE_METADATA = {
 }
 
 
+# What the "distance" of each record measures (records carry it as "distance_kind").
+# H-bonds are always donor-acceptor heavy-atom distances; the H...A distance, when
+# the hydrogen is known, is in "ha_distance".
+INTERACTION_DISTANCE_KIND = {
+    "Hydrogen Bond": "D...A",
+    "Salt Bridge": "charge center-center",
+    "Hydrophobic": "closest C...C",
+    "Pi-Pi Stacking": "ring centroid-centroid",
+    "T-Shaped Pi-Pi": "ring centroid-centroid",
+    "Cation-Pi": "charge center-ring centroid",
+    "Anion-Pi": "charge center-ring centroid",
+    "Halogen Bond": "X...A",
+    "Metal Coordination": "metal-donor atom",
+    "Van der Waals": "closest heavy atoms",
+}
+
+
 _PROTEIN_HYDROPHOBIC_ATOMS = {
     "ALA": ("CB",),
     "VAL": ("CB", "CG1", "CG2"),
     "LEU": ("CB", "CG", "CD1", "CD2"),
     "ILE": ("CB", "CG1", "CG2", "CD1"),
-    "PRO": ("CB", "CG", "CD"),
+    "PRO": ("CB", "CG"),                  # CD is bonded to N
     "MET": ("CB", "CG", "CE"),
     "MSE": ("CB", "CG", "CE"),
     "PHE": ("CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ"),
-    "TRP": ("CB", "CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3", "CH2"),
-    "TYR": ("CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ"),
+    # PLIP: carbons bonded only to C/H (Trp CD1/CE2 carry NE1, Tyr CZ carries OH: polar);
+    # Met carbons bonded to SD are kept, a C-S bond is apolar
+    "TRP": ("CB", "CG", "CD2", "CE3", "CZ2", "CZ3", "CH2"),
+    "TYR": ("CB", "CG", "CD1", "CD2", "CE1", "CE2"),
     "CYS": ("CB",),
 }
 
@@ -314,12 +336,39 @@ def ring_plane_distance(center, normal, point):
     return float(np.dot(p - c, n / nn))
 
 
-def classify_hbond_geometry(donor, acceptor, hydrogen=None, acceptor_neighbor=None, criteria=None):
+def _neighbor_centroid(neighbors):
+    pts = [c for c in (atom_coord(n) for n in list(neighbors or [])) if c is not None]
+    if not pts:
+        return None
+    return np.mean(np.vstack(pts), axis=0)
+
+
+def classify_hbond_geometry(
+    donor,
+    acceptor,
+    hydrogen=None,
+    acceptor_neighbor=None,
+    criteria=None,
+    *,
+    acceptor_neighbors=None,
+    donor_neighbors=None,
+):
     """Validate H-bond geometry and return a normalized payload.
 
-    Explicit-H mode uses the D-H...A angle and H...A distance.  Fallback mode is
-    used when hydrogens are absent; it reports D...A distance and, when an
-    acceptor heavy neighbor is available, screens with the D-A-X angle.
+    Explicit-H mode (the donor's hydrogen is known): PLIP criteria, D...A <=
+    ``h_bond_dist`` (4.1 A) and D-H...A >= ``h_bond_angle`` (100 deg), plus
+    H...A <= ``h_bond_ha_dist``.
+
+    Heavy-atom mode (no usable hydrogen): D...A <= ``h_bond_heavy_dist`` (3.6 A,
+    PyMOL's polar-contact cutoff; PLIP's 4.1 A relies on the H angle and is too
+    loose without it), the acceptor's heavy neighbours (their centroid, so a
+    ring N is judged by its lone-pair direction) behind the acceptor
+    (D...A-X >= ``h_bond_fallback_angle``) and, for a donor with two or more
+    heavy neighbours (backbone/ring N-H, whose H lies opposite them), the
+    acceptor in front of the donor (Y-D...A >= the same angle).
+
+    ``distance`` is always the donor-acceptor heavy-atom distance; ``ha_distance``
+    is set only in explicit-H mode.
     """
     crit = _criteria(criteria)
     donor_el = _element(donor)
@@ -350,30 +399,46 @@ def classify_hbond_geometry(donor, acceptor, hydrogen=None, acceptor_neighbor=No
         return {
             "ok": True,
             "mode": "explicit_hydrogen",
-            "distance": ha_distance,
+            "distance": da_distance,
+            "distance_kind": "D...A",
             "da_distance": da_distance,
             "ha_distance": ha_distance,
             "angle": angle,
-            "details": f"D-H...A {ha_distance:.1f}Å, {angle:.0f}°",
+            "details": f"D...A {da_distance:.1f}Å, H...A {ha_distance:.1f}Å, D-H...A {angle:.0f}°",
         }
 
+    heavy_cut = float(crit.get("h_bond_heavy_dist", crit["h_bond_dist"]))
+    if da_distance > heavy_cut:
+        return {"ok": False, "reason": "donor_acceptor_distance", "da_distance": da_distance}
     fallback_angle = float(crit.get("h_bond_fallback_angle", 90.0))
     angle = 180.0
-    details = f"D...A {da_distance:.1f}Å"
-    if acceptor_neighbor is not None:
-        x_coord = atom_coord(acceptor_neighbor)
-        if x_coord is not None:
-            angle = angle_between_vectors(d_coord - a_coord, x_coord - a_coord)
-            if not np.isfinite(angle) or angle < fallback_angle:
-                return {"ok": False, "reason": "donor_acceptor_neighbor_angle", "angle": angle}
-            details = f"D...A {da_distance:.1f}Å, D-A-X {angle:.0f}°"
+    parts = [f"D...A {da_distance:.1f}Å"]
+    acc_nbrs = list(acceptor_neighbors or []) or ([acceptor_neighbor] if acceptor_neighbor is not None else [])
+    x_coord = _neighbor_centroid(acc_nbrs)
+    if x_coord is not None:
+        angle = angle_between_vectors(d_coord - a_coord, x_coord - a_coord)
+        if not np.isfinite(angle) or angle < fallback_angle:
+            return {"ok": False, "reason": "donor_acceptor_neighbor_angle", "angle": angle}
+        parts.append(f"D...A-X {angle:.0f}°")
+    donor_angle = None
+    don_nbrs = list(donor_neighbors or [])
+    if len(don_nbrs) >= 2:
+        y_coord = _neighbor_centroid(don_nbrs)
+        if y_coord is not None:
+            donor_angle = angle_between_vectors(y_coord - d_coord, a_coord - d_coord)
+            if not np.isfinite(donor_angle) or donor_angle < fallback_angle:
+                return {"ok": False, "reason": "donor_neighbor_angle", "donor_angle": donor_angle}
+            parts.append(f"Y-D...A {donor_angle:.0f}°")
     return {
         "ok": True,
         "mode": "heavy_atom_fallback",
         "distance": da_distance,
+        "distance_kind": "D...A",
         "da_distance": da_distance,
+        "ha_distance": None,
         "angle": angle,
-        "details": details,
+        "donor_angle": donor_angle,
+        "details": ", ".join(parts) + " (no H)",
     }
 
 
@@ -458,7 +523,9 @@ def classify_pi_ring_pair(protein_ring, ligand_ring, criteria=None):
     angle = angle_between_vectors(p_norm, l_norm)
     if not np.isfinite(angle):
         return {"ok": False, "reason": "ring_normal_angle"}
-    parallel_dev = min(abs(angle), abs(180.0 - angle))
+    # ring normals have no sign: the angle between the planes is 0-90 deg (157 deg is 23 deg)
+    angle = float(min(abs(angle), abs(180.0 - angle)))
+    parallel_dev = angle
     ortho_dev = abs(float(crit["pi_t_angle"]) - angle)
     offset = min(
         ring_plane_offset(p_cent, p_norm, l_cent),
@@ -471,6 +538,7 @@ def classify_pi_ring_pair(protein_ring, ligand_ring, criteria=None):
             "ok": True,
             "type": "Pi-Pi Stacking",
             "distance": d,
+            "distance_kind": "ring centroid-centroid",
             "angle": angle,
             "offset": offset,
             "details": f"centroid {d:.1f}Å, angle {angle:.0f}°, offset {offset:.2f}Å",
@@ -480,6 +548,7 @@ def classify_pi_ring_pair(protein_ring, ligand_ring, criteria=None):
             "ok": True,
             "type": "T-Shaped Pi-Pi",
             "distance": d,
+            "distance_kind": "ring centroid-centroid",
             "angle": angle,
             "offset": offset,
             "details": f"centroid {d:.1f}Å, angle {angle:.0f}°, offset {offset:.2f}Å",
@@ -1178,4 +1247,7 @@ def build_interaction_record(
         rec["lig_coord"] = tuple(np.array(lig.get("coord"), dtype=float))
     if isinstance(extra, dict):
         rec.update(dict(extra))
+    kind = INTERACTION_DISTANCE_KIND.get(rec["type"])
+    if kind:
+        rec.setdefault("distance_kind", kind)
     return rec
