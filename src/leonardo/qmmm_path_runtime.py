@@ -113,7 +113,8 @@ def _optimize(model, qm_xyz, restraints=(), fmax_kj_mol_ang=2.0, steps=400, tag=
     xyz = atoms.get_positions().copy()
     e, f, terms = model.evaluate(xyz, tag=f"{tag}/final")
     return {"qm_xyz": xyz, "energy_kj_mol": float(terms["energy_kj_mol"]), "converged": converged,
-            "steps": int(opt.get_number_of_steps())}
+            "steps": int(opt.get_number_of_steps()),
+            "max_force_kj_mol_ang": float(np.max(np.linalg.norm(np.asarray(f, dtype=float), axis=1)) / 10.0)}
 
 
 def build_product(model, reactant_xyz, form_bonds, break_bonds, k_kj_mol_ang2=2000.0, stages=4, fmax_kj_mol_ang=2.0,
@@ -243,12 +244,20 @@ def reaction_path(model, form_bonds, break_bonds, n_images=9, fmax_kj_mol_ang=2.
     out = {"ok": False, "form_bonds": form_bonds, "break_bonds": break_bonds}
     react = _optimize(model, model.xyz_ref[model.qm], (), fmax_kj_mol_ang=fmax_kj_mol_ang, tag="reactant")
     out["reactant"] = {"energy_kj_mol": react["energy_kj_mol"], "converged": react["converged"],
+                       "max_force_kj_mol_ang": react["max_force_kj_mol_ang"],
                        "check": bond_states(model, react["qm_xyz"], form_bonds, break_bonds)}
     if not out["reactant"]["check"]["reactant_like"]:
         out["error"] = "the optimized starting structure is not a reactant for the given bonds"
         return out
     prod = build_product(model, react["qm_xyz"], form_bonds, break_bonds, fmax_kj_mol_ang=fmax_kj_mol_ang)
-    out["product"] = {"energy_kj_mol": prod["energy_kj_mol"], "converged": prod["converged"], "check": prod["check"]}
+    out["product"] = {"energy_kj_mol": prod["energy_kj_mol"], "converged": prod["converged"],
+                      "max_force_kj_mol_ang": prod["max_force_kj_mol_ang"], "check": prod["check"]}
+    if not prod["converged"] and prod["max_force_kj_mol_ang"] > 5.0 * float(fmax_kj_mol_ang):
+        # the bond distances alone do not make a minimum: on a slope with no product well the optimizer stalls
+        # with the bonds "formed", and the path, TS and IRC would then be searched towards a point that is not one
+        out["error"] = (f"no stable product with the requested bonds: its optimization stopped on a slope (residual "
+                        f"force {prod['max_force_kj_mol_ang']:.1f} kJ/mol/A), not at a minimum")
+        return out
     if not prod["check"]["product_like"]:
         out["error"] = "no stable product with the requested bonds: it relaxed back or to another structure"
         return out
