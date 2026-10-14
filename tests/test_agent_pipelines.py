@@ -244,30 +244,43 @@ def test_update_pipeline_keeps_step_links():
         reg.call("update_pipeline", {"name": "md", "remove_steps": [3]}, None)
 
 
-def test_pipeline_tools_never_overwrite_without_asking(tmp_path):
-    # save/import/rename are quick (compute_light, not confirmed under the default policy): they must not
-    # replace a saved pipeline or an existing file; only delete_pipeline (destructive, always asked) removes one
+# save/import/rename are quick (compute_light, not confirmed under the default policy): they must not replace a
+# saved pipeline or an existing file; only delete_pipeline (destructive, always asked) removes one
+_STEPS = [{"tool": "fetch_structure", "args": {"identifier": "3PTB"}}]
+
+
+def _saved_md(reg):
+    reg.call("save_pipeline", {"name": "md", "steps": _STEPS}, None)
+    return open(P.path_for("md")).read()
+
+
+def test_save_pipeline_does_not_overwrite_a_pipeline_or_a_file(tmp_path):
     reg = _registry([])
-    steps = [{"tool": "fetch_structure", "args": {"identifier": "3PTB"}}]
-    reg.call("save_pipeline", {"name": "md", "steps": steps}, None)
-    first = open(P.path_for("md")).read()
+    first = _saved_md(reg)
     with pytest.raises(ToolError, match="not overwritten"):
         reg.call("save_pipeline", {"name": "md", "steps": [{"tool": "run_md", "args": {"object": "X"}}]}, None)
     assert open(P.path_for("md")).read() == first
-
     victim = tmp_path / "notes.json"
     victim.write_text("keep me")
     with pytest.raises(ToolError, match="not overwritten"):
-        reg.call("save_pipeline", {"name": "other", "steps": steps, "export_path": str(victim)}, None)
+        reg.call("save_pipeline", {"name": "other", "steps": _STEPS, "export_path": str(victim)}, None)
     assert victim.read_text() == "keep me" and not os.path.exists(P.path_for("other"))
 
+
+def test_import_pipeline_does_not_overwrite_a_saved_one(tmp_path):
+    reg = _registry([])
+    first = _saved_md(reg)
     shared = tmp_path / "from_a_colleague.json"           # another pipeline that is also called "md"
     shared.write_text(json.dumps(dict(P.load("md"), steps=[{"tool": "run_md", "args": {"object": "Y"}}])))
     with pytest.raises(ToolError, match="not overwritten"):
         reg.call("import_pipeline", {"path": str(shared)}, None)
     assert open(P.path_for("md")).read() == first
 
-    reg.call("save_pipeline", {"name": "dock", "steps": steps}, None)
+
+def test_update_pipeline_rename_does_not_overwrite_another_pipeline():
+    reg = _registry([])
+    first = _saved_md(reg)
+    reg.call("save_pipeline", {"name": "dock", "steps": _STEPS}, None)
     with pytest.raises(ToolError, match="not overwritten"):
         reg.call("update_pipeline", {"name": "dock", "rename_to": "md"}, None)
     assert open(P.path_for("md")).read() == first and os.path.exists(P.path_for("dock"))
