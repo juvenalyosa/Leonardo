@@ -159,8 +159,9 @@ def run_pipeline(pack, workdir, progress=print):
                 app.processEvents()
                 st = ctx.jobs.status(res["job_id"])
                 if st.get("status") not in ("running", "cancelling", "queued"):
-                    if st.get("status") != "done" and st.get("error"):
-                        raise RuntimeError(f"step {i} ({step['tool']}) failed: {st.get('error')}")
+                    if st.get("status") != "done":          # failed, cancelled or lost: never a result
+                        raise RuntimeError(f"step {i} ({step['tool']}) {st.get('status')}: "
+                                           f"{st.get('error') or st.get('note') or 'no result'}")
                     res = dict(st.get("result") or st)
                     break
                 time.sleep(0.2)
@@ -200,14 +201,20 @@ def main(argv=None):
     for name, metric in expected["metrics"].items():
         try:
             observed = _jsonable(_value_at(results, metric["path"]))
-        except (KeyError, IndexError, ValueError) as exc:
-            observed, passed = None, False
+        except (KeyError, IndexError, ValueError, TypeError, ZeroDivisionError) as exc:
+            observed = None
             print(f"  {name}: missing ({exc})")
         if a.action == "record":
-            metric["value"] = observed
-            passed = True
+            # a metric the run did not produce is a failure, and its reference value is kept
+            passed = observed is not None
+            if passed:
+                metric["value"] = observed
         else:
-            passed = bool(check(metric, observed))
+            try:
+                passed = bool(check(metric, observed))
+            except (TypeError, ValueError) as exc:
+                passed = False
+                print(f"  {name}: cannot compare {observed!r} with {metric.get('value')!r} ({exc})")
         ok_all &= passed
         rows.append({"metric": name, "observed": observed, "expected": metric.get("value"),
                      "tol": metric.get("tol"), "kind": metric.get("kind", "abs"), "pass": passed})
@@ -223,7 +230,7 @@ def main(argv=None):
     with open(out, "w") as fh:
         json.dump(report, fh, indent=1)
         fh.write("\n")
-    width = max(len(r["metric"]) for r in rows)
+    width = max((len(r["metric"]) for r in rows), default=0)
     print(f"\n{report['pack']}: {a.action} on {env['platform']} · Leonardo {env['leonardo']}")
     for r in rows:
         tol = "" if r["kind"] == "exact" else f" ± {r['tol']}" if r["kind"] == "abs" else " (max)"
