@@ -1,10 +1,9 @@
 import tempfile
 from pathlib import Path
 
+import compare_abfe_vs_docking as cabd
 import numpy as np
 import pandas as pd
-
-import compare_abfe_vs_docking as cabd
 
 
 def test_fit_affine_loto_predictions_recovers_linear_relation():

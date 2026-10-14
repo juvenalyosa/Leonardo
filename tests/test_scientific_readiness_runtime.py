@@ -1,10 +1,11 @@
-from scientific_readiness_runtime import build_scientific_workflow_catalog
-from scientific_readiness_runtime import build_suite_readiness_report
-from scientific_readiness_runtime import build_workflow_readiness_report
-from scientific_readiness_runtime import format_suite_readiness_lines
-from scientific_readiness_runtime import list_scientific_workflow_ids
-
 import report_scientific_readiness
+from scientific_readiness_runtime import (
+    build_scientific_workflow_catalog,
+    build_suite_readiness_report,
+    build_workflow_readiness_report,
+    format_suite_readiness_lines,
+    list_scientific_workflow_ids,
+)
 
 
 def test_workflow_ids_cover_suite_surface():

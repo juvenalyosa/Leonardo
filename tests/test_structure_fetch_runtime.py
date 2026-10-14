@@ -1,12 +1,13 @@
 import os
 
 import pytest
-
-from structure_fetch_runtime import build_structure_fetch_request
-from structure_fetch_runtime import download_structure_file
-from structure_fetch_runtime import normalize_structure_identifier
-from structure_fetch_runtime import normalize_structure_format
-from structure_fetch_runtime import resolve_structure_fetch_download_url
+from structure_fetch_runtime import (
+    build_structure_fetch_request,
+    download_structure_file,
+    normalize_structure_format,
+    normalize_structure_identifier,
+    resolve_structure_fetch_download_url,
+)
 
 
 def test_rcsb_fetch_request_prefers_mmcif_and_validates_pdb_id():

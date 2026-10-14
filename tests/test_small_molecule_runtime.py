@@ -1,16 +1,16 @@
 import pytest
 
-
 rdkit = pytest.importorskip("rdkit")
 
-from rdkit import Chem
-
-from small_molecule_runtime import prepare_small_molecule_working_mol
-from small_molecule_runtime import build_small_molecule_prep_qc
-from small_molecule_runtime import small_molecule_explicit_hydrogen_count
-from small_molecule_runtime import small_molecule_formal_charge
-from small_molecule_runtime import summarize_pdbqt_ligand_file
-from small_molecule_runtime import summarize_small_molecule_state
+from rdkit import Chem  # noqa: E402
+from small_molecule_runtime import (  # noqa: E402
+    build_small_molecule_prep_qc,
+    prepare_small_molecule_working_mol,
+    small_molecule_explicit_hydrogen_count,
+    small_molecule_formal_charge,
+    summarize_pdbqt_ligand_file,
+    summarize_small_molecule_state,
+)
 
 
 def _pick_largest_fragment(mol):

@@ -21,7 +21,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,7 +33,6 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.optimize import differential_evolution
 from scipy.spatial.transform import Rotation
-
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts" / "cinematic_videos"
@@ -383,7 +381,6 @@ def run_md() -> dict:
     ca = universe.select_atoms("protein and name CA")
     heavy = universe.select_atoms("protein and not name H*")
     trp = universe.select_atoms("resname TRP and not name H*")
-    ca_indices = ca.indices
     heavy_indices = heavy.indices
     trp_indices_global = set(int(i) for i in trp.indices)
     trp_indices_heavy = np.array([i for i, global_i in enumerate(heavy_indices) if int(global_i) in trp_indices_global])

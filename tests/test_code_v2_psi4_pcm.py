@@ -1,11 +1,10 @@
-import code_v2
 import os
-import numpy as np
 import types
+
+import code_v2
+import numpy as np
 import psi4_runtime
-from psi4_runtime import psi4_pcm_supported_solvents
-from psi4_runtime import psi4_element_token
-from psi4_runtime import psi4_qst_build_guess_atoms
+from psi4_runtime import psi4_element_token, psi4_pcm_supported_solvents, psi4_qst_build_guess_atoms
 
 
 class _DummyDialog:

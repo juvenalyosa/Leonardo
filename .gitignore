@@ -94,3 +94,6 @@ redocking_real_1hsg/
 
 # replay packs: machine-specific verification reports
 examples/films/*/last_report.json
+
+# local run outputs (films data, downloaded inputs)
+artifacts/

@@ -1,10 +1,12 @@
 import math
 
-from dock_runtime import format_docking_grid_summary
-from dock_runtime import normalize_docking_grid
-from dock_runtime import parse_fpocket_info_text
-from dock_runtime import parse_pdb_atom_coordinates_from_lines
-from dock_runtime import pocket_geometry_from_coordinates
+from dock_runtime import (
+    format_docking_grid_summary,
+    normalize_docking_grid,
+    parse_fpocket_info_text,
+    parse_pdb_atom_coordinates_from_lines,
+    pocket_geometry_from_coordinates,
+)
 
 
 def test_parse_fpocket_info_text_accepts_common_separators():

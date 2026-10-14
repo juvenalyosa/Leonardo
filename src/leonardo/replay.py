@@ -93,7 +93,6 @@ def environment():
            "machine": platform.machine(), "date": datetime.datetime.now().isoformat(timespec="seconds")}
     try:
         import leonardo
-
         from leonardo import config
 
         build = getattr(config, "PLUGIN_BUILD", "") or getattr(leonardo, "__build__", "")

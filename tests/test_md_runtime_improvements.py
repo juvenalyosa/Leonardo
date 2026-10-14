@@ -1,9 +1,6 @@
 import numpy as np
-
-from abfe_runtime import build_abfe_openmm_context_setup_plan
-from abfe_runtime import build_abfe_openmm_staged_prep_plan
-from openmm_qmmm_runtime import run_openmm_qmmm_distance_scan_probe
-from openmm_qmmm_runtime import run_openmm_qmmm_single_point_probe
+from abfe_runtime import build_abfe_openmm_context_setup_plan, build_abfe_openmm_staged_prep_plan
+from openmm_qmmm_runtime import run_openmm_qmmm_distance_scan_probe, run_openmm_qmmm_single_point_probe
 
 
 def test_abfe_context_setup_plan_sanitizes_md_inputs_and_gpu_precision():

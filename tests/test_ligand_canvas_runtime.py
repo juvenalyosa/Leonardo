@@ -1,14 +1,15 @@
 import pytest
-
-from ligand_canvas_runtime import atom_display_label
-from ligand_canvas_runtime import bond_canvas_segments
-from ligand_canvas_runtime import bond_line_offsets
-from ligand_canvas_runtime import build_hydrogen_marker_layout
-from ligand_canvas_runtime import canvas_to_model_point
-from ligand_canvas_runtime import find_atom_at_canvas_point
-from ligand_canvas_runtime import find_bond_at_canvas_point
-from ligand_canvas_runtime import find_hydrogen_marker_at_canvas_point
-from ligand_canvas_runtime import layout_atom_positions
+from ligand_canvas_runtime import (
+    atom_display_label,
+    bond_canvas_segments,
+    bond_line_offsets,
+    build_hydrogen_marker_layout,
+    canvas_to_model_point,
+    find_atom_at_canvas_point,
+    find_bond_at_canvas_point,
+    find_hydrogen_marker_at_canvas_point,
+    layout_atom_positions,
+)
 
 
 def test_layout_atom_positions_fits_atoms_into_widget_bounds():
@@ -45,7 +46,7 @@ def test_find_atom_at_canvas_point_picks_nearest_atom_within_radius():
 
 
 def test_atom_display_label_includes_hydrogen_counts_and_index():
-    rdkit = pytest.importorskip("rdkit")
+    pytest.importorskip("rdkit")
     from rdkit import Chem
 
     mol = Chem.MolFromSmiles("CCO")
@@ -129,7 +130,7 @@ def test_bond_canvas_segments_shortens_and_splits_multiple_bonds():
 
 
 def test_find_bond_at_canvas_point_hits_double_bond():
-    rdkit = pytest.importorskip("rdkit")
+    pytest.importorskip("rdkit")
     from rdkit import Chem
 
     mol = Chem.MolFromSmiles("C=C")

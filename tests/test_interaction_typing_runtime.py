@@ -1,11 +1,13 @@
-from interaction_typing_runtime import is_protein_hydrophobic_residue
-from interaction_typing_runtime import normalize_interaction_residue_name
-from interaction_typing_runtime import protein_aromatic_ring_atom_names
-from interaction_typing_runtime import protein_hbond_acceptor_atom_names
-from interaction_typing_runtime import protein_hbond_donor_atom_names
-from interaction_typing_runtime import protein_hydrophobic_atom_names
-from interaction_typing_runtime import protein_metal_donor_atom_names
-from interaction_typing_runtime import protein_positive_atom_names
+from interaction_typing_runtime import (
+    is_protein_hydrophobic_residue,
+    normalize_interaction_residue_name,
+    protein_aromatic_ring_atom_names,
+    protein_hbond_acceptor_atom_names,
+    protein_hbond_donor_atom_names,
+    protein_hydrophobic_atom_names,
+    protein_metal_donor_atom_names,
+    protein_positive_atom_names,
+)
 
 
 def test_histidine_variants_keep_distinct_charge_and_hbond_roles():

@@ -1,16 +1,17 @@
 import numpy as np
-
-from trajectory_interaction_runtime import trajectory_build_selected_trace_payload
-from trajectory_interaction_runtime import trajectory_collect_interaction_occupancy
-from trajectory_interaction_runtime import trajectory_collect_presence_counts
-from trajectory_interaction_runtime import trajectory_frame_indices
-from trajectory_interaction_runtime import trajectory_interaction_key
-from trajectory_interaction_runtime import trajectory_interaction_label
-from trajectory_interaction_runtime import trajectory_interaction_occ_key
-from trajectory_interaction_runtime import trajectory_normalize_max_distance
-from trajectory_interaction_runtime import trajectory_normalize_step
-from trajectory_interaction_runtime import trajectory_pick_matching_interaction
-from trajectory_interaction_runtime import trajectory_run_interaction_analysis
+from trajectory_interaction_runtime import (
+    trajectory_build_selected_trace_payload,
+    trajectory_collect_interaction_occupancy,
+    trajectory_collect_presence_counts,
+    trajectory_frame_indices,
+    trajectory_interaction_key,
+    trajectory_interaction_label,
+    trajectory_interaction_occ_key,
+    trajectory_normalize_max_distance,
+    trajectory_normalize_step,
+    trajectory_pick_matching_interaction,
+    trajectory_run_interaction_analysis,
+)
 
 
 def test_trajectory_frame_indices_sanitizes_step_and_keeps_last_frame():

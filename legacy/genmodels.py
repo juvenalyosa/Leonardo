@@ -19,21 +19,21 @@ email = "juvenal.yosa@gmail.com"
 version = "1.0"
 """
 
+import glob
 import os
 import random as _random
-import numpy as _np
 import shutil
 import time
 import urllib.request
-import argparse
-import glob
+
+import numpy as _np
 
 MODELLER_IMPORT_ERROR = None
 try:
-    from modeller import *
-    from modeller.automodel import *
+    from modeller import *  # noqa: F403  (MODELLER scripts use its namespace)
+    from modeller.automodel import *  # noqa: F403  (MODELLER scripts use its namespace)
+    from modeller.parallel import *  # noqa: F403  (MODELLER scripts use its namespace)
     from modeller.scripts import complete_pdb
-    from modeller.parallel import *
 except Exception as exc:
     # MODELLER is license-gated.  CI and reviewer machines can install the
     # package but still lack a valid license key, which raises at import time.
@@ -70,10 +70,10 @@ except Exception as exc:
     assess = _UnavailableModellerSymbol("assess")
 try:
     # Support package-relative imports when used as part of src package
-    from .mutator import mutate_sequence, verify_and_print_alignment, MutationError
+    from .mutator import mutate_sequence, verify_and_print_alignment
 except Exception:
     # Fallback for direct script execution
-    from mutator import mutate_sequence, verify_and_print_alignment, MutationError
+    from mutator import mutate_sequence, verify_and_print_alignment
 
 # =============================================================================
 #  1. SETUP AND FILE PREPARATION
@@ -162,7 +162,7 @@ def generate_sequence_file(sequence, output_file):
     """
     with open(output_file, 'w') as f:
         # Write the header for the target sequence, named 'modeljuv'.
-        f.write(f">P1;modeljuv\n")
+        f.write(">P1;modeljuv\n")
         # Specify that this is a sequence entry.
         f.write("sequence:modeljuv:::::::0.00: 0.00\n")
         # Write the actual amino acid sequence, terminated by a '*'.

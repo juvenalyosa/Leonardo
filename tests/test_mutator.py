@@ -1,8 +1,5 @@
 import pytest
-
-from mutator import MutationError
-from mutator import mutate_sequence
-from mutator import needleman_wunsch_affine
+from mutator import MutationError, mutate_sequence, needleman_wunsch_affine
 
 
 def test_mutator_accepts_string_input_prefix_and_case_normalizes():

@@ -1,34 +1,45 @@
 #!/usr/bin/env python3
 """Package, document and verify the expanded five-mutant molecular film."""
+
 from __future__ import annotations
+
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import re
 import subprocess
 import zipfile
+from pathlib import Path
+
+from cinematic_stability_multimutant import OUT, ROOT, SOURCE, WORK, dump, load
 from PIL import Image
-from cinematic_stability_multimutant import ROOT, OUT, WORK, SOURCE, load, dump
-from render_cinematic_multimutant import NAME, FOLDER, FRAMES, FPS
+from render_cinematic_multimutant import FOLDER, FPS, FRAMES, NAME
 
 
 def sha(path):
-    h=hashlib.sha256()
+    h = hashlib.sha256()
     with path.open('rb') as f:
-        while chunk:=f.read(1024*1024):h.update(chunk)
+        while chunk := f.read(1024 * 1024):
+            h.update(chunk)
     return h.hexdigest()
 
 
 def gallery():
-    data=load();chosen=data['mutants'][-1]
-    Image.open(FOLDER/'frame_00000.png').save(OUT/'multimutant_poster.jpg',quality=95)
-    sheet=Image.new('RGB',(1920,810),'white')
-    for q,f in enumerate([0,168,348,444,540,636,732,816,936,1032,1104,1151]):
-        sheet.paste(Image.open(FOLDER/f'frame_{f:05d}.png').resize((480,270),Image.Resampling.LANCZOS),((q%4)*480,(q//4)*270))
-    sheet.save(OUT/'multimutant_contact_sheet.jpg',quality=95)
-    table='\n'.join(f'| {r["label"]} | {r["SS_A"]:.3f} | {abs(r["chi3_deg"]):.2f} | {r["ca_displacement_rms_A"]:.3f} | {"Cumple" if r["passed_geometry_filter"] else "Fuera del filtro de torsión"} |' for r in data['mutants'])
-    methods=f'''# Leonardo · 07 · One fold. Five futures.
+    data = load()
+    chosen = data['mutants'][-1]
+    Image.open(FOLDER / 'frame_00000.png').save(OUT / 'multimutant_poster.jpg', quality=95)
+    sheet = Image.new('RGB', (1920, 810), 'white')
+    for q, f in enumerate([0, 168, 348, 444, 540, 636, 732, 816, 936, 1032, 1104, 1151]):
+        sheet.paste(
+            Image.open(FOLDER / f'frame_{f:05d}.png').resize((480, 270), Image.Resampling.LANCZOS),
+            ((q % 4) * 480, (q // 4) * 270),
+        )
+    sheet.save(OUT / 'multimutant_contact_sheet.jpg', quality=95)
+    table = '\n'.join(
+        f'| {r["label"]} | {r["SS_A"]:.3f} | {abs(r["chi3_deg"]):.2f} | {r["ca_displacement_rms_A"]:.3f} | {"Cumple" if r["passed_geometry_filter"] else "Fuera del filtro de torsión"} |'
+        for r in data['mutants']
+    )
+    methods = f'''# Leonardo · 07 · One fold. Five futures.
 
 Versión ampliada del diseño de estabilidad de GB1: **cinco mutantes dobles**, presentados individualmente y en comparación. 48 s, 1920 × 1080, 24 fps, H.264, sin audio, misma estética `cinematic_v2`. Las seis películas anteriores se conservan.
 
@@ -110,85 +121,178 @@ python scripts/finalize_cinematic_multimutant.py deliver
 Los renderizados y coordenadas se reutilizan si existen. Para cambiar parámetros o diseños use una carpeta nueva. Las vistas previas están separadas de los fotogramas definitivos. El paquete portable incluye los sistemas y estados necesarios para reconstruir las energías; los scripts reproducibles permanecen en el repositorio y sus hashes figuran en el manifiesto.
 '''
     # Escape the literal vertical bars in the Markdown table's torsion heading.
-    methods=methods.replace('| |χ3| (°) |','| Torsión absoluta χ3 (°) |')
-    (OUT/'MULTIMUTANT_DESIGN.md').write_text(methods)
-    cards=''
+    methods = methods.replace('| |χ3| (°) |', '| Torsión absoluta χ3 (°) |')
+    (OUT / 'MULTIMUTANT_DESIGN.md').write_text(methods)
+    cards = ''
     for r in data['mutants']:
-        cards+=f'<tr><td><b>{r["label"]}</b></td><td>{r["SS_A"]:.3f} Å</td><td>{abs(r["chi3_deg"]):.1f}°</td><td>{"Seleccionado" if r["passed_geometry_filter"] else "Fuera del filtro de torsión"}</td><td><a href="stability_design/{r["folder"]}/model.pdb">PDB</a> · <a href="stability_multimutant/{r["folder"]}.fasta">FASTA</a> · <a href="sessions/multimutant_{r["folder"]}.pse">PyMOL</a></td></tr>'
-    figures=''
-    for stem,title,desc in [('torsion','La torsión decide','Cinco diseños comparados con la misma ventana geométrica.'),('geometry','Cuatro criterios, una selección','Distancia, ángulos, torsión y conservación del esqueleto.'),('refinement','El refinamiento completo','31 estados por mutante y energía relativa a su propio inicio.'),('rigidity','Movimiento bajo un modelo explícito','Predicciones locales y globales; rangos de sensibilidad a los supuestos.')]:
-        figures+=f'<section><h2>{title}</h2><p class="muted">{desc}</p><a href="plots/multimutant_{stem}.png"><img class="plot" loading="lazy" src="plots/multimutant_{stem}.png" alt="{title}"></a><p class="links"><a href="plots/multimutant_{stem}.pdf">PDF</a><a href="plots/multimutant_{stem}.svg">SVG editable</a><a href="plots/multimutant_{stem}.png">PNG 300 dpi</a></p></section>'
-    master=OUT/'index.html';html=master.read_text();css=re.search(r'<style>.*?</style>',html,re.S).group(0)
-    block=f'''<!-- MULTIMUTANT_FILM_START --><div class="eyebrow">MOLECULAR FILMS / 07 · CINCO MUTANTES</div><h1>Una estructura.<br>Cinco futuros posibles.</h1><p class="muted">GB1 · cinco mutantes dobles · un diseño seleccionado. Una versión ampliada con biblioteca molecular, refinamiento individual y comparaciones cuantitativas.</p><video controls preload="metadata" poster="multimutant_poster.jpg" src="videos/{NAME}.mp4"></video><div class="metrics"><div class="metric"><strong>5</strong><span>Mutantes dobles analizados</span></div><div class="metric"><strong>155</strong><span>Estados de refinamiento guardados</span></div><div class="metric"><strong>48 <small>s</small></strong><span>Full HD · 24 fps</span></div></div><p class="links"><a href="videos/{NAME}.mp4" download>Descargar video</a><a href="multimutant.html">Galería y los cuatro plots</a><a href="multimutant_design_pack.zip" download>Paquete de diseños y datos</a><a href="MULTIMUTANT_DESIGN.md">Método y alcance</a></p><p class="muted">K10C/E56C cumple los cuatro filtros geométricos. Su reducción local de movimiento del 51% es condicional al modelo de rigidez; la estabilidad térmica aún requiere validación experimental.</p><!-- MULTIMUTANT_FILM_END -->'''
-    if '<!-- MULTIMUTANT_FILM_START -->' in html:html=re.sub(r'<!-- MULTIMUTANT_FILM_START -->.*?<!-- MULTIMUTANT_FILM_END -->',block,html,flags=re.S)
-    else:html=html.replace('<footer>',block+'<footer>',1)
+        cards += f'<tr><td><b>{r["label"]}</b></td><td>{r["SS_A"]:.3f} Å</td><td>{abs(r["chi3_deg"]):.1f}°</td><td>{"Seleccionado" if r["passed_geometry_filter"] else "Fuera del filtro de torsión"}</td><td><a href="stability_design/{r["folder"]}/model.pdb">PDB</a> · <a href="stability_multimutant/{r["folder"]}.fasta">FASTA</a> · <a href="sessions/multimutant_{r["folder"]}.pse">PyMOL</a></td></tr>'
+    figures = ''
+    for stem, title, desc in [
+        ('torsion', 'La torsión decide', 'Cinco diseños comparados con la misma ventana geométrica.'),
+        ('geometry', 'Cuatro criterios, una selección', 'Distancia, ángulos, torsión y conservación del esqueleto.'),
+        ('refinement', 'El refinamiento completo', '31 estados por mutante y energía relativa a su propio inicio.'),
+        (
+            'rigidity',
+            'Movimiento bajo un modelo explícito',
+            'Predicciones locales y globales; rangos de sensibilidad a los supuestos.',
+        ),
+    ]:
+        figures += f'<section><h2>{title}</h2><p class="muted">{desc}</p><a href="plots/multimutant_{stem}.png"><img class="plot" loading="lazy" src="plots/multimutant_{stem}.png" alt="{title}"></a><p class="links"><a href="plots/multimutant_{stem}.pdf">PDF</a><a href="plots/multimutant_{stem}.svg">SVG editable</a><a href="plots/multimutant_{stem}.png">PNG 300 dpi</a></p></section>'
+    master = OUT / 'index.html'
+    html = master.read_text()
+    css = re.search(r'<style>.*?</style>', html, re.S).group(0)
+    block = f'''<!-- MULTIMUTANT_FILM_START --><div class="eyebrow">MOLECULAR FILMS / 07 · CINCO MUTANTES</div><h1>Una estructura.<br>Cinco futuros posibles.</h1><p class="muted">GB1 · cinco mutantes dobles · un diseño seleccionado. Una versión ampliada con biblioteca molecular, refinamiento individual y comparaciones cuantitativas.</p><video controls preload="metadata" poster="multimutant_poster.jpg" src="videos/{NAME}.mp4"></video><div class="metrics"><div class="metric"><strong>5</strong><span>Mutantes dobles analizados</span></div><div class="metric"><strong>155</strong><span>Estados de refinamiento guardados</span></div><div class="metric"><strong>48 <small>s</small></strong><span>Full HD · 24 fps</span></div></div><p class="links"><a href="videos/{NAME}.mp4" download>Descargar video</a><a href="multimutant.html">Galería y los cuatro plots</a><a href="multimutant_design_pack.zip" download>Paquete de diseños y datos</a><a href="MULTIMUTANT_DESIGN.md">Método y alcance</a></p><p class="muted">K10C/E56C cumple los cuatro filtros geométricos. Su reducción local de movimiento del 51% es condicional al modelo de rigidez; la estabilidad térmica aún requiere validación experimental.</p><!-- MULTIMUTANT_FILM_END -->'''
+    if '<!-- MULTIMUTANT_FILM_START -->' in html:
+        html = re.sub(r'<!-- MULTIMUTANT_FILM_START -->.*?<!-- MULTIMUTANT_FILM_END -->', block, html, flags=re.S)
+    else:
+        html = html.replace('<footer>', block + '<footer>', 1)
     master.write_text(html)
-    page='<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Leonardo · One fold. Five futures.</title>'+css
-    page+='<style>section{margin-top:64px}.plot{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:15px}th,td{text-align:left;padding:16px 12px;border-bottom:1px solid #DCE6E8}.scroll{overflow:auto}h2{font-size:30px;color:#142E3B}a{color:#277F87}</style>'
-    page+='<main><header><b>L E O N A R D O</b><span class="muted">MOLECULAR FILMS / 07</span></header>'+block
-    page+='<section><h2>Los cinco diseños</h2><div class="scroll"><table><thead><tr><th>Mutante</th><th>S–S</th><th>Torsión absoluta</th><th>Resultado del filtro</th><th>Archivos</th></tr></thead><tbody>'+cards+'</tbody></table></div></section>'+figures
-    page+='<section><h2>Datos reproducibles</h2><p class="links"><a href="stability_multimutant/comparison.csv">Comparación CSV</a><a href="stability_multimutant/refinement.csv">Refinamiento CSV</a><a href="stability_multimutant/mobility.csv">Movilidad CSV</a><a href="stability_multimutant/sensitivity.csv">Sensibilidad CSV</a><a href="stability_multimutant/all_variants.fasta">Todas las secuencias</a><a href="stability_multimutant/validation.json">Validación científica</a><a href="multimutant_manifest.json">Manifiesto</a></p></section><footer>48 s · 1920 × 1080 · 24 fps · sin audio. <a href="index.html">Colección completa</a></footer></main></html>'
-    (OUT/'multimutant.html').write_text(page)
-    readme=OUT/'README.md';r=readme.read_text()
-    if 'MULTIMUTANT_DESIGN.md' not in r:readme.write_text(r+'\n## Video 07 · Cinco mutantes de GB1\n\nVersión ampliada de 48 s: cinco mutantes dobles, sus refinamientos, selección geométrica y predicción de rigidez. [Galería y descargas](multimutant.html), [método](MULTIMUTANT_DESIGN.md).\n')
-    files=[OUT/'MULTIMUTANT_DESIGN.md']+list(WORK.glob('*'))+list((OUT/'plots').glob('multimutant_*'))+list((OUT/'sessions').glob('multimutant_*.pse'))
-    files+=[SOURCE/'data/1PGA.pdb',SOURCE/'screen.json']
-    for variant in ['original']+[r['folder'] for r in data['mutants']]:
-        files.extend(SOURCE/variant/f for f in ['model.pdb','system.xml','atoms.json','relaxation.npz','preparation.json'])
-    with zipfile.ZipFile(OUT/'multimutant_design_pack.zip','w',zipfile.ZIP_DEFLATED) as z:
+    page = (
+        '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Leonardo · One fold. Five futures.</title>'
+        + css
+    )
+    page += '<style>section{margin-top:64px}.plot{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:15px}th,td{text-align:left;padding:16px 12px;border-bottom:1px solid #DCE6E8}.scroll{overflow:auto}h2{font-size:30px;color:#142E3B}a{color:#277F87}</style>'
+    page += '<main><header><b>L E O N A R D O</b><span class="muted">MOLECULAR FILMS / 07</span></header>' + block
+    page += (
+        '<section><h2>Los cinco diseños</h2><div class="scroll"><table><thead><tr><th>Mutante</th><th>S–S</th><th>Torsión absoluta</th><th>Resultado del filtro</th><th>Archivos</th></tr></thead><tbody>'
+        + cards
+        + '</tbody></table></div></section>'
+        + figures
+    )
+    page += '<section><h2>Datos reproducibles</h2><p class="links"><a href="stability_multimutant/comparison.csv">Comparación CSV</a><a href="stability_multimutant/refinement.csv">Refinamiento CSV</a><a href="stability_multimutant/mobility.csv">Movilidad CSV</a><a href="stability_multimutant/sensitivity.csv">Sensibilidad CSV</a><a href="stability_multimutant/all_variants.fasta">Todas las secuencias</a><a href="stability_multimutant/validation.json">Validación científica</a><a href="multimutant_manifest.json">Manifiesto</a></p></section><footer>48 s · 1920 × 1080 · 24 fps · sin audio. <a href="index.html">Colección completa</a></footer></main></html>'
+    (OUT / 'multimutant.html').write_text(page)
+    readme = OUT / 'README.md'
+    r = readme.read_text()
+    if 'MULTIMUTANT_DESIGN.md' not in r:
+        readme.write_text(
+            r
+            + '\n## Video 07 · Cinco mutantes de GB1\n\nVersión ampliada de 48 s: cinco mutantes dobles, sus refinamientos, selección geométrica y predicción de rigidez. [Galería y descargas](multimutant.html), [método](MULTIMUTANT_DESIGN.md).\n'
+        )
+    files = (
+        [OUT / 'MULTIMUTANT_DESIGN.md']
+        + list(WORK.glob('*'))
+        + list((OUT / 'plots').glob('multimutant_*'))
+        + list((OUT / 'sessions').glob('multimutant_*.pse'))
+    )
+    files += [SOURCE / 'data/1PGA.pdb', SOURCE / 'screen.json']
+    for variant in ['original'] + [r['folder'] for r in data['mutants']]:
+        files.extend(
+            SOURCE / variant / f
+            for f in ['model.pdb', 'system.xml', 'atoms.json', 'relaxation.npz', 'preparation.json']
+        )
+    with zipfile.ZipFile(OUT / 'multimutant_design_pack.zip', 'w', zipfile.ZIP_DEFLATED) as z:
         for f in files:
-            if f.is_file():z.write(f,str(f.relative_to(OUT)))
-    print('Gallery, comparison downloads, portable design pack and methods written.',flush=True)
+            if f.is_file():
+                z.write(f, str(f.relative_to(OUT)))
+    print('Gallery, comparison downloads, portable design pack and methods written.', flush=True)
 
 
 def manifest():
-    path=OUT/'videos'/f'{NAME}.mp4'
-    streams=json.loads(subprocess.check_output(['/opt/homebrew/bin/ffprobe','-v','error','-show_streams','-of','json',str(path)]))['streams']
-    assert len(streams)==1;s=streams[0]
-    assert (s['width'],s['height'],s['r_frame_rate'],int(s['nb_frames']),s['pix_fmt'],s['codec_name'])==(1920,1080,'24/1',FRAMES,'yuv420p','h264')
-    assert abs(float(s['duration'])-48)<1e-6
-    p=subprocess.run(['/opt/homebrew/bin/ffmpeg','-v','error','-i',str(path),'-f','null','-'],capture_output=True,text=True)
-    assert p.returncode==0 and not p.stderr.strip(),p.stderr
+    path = OUT / 'videos' / f'{NAME}.mp4'
+    streams = json.loads(
+        subprocess.check_output(['/opt/homebrew/bin/ffprobe', '-v', 'error', '-show_streams', '-of', 'json', str(path)])
+    )['streams']
+    assert len(streams) == 1
+    s = streams[0]
+    assert (s['width'], s['height'], s['r_frame_rate'], int(s['nb_frames']), s['pix_fmt'], s['codec_name']) == (
+        1920,
+        1080,
+        '24/1',
+        FRAMES,
+        'yuv420p',
+        'h264',
+    )
+    assert abs(float(s['duration']) - 48) < 1e-6
+    p = subprocess.run(
+        ['/opt/homebrew/bin/ffmpeg', '-v', 'error', '-i', str(path), '-f', 'null', '-'], capture_output=True, text=True
+    )
+    assert p.returncode == 0 and not p.stderr.strip(), p.stderr
     for i in range(FRAMES):
-        with Image.open(FOLDER/f'frame_{i:05d}.png') as im:assert im.size==(1920,1080);im.verify()
-    prior={}
-    for name in ['manifest.json','mutations_manifest.json','stability_manifest.json']:
-        m=json.loads((OUT/name).read_text());videos=m.get('videos',[m.get('video')])
-        if isinstance(videos,dict):videos=list(videos.values())
+        with Image.open(FOLDER / f'frame_{i:05d}.png') as im:
+            assert im.size == (1920, 1080)
+            im.verify()
+    prior = {}
+    for name in ['manifest.json', 'mutations_manifest.json', 'stability_manifest.json']:
+        m = json.loads((OUT / name).read_text())
+        videos = m.get('videos', [m.get('video')])
+        if isinstance(videos, dict):
+            videos = list(videos.values())
         for v in videos:
-            if not v:continue
-            file=v.get('file',v.get('path'));digest=v.get('sha256')
+            if not v:
+                continue
+            file = v.get('file', v.get('path'))
+            digest = v.get('sha256')
             if file and digest:
-                p=OUT/file
-                if not p.exists():p=OUT/'videos'/Path(file).name
-                assert sha(p)==digest,f'Previous film changed: {p}'
-                prior[str(p.relative_to(OUT))]=digest
-    assert len(prior)==6,prior
-    files={}
-    for pattern in ['stability_multimutant/*','plots/multimutant_*','sessions/multimutant_*.pse']:
+                p = OUT / file
+                if not p.exists():
+                    p = OUT / 'videos' / Path(file).name
+                assert sha(p) == digest, f'Previous film changed: {p}'
+                prior[str(p.relative_to(OUT))] = digest
+    assert len(prior) == 6, prior
+    files = {}
+    for pattern in ['stability_multimutant/*', 'plots/multimutant_*', 'sessions/multimutant_*.pse']:
         for f in OUT.glob(pattern):
-            if f.is_file():files[str(f.relative_to(OUT))]=sha(f)
-    for name in ['MULTIMUTANT_DESIGN.md','multimutant.html','multimutant_poster.jpg','multimutant_contact_sheet.jpg','multimutant_design_pack.zip']:
-        files[name]=sha(OUT/name)
-    for variant in ['original','design']+[r['folder'] for r in load()['mutants']]:
-        for name in ['model.pdb','system.xml','atoms.json','relaxation.npz','preparation.json']:
-            f=SOURCE/variant/name;files[str(f.relative_to(OUT))]=sha(f)
-    for name in ['data/1PGA.pdb','screen.json','summary.json','network.npz']:
-        f=SOURCE/name;files[str(f.relative_to(OUT))]=sha(f)
-    for name in ['cinematic_stability_multimutant.py','render_cinematic_multimutant.py','finalize_cinematic_multimutant.py',
-                 'cinematic_stability_design.py','render_cinematic_stability.py','render_cinematic_v2.py','render_real_cinematic_videos.py']:
-        files['../../scripts/'+name]=sha(ROOT/'scripts'/name)
-    dump(OUT/'multimutant_manifest.json',dict(video=dict(file=str(path.relative_to(OUT)),sha256=sha(path),bytes=path.stat().st_size,
-        width=1920,height=1080,fps=FPS,frames=FRAMES,seconds=48,fully_decoded=True),sources_sha256=files,
-        previous_six_films_unchanged=prior,validation=json.loads((WORK/'validation.json').read_text()),summary=json.loads((WORK/'summary.json').read_text())))
-    for page in ['index.html','multimutant.html']:
-        for ref in re.findall(r'(?:href|src|poster)="([^"]+)"',(OUT/page).read_text()):
-            if not ref.startswith(('http','#')):assert (OUT/ref).exists(),ref
-    with zipfile.ZipFile(OUT/'multimutant_design_pack.zip') as z:assert z.testzip() is None
-    print('48-second film fully decoded; 1152 frames, gallery links, ZIP and six previous films verified.',flush=True)
+            if f.is_file():
+                files[str(f.relative_to(OUT))] = sha(f)
+    for name in [
+        'MULTIMUTANT_DESIGN.md',
+        'multimutant.html',
+        'multimutant_poster.jpg',
+        'multimutant_contact_sheet.jpg',
+        'multimutant_design_pack.zip',
+    ]:
+        files[name] = sha(OUT / name)
+    for variant in ['original', 'design'] + [r['folder'] for r in load()['mutants']]:
+        for name in ['model.pdb', 'system.xml', 'atoms.json', 'relaxation.npz', 'preparation.json']:
+            f = SOURCE / variant / name
+            files[str(f.relative_to(OUT))] = sha(f)
+    for name in ['data/1PGA.pdb', 'screen.json', 'summary.json', 'network.npz']:
+        f = SOURCE / name
+        files[str(f.relative_to(OUT))] = sha(f)
+    for name in [
+        'cinematic_stability_multimutant.py',
+        'render_cinematic_multimutant.py',
+        'finalize_cinematic_multimutant.py',
+        'cinematic_stability_design.py',
+        'render_cinematic_stability.py',
+        'render_cinematic_v2.py',
+        'render_real_cinematic_videos.py',
+    ]:
+        files['../../scripts/' + name] = sha(ROOT / 'scripts' / name)
+    dump(
+        OUT / 'multimutant_manifest.json',
+        dict(
+            video=dict(
+                file=str(path.relative_to(OUT)),
+                sha256=sha(path),
+                bytes=path.stat().st_size,
+                width=1920,
+                height=1080,
+                fps=FPS,
+                frames=FRAMES,
+                seconds=48,
+                fully_decoded=True,
+            ),
+            sources_sha256=files,
+            previous_six_films_unchanged=prior,
+            validation=json.loads((WORK / 'validation.json').read_text()),
+            summary=json.loads((WORK / 'summary.json').read_text()),
+        ),
+    )
+    for page in ['index.html', 'multimutant.html']:
+        for ref in re.findall(r'(?:href|src|poster)="([^"]+)"', (OUT / page).read_text()):
+            if not ref.startswith(('http', '#')):
+                assert (OUT / ref).exists(), ref
+    with zipfile.ZipFile(OUT / 'multimutant_design_pack.zip') as z:
+        assert z.testzip() is None
+    print('48-second film fully decoded; 1152 frames, gallery links, ZIP and six previous films verified.', flush=True)
 
 
-if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('stage',choices=['gallery','manifest','deliver']);a=p.parse_args()
-    if a.stage in ['gallery','deliver']:gallery()
-    if a.stage in ['manifest','deliver']:manifest()
+if __name__ == '__main__':
+    p = argparse.ArgumentParser()
+    p.add_argument('stage', choices=['gallery', 'manifest', 'deliver'])
+    a = p.parse_args()
+    if a.stage in ['gallery', 'deliver']:
+        gallery()
+    if a.stage in ['manifest', 'deliver']:
+        manifest()

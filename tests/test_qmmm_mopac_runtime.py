@@ -2,24 +2,25 @@ import math
 from types import SimpleNamespace
 
 import numpy as np
-
-from qmmm_mopac_runtime import EV_TO_HARTREE
-from qmmm_mopac_runtime import OPENMM_COULOMB_CONSTANT
-from qmmm_mopac_runtime import assemble_force_correction
-from qmmm_mopac_runtime import build_mopac_input_text
-from qmmm_mopac_runtime import build_mopac_reaction_input_text
-from qmmm_mopac_runtime import compute_phi_on_qm_atoms
-from qmmm_mopac_runtime import electrostatic_backreaction_openmm
-from qmmm_mopac_runtime import mopac_build_irc_profile_payload
-from qmmm_mopac_runtime import mopac_reaction_keywords_for_stage
-from qmmm_mopac_runtime import mopac_validate_ts_frequencies
-from qmmm_mopac_runtime import parse_mopac_arc_geometries
-from qmmm_mopac_runtime import parse_mopac_aux_text
-from qmmm_mopac_runtime import qmmm_assess_interface
-from qmmm_mopac_runtime import qmmm_mopac_keywords_for_operation
-from qmmm_mopac_runtime import qmmm_recommend_region
-from qmmm_mopac_runtime import run_mopac_reaction_workflow
-from qmmm_mopac_runtime import qmmm_step_file_based
+from qmmm_mopac_runtime import (
+    EV_TO_HARTREE,
+    OPENMM_COULOMB_CONSTANT,
+    assemble_force_correction,
+    build_mopac_input_text,
+    build_mopac_reaction_input_text,
+    compute_phi_on_qm_atoms,
+    electrostatic_backreaction_openmm,
+    mopac_build_irc_profile_payload,
+    mopac_reaction_keywords_for_stage,
+    mopac_validate_ts_frequencies,
+    parse_mopac_arc_geometries,
+    parse_mopac_aux_text,
+    qmmm_assess_interface,
+    qmmm_mopac_keywords_for_operation,
+    qmmm_recommend_region,
+    qmmm_step_file_based,
+    run_mopac_reaction_workflow,
+)
 
 
 def test_compute_phi_on_qm_atoms_positive_and_distance_dependent():
@@ -543,6 +544,7 @@ def _water_step(q_mm, tmp_path):
 def test_qmmm_step_runs_with_real_mopac(tmp_path):
     """End-to-end with the real MOPAC binary: the mocked tests above never exercised mol.in."""
     import shutil
+
     import pytest
     if not (shutil.which("mopac") or shutil.which("MOPAC")):
         pytest.skip("MOPAC is not installed")
@@ -592,6 +594,7 @@ def test_link_atom_plan_caps_the_cut_bond_and_moves_the_boundary_charge():
 
 def test_link_atom_and_lj_forces_match_finite_differences_with_real_mopac(tmp_path):
     import shutil
+
     import pytest
     exe = shutil.which("mopac") or shutil.which("MOPAC")
     if not exe:

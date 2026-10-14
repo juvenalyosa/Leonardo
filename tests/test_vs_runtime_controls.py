@@ -1,8 +1,10 @@
 import math
 
-from vs_runtime import format_virtual_screening_library_status
-from vs_runtime import normalize_virtual_screening_controls
-from vs_runtime import normalize_virtual_screening_grid
+from vs_runtime import (
+    format_virtual_screening_library_status,
+    normalize_virtual_screening_controls,
+    normalize_virtual_screening_grid,
+)
 
 
 def test_vs_grid_from_pocket_applies_padding_min_edge_and_max_edge():

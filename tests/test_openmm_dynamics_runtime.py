@@ -1,16 +1,18 @@
-from openmm_dynamics_runtime import apply_openmm_cv_preset
-from openmm_dynamics_runtime import build_openmm_capability_report
-from openmm_dynamics_runtime import normalize_openmm_run_controls
-from openmm_dynamics_runtime import openmm_cv_expression
-from openmm_dynamics_runtime import openmm_cv_presets
-from openmm_dynamics_runtime import openmm_default_cv_context
-from openmm_dynamics_runtime import run_openmm_alanine_cv_suite
-from openmm_dynamics_runtime import run_openmm_alanine_dipeptide_fes
-from openmm_dynamics_runtime import run_openmm_advanced_template_smoke
-from openmm_dynamics_runtime import run_openmm_metadynamics_smoke
-from openmm_dynamics_runtime import run_openmm_umbrella_smoke
-from openmm_dynamics_runtime import summarize_openmm_cv_definitions
-from openmm_dynamics_runtime import validate_openmm_cv_definitions
+from openmm_dynamics_runtime import (
+    apply_openmm_cv_preset,
+    build_openmm_capability_report,
+    normalize_openmm_run_controls,
+    openmm_cv_expression,
+    openmm_cv_presets,
+    openmm_default_cv_context,
+    run_openmm_advanced_template_smoke,
+    run_openmm_alanine_cv_suite,
+    run_openmm_alanine_dipeptide_fes,
+    run_openmm_metadynamics_smoke,
+    run_openmm_umbrella_smoke,
+    summarize_openmm_cv_definitions,
+    validate_openmm_cv_definitions,
+)
 
 
 def test_openmm_cv_presets_resolve_context_and_validate_for_umbrella():
@@ -256,7 +258,6 @@ def test_rmsd_cv_is_zero_for_a_rigidly_rotated_copy():
     import math
 
     import numpy as np
-
     from openmm_dynamics_runtime import _rmsd_nm
 
     rng = np.random.default_rng(7)
@@ -312,10 +313,7 @@ def test_phi_psi_free_energy_map_puts_the_hills_at_their_phi_psi(tmp_path):
     import openmm as mm
     import openmm.app as app
     from openmm import unit
-
-    from openmm_dynamics_runtime import _phi_psi_free_energy_grid
-    from openmm_dynamics_runtime import _shift_fes_minimum
-    from openmm_dynamics_runtime import _write_alanine_fes_csv
+    from openmm_dynamics_runtime import _phi_psi_free_energy_grid, _shift_fes_minimum, _write_alanine_fes_csv
 
     p = [np.array([0.0, 0.14, 0.0]), np.array([0.0, 0.0, 0.0]), np.array([0.15, 0.0, 0.0])]
     p.append(_place(p[0], p[1], p[2], 0.15, 110.0, -100.0))      # phi = -100

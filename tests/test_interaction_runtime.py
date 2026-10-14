@@ -1,17 +1,18 @@
 import numpy as np
-
-from interaction_runtime import assign_ligand_hydrophobic_flags_from_rdkit
-from interaction_runtime import assign_ligand_ionic_groups_from_topology
-from interaction_runtime import build_ligand_charge_groups
-from interaction_runtime import build_protein_charge_groups
-from interaction_runtime import classify_hbond_geometry
-from interaction_runtime import classify_pi_ring_pair
-from interaction_runtime import is_supported_ligand_cation_center
-from interaction_runtime import reduce_hydrophobic_pairs
-from interaction_runtime import validate_halogen_bond
-from interaction_runtime import validate_metal_coordination
-from interaction_runtime import validate_ring_charge_interaction
-from interaction_runtime import vdw_contact_cutoff
+from interaction_runtime import (
+    assign_ligand_hydrophobic_flags_from_rdkit,
+    assign_ligand_ionic_groups_from_topology,
+    build_ligand_charge_groups,
+    build_protein_charge_groups,
+    classify_hbond_geometry,
+    classify_pi_ring_pair,
+    is_supported_ligand_cation_center,
+    reduce_hydrophobic_pairs,
+    validate_halogen_bond,
+    validate_metal_coordination,
+    validate_ring_charge_interaction,
+    vdw_contact_cutoff,
+)
 
 
 def _atom(name, element, xyz, **extra):
@@ -516,6 +517,7 @@ def test_ligand_bond_orders_from_pdb_keeps_the_aromatic_ring(tmp_path, monkeypat
 
     pytest.importorskip("rdkit")
     from rdkit import Chem
+
     from leonardo.component_library_runtime import ligand_bond_orders_from_pdb
 
     monkeypatch.setenv("LEONARDO_PARAMETERS_DIR", str(tmp_path))      # empty: no CCD template

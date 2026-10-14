@@ -10,7 +10,6 @@ import os
 import sys
 from importlib import import_module
 
-
 __version__ = "0.2.0a9"
 __build__ = "2026-10-13-r1"
 PLUGIN_MENU_NAME = "Leonardo"

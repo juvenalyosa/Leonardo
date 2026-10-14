@@ -1,8 +1,6 @@
 from pathlib import Path
 
-from task_monitor_runtime import task_monitor_probe_job
-from task_monitor_runtime import task_monitor_probe_openmm
-from task_monitor_runtime import task_monitor_probe_psi4
+from task_monitor_runtime import task_monitor_probe_job, task_monitor_probe_openmm, task_monitor_probe_psi4
 
 
 def test_task_monitor_probe_psi4_reads_live_log_tail(tmp_path):

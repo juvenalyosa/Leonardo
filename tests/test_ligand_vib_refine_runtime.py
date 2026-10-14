@@ -1,20 +1,21 @@
 import numpy as np
 import pytest
-
-from ligand_vib_refine_runtime import build_mode_comparison_rows
-from ligand_vib_refine_runtime import build_qm_optimization_stages
-from ligand_vib_refine_runtime import build_refined_frcmod_from_system
-from ligand_vib_refine_runtime import build_scale_search_config
-from ligand_vib_refine_runtime import compute_mode_fit_metrics
-from ligand_vib_refine_runtime import _infer_element_from_mol2_name_type
-from ligand_vib_refine_runtime import load_first_sdf_record_atoms
-from ligand_vib_refine_runtime import parse_mopac_vibrational_aux_text
-from ligand_vib_refine_runtime import qm_result_matches_stage
-from ligand_vib_refine_runtime import _scale_regularization_weight
-from ligand_vib_refine_runtime import load_mol2_full_records
-from ligand_vib_refine_runtime import run_bounded_pso
-from ligand_vib_refine_runtime import validate_qm_start_sdf_matches_template_mol2
-from ligand_vib_refine_runtime import write_mol2_with_coords
+from ligand_vib_refine_runtime import (
+    _infer_element_from_mol2_name_type,
+    _scale_regularization_weight,
+    build_mode_comparison_rows,
+    build_qm_optimization_stages,
+    build_refined_frcmod_from_system,
+    build_scale_search_config,
+    compute_mode_fit_metrics,
+    load_first_sdf_record_atoms,
+    load_mol2_full_records,
+    parse_mopac_vibrational_aux_text,
+    qm_result_matches_stage,
+    run_bounded_pso,
+    validate_qm_start_sdf_matches_template_mol2,
+    write_mol2_with_coords,
+)
 
 
 def test_run_bounded_pso_moves_toward_simple_minimum():
@@ -151,9 +152,10 @@ def test_mol2_element_inference_handles_gaff_aromatic_types():
 
 def test_build_refined_frcmod_has_amber_section_layout():
     openmm = pytest.importorskip("openmm")
-    from openmm import unit
     import os
     import tempfile
+
+    from openmm import unit
 
     system = openmm.System()
     for mass in (12.0, 12.0, 14.0, 1.0):

@@ -7,12 +7,9 @@ Prints the YouTube chapter timestamps.
 from __future__ import annotations
 
 import argparse
-import math
-import shutil
 import subprocess
 from pathlib import Path
 
-import numpy as np
 import render_cinematic_v2 as style
 from PIL import Image, ImageDraw, ImageFilter
 

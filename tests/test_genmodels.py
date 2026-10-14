@@ -1,8 +1,7 @@
 import os
 
-import pytest
-
 import genmodels
+import pytest
 
 
 def test_genmodels_salign_single_template_skips_multi_template_salign(tmp_path, monkeypatch):

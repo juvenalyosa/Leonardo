@@ -5,9 +5,9 @@ import shutil
 
 import numpy as np
 import pytest
+from openmm_qmmm_runtime import run_openmm_qmmm_relaxed_scan, run_openmm_qmmm_ts_search
 
 from leonardo.qmmm_reaction_runtime import EmbeddedQMMMModel
-from openmm_qmmm_runtime import run_openmm_qmmm_relaxed_scan, run_openmm_qmmm_ts_search
 
 # propan-1-ol + water: QM = C3H2-O-H (C2-C3 cut -> one H link atom); MM = C1H3-C2H2 + water
 _PROPANOL_SYM = ["C", "H", "H", "H", "C", "H", "H", "C", "H", "H", "O", "H", "O", "H", "H"]

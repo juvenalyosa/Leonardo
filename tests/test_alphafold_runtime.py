@@ -1,17 +1,19 @@
 import json
 
-from alphafold_runtime import AF_ENGINE_AF3_LOCAL
-from alphafold_runtime import COLABFOLD_NOTEBOOK_URL
-from alphafold_runtime import af_build_alphafold3_docker_command
-from alphafold_runtime import af_build_alphafold3_input_json
-from alphafold_runtime import af_build_colabfold_command
-from alphafold_runtime import af_build_colabfold_job_notebook
-from alphafold_runtime import af_build_colabfold_job_script
-from alphafold_runtime import af_engine_profile
-from alphafold_runtime import af_find_best_model_recursive
-from alphafold_runtime import af_format_shell_command
-from alphafold_runtime import af_model_patterns
-from alphafold_runtime import af_write_json
+from alphafold_runtime import (
+    AF_ENGINE_AF3_LOCAL,
+    COLABFOLD_NOTEBOOK_URL,
+    af_build_alphafold3_docker_command,
+    af_build_alphafold3_input_json,
+    af_build_colabfold_command,
+    af_build_colabfold_job_notebook,
+    af_build_colabfold_job_script,
+    af_engine_profile,
+    af_find_best_model_recursive,
+    af_format_shell_command,
+    af_model_patterns,
+    af_write_json,
+)
 
 
 def test_af3_input_json_is_protein_only_schema(tmp_path):

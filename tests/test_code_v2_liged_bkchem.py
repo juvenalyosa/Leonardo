@@ -1,8 +1,7 @@
 import sys
 
-import pytest
-
 import code_v2
+import pytest
 
 
 def _build_dummy_dialog():

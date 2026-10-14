@@ -1,10 +1,7 @@
 import os
 
 import numpy as np
-
-from leadopt_runtime import leadopt_finalize_refine_estimate
-from leadopt_runtime import mpo_score
-from leadopt_runtime import run_leadopt_entries
+from leadopt_runtime import leadopt_finalize_refine_estimate, mpo_score, run_leadopt_entries
 from redock_runtime import pick_best_pose_row
 from smina_runtime import run_smina_repeats
 from vs_runtime import run_virtual_screening_entries

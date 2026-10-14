@@ -1,6 +1,5 @@
-import pytest
-
 import code_v2
+import pytest
 
 
 class _Spin:

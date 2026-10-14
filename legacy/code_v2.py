@@ -1,844 +1,919 @@
 # ProtLigInteract/code_v2.py
-import os
-import sys
-import math
-import time
-import re
-import hashlib
 import collections
-import json
+import datetime
+import functools
+import glob
+import hashlib
 import importlib
-import inspect
 import importlib.util
+import inspect
+import json
+import math
+import os
+import re
+import shlex
 import shutil
 import subprocess
-import shlex
+import sys
 import tempfile
-import glob
-import urllib.parse
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
-import zipfile
-import functools
-import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
+
 import numpy as np
 from Bio.PDB.MMCIFParser import MMCIFParser
 from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB.Polypeptide import is_aa
 from pymol import cgo, cmd
-from pymol.Qt import QtCore, QtWidgets, QtGui
+from pymol.Qt import QtCore, QtGui, QtWidgets
 from pymol.Qt.utils import loadUi
-import datetime
 
 try:
-    from .alphafold_runtime import AF3_SERVER_URL
-    from .alphafold_runtime import AF_ENGINE_AF3_LOCAL
-    from .alphafold_runtime import AF_ENGINE_AF3_SERVER
-    from .alphafold_runtime import AF_ENGINE_COLABFOLD
-    from .alphafold_runtime import COLABFOLD_NOTEBOOK_URL
-    from .alphafold_runtime import af_alphafold3_required_path_status
-    from .alphafold_runtime import af_build_alphafold3_docker_command
-    from .alphafold_runtime import af_build_alphafold3_input_json
-    from .alphafold_runtime import af_build_alphafold_server_json
-    from .alphafold_runtime import af_colabfold_query
-    from .alphafold_runtime import af_fasta_text
-    from .alphafold_runtime import af_sanitize_af3_chain_id
-    from .alphafold_runtime import af_split_protein_chains
-    from .alphafold_runtime import af_build_colabfold_colab_cell
-    from .alphafold_runtime import af_build_colabfold_command
-    from .alphafold_runtime import af_build_colabfold_job_notebook
-    from .alphafold_runtime import af_build_colabfold_job_script
-    from .alphafold_runtime import af_collect_existing_dirs
-    from .alphafold_runtime import GPU_REQUIRED_TITLE
-    from .alphafold_runtime import af_detect_local_gpu
-    from .alphafold_runtime import af_extract_result_zips
-    from .alphafold_runtime import af_safe_extract_zip
-    from .alphafold_runtime import af_gpu_requirement_message
-    from .alphafold_runtime import af_engine_profile
-    from .alphafold_runtime import af_extract_plddt_pae_from_json
-    from .alphafold_runtime import af_find_best_model_recursive
-    from .alphafold_runtime import af_format_shell_command
-    from .alphafold_runtime import af_is_relaxed_name
-    from .alphafold_runtime import af_model_patterns
-    from .alphafold_runtime import af_pick_best_plot_image
-    from .alphafold_runtime import af_plot_patterns
-    from .alphafold_runtime import af_plot_title
-    from .alphafold_runtime import af_sanitize_job_name
-    from .alphafold_runtime import af_write_json
-    from .bioseq_runtime import BIOSEQ_ANALYSIS_CATALOG
-    from .bioseq_runtime import BIOSEQ_QUESTION_MAP
+    from .abfe_runtime import (
+        ABFE_POCKET_DESCRIPTOR_COLS,
+        _load_abfe_runtime_deploy,
+        _nan_pocket_descriptor_row,
+        infer_abfe_target_hint,
+    )
+    from .abfe_runtime import abfe_distance_axis_label as abfe_distance_axis_label
+    from .abfe_runtime import build_abfe_adaptive_steering_state_payload as abfe_build_adaptive_steering_state_payload
+    from .abfe_runtime import (
+        build_abfe_adaptive_steering_update_decision as abfe_build_adaptive_steering_update_decision,
+    )
+    from .abfe_runtime import (
+        build_abfe_final_scene_restore_execution_default_payload as abfe_build_final_scene_restore_execution_default_payload,
+    )
+    from .abfe_runtime import (
+        build_abfe_final_scene_restore_execution_payload as abfe_build_final_scene_restore_execution_payload,
+    )
+    from .abfe_runtime import build_abfe_final_traj_build_plan as abfe_build_final_traj_build_plan
+    from .abfe_runtime import build_abfe_final_traj_post_build_ui_plan as abfe_build_final_traj_post_build_ui_plan
+    from .abfe_runtime import build_abfe_free_energy_debug_line as abfe_build_free_energy_debug_line
+    from .abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
+    from .abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
+    from .abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
+    from .abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
+    from .abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
+    from .abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
+    from .abfe_runtime import build_abfe_live_plot_state_payload as abfe_build_live_plot_state_payload
+    from .abfe_runtime import build_abfe_live_plot_update_default_payload as abfe_build_live_plot_update_default_payload
+    from .abfe_runtime import build_abfe_live_plot_update_payload as abfe_build_live_plot_update_payload
+    from .abfe_runtime import build_abfe_live_update_decision as abfe_build_live_update_decision
+    from .abfe_runtime import build_abfe_live_view_atom_count_payload as abfe_build_live_view_atom_count_payload
+    from .abfe_runtime import (
+        build_abfe_live_view_tracking_default_payload as abfe_build_live_view_tracking_default_payload,
+    )
+    from .abfe_runtime import build_abfe_live_view_update_plan as abfe_build_live_view_update_plan
+    from .abfe_runtime import build_abfe_local_md_cleanup_plan as abfe_build_local_md_cleanup_plan
+    from .abfe_runtime import build_abfe_local_md_result_payload as abfe_build_local_md_result_payload
+    from .abfe_runtime import build_abfe_local_md_teardown_plan as abfe_build_local_md_teardown_plan
+    from .abfe_runtime import build_abfe_local_resource_plan as abfe_build_local_resource_plan
+    from .abfe_runtime import build_abfe_md_progress_dialog_plan as abfe_build_md_progress_dialog_plan
+    from .abfe_runtime import build_abfe_md_progress_finalize_decision as abfe_build_md_progress_finalize_decision
+    from .abfe_runtime import build_abfe_md_progress_step_decision as abfe_build_md_progress_step_decision
+    from .abfe_runtime import build_abfe_md_sample_payload as abfe_build_md_sample_payload
+    from .abfe_runtime import build_abfe_object_inventory_payload as abfe_build_object_inventory_payload
+    from .abfe_runtime import build_abfe_openmm_context_setup_plan as abfe_build_openmm_context_setup_plan
+    from .abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
+    from .abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
+    from .abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
+    from .abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
+    from .abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
+    from .abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
+    from .abfe_runtime import build_abfe_scene_restore_plan as abfe_build_scene_restore_plan
+    from .abfe_runtime import build_abfe_state_save_decision as abfe_build_state_save_decision
+    from .abfe_runtime import build_abfe_steering_bandit_action_payload as abfe_build_steering_bandit_action_payload
+    from .abfe_runtime import build_abfe_steering_lambda_schedule as abfe_build_steering_lambda_schedule
+    from .abfe_runtime import (
+        build_abfe_steering_policy_observation_payload as abfe_build_steering_policy_observation_payload,
+    )
+    from .abfe_runtime import (
+        build_abfe_steering_policy_safe_action_payload as abfe_build_steering_policy_safe_action_payload,
+    )
+    from .abfe_runtime import build_abfe_steering_policy_state_payload as abfe_build_steering_policy_state_payload
+    from .abfe_runtime import build_abfe_steering_policy_summary_payload as abfe_build_steering_policy_summary_payload
+    from .abfe_runtime import build_abfe_steering_policy_trace_payload as abfe_build_steering_policy_trace_payload
+    from .abfe_runtime import build_abfe_surface_detach_direction_payload as abfe_build_surface_detach_direction_payload
+    from .abfe_runtime import build_abfe_tunnel_restraint_payload as abfe_build_tunnel_restraint_payload
+    from .abfe_runtime import build_abfe_ui_process_events_decision as abfe_build_ui_process_events_decision
+    from .abfe_runtime import build_openmm_platform_selection_plan as abfe_build_openmm_platform_selection_plan
+    from .abfe_runtime import compute_runtime_pocket_descriptors as abfe_compute_runtime_pocket_descriptors
+    from .abfe_runtime import configure_abfe_steering_cycles as abfe_configure_steering_cycles
+    from .abfe_runtime import prepare_abfe_live_view_preflight as abfe_prepare_live_view_preflight
+    from .abfe_runtime import (
+        prepare_abfe_post_interaction_followup_runtime_plan as abfe_prepare_post_interaction_followup_runtime_plan,
+    )
+    from .abfe_runtime import (
+        resolve_abfe_post_interaction_dialog_payload as abfe_resolve_post_interaction_dialog_payload,
+    )
+    from .alphafold_runtime import (
+        AF3_SERVER_URL,
+        AF_ENGINE_AF3_LOCAL,
+        AF_ENGINE_AF3_SERVER,
+        AF_ENGINE_COLABFOLD,
+        COLABFOLD_NOTEBOOK_URL,
+        GPU_REQUIRED_TITLE,
+        af_build_alphafold3_docker_command,
+        af_build_alphafold3_input_json,
+        af_build_alphafold_server_json,
+        af_build_colabfold_colab_cell,
+        af_build_colabfold_command,
+        af_build_colabfold_job_notebook,
+        af_build_colabfold_job_script,
+        af_colabfold_query,
+        af_collect_existing_dirs,
+        af_detect_local_gpu,
+        af_engine_profile,
+        af_extract_plddt_pae_from_json,
+        af_extract_result_zips,
+        af_fasta_text,
+        af_find_best_model_recursive,
+        af_format_shell_command,
+        af_gpu_requirement_message,
+        af_is_relaxed_name,
+        af_model_patterns,
+        af_pick_best_plot_image,
+        af_plot_patterns,
+        af_plot_title,
+        af_safe_extract_zip,
+        af_sanitize_af3_chain_id,
+        af_sanitize_job_name,
+        af_split_protein_chains,
+        af_write_json,
+    )
+    from .background_tasks import submit_background_task
+    from .bioseq_runtime import BIOSEQ_ANALYSIS_CATALOG, BIOSEQ_QUESTION_MAP
     from .bioseq_runtime import align_residue_index_map as bioseq_align_residue_index_map
     from .bioseq_runtime import build_external_tool_urls as bioseq_build_external_tool_urls
     from .bioseq_runtime import build_motif_summary_lines as bioseq_build_motif_summary_lines
     from .bioseq_runtime import build_simulation_readiness_report as bioseq_build_simulation_readiness_report
     from .bioseq_runtime import clean_sequence as bioseq_clean_sequence
     from .bioseq_runtime import compute_msa_conservation as bioseq_compute_msa_conservation
-    from .bioseq_runtime import find_simple_motifs as bioseq_find_simple_motifs
-    from .bioseq_runtime import parse_fasta as bioseq_parse_fasta
-    from .bioseq_runtime import predict_disorder_segments as bioseq_predict_disorder_segments
-    from .bioseq_runtime import predict_signal_peptide as bioseq_predict_signal_peptide
-    from .bioseq_runtime import predict_tm_segments as bioseq_predict_tm_segments
-    from .bioseq_runtime import sequence_text_residue_offsets as bioseq_sequence_text_residue_offsets
-    from .bioseq_runtime import sequence_basic_metrics as bioseq_sequence_basic_metrics
     from .bioseq_runtime import fetch_uniprot_feature_summary as bioseq_fetch_uniprot_feature_summary
+    from .bioseq_runtime import sequence_text_residue_offsets as bioseq_sequence_text_residue_offsets
     from .bioseq_runtime import summarize_question_answers as bioseq_summarize_question_answers
-    from .structure_fetch_runtime import STRUCTURE_FETCH_SOURCES
-    from .structure_fetch_runtime import build_structure_fetch_request
-    from .structure_fetch_runtime import download_structure_file
-    from .psi4_runtime import psi4_build_mulliken_esp_cube_from_density
-    from .psi4_runtime import psi4_normalize_method_basis
-    from .psi4_runtime import psi4_normalize_threads
-    from .psi4_runtime import psi4_prepare_driver_job
-    from .psi4_runtime import psi4_read_cube
-    from .psi4_runtime import psi4_load_history_data
-    from .psi4_runtime import psi4_prepare_ir_spectrum
-    from .psi4_runtime import psi4_prepare_vibrational_animation
-    from .psi4_runtime import psi4_mol2_atom_type_to_element
-    from .psi4_runtime import psi4_collect_atoms_from_mol2
-    from .psi4_runtime import psi4_load_mol2_atom_records
-    from .psi4_runtime import psi4_load_mol2_charges_and_bonds
-    from .psi4_runtime import psi4_collect_ligand_charges_from_file
-    from .psi4_runtime import psi4_estimate_net_charge_from_charges
-    from .psi4_runtime import psi4_prepare_tleap_ligand_build
-    from .psi4_runtime import psi4_pick_charged_mol2_for_rebuild
-    from .psi4_runtime import psi4_prepare_rebuild_output_paths
-    from .psi4_runtime import psi4_build_antechamber_cmd
-    from .psi4_runtime import psi4_build_parmchk2_cmd
-    from .psi4_runtime import psi4_build_rebuild_failure_payload
-    from .psi4_runtime import psi4_build_rebuild_success_payload
-    from .psi4_runtime import psi4_build_net_charge_candidates
-    from .psi4_runtime import psi4_detect_sqm_charge_mismatch_hint
-    from .psi4_runtime import psi4_format_antechamber_attempt_brief
-    from .psi4_runtime import psi4_format_antechamber_attempts_failure
-    from .psi4_runtime import psi4_format_tool_rc_failure
-    from .psi4_runtime import psi4_prepare_leadopt_parameterization_paths
-    from .psi4_runtime import psi4_prepare_pose_source_for_parameterization
-    from .psi4_runtime import psi4_choose_parameterization_source
-    from .psi4_runtime import psi4_prepare_rdkit_source_for_parameterization
-    from .psi4_runtime import psi4_make_leadopt_parameterization_info
-    from .psi4_runtime import psi4_make_leadopt_cached_info
-    from .psi4_runtime import psi4_make_leadopt_generated_info
-    from .psi4_runtime import psi4_reason_missing_parameterization_tools
-    from .psi4_runtime import psi4_reason_source_for_parameterization_unavailable
-    from .psi4_runtime import psi4_reason_tleap_parameterization_failed
-    from .psi4_runtime import psi4_merge_notes
-    from .psi4_runtime import psi4_build_leadopt_param_hit_updates
-    from .psi4_runtime import psi4_apply_mapping_to_dict
-    from .psi4_runtime import psi4_finalize_leadopt_parameterization_success
-    from .psi4_runtime import psi4_resolve_leadopt_cached_parameterization
-    from .psi4_runtime import psi4_validate_leadopt_parameterization_tools
-    from .psi4_runtime import psi4_orchestrate_leadopt_parameterization
-    from .psi4_runtime import psi4_normalize_rdkit_parameterization_payload
-    from .psi4_runtime import psi4_resolve_leadopt_rdkit_state
-    from .psi4_runtime import psi4_resolve_leadopt_parameterization_source
-    from .psi4_runtime import psi4_run_leadopt_parameterization_pipeline
-    from .psi4_runtime import psi4_map_ligand_charges_from_param_mol2
-    from .psi4_runtime import psi4_map_charge_transfer_between_mol2_records
-    from .psi4_runtime import psi4_transfer_mol2_charges_to_typed
-    from .psi4_runtime import psi4_atomic_number
-    from .psi4_runtime import psi4_collect_atoms_from_xyz
-    from .psi4_runtime import psi4_element_token
-    from .psi4_runtime import psi4_guess_multiplicity_from_atoms
-    from .psi4_runtime import psi4_infer_charge_multiplicity
-    from .psi4_runtime import psi4_load_vib_data
-    from .psi4_runtime import psi4_pcm_solvent_candidates
-    from .psi4_runtime import psi4_pcm_supported_solvents
-    from .psi4_runtime import psi4_qst_align_coords_kabsch
-    from .psi4_runtime import psi4_qst_build_guess_atoms
-    from .psi4_runtime import psi4_qst_reorder_atoms_to_template
-    from .psi4_runtime import psi4_resolve_density_cube
-    from .psi4_runtime import psi4_resolve_esp_cube
-    from .psi4_runtime import psi4_resolve_homo_lumo_cubes
-    from .psi4_runtime import psi4_tail_file
-    from .psi4_runtime import psi4_write_charged_mol2
-    from .psi4_runtime import psi4_write_cube_data
-    from .abfe_runtime import ABFE_POCKET_DESCRIPTOR_COLS
-    from .abfe_runtime import prepare_abfe_live_view_preflight as abfe_prepare_live_view_preflight
-    from .abfe_runtime import build_abfe_steering_lambda_schedule as abfe_build_steering_lambda_schedule
-    from .abfe_runtime import configure_abfe_steering_cycles as abfe_configure_steering_cycles
-    from .abfe_runtime import build_abfe_adaptive_steering_state_payload as abfe_build_adaptive_steering_state_payload
-    from .abfe_runtime import build_abfe_adaptive_steering_update_decision as abfe_build_adaptive_steering_update_decision
-    from .abfe_runtime import build_abfe_steering_policy_state_payload as abfe_build_steering_policy_state_payload
-    from .abfe_runtime import build_abfe_steering_policy_observation_payload as abfe_build_steering_policy_observation_payload
-    from .abfe_runtime import build_abfe_steering_bandit_action_payload as abfe_build_steering_bandit_action_payload
-    from .abfe_runtime import build_abfe_steering_policy_safe_action_payload as abfe_build_steering_policy_safe_action_payload
-    from .abfe_runtime import build_abfe_steering_policy_trace_payload as abfe_build_steering_policy_trace_payload
-    from .abfe_runtime import build_abfe_steering_policy_summary_payload as abfe_build_steering_policy_summary_payload
-    from .abfe_runtime import build_abfe_surface_detach_direction_payload as abfe_build_surface_detach_direction_payload
-    from .abfe_runtime import build_abfe_tunnel_restraint_payload as abfe_build_tunnel_restraint_payload
-    from .abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
-    from .abfe_runtime import build_abfe_live_plot_update_default_payload as abfe_build_live_plot_update_default_payload
-    from .abfe_runtime import build_abfe_live_plot_state_payload as abfe_build_live_plot_state_payload
-    from .abfe_runtime import build_abfe_live_plot_update_payload as abfe_build_live_plot_update_payload
-    from .abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
-    from .abfe_runtime import build_abfe_md_sample_payload as abfe_build_md_sample_payload
-    from .abfe_runtime import build_abfe_local_resource_plan as abfe_build_local_resource_plan
-    from .abfe_runtime import build_abfe_state_save_decision as abfe_build_state_save_decision
-    from .abfe_runtime import build_abfe_live_update_decision as abfe_build_live_update_decision
-    from .abfe_runtime import build_abfe_live_view_update_plan as abfe_build_live_view_update_plan
-    from .abfe_runtime import build_abfe_md_progress_dialog_plan as abfe_build_md_progress_dialog_plan
-    from .abfe_runtime import build_abfe_md_progress_step_decision as abfe_build_md_progress_step_decision
-    from .abfe_runtime import build_abfe_md_progress_finalize_decision as abfe_build_md_progress_finalize_decision
-    from .abfe_runtime import build_abfe_ui_process_events_decision as abfe_build_ui_process_events_decision
-    from .abfe_runtime import build_abfe_final_traj_build_plan as abfe_build_final_traj_build_plan
-    from .abfe_runtime import build_abfe_final_traj_post_build_ui_plan as abfe_build_final_traj_post_build_ui_plan
-    from .abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
-    from .abfe_runtime import build_abfe_local_md_result_payload as abfe_build_local_md_result_payload
-    from .abfe_runtime import abfe_distance_axis_label as abfe_distance_axis_label
-    from .abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
-    from .abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
-    from .abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
-    from .abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
-    from .abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
-    from .abfe_runtime import build_abfe_free_energy_debug_line as abfe_build_free_energy_debug_line
-    from .abfe_runtime import prepare_abfe_post_interaction_followup_runtime_plan as abfe_prepare_post_interaction_followup_runtime_plan
-    from .abfe_runtime import resolve_abfe_post_interaction_dialog_payload as abfe_resolve_post_interaction_dialog_payload
-    from .abfe_runtime import collect_abfe_interaction_presence_sets as abfe_collect_interaction_presence_sets
-    from .abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
-    from .abfe_runtime import compute_runtime_pocket_descriptors as abfe_compute_runtime_pocket_descriptors
-    from .abfe_runtime import _load_abfe_runtime_deploy
-    from .abfe_runtime import _nan_pocket_descriptor_row
-    from .abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
-    from .abfe_runtime import build_abfe_scene_restore_plan as abfe_build_scene_restore_plan
-    from .abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
-    from .abfe_runtime import build_abfe_final_scene_restore_execution_payload as abfe_build_final_scene_restore_execution_payload
-    from .abfe_runtime import build_abfe_final_scene_restore_execution_default_payload as abfe_build_final_scene_restore_execution_default_payload
-    from .abfe_runtime import build_abfe_object_inventory_payload as abfe_build_object_inventory_payload
-    from .abfe_runtime import build_abfe_local_md_cleanup_plan as abfe_build_local_md_cleanup_plan
-    from .abfe_runtime import build_abfe_live_view_tracking_default_payload as abfe_build_live_view_tracking_default_payload
-    from .abfe_runtime import build_abfe_live_view_atom_count_payload as abfe_build_live_view_atom_count_payload
-    from .abfe_runtime import build_abfe_local_md_teardown_plan as abfe_build_local_md_teardown_plan
-    from .abfe_runtime import build_abfe_openmm_context_setup_plan as abfe_build_openmm_context_setup_plan
-    from .abfe_runtime import build_openmm_platform_selection_plan as abfe_build_openmm_platform_selection_plan
-    from .abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
-    from .abfe_runtime import infer_abfe_target_hint
-    from .background_tasks import submit_background_task
-    from .task_monitor_runtime import task_monitor_probe_job
-    from .dock_runtime import resolve_tool_path as resolve_external_tool_path
-    from .dock_runtime import run_post_docking_pipeline
-    from .dock_runtime import run_command as run_external_command
+    from .component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
+    from .component_library_runtime import coordination_variants as component_coordination_variants
+    from .component_library_runtime import forcefield_family_base_files
+    from .component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from .component_library_runtime import ligand_bond_orders_from_pdb as component_ligand_bond_orders_from_pdb
+    from .component_library_runtime import prepare_modeller as component_prepare_modeller
+    from .component_library_runtime import resolve_components as component_resolve_components
+    from .component_library_runtime import restore_names as component_restore_names
+    from .dock_runtime import build_legacy_python_tool_command as dock_build_legacy_python_tool_command
+    from .dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
+    from .dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
+    from .dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
     from .dock_runtime import format_docking_grid_summary as dock_format_docking_grid_summary
     from .dock_runtime import normalize_docking_grid as dock_normalize_docking_grid
     from .dock_runtime import parse_fpocket_info_text as dock_parse_fpocket_info_text
     from .dock_runtime import parse_pdb_atom_coordinates_from_lines as dock_parse_pdb_atom_coordinates_from_lines
-    from .dock_runtime import pocket_geometry_from_coordinates as dock_pocket_geometry_from_coordinates
-    from .leadopt_runtime import admet_score as leadopt_admet_score
-    from .leadopt_runtime import leadopt_build_candidate_rows
-    from .leadopt_runtime import build_leadopt_summary_lines
-    from .leadopt_runtime import filter_fail_reason as leadopt_filter_fail_reason
-    from .leadopt_runtime import find_best_leadopt_result
-    from .leadopt_runtime import leadopt_append_charge_map_source
-    from .leadopt_runtime import leadopt_apply_refinement_result
-    from .leadopt_runtime import leadopt_build_complex_selection_ids
-    from .leadopt_runtime import leadopt_build_nonbonded_particle_data
-    from .leadopt_runtime import leadopt_build_openmm_refinement_system
-    from .leadopt_runtime import leadopt_finalize_advanced_refinement_report
-    from .leadopt_runtime import leadopt_finalize_refine_estimate
-    from .leadopt_runtime import leadopt_heavy_atom_ids
-    from .leadopt_runtime import leadopt_infer_atom_names_elements
-    from .leadopt_runtime import leadopt_filter_and_rescue_candidates
-    from .leadopt_runtime import leadopt_merge_candidate_and_docked_results
-    from .leadopt_runtime import leadopt_needs_parameterization_build
-    from .leadopt_runtime import leadopt_optional_refine_note
-    from .leadopt_runtime import leadopt_pick_protein_eval_ids
-    from .leadopt_runtime import leadopt_prepare_parameterization_for_refinement
-    from .leadopt_runtime import leadopt_status_text
-    from .leadopt_runtime import leadopt_run_openmm_refinement_sampling
-    from .leadopt_runtime import leadopt_select_advanced_refinement_rows
-    from .leadopt_runtime import leadopt_sanitize_refine_parameterization_options
-    from .leadopt_runtime import make_leadopt_advanced_refinement_report
-    from .leadopt_runtime import make_leadopt_refine_result
-    from .leadopt_runtime import leadopt_compute_result_counts
-    from .leadopt_runtime import leadopt_export_csv_outputs
-    from .leadopt_runtime import leadopt_prepare_job_paths
-    from .leadopt_runtime import mpo_score as leadopt_mpo_score
-    from .interaction_typing_runtime import is_protein_hydrophobic_residue
-    from .interaction_typing_runtime import protein_aromatic_ring_atom_names
-    from .interaction_typing_runtime import protein_hbond_acceptor_atom_names
-    from .interaction_typing_runtime import protein_donor_hydrogen_count
-    from .interaction_typing_runtime import protein_hbond_donor_atom_names
-    from .interaction_typing_runtime import protein_hydrophobic_atom_names
-    from .interaction_typing_runtime import protein_metal_donor_atom_names
-    from .interaction_typing_runtime import protein_negative_atom_names
-    from .interaction_typing_runtime import protein_positive_atom_names
-    from .interaction_runtime import INTERACTION_GEOMETRY_CRITERIA
-    from .interaction_runtime import assign_ligand_hydrophobic_flags_from_rdkit
-    from .interaction_runtime import assign_ligand_ionic_groups_from_topology
-    from .interaction_runtime import build_interaction_record
-    from .interaction_runtime import build_ligand_charge_groups
-    from .interaction_runtime import build_protein_charge_groups
-    from .interaction_runtime import classify_hbond_geometry
-    from .interaction_runtime import classify_pi_ring_pair
-    from .interaction_runtime import interaction_metadata
-    from .interaction_runtime import is_ligand_anion_center
-    from .interaction_runtime import is_supported_ligand_cation_center
-    from .interaction_runtime import metal_coordination_cutoff
-    from .interaction_runtime import reduce_hydrophobic_pairs
-    from .interaction_runtime import validate_halogen_bond
-    from .interaction_runtime import validate_metal_coordination
-    from .interaction_runtime import validate_ring_charge_interaction
-    from .interaction_runtime import vdw_contact_cutoff
-    from .trajectory_interaction_runtime import trajectory_build_selected_trace_payload
-    from .trajectory_interaction_runtime import trajectory_collect_interaction_occupancy
-    from .trajectory_interaction_runtime import trajectory_collect_presence_counts
-    from .trajectory_interaction_runtime import trajectory_frame_indices
-    from .trajectory_interaction_runtime import trajectory_interaction_key
-    from .trajectory_interaction_runtime import trajectory_interaction_label
-    from .trajectory_interaction_runtime import trajectory_interaction_occ_key
-    from .trajectory_interaction_runtime import trajectory_normalize_max_distance
-    from .trajectory_interaction_runtime import trajectory_normalize_step
-    from .trajectory_interaction_runtime import trajectory_pick_matching_interaction
-    from .trajectory_interaction_runtime import trajectory_run_interaction_analysis
-    from .ligand_sketcher_runtime import LigandSketcherWidget
-    from .openmm_qmmm_runtime import classify_openmm_component_ff_class
-    from .openmm_qmmm_runtime import dedupe_openmm_forcefield_xml_paths
-    from .openmm_qmmm_runtime import default_openmm_xml_selected_keys
-    from .openmm_qmmm_runtime import resolve_openmm_component_template_plan
-    from .openmm_qmmm_runtime import compose_openmm_input_pdb
-    from .openmm_qmmm_runtime import build_openmm_parameterization_audit
-    from .openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
-    from .openmm_qmmm_runtime import summarize_openmm_system_terms
-    from .openmm_qmmm_runtime import compare_openmm_system_term_summaries
-    from .openmm_qmmm_runtime import assess_ligand_topology_signature_compatibility
-    from .openmm_qmmm_runtime import merge_openmm_periodic_torsion_rows
-    from .openmm_qmmm_runtime import normalize_pdb_conect_records
-    from .openmm_qmmm_runtime import plan_openmm_staged_minimization
-    from .openmm_qmmm_runtime import rewrite_pdb_component_identity
-    from .openmm_qmmm_runtime import sanitize_pdb_conect_for_standalone_components
-    from .openmm_qmmm_runtime import split_openmm_parameterization_targets
-    from .component_library_runtime import prepare_modeller as component_prepare_modeller
-    from .component_library_runtime import resolve_components as component_resolve_components
-    from .component_library_runtime import forcefield_family_base_files
-    from .component_library_runtime import restore_names as component_restore_names
-    from .component_library_runtime import coordination_variants as component_coordination_variants
-    from .component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
-    from .component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
-    from .component_library_runtime import ligand_bond_orders_from_pdb as component_ligand_bond_orders_from_pdb
-    from .openmm_qmmm_runtime import read_openmm_forcefield_residue_names
-    from .openmm_dynamics_runtime import apply_openmm_cv_preset
-    from .openmm_dynamics_runtime import build_openmm_capability_report
-    from .openmm_dynamics_runtime import normalize_openmm_cv_definition
-    from .openmm_dynamics_runtime import normalize_openmm_run_controls
-    from .openmm_dynamics_runtime import openmm_cv_expression
-    from .openmm_dynamics_runtime import openmm_cv_presets
-    from .openmm_dynamics_runtime import openmm_default_cv_context
-    from .openmm_dynamics_runtime import run_openmm_advanced_template_smoke
-    from .openmm_dynamics_runtime import summarize_openmm_cv_definitions
-    from .openmm_dynamics_runtime import validate_openmm_cv_definitions
-    from .small_molecule_runtime import build_small_molecule_prep_qc
-    from .small_molecule_runtime import prepare_small_molecule_working_mol
-    from .pka_runtime import protonate_molecule as pka_protonate_molecule
-    from .small_molecule_runtime import summarize_small_molecule_state
-    from .modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
-    from .modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
-    from .modeler_runtime import validate_modeler_model_count as modeler_validate_model_count
-    from .modeler_runtime import build_modeler_run_root as modeler_build_run_root
-    from .modeler_runtime import resolve_modeler_template_transfer_flags as modeler_resolve_template_transfer_flags
-    from .modeler_runtime import build_modeler_mutation_highlight_indices as modeler_build_mutation_highlight_indices
-    from .modeler_runtime import map_modeler_highlight_indices_to_positions as modeler_map_highlight_indices_to_positions
-    from .modeler_runtime import should_modeler_autoresolve_mutation_start as modeler_should_autoresolve_mutation_start
-    from .modeler_runtime import extract_modeler_mutation_target_positions as modeler_extract_mutation_target_positions
-    from .modeler_runtime import resolve_modeler_mutation_input_sequence as modeler_resolve_mutation_input_sequence
-    from .modeler_runtime import build_modeler_chain_entry
-    from .modeler_runtime import modeler_gap_fill_sequence
-    from .modeler_runtime import modeler_mutation_target_labels
-    from .modeler_runtime import modeler_peptide_bonded
-    from .modeler_runtime import select_modeler_search_result_variant as modeler_select_search_result_variant
-    from .modeler_runtime import resolve_modeler_template_selection as modeler_resolve_template_selection
-    from .modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
-    from .dock_runtime import build_legacy_python_tool_command as dock_build_legacy_python_tool_command
-    from .dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
-    from .dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
-    from .dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
     from .dock_runtime import pdb_atom_element as dock_pdb_atom_element
+    from .dock_runtime import pocket_geometry_from_coordinates as dock_pocket_geometry_from_coordinates
+    from .dock_runtime import resolve_tool_path as resolve_external_tool_path
+    from .dock_runtime import run_command as run_external_command
+    from .dock_runtime import run_post_docking_pipeline
     from .dock_runtime import smina_supports_native_flexres as dock_smina_supports_native_flexres
+    from .interaction_runtime import (
+        INTERACTION_GEOMETRY_CRITERIA,
+        assign_ligand_hydrophobic_flags_from_rdkit,
+        assign_ligand_ionic_groups_from_topology,
+        build_interaction_record,
+        build_ligand_charge_groups,
+        build_protein_charge_groups,
+        classify_hbond_geometry,
+        classify_pi_ring_pair,
+        is_ligand_anion_center,
+        is_supported_ligand_cation_center,
+        metal_coordination_cutoff,
+        reduce_hydrophobic_pairs,
+        validate_halogen_bond,
+        validate_metal_coordination,
+        validate_ring_charge_interaction,
+        vdw_contact_cutoff,
+    )
+    from .interaction_typing_runtime import (
+        protein_aromatic_ring_atom_names,
+        protein_donor_hydrogen_count,
+        protein_hbond_acceptor_atom_names,
+        protein_hbond_donor_atom_names,
+        protein_hydrophobic_atom_names,
+        protein_negative_atom_names,
+        protein_positive_atom_names,
+    )
+    from .leadopt_runtime import admet_score as leadopt_admet_score
+    from .leadopt_runtime import (
+        build_leadopt_summary_lines,
+        find_best_leadopt_result,
+        leadopt_append_charge_map_source,
+        leadopt_apply_refinement_result,
+        leadopt_build_candidate_rows,
+        leadopt_build_complex_selection_ids,
+        leadopt_build_nonbonded_particle_data,
+        leadopt_build_openmm_refinement_system,
+        leadopt_compute_result_counts,
+        leadopt_export_csv_outputs,
+        leadopt_filter_and_rescue_candidates,
+        leadopt_finalize_advanced_refinement_report,
+        leadopt_finalize_refine_estimate,
+        leadopt_heavy_atom_ids,
+        leadopt_infer_atom_names_elements,
+        leadopt_merge_candidate_and_docked_results,
+        leadopt_needs_parameterization_build,
+        leadopt_optional_refine_note,
+        leadopt_pick_protein_eval_ids,
+        leadopt_prepare_job_paths,
+        leadopt_prepare_parameterization_for_refinement,
+        leadopt_run_openmm_refinement_sampling,
+        leadopt_sanitize_refine_parameterization_options,
+        leadopt_select_advanced_refinement_rows,
+        leadopt_status_text,
+        make_leadopt_advanced_refinement_report,
+        make_leadopt_refine_result,
+        rank_leadopt_results,
+        run_leadopt_entries,
+    )
+    from .leadopt_runtime import filter_fail_reason as leadopt_filter_fail_reason
+    from .leadopt_runtime import mpo_score as leadopt_mpo_score
     from .leadopt_runtime import pass_filters as leadopt_pass_filters
-    from .leadopt_runtime import rank_leadopt_results
     from .leadopt_runtime import relax_filter_limits as leadopt_relax_filter_limits
-    from .leadopt_runtime import run_leadopt_entries
+    from .ligand_sketcher_runtime import LigandSketcherWidget
+    from .modeler_runtime import (
+        build_modeler_chain_entry,
+        modeler_gap_fill_sequence,
+        modeler_mutation_target_labels,
+        modeler_peptide_bonded,
+    )
+    from .modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
+    from .modeler_runtime import build_modeler_mutation_highlight_indices as modeler_build_mutation_highlight_indices
+    from .modeler_runtime import build_modeler_run_root as modeler_build_run_root
+    from .modeler_runtime import extract_modeler_mutation_target_positions as modeler_extract_mutation_target_positions
+    from .modeler_runtime import (
+        map_modeler_highlight_indices_to_positions as modeler_map_highlight_indices_to_positions,
+    )
+    from .modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
+    from .modeler_runtime import resolve_modeler_mutation_input_sequence as modeler_resolve_mutation_input_sequence
+    from .modeler_runtime import resolve_modeler_template_selection as modeler_resolve_template_selection
+    from .modeler_runtime import resolve_modeler_template_transfer_flags as modeler_resolve_template_transfer_flags
+    from .modeler_runtime import select_modeler_search_result_variant as modeler_select_search_result_variant
+    from .modeler_runtime import should_modeler_autoresolve_mutation_start as modeler_should_autoresolve_mutation_start
+    from .modeler_runtime import validate_modeler_model_count as modeler_validate_model_count
+    from .modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
+    from .openmm_dynamics_runtime import (
+        apply_openmm_cv_preset,
+        build_openmm_capability_report,
+        normalize_openmm_cv_definition,
+        normalize_openmm_run_controls,
+        openmm_cv_presets,
+        openmm_default_cv_context,
+        run_openmm_advanced_template_smoke,
+        summarize_openmm_cv_definitions,
+        validate_openmm_cv_definitions,
+    )
+    from .openmm_qmmm_runtime import (
+        assess_ligand_topology_signature_compatibility,
+        classify_openmm_component_ff_class,
+        compose_openmm_input_pdb,
+        dedupe_openmm_forcefield_xml_paths,
+        default_openmm_xml_selected_keys,
+        export_forcefield_xml_from_amber_prmtop,
+        normalize_pdb_conect_records,
+        plan_openmm_staged_minimization,
+        read_openmm_forcefield_residue_names,
+        resolve_openmm_component_template_plan,
+        rewrite_pdb_component_identity,
+        sanitize_pdb_conect_for_standalone_components,
+        split_openmm_parameterization_targets,
+    )
+    from .pka_runtime import protonate_molecule as pka_protonate_molecule
+    from .psi4_runtime import (
+        psi4_apply_mapping_to_dict,
+        psi4_atomic_number,
+        psi4_build_antechamber_cmd,
+        psi4_build_leadopt_param_hit_updates,
+        psi4_build_mulliken_esp_cube_from_density,
+        psi4_build_net_charge_candidates,
+        psi4_build_parmchk2_cmd,
+        psi4_build_rebuild_failure_payload,
+        psi4_build_rebuild_success_payload,
+        psi4_choose_parameterization_source,
+        psi4_collect_atoms_from_mol2,
+        psi4_collect_atoms_from_xyz,
+        psi4_collect_ligand_charges_from_file,
+        psi4_detect_sqm_charge_mismatch_hint,
+        psi4_element_token,
+        psi4_estimate_net_charge_from_charges,
+        psi4_finalize_leadopt_parameterization_success,
+        psi4_format_antechamber_attempt_brief,
+        psi4_format_antechamber_attempts_failure,
+        psi4_format_tool_rc_failure,
+        psi4_guess_multiplicity_from_atoms,
+        psi4_infer_charge_multiplicity,
+        psi4_load_history_data,
+        psi4_load_mol2_atom_records,
+        psi4_load_mol2_charges_and_bonds,
+        psi4_load_vib_data,
+        psi4_make_leadopt_cached_info,
+        psi4_make_leadopt_generated_info,
+        psi4_make_leadopt_parameterization_info,
+        psi4_map_charge_transfer_between_mol2_records,
+        psi4_map_ligand_charges_from_param_mol2,
+        psi4_merge_notes,
+        psi4_mol2_atom_type_to_element,
+        psi4_normalize_method_basis,
+        psi4_normalize_rdkit_parameterization_payload,
+        psi4_normalize_threads,
+        psi4_orchestrate_leadopt_parameterization,
+        psi4_pcm_solvent_candidates,
+        psi4_pcm_supported_solvents,
+        psi4_pick_charged_mol2_for_rebuild,
+        psi4_prepare_driver_job,
+        psi4_prepare_ir_spectrum,
+        psi4_prepare_leadopt_parameterization_paths,
+        psi4_prepare_pose_source_for_parameterization,
+        psi4_prepare_rdkit_source_for_parameterization,
+        psi4_prepare_rebuild_output_paths,
+        psi4_prepare_tleap_ligand_build,
+        psi4_prepare_vibrational_animation,
+        psi4_qst_align_coords_kabsch,
+        psi4_qst_build_guess_atoms,
+        psi4_qst_reorder_atoms_to_template,
+        psi4_read_cube,
+        psi4_reason_missing_parameterization_tools,
+        psi4_reason_source_for_parameterization_unavailable,
+        psi4_reason_tleap_parameterization_failed,
+        psi4_resolve_density_cube,
+        psi4_resolve_esp_cube,
+        psi4_resolve_homo_lumo_cubes,
+        psi4_resolve_leadopt_cached_parameterization,
+        psi4_resolve_leadopt_parameterization_source,
+        psi4_resolve_leadopt_rdkit_state,
+        psi4_run_leadopt_parameterization_pipeline,
+        psi4_tail_file,
+        psi4_transfer_mol2_charges_to_typed,
+        psi4_validate_leadopt_parameterization_tools,
+        psi4_write_charged_mol2,
+        psi4_write_cube_data,
+    )
+    from .redock_runtime import adjust_redocking_grid_size as redock_adjust_grid_size
     from .redock_runtime import aggregate_label_runs_runtime as redock_aggregate_label_runs_runtime
     from .redock_runtime import best_pose_for_member as redock_best_pose_for_member
+    from .redock_runtime import build_redocking_best_rmsd_config as redock_build_best_rmsd_config
+    from .redock_runtime import build_redocking_chainwise_ca_alignment as redock_build_chainwise_ca_alignment
     from .redock_runtime import build_redocking_combo_object_name as redock_build_combo_object_name
     from .redock_runtime import build_redocking_combo_states as redock_build_combo_states
-    from .redock_runtime import build_redocking_state_row_map as redock_build_state_row_map
-    from .redock_runtime import build_redocking_post_pipeline_context as redock_build_post_pipeline_context
-    from .redock_runtime import build_redocking_run_map_runtime as redock_build_run_map_runtime
+    from .redock_runtime import build_redocking_comparison_rows as redock_build_comparison_rows
     from .redock_runtime import build_redocking_post_apply_state_runtime as redock_build_post_apply_state_runtime
-    from .redock_runtime import run_redocking_post_status_runtime as redock_run_post_status_runtime
     from .redock_runtime import build_redocking_post_dialog_runtime as redock_build_post_dialog_runtime
+    from .redock_runtime import build_redocking_post_pipeline_context as redock_build_post_pipeline_context
+    from .redock_runtime import build_redocking_post_summary_runtime as redock_build_post_summary_runtime
+    from .redock_runtime import build_redocking_post_transform_runtime as redock_build_post_transform_runtime
+    from .redock_runtime import build_redocking_receptor_structure_qc as redock_build_receptor_structure_qc
+    from .redock_runtime import build_redocking_reference_grid_info_message as redock_build_reference_grid_info_message
+    from .redock_runtime import build_redocking_reference_grid_size as redock_build_reference_grid_size
+    from .redock_runtime import build_redocking_run_map_runtime as redock_build_run_map_runtime
+    from .redock_runtime import (
+        build_redocking_selected_interaction_post_apply_plan as redock_build_selected_interaction_post_apply_plan,
+    )
+    from .redock_runtime import build_redocking_site_qc_payload as redock_build_site_qc_payload
+    from .redock_runtime import build_redocking_state_row_map as redock_build_state_row_map
+    from .redock_runtime import build_redocking_table_rows as redock_build_table_rows
+    from .redock_runtime import (
+        build_redocking_traj_focus_visibility_actions as redock_build_traj_focus_visibility_actions,
+    )
     from .redock_runtime import build_redocking_traj_view_entry as redock_build_traj_view_entry
     from .redock_runtime import build_redocking_traj_view_plan as redock_build_traj_view_plan
-    from .redock_runtime import run_redocking_row_object_actions_runtime as redock_run_row_object_actions_runtime
-    from .redock_runtime import prepare_redocking_runtime_views_runtime as redock_prepare_runtime_views_runtime
-    from .redock_runtime import build_redocking_traj_focus_visibility_actions as redock_build_traj_focus_visibility_actions
-    from .redock_runtime import run_redocking_traj_visibility_runtime as redock_run_traj_visibility_runtime
+    from .redock_runtime import build_redocking_unique_atom_maps as redock_build_unique_atom_maps
     from .redock_runtime import collect_redocking_traj_view_objects as redock_collect_traj_view_objects
+    from .redock_runtime import compute_redocking_rmsd_no_fit as redock_compute_rmsd_no_fit
+    from .redock_runtime import (
+        dedupe_redocking_runtime_systems_by_signature as redock_dedupe_runtime_systems_by_signature,
+    )
+    from .redock_runtime import (
+        finalize_redocking_reference_ligand_export_result as redock_finalize_reference_ligand_export_result,
+    )
+    from .redock_runtime import finalize_redocking_reference_mol_result as redock_finalize_reference_mol_result
     from .redock_runtime import load_redocking_traj_members as redock_load_traj_members
-    from .redock_runtime import run_redocking_selected_pose_runtime as redock_run_selected_pose_runtime
-    from .redock_runtime import resolve_redocking_selected_pose_warning_message as redock_resolve_selected_pose_warning_message
-    from .redock_runtime import resolve_redocking_reference_grid_warning_message as redock_resolve_reference_grid_warning_message
-    from .redock_runtime import build_redocking_reference_grid_size as redock_build_reference_grid_size
-    from .redock_runtime import adjust_redocking_grid_size as redock_adjust_grid_size
-    from .redock_runtime import build_redocking_reference_grid_info_message as redock_build_reference_grid_info_message
-    from .redock_runtime import run_redocking_selected_interaction_runtime as redock_run_selected_interaction_runtime
-    from .redock_runtime import resolve_redocking_selected_interaction_warning_message as redock_resolve_selected_interaction_warning_message
-    from .redock_runtime import build_redocking_selected_interaction_post_apply_plan as redock_build_selected_interaction_post_apply_plan
-    from .redock_runtime import run_redocking_reference_context_runtime as redock_run_reference_context_runtime
-    from .redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
-    from .redock_runtime import build_redocking_table_rows as redock_build_table_rows
-    from .redock_runtime import pick_best_pose_row as redock_pick_best_pose_row
     from .redock_runtime import pick_top_scored_pose_row as redock_pick_top_scored_pose_row
     from .redock_runtime import prepare_redocking_base_runtime as redock_prepare_base_runtime
     from .redock_runtime import prepare_redocking_ligand_override_runtime as redock_prepare_ligand_override_runtime
-    from .redock_runtime import prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan
-    from .redock_runtime import finalize_redocking_reference_ligand_export_result as redock_finalize_reference_ligand_export_result
-    from .redock_runtime import resolve_redocking_reference_ligand_export_response as redock_resolve_reference_ligand_export_response
+    from .redock_runtime import prepare_redocking_reference_flex_runtime as redock_prepare_reference_flex_runtime
+    from .redock_runtime import (
+        prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan,
+    )
     from .redock_runtime import prepare_redocking_reference_mol_plan as redock_prepare_reference_mol_plan
-    from .redock_runtime import finalize_redocking_reference_mol_result as redock_finalize_reference_mol_result
-    from .redock_runtime import resolve_redocking_rdkit_rmsd_mol_with_config as redock_resolve_rdkit_rmsd_mol_with_config
-    from .redock_runtime import build_redocking_unique_atom_maps as redock_build_unique_atom_maps
-    from .redock_runtime import compute_redocking_rmsd_no_fit as redock_compute_rmsd_no_fit
-    from .redock_runtime import build_redocking_best_rmsd_config as redock_build_best_rmsd_config
+    from .redock_runtime import prepare_redocking_runtime_systems_runtime as redock_prepare_runtime_systems_runtime
+    from .redock_runtime import prepare_redocking_runtime_views_runtime as redock_prepare_runtime_views_runtime
+    from .redock_runtime import recover_redocking_reference_mol_from_pdb as redock_recover_reference_mol_from_pdb
+    from .redock_runtime import redocking_traj_visible_for_label as redock_traj_visible_for_label
     from .redock_runtime import resolve_redocking_best_rmsd as redock_resolve_best_rmsd
     from .redock_runtime import resolve_redocking_rdkit_candidate_atom_maps as redock_resolve_rdkit_candidate_atom_maps
-    from .redock_runtime import build_redocking_chainwise_ca_alignment as redock_build_chainwise_ca_alignment
-    from .redock_runtime import build_redocking_site_qc_payload as redock_build_site_qc_payload
-    from .redock_runtime import build_redocking_receptor_structure_qc as redock_build_receptor_structure_qc
-    from .redock_runtime import recover_redocking_reference_mol_from_pdb as redock_recover_reference_mol_from_pdb
-    from .redock_runtime import prepare_redocking_reference_flex_runtime as redock_prepare_reference_flex_runtime
-    from .redock_runtime import redocking_traj_visible_for_label as redock_traj_visible_for_label
-    from .redock_runtime import resolve_redocking_traj_state as redock_resolve_traj_state
-    from .redock_runtime import run_redocking_hetatm_preflight_runtime as redock_run_hetatm_preflight_runtime
-    from .redock_runtime import prepare_redocking_runtime_systems_runtime as redock_prepare_runtime_systems_runtime
-    from .redock_runtime import run_redocking_workflow_orchestrator as redock_run_workflow_orchestrator
-    from .redock_runtime import run_redocking_runtime_systems_runtime as redock_run_runtime_systems_runtime
-    from .redock_runtime import run_redocking_single_system_runtime as redock_run_single_system_runtime
-    from .redock_runtime import build_redocking_post_transform_runtime as redock_build_post_transform_runtime
-    from .redock_runtime import build_redocking_post_summary_runtime as redock_build_post_summary_runtime
-    from .redock_runtime import build_redocking_comparison_rows as redock_build_comparison_rows
-    from .redock_runtime import write_redocking_comparison_summary_csv as redock_write_comparison_summary_csv
+    from .redock_runtime import (
+        resolve_redocking_rdkit_rmsd_mol_with_config as redock_resolve_rdkit_rmsd_mol_with_config,
+    )
+    from .redock_runtime import (
+        resolve_redocking_reference_grid_warning_message as redock_resolve_reference_grid_warning_message,
+    )
+    from .redock_runtime import (
+        resolve_redocking_reference_ligand_export_response as redock_resolve_reference_ligand_export_response,
+    )
+    from .redock_runtime import (
+        resolve_redocking_selected_interaction_warning_message as redock_resolve_selected_interaction_warning_message,
+    )
+    from .redock_runtime import (
+        resolve_redocking_selected_pose_warning_message as redock_resolve_selected_pose_warning_message,
+    )
     from .redock_runtime import resolve_state_for_member as redock_resolve_state_for_member
     from .redock_runtime import rows_best_per_member as redock_rows_best_per_member
-    from .redock_runtime import dedupe_redocking_runtime_systems_by_signature as redock_dedupe_runtime_systems_by_signature
+    from .redock_runtime import run_redocking_hetatm_preflight_runtime as redock_run_hetatm_preflight_runtime
+    from .redock_runtime import run_redocking_post_status_runtime as redock_run_post_status_runtime
+    from .redock_runtime import run_redocking_reference_context_runtime as redock_run_reference_context_runtime
+    from .redock_runtime import run_redocking_row_object_actions_runtime as redock_run_row_object_actions_runtime
+    from .redock_runtime import run_redocking_runtime_systems_runtime as redock_run_runtime_systems_runtime
+    from .redock_runtime import run_redocking_selected_interaction_runtime as redock_run_selected_interaction_runtime
+    from .redock_runtime import run_redocking_selected_pose_runtime as redock_run_selected_pose_runtime
+    from .redock_runtime import run_redocking_single_system_runtime as redock_run_single_system_runtime
+    from .redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
+    from .redock_runtime import run_redocking_traj_visibility_runtime as redock_run_traj_visibility_runtime
+    from .redock_runtime import run_redocking_workflow_orchestrator as redock_run_workflow_orchestrator
     from .redock_runtime import strip_redocking_residue_from_structure_file as redock_strip_residue_from_structure_file
+    from .redock_runtime import write_redocking_comparison_summary_csv as redock_write_comparison_summary_csv
+    from .small_molecule_runtime import (
+        build_small_molecule_prep_qc,
+        prepare_small_molecule_working_mol,
+        summarize_small_molecule_state,
+    )
     from .smina_runtime import format_recent_errors as smina_format_recent_errors
     from .smina_runtime import parse_smina_pose_scores as runtime_parse_smina_pose_scores
     from .smina_runtime import run_smina_repeats
-    from .vs_runtime import build_virtual_screening_summary_lines
-    from .vs_runtime import rank_virtual_screening_results
-    from .vs_runtime import run_virtual_screening_entries
-    from .vs_runtime import normalize_virtual_screening_controls
-    from .vs_runtime import normalize_virtual_screening_grid
-    from .vs_runtime import format_virtual_screening_library_status
-    from .vs_runtime import vs_status_text
-    from .vs_runtime import summarize_virtual_screening_results
-    from .vs_runtime import vs_prepare_job_paths
+    from .structure_fetch_runtime import STRUCTURE_FETCH_SOURCES, build_structure_fetch_request, download_structure_file
+    from .task_monitor_runtime import task_monitor_probe_job
+    from .trajectory_interaction_runtime import (
+        trajectory_build_selected_trace_payload,
+        trajectory_collect_presence_counts,
+        trajectory_frame_indices,
+        trajectory_interaction_key,
+        trajectory_interaction_label,
+        trajectory_interaction_occ_key,
+        trajectory_normalize_max_distance,
+        trajectory_normalize_step,
+        trajectory_pick_matching_interaction,
+        trajectory_run_interaction_analysis,
+    )
+    from .vs_runtime import (
+        build_virtual_screening_summary_lines,
+        format_virtual_screening_library_status,
+        normalize_virtual_screening_controls,
+        normalize_virtual_screening_grid,
+        rank_virtual_screening_results,
+        run_virtual_screening_entries,
+        summarize_virtual_screening_results,
+        vs_prepare_job_paths,
+        vs_status_text,
+    )
 except Exception:
-    from alphafold_runtime import AF3_SERVER_URL
-    from alphafold_runtime import AF_ENGINE_AF3_LOCAL
-    from alphafold_runtime import AF_ENGINE_AF3_SERVER
-    from alphafold_runtime import AF_ENGINE_COLABFOLD
-    from alphafold_runtime import COLABFOLD_NOTEBOOK_URL
-    from alphafold_runtime import af_alphafold3_required_path_status
-    from alphafold_runtime import af_build_alphafold3_docker_command
-    from alphafold_runtime import af_build_alphafold3_input_json
-    from alphafold_runtime import af_build_alphafold_server_json
-    from alphafold_runtime import af_colabfold_query
-    from alphafold_runtime import af_fasta_text
-    from alphafold_runtime import af_sanitize_af3_chain_id
-    from alphafold_runtime import af_split_protein_chains
-    from alphafold_runtime import af_build_colabfold_colab_cell
-    from alphafold_runtime import af_build_colabfold_command
-    from alphafold_runtime import af_build_colabfold_job_notebook
-    from alphafold_runtime import af_build_colabfold_job_script
-    from alphafold_runtime import af_collect_existing_dirs
-    from alphafold_runtime import GPU_REQUIRED_TITLE
-    from alphafold_runtime import af_detect_local_gpu
-    from alphafold_runtime import af_extract_result_zips
-    from alphafold_runtime import af_safe_extract_zip
-    from alphafold_runtime import af_gpu_requirement_message
-    from alphafold_runtime import af_engine_profile
-    from alphafold_runtime import af_extract_plddt_pae_from_json
-    from alphafold_runtime import af_find_best_model_recursive
-    from alphafold_runtime import af_format_shell_command
-    from alphafold_runtime import af_is_relaxed_name
-    from alphafold_runtime import af_model_patterns
-    from alphafold_runtime import af_pick_best_plot_image
-    from alphafold_runtime import af_plot_patterns
-    from alphafold_runtime import af_plot_title
-    from alphafold_runtime import af_sanitize_job_name
-    from alphafold_runtime import af_write_json
-    from bioseq_runtime import BIOSEQ_ANALYSIS_CATALOG
-    from bioseq_runtime import BIOSEQ_QUESTION_MAP
+    from abfe_runtime import (
+        ABFE_POCKET_DESCRIPTOR_COLS,
+        _load_abfe_runtime_deploy,
+        _nan_pocket_descriptor_row,
+        infer_abfe_target_hint,
+    )
+    from abfe_runtime import abfe_distance_axis_label as abfe_distance_axis_label
+    from abfe_runtime import build_abfe_adaptive_steering_state_payload as abfe_build_adaptive_steering_state_payload
+    from abfe_runtime import (
+        build_abfe_adaptive_steering_update_decision as abfe_build_adaptive_steering_update_decision,
+    )
+    from abfe_runtime import (
+        build_abfe_final_scene_restore_execution_default_payload as abfe_build_final_scene_restore_execution_default_payload,
+    )
+    from abfe_runtime import (
+        build_abfe_final_scene_restore_execution_payload as abfe_build_final_scene_restore_execution_payload,
+    )
+    from abfe_runtime import build_abfe_final_traj_build_plan as abfe_build_final_traj_build_plan
+    from abfe_runtime import build_abfe_final_traj_post_build_ui_plan as abfe_build_final_traj_post_build_ui_plan
+    from abfe_runtime import build_abfe_free_energy_debug_line as abfe_build_free_energy_debug_line
+    from abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
+    from abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
+    from abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
+    from abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
+    from abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
+    from abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
+    from abfe_runtime import build_abfe_live_plot_state_payload as abfe_build_live_plot_state_payload
+    from abfe_runtime import build_abfe_live_plot_update_default_payload as abfe_build_live_plot_update_default_payload
+    from abfe_runtime import build_abfe_live_plot_update_payload as abfe_build_live_plot_update_payload
+    from abfe_runtime import build_abfe_live_update_decision as abfe_build_live_update_decision
+    from abfe_runtime import build_abfe_live_view_atom_count_payload as abfe_build_live_view_atom_count_payload
+    from abfe_runtime import (
+        build_abfe_live_view_tracking_default_payload as abfe_build_live_view_tracking_default_payload,
+    )
+    from abfe_runtime import build_abfe_live_view_update_plan as abfe_build_live_view_update_plan
+    from abfe_runtime import build_abfe_local_md_cleanup_plan as abfe_build_local_md_cleanup_plan
+    from abfe_runtime import build_abfe_local_md_result_payload as abfe_build_local_md_result_payload
+    from abfe_runtime import build_abfe_local_md_teardown_plan as abfe_build_local_md_teardown_plan
+    from abfe_runtime import build_abfe_local_resource_plan as abfe_build_local_resource_plan
+    from abfe_runtime import build_abfe_md_progress_dialog_plan as abfe_build_md_progress_dialog_plan
+    from abfe_runtime import build_abfe_md_progress_finalize_decision as abfe_build_md_progress_finalize_decision
+    from abfe_runtime import build_abfe_md_progress_step_decision as abfe_build_md_progress_step_decision
+    from abfe_runtime import build_abfe_md_sample_payload as abfe_build_md_sample_payload
+    from abfe_runtime import build_abfe_object_inventory_payload as abfe_build_object_inventory_payload
+    from abfe_runtime import build_abfe_openmm_context_setup_plan as abfe_build_openmm_context_setup_plan
+    from abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
+    from abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
+    from abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
+    from abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
+    from abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
+    from abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
+    from abfe_runtime import build_abfe_scene_restore_plan as abfe_build_scene_restore_plan
+    from abfe_runtime import build_abfe_state_save_decision as abfe_build_state_save_decision
+    from abfe_runtime import build_abfe_steering_bandit_action_payload as abfe_build_steering_bandit_action_payload
+    from abfe_runtime import build_abfe_steering_lambda_schedule as abfe_build_steering_lambda_schedule
+    from abfe_runtime import (
+        build_abfe_steering_policy_observation_payload as abfe_build_steering_policy_observation_payload,
+    )
+    from abfe_runtime import (
+        build_abfe_steering_policy_safe_action_payload as abfe_build_steering_policy_safe_action_payload,
+    )
+    from abfe_runtime import build_abfe_steering_policy_state_payload as abfe_build_steering_policy_state_payload
+    from abfe_runtime import build_abfe_steering_policy_summary_payload as abfe_build_steering_policy_summary_payload
+    from abfe_runtime import build_abfe_steering_policy_trace_payload as abfe_build_steering_policy_trace_payload
+    from abfe_runtime import build_abfe_surface_detach_direction_payload as abfe_build_surface_detach_direction_payload
+    from abfe_runtime import build_abfe_tunnel_restraint_payload as abfe_build_tunnel_restraint_payload
+    from abfe_runtime import build_abfe_ui_process_events_decision as abfe_build_ui_process_events_decision
+    from abfe_runtime import build_openmm_platform_selection_plan as abfe_build_openmm_platform_selection_plan
+    from abfe_runtime import compute_runtime_pocket_descriptors as abfe_compute_runtime_pocket_descriptors
+    from abfe_runtime import configure_abfe_steering_cycles as abfe_configure_steering_cycles
+    from abfe_runtime import prepare_abfe_live_view_preflight as abfe_prepare_live_view_preflight
+    from abfe_runtime import (
+        prepare_abfe_post_interaction_followup_runtime_plan as abfe_prepare_post_interaction_followup_runtime_plan,
+    )
+    from abfe_runtime import (
+        resolve_abfe_post_interaction_dialog_payload as abfe_resolve_post_interaction_dialog_payload,
+    )
+    from alphafold_runtime import (
+        AF3_SERVER_URL,
+        AF_ENGINE_AF3_LOCAL,
+        AF_ENGINE_AF3_SERVER,
+        AF_ENGINE_COLABFOLD,
+        COLABFOLD_NOTEBOOK_URL,
+        GPU_REQUIRED_TITLE,
+        af_build_alphafold3_docker_command,
+        af_build_alphafold3_input_json,
+        af_build_alphafold_server_json,
+        af_build_colabfold_colab_cell,
+        af_build_colabfold_command,
+        af_build_colabfold_job_notebook,
+        af_build_colabfold_job_script,
+        af_colabfold_query,
+        af_collect_existing_dirs,
+        af_detect_local_gpu,
+        af_engine_profile,
+        af_extract_plddt_pae_from_json,
+        af_extract_result_zips,
+        af_fasta_text,
+        af_find_best_model_recursive,
+        af_format_shell_command,
+        af_gpu_requirement_message,
+        af_is_relaxed_name,
+        af_model_patterns,
+        af_pick_best_plot_image,
+        af_plot_patterns,
+        af_plot_title,
+        af_safe_extract_zip,
+        af_sanitize_af3_chain_id,
+        af_sanitize_job_name,
+        af_split_protein_chains,
+        af_write_json,
+    )
+    from background_tasks import submit_background_task
+    from bioseq_runtime import BIOSEQ_ANALYSIS_CATALOG, BIOSEQ_QUESTION_MAP
     from bioseq_runtime import align_residue_index_map as bioseq_align_residue_index_map
     from bioseq_runtime import build_external_tool_urls as bioseq_build_external_tool_urls
     from bioseq_runtime import build_motif_summary_lines as bioseq_build_motif_summary_lines
     from bioseq_runtime import build_simulation_readiness_report as bioseq_build_simulation_readiness_report
     from bioseq_runtime import clean_sequence as bioseq_clean_sequence
     from bioseq_runtime import compute_msa_conservation as bioseq_compute_msa_conservation
-    from bioseq_runtime import find_simple_motifs as bioseq_find_simple_motifs
-    from bioseq_runtime import parse_fasta as bioseq_parse_fasta
-    from bioseq_runtime import predict_disorder_segments as bioseq_predict_disorder_segments
-    from bioseq_runtime import predict_signal_peptide as bioseq_predict_signal_peptide
-    from bioseq_runtime import predict_tm_segments as bioseq_predict_tm_segments
-    from bioseq_runtime import sequence_text_residue_offsets as bioseq_sequence_text_residue_offsets
-    from bioseq_runtime import sequence_basic_metrics as bioseq_sequence_basic_metrics
     from bioseq_runtime import fetch_uniprot_feature_summary as bioseq_fetch_uniprot_feature_summary
+    from bioseq_runtime import sequence_text_residue_offsets as bioseq_sequence_text_residue_offsets
     from bioseq_runtime import summarize_question_answers as bioseq_summarize_question_answers
-    from structure_fetch_runtime import STRUCTURE_FETCH_SOURCES
-    from structure_fetch_runtime import build_structure_fetch_request
-    from structure_fetch_runtime import download_structure_file
-    from psi4_runtime import psi4_build_mulliken_esp_cube_from_density
-    from psi4_runtime import psi4_normalize_method_basis
-    from psi4_runtime import psi4_normalize_threads
-    from psi4_runtime import psi4_prepare_driver_job
-    from psi4_runtime import psi4_read_cube
-    from psi4_runtime import psi4_load_history_data
-    from psi4_runtime import psi4_prepare_ir_spectrum
-    from psi4_runtime import psi4_prepare_vibrational_animation
-    from psi4_runtime import psi4_mol2_atom_type_to_element
-    from psi4_runtime import psi4_collect_atoms_from_mol2
-    from psi4_runtime import psi4_load_mol2_atom_records
-    from psi4_runtime import psi4_load_mol2_charges_and_bonds
-    from psi4_runtime import psi4_collect_ligand_charges_from_file
-    from psi4_runtime import psi4_estimate_net_charge_from_charges
-    from psi4_runtime import psi4_prepare_tleap_ligand_build
-    from psi4_runtime import psi4_pick_charged_mol2_for_rebuild
-    from psi4_runtime import psi4_prepare_rebuild_output_paths
-    from psi4_runtime import psi4_build_antechamber_cmd
-    from psi4_runtime import psi4_build_parmchk2_cmd
-    from psi4_runtime import psi4_build_rebuild_failure_payload
-    from psi4_runtime import psi4_build_rebuild_success_payload
-    from psi4_runtime import psi4_build_net_charge_candidates
-    from psi4_runtime import psi4_detect_sqm_charge_mismatch_hint
-    from psi4_runtime import psi4_format_antechamber_attempt_brief
-    from psi4_runtime import psi4_format_antechamber_attempts_failure
-    from psi4_runtime import psi4_format_tool_rc_failure
-    from psi4_runtime import psi4_prepare_leadopt_parameterization_paths
-    from psi4_runtime import psi4_prepare_pose_source_for_parameterization
-    from psi4_runtime import psi4_choose_parameterization_source
-    from psi4_runtime import psi4_prepare_rdkit_source_for_parameterization
-    from psi4_runtime import psi4_make_leadopt_parameterization_info
-    from psi4_runtime import psi4_make_leadopt_cached_info
-    from psi4_runtime import psi4_make_leadopt_generated_info
-    from psi4_runtime import psi4_reason_missing_parameterization_tools
-    from psi4_runtime import psi4_reason_source_for_parameterization_unavailable
-    from psi4_runtime import psi4_reason_tleap_parameterization_failed
-    from psi4_runtime import psi4_merge_notes
-    from psi4_runtime import psi4_build_leadopt_param_hit_updates
-    from psi4_runtime import psi4_apply_mapping_to_dict
-    from psi4_runtime import psi4_finalize_leadopt_parameterization_success
-    from psi4_runtime import psi4_resolve_leadopt_cached_parameterization
-    from psi4_runtime import psi4_validate_leadopt_parameterization_tools
-    from psi4_runtime import psi4_orchestrate_leadopt_parameterization
-    from psi4_runtime import psi4_normalize_rdkit_parameterization_payload
-    from psi4_runtime import psi4_resolve_leadopt_rdkit_state
-    from psi4_runtime import psi4_resolve_leadopt_parameterization_source
-    from psi4_runtime import psi4_run_leadopt_parameterization_pipeline
-    from psi4_runtime import psi4_map_ligand_charges_from_param_mol2
-    from psi4_runtime import psi4_map_charge_transfer_between_mol2_records
-    from psi4_runtime import psi4_transfer_mol2_charges_to_typed
-    from psi4_runtime import psi4_atomic_number
-    from psi4_runtime import psi4_collect_atoms_from_xyz
-    from psi4_runtime import psi4_element_token
-    from psi4_runtime import psi4_guess_multiplicity_from_atoms
-    from psi4_runtime import psi4_infer_charge_multiplicity
-    from psi4_runtime import psi4_load_vib_data
-    from psi4_runtime import psi4_pcm_solvent_candidates
-    from psi4_runtime import psi4_pcm_supported_solvents
-    from psi4_runtime import psi4_qst_align_coords_kabsch
-    from psi4_runtime import psi4_qst_build_guess_atoms
-    from psi4_runtime import psi4_qst_reorder_atoms_to_template
-    from psi4_runtime import psi4_resolve_density_cube
-    from psi4_runtime import psi4_resolve_esp_cube
-    from psi4_runtime import psi4_resolve_homo_lumo_cubes
-    from psi4_runtime import psi4_tail_file
-    from psi4_runtime import psi4_write_charged_mol2
-    from psi4_runtime import psi4_write_cube_data
-    from abfe_runtime import ABFE_POCKET_DESCRIPTOR_COLS
-    from abfe_runtime import prepare_abfe_live_view_preflight as abfe_prepare_live_view_preflight
-    from abfe_runtime import build_abfe_steering_lambda_schedule as abfe_build_steering_lambda_schedule
-    from abfe_runtime import configure_abfe_steering_cycles as abfe_configure_steering_cycles
-    from abfe_runtime import build_abfe_adaptive_steering_state_payload as abfe_build_adaptive_steering_state_payload
-    from abfe_runtime import build_abfe_adaptive_steering_update_decision as abfe_build_adaptive_steering_update_decision
-    from abfe_runtime import build_abfe_steering_policy_state_payload as abfe_build_steering_policy_state_payload
-    from abfe_runtime import build_abfe_steering_policy_observation_payload as abfe_build_steering_policy_observation_payload
-    from abfe_runtime import build_abfe_steering_bandit_action_payload as abfe_build_steering_bandit_action_payload
-    from abfe_runtime import build_abfe_steering_policy_safe_action_payload as abfe_build_steering_policy_safe_action_payload
-    from abfe_runtime import build_abfe_steering_policy_trace_payload as abfe_build_steering_policy_trace_payload
-    from abfe_runtime import build_abfe_steering_policy_summary_payload as abfe_build_steering_policy_summary_payload
-    from abfe_runtime import build_abfe_surface_detach_direction_payload as abfe_build_surface_detach_direction_payload
-    from abfe_runtime import build_abfe_tunnel_restraint_payload as abfe_build_tunnel_restraint_payload
-    from abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
-    from abfe_runtime import build_abfe_live_plot_update_default_payload as abfe_build_live_plot_update_default_payload
-    from abfe_runtime import build_abfe_live_plot_state_payload as abfe_build_live_plot_state_payload
-    from abfe_runtime import build_abfe_live_plot_update_payload as abfe_build_live_plot_update_payload
-    from abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
-    from abfe_runtime import build_abfe_md_sample_payload as abfe_build_md_sample_payload
-    from abfe_runtime import build_abfe_local_resource_plan as abfe_build_local_resource_plan
-    from abfe_runtime import build_abfe_state_save_decision as abfe_build_state_save_decision
-    from abfe_runtime import build_abfe_live_update_decision as abfe_build_live_update_decision
-    from abfe_runtime import build_abfe_live_view_update_plan as abfe_build_live_view_update_plan
-    from abfe_runtime import build_abfe_md_progress_dialog_plan as abfe_build_md_progress_dialog_plan
-    from abfe_runtime import build_abfe_md_progress_step_decision as abfe_build_md_progress_step_decision
-    from abfe_runtime import build_abfe_md_progress_finalize_decision as abfe_build_md_progress_finalize_decision
-    from abfe_runtime import build_abfe_ui_process_events_decision as abfe_build_ui_process_events_decision
-    from abfe_runtime import build_abfe_final_traj_build_plan as abfe_build_final_traj_build_plan
-    from abfe_runtime import build_abfe_final_traj_post_build_ui_plan as abfe_build_final_traj_post_build_ui_plan
-    from abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
-    from abfe_runtime import build_abfe_local_md_result_payload as abfe_build_local_md_result_payload
-    from abfe_runtime import abfe_distance_axis_label as abfe_distance_axis_label
-    from abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
-    from abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
-    from abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
-    from abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
-    from abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
-    from abfe_runtime import build_abfe_free_energy_debug_line as abfe_build_free_energy_debug_line
-    from abfe_runtime import prepare_abfe_post_interaction_followup_runtime_plan as abfe_prepare_post_interaction_followup_runtime_plan
-    from abfe_runtime import resolve_abfe_post_interaction_dialog_payload as abfe_resolve_post_interaction_dialog_payload
-    from abfe_runtime import collect_abfe_interaction_presence_sets as abfe_collect_interaction_presence_sets
-    from abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
-    from abfe_runtime import compute_runtime_pocket_descriptors as abfe_compute_runtime_pocket_descriptors
-    from abfe_runtime import _load_abfe_runtime_deploy
-    from abfe_runtime import _nan_pocket_descriptor_row
-    from abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
-    from abfe_runtime import build_abfe_scene_restore_plan as abfe_build_scene_restore_plan
-    from abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
-    from abfe_runtime import build_abfe_final_scene_restore_execution_payload as abfe_build_final_scene_restore_execution_payload
-    from abfe_runtime import build_abfe_final_scene_restore_execution_default_payload as abfe_build_final_scene_restore_execution_default_payload
-    from abfe_runtime import build_abfe_object_inventory_payload as abfe_build_object_inventory_payload
-    from abfe_runtime import build_abfe_local_md_cleanup_plan as abfe_build_local_md_cleanup_plan
-    from abfe_runtime import build_abfe_live_view_tracking_default_payload as abfe_build_live_view_tracking_default_payload
-    from abfe_runtime import build_abfe_live_view_atom_count_payload as abfe_build_live_view_atom_count_payload
-    from abfe_runtime import build_abfe_local_md_teardown_plan as abfe_build_local_md_teardown_plan
-    from abfe_runtime import build_abfe_openmm_context_setup_plan as abfe_build_openmm_context_setup_plan
-    from abfe_runtime import build_openmm_platform_selection_plan as abfe_build_openmm_platform_selection_plan
-    from abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
-    from abfe_runtime import infer_abfe_target_hint
-    from background_tasks import submit_background_task
-    from task_monitor_runtime import task_monitor_probe_job
-    from dock_runtime import resolve_tool_path as resolve_external_tool_path
-    from dock_runtime import run_post_docking_pipeline
-    from dock_runtime import run_command as run_external_command
+    from component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
+    from component_library_runtime import coordination_variants as component_coordination_variants
+    from component_library_runtime import forcefield_family_base_files
+    from component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from component_library_runtime import ligand_bond_orders_from_pdb as component_ligand_bond_orders_from_pdb
+    from component_library_runtime import prepare_modeller as component_prepare_modeller
+    from component_library_runtime import resolve_components as component_resolve_components
+    from component_library_runtime import restore_names as component_restore_names
+    from dock_runtime import build_legacy_python_tool_command as dock_build_legacy_python_tool_command
+    from dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
+    from dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
+    from dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
     from dock_runtime import format_docking_grid_summary as dock_format_docking_grid_summary
     from dock_runtime import normalize_docking_grid as dock_normalize_docking_grid
     from dock_runtime import parse_fpocket_info_text as dock_parse_fpocket_info_text
     from dock_runtime import parse_pdb_atom_coordinates_from_lines as dock_parse_pdb_atom_coordinates_from_lines
-    from dock_runtime import pocket_geometry_from_coordinates as dock_pocket_geometry_from_coordinates
-    from leadopt_runtime import admet_score as leadopt_admet_score
-    from leadopt_runtime import leadopt_build_candidate_rows
-    from leadopt_runtime import build_leadopt_summary_lines
-    from leadopt_runtime import filter_fail_reason as leadopt_filter_fail_reason
-    from leadopt_runtime import find_best_leadopt_result
-    from leadopt_runtime import leadopt_append_charge_map_source
-    from leadopt_runtime import leadopt_apply_refinement_result
-    from leadopt_runtime import leadopt_build_complex_selection_ids
-    from leadopt_runtime import leadopt_build_nonbonded_particle_data
-    from leadopt_runtime import leadopt_build_openmm_refinement_system
-    from leadopt_runtime import leadopt_finalize_advanced_refinement_report
-    from leadopt_runtime import leadopt_finalize_refine_estimate
-    from leadopt_runtime import leadopt_heavy_atom_ids
-    from leadopt_runtime import leadopt_infer_atom_names_elements
-    from leadopt_runtime import leadopt_filter_and_rescue_candidates
-    from leadopt_runtime import leadopt_merge_candidate_and_docked_results
-    from leadopt_runtime import leadopt_needs_parameterization_build
-    from leadopt_runtime import leadopt_optional_refine_note
-    from leadopt_runtime import leadopt_pick_protein_eval_ids
-    from leadopt_runtime import leadopt_prepare_parameterization_for_refinement
-    from leadopt_runtime import leadopt_status_text
-    from leadopt_runtime import leadopt_run_openmm_refinement_sampling
-    from leadopt_runtime import leadopt_select_advanced_refinement_rows
-    from leadopt_runtime import leadopt_sanitize_refine_parameterization_options
-    from leadopt_runtime import make_leadopt_advanced_refinement_report
-    from leadopt_runtime import make_leadopt_refine_result
-    from leadopt_runtime import leadopt_compute_result_counts
-    from leadopt_runtime import leadopt_export_csv_outputs
-    from leadopt_runtime import leadopt_prepare_job_paths
-    from leadopt_runtime import mpo_score as leadopt_mpo_score
-    from interaction_typing_runtime import is_protein_hydrophobic_residue
-    from interaction_typing_runtime import protein_aromatic_ring_atom_names
-    from interaction_typing_runtime import protein_hbond_acceptor_atom_names
-    from interaction_typing_runtime import protein_donor_hydrogen_count
-    from interaction_typing_runtime import protein_hbond_donor_atom_names
-    from interaction_typing_runtime import protein_hydrophobic_atom_names
-    from interaction_typing_runtime import protein_metal_donor_atom_names
-    from interaction_typing_runtime import protein_negative_atom_names
-    from interaction_typing_runtime import protein_positive_atom_names
-    from interaction_runtime import INTERACTION_GEOMETRY_CRITERIA
-    from interaction_runtime import assign_ligand_hydrophobic_flags_from_rdkit
-    from interaction_runtime import assign_ligand_ionic_groups_from_topology
-    from interaction_runtime import build_interaction_record
-    from interaction_runtime import build_ligand_charge_groups
-    from interaction_runtime import build_protein_charge_groups
-    from interaction_runtime import classify_hbond_geometry
-    from interaction_runtime import classify_pi_ring_pair
-    from interaction_runtime import interaction_metadata
-    from interaction_runtime import is_ligand_anion_center
-    from interaction_runtime import is_supported_ligand_cation_center
-    from interaction_runtime import metal_coordination_cutoff
-    from interaction_runtime import reduce_hydrophobic_pairs
-    from interaction_runtime import validate_halogen_bond
-    from interaction_runtime import validate_metal_coordination
-    from interaction_runtime import validate_ring_charge_interaction
-    from interaction_runtime import vdw_contact_cutoff
-    from trajectory_interaction_runtime import trajectory_build_selected_trace_payload
-    from trajectory_interaction_runtime import trajectory_collect_interaction_occupancy
-    from trajectory_interaction_runtime import trajectory_collect_presence_counts
-    from trajectory_interaction_runtime import trajectory_frame_indices
-    from trajectory_interaction_runtime import trajectory_interaction_key
-    from trajectory_interaction_runtime import trajectory_interaction_label
-    from trajectory_interaction_runtime import trajectory_interaction_occ_key
-    from trajectory_interaction_runtime import trajectory_normalize_max_distance
-    from trajectory_interaction_runtime import trajectory_normalize_step
-    from trajectory_interaction_runtime import trajectory_pick_matching_interaction
-    from trajectory_interaction_runtime import trajectory_run_interaction_analysis
-    from ligand_sketcher_runtime import LigandSketcherWidget
-    from openmm_qmmm_runtime import classify_openmm_component_ff_class
-    from openmm_qmmm_runtime import dedupe_openmm_forcefield_xml_paths
-    from openmm_qmmm_runtime import default_openmm_xml_selected_keys
-    from openmm_qmmm_runtime import resolve_openmm_component_template_plan
-    from openmm_qmmm_runtime import compose_openmm_input_pdb
-    from openmm_qmmm_runtime import build_openmm_parameterization_audit
-    from openmm_qmmm_runtime import export_forcefield_xml_from_amber_prmtop
-    from openmm_qmmm_runtime import summarize_openmm_system_terms
-    from openmm_qmmm_runtime import compare_openmm_system_term_summaries
-    from openmm_qmmm_runtime import assess_ligand_topology_signature_compatibility
-    from openmm_qmmm_runtime import merge_openmm_periodic_torsion_rows
-    from openmm_qmmm_runtime import normalize_pdb_conect_records
-    from openmm_qmmm_runtime import plan_openmm_staged_minimization
-    from openmm_qmmm_runtime import rewrite_pdb_component_identity
-    from openmm_qmmm_runtime import sanitize_pdb_conect_for_standalone_components
-    from openmm_qmmm_runtime import split_openmm_parameterization_targets
-    from component_library_runtime import prepare_modeller as component_prepare_modeller
-    from component_library_runtime import resolve_components as component_resolve_components
-    from component_library_runtime import forcefield_family_base_files
-    from component_library_runtime import restore_names as component_restore_names
-    from component_library_runtime import coordination_variants as component_coordination_variants
-    from component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
-    from component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
-    from component_library_runtime import ligand_bond_orders_from_pdb as component_ligand_bond_orders_from_pdb
-    from openmm_qmmm_runtime import read_openmm_forcefield_residue_names
-    from openmm_dynamics_runtime import apply_openmm_cv_preset
-    from openmm_dynamics_runtime import build_openmm_capability_report
-    from openmm_dynamics_runtime import normalize_openmm_cv_definition
-    from openmm_dynamics_runtime import normalize_openmm_run_controls
-    from openmm_dynamics_runtime import openmm_cv_expression
-    from openmm_dynamics_runtime import openmm_cv_presets
-    from openmm_dynamics_runtime import openmm_default_cv_context
-    from openmm_dynamics_runtime import run_openmm_advanced_template_smoke
-    from openmm_dynamics_runtime import summarize_openmm_cv_definitions
-    from openmm_dynamics_runtime import validate_openmm_cv_definitions
-    from small_molecule_runtime import build_small_molecule_prep_qc
-    from small_molecule_runtime import prepare_small_molecule_working_mol
-    from pka_runtime import protonate_molecule as pka_protonate_molecule
-    from small_molecule_runtime import summarize_small_molecule_state
-    from modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
-    from modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
-    from modeler_runtime import validate_modeler_model_count as modeler_validate_model_count
-    from modeler_runtime import build_modeler_run_root as modeler_build_run_root
-    from modeler_runtime import resolve_modeler_template_transfer_flags as modeler_resolve_template_transfer_flags
-    from modeler_runtime import build_modeler_mutation_highlight_indices as modeler_build_mutation_highlight_indices
-    from modeler_runtime import map_modeler_highlight_indices_to_positions as modeler_map_highlight_indices_to_positions
-    from modeler_runtime import should_modeler_autoresolve_mutation_start as modeler_should_autoresolve_mutation_start
-    from modeler_runtime import extract_modeler_mutation_target_positions as modeler_extract_mutation_target_positions
-    from modeler_runtime import resolve_modeler_mutation_input_sequence as modeler_resolve_mutation_input_sequence
-    from modeler_runtime import build_modeler_chain_entry
-    from modeler_runtime import modeler_gap_fill_sequence
-    from modeler_runtime import modeler_mutation_target_labels
-    from modeler_runtime import modeler_peptide_bonded
-    from modeler_runtime import select_modeler_search_result_variant as modeler_select_search_result_variant
-    from modeler_runtime import resolve_modeler_template_selection as modeler_resolve_template_selection
-    from modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
-    from dock_runtime import build_legacy_python_tool_command as dock_build_legacy_python_tool_command
-    from dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
-    from dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
-    from dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
     from dock_runtime import pdb_atom_element as dock_pdb_atom_element
+    from dock_runtime import pocket_geometry_from_coordinates as dock_pocket_geometry_from_coordinates
+    from dock_runtime import resolve_tool_path as resolve_external_tool_path
+    from dock_runtime import run_command as run_external_command
+    from dock_runtime import run_post_docking_pipeline
     from dock_runtime import smina_supports_native_flexres as dock_smina_supports_native_flexres
+    from interaction_runtime import (
+        INTERACTION_GEOMETRY_CRITERIA,
+        assign_ligand_hydrophobic_flags_from_rdkit,
+        assign_ligand_ionic_groups_from_topology,
+        build_interaction_record,
+        build_ligand_charge_groups,
+        build_protein_charge_groups,
+        classify_hbond_geometry,
+        classify_pi_ring_pair,
+        is_ligand_anion_center,
+        is_supported_ligand_cation_center,
+        metal_coordination_cutoff,
+        reduce_hydrophobic_pairs,
+        validate_halogen_bond,
+        validate_metal_coordination,
+        validate_ring_charge_interaction,
+        vdw_contact_cutoff,
+    )
+    from interaction_typing_runtime import (
+        protein_aromatic_ring_atom_names,
+        protein_donor_hydrogen_count,
+        protein_hbond_acceptor_atom_names,
+        protein_hbond_donor_atom_names,
+        protein_hydrophobic_atom_names,
+        protein_negative_atom_names,
+        protein_positive_atom_names,
+    )
+    from leadopt_runtime import admet_score as leadopt_admet_score
+    from leadopt_runtime import (
+        build_leadopt_summary_lines,
+        find_best_leadopt_result,
+        leadopt_append_charge_map_source,
+        leadopt_apply_refinement_result,
+        leadopt_build_candidate_rows,
+        leadopt_build_complex_selection_ids,
+        leadopt_build_nonbonded_particle_data,
+        leadopt_build_openmm_refinement_system,
+        leadopt_compute_result_counts,
+        leadopt_export_csv_outputs,
+        leadopt_filter_and_rescue_candidates,
+        leadopt_finalize_advanced_refinement_report,
+        leadopt_finalize_refine_estimate,
+        leadopt_heavy_atom_ids,
+        leadopt_infer_atom_names_elements,
+        leadopt_merge_candidate_and_docked_results,
+        leadopt_needs_parameterization_build,
+        leadopt_optional_refine_note,
+        leadopt_pick_protein_eval_ids,
+        leadopt_prepare_job_paths,
+        leadopt_prepare_parameterization_for_refinement,
+        leadopt_run_openmm_refinement_sampling,
+        leadopt_sanitize_refine_parameterization_options,
+        leadopt_select_advanced_refinement_rows,
+        leadopt_status_text,
+        make_leadopt_advanced_refinement_report,
+        make_leadopt_refine_result,
+        rank_leadopt_results,
+        run_leadopt_entries,
+    )
+    from leadopt_runtime import filter_fail_reason as leadopt_filter_fail_reason
+    from leadopt_runtime import mpo_score as leadopt_mpo_score
     from leadopt_runtime import pass_filters as leadopt_pass_filters
-    from leadopt_runtime import rank_leadopt_results
     from leadopt_runtime import relax_filter_limits as leadopt_relax_filter_limits
-    from leadopt_runtime import run_leadopt_entries
+    from ligand_sketcher_runtime import LigandSketcherWidget
+    from modeler_runtime import (
+        build_modeler_chain_entry,
+        modeler_gap_fill_sequence,
+        modeler_mutation_target_labels,
+        modeler_peptide_bonded,
+    )
+    from modeler_runtime import build_modeler_energy_distribution_payload as modeler_build_energy_distribution_payload
+    from modeler_runtime import build_modeler_mutation_highlight_indices as modeler_build_mutation_highlight_indices
+    from modeler_runtime import build_modeler_run_root as modeler_build_run_root
+    from modeler_runtime import extract_modeler_mutation_target_positions as modeler_extract_mutation_target_positions
+    from modeler_runtime import map_modeler_highlight_indices_to_positions as modeler_map_highlight_indices_to_positions
+    from modeler_runtime import normalize_modeler_build_output as modeler_normalize_build_output
+    from modeler_runtime import resolve_modeler_mutation_input_sequence as modeler_resolve_mutation_input_sequence
+    from modeler_runtime import resolve_modeler_template_selection as modeler_resolve_template_selection
+    from modeler_runtime import resolve_modeler_template_transfer_flags as modeler_resolve_template_transfer_flags
+    from modeler_runtime import select_modeler_search_result_variant as modeler_select_search_result_variant
+    from modeler_runtime import should_modeler_autoresolve_mutation_start as modeler_should_autoresolve_mutation_start
+    from modeler_runtime import validate_modeler_model_count as modeler_validate_model_count
+    from modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
+    from openmm_dynamics_runtime import (
+        apply_openmm_cv_preset,
+        build_openmm_capability_report,
+        normalize_openmm_cv_definition,
+        normalize_openmm_run_controls,
+        openmm_cv_presets,
+        openmm_default_cv_context,
+        run_openmm_advanced_template_smoke,
+        summarize_openmm_cv_definitions,
+        validate_openmm_cv_definitions,
+    )
+    from openmm_qmmm_runtime import (
+        assess_ligand_topology_signature_compatibility,
+        classify_openmm_component_ff_class,
+        compose_openmm_input_pdb,
+        dedupe_openmm_forcefield_xml_paths,
+        default_openmm_xml_selected_keys,
+        export_forcefield_xml_from_amber_prmtop,
+        normalize_pdb_conect_records,
+        plan_openmm_staged_minimization,
+        read_openmm_forcefield_residue_names,
+        resolve_openmm_component_template_plan,
+        rewrite_pdb_component_identity,
+        sanitize_pdb_conect_for_standalone_components,
+        split_openmm_parameterization_targets,
+    )
+    from pka_runtime import protonate_molecule as pka_protonate_molecule
+    from psi4_runtime import (
+        psi4_apply_mapping_to_dict,
+        psi4_atomic_number,
+        psi4_build_antechamber_cmd,
+        psi4_build_leadopt_param_hit_updates,
+        psi4_build_mulliken_esp_cube_from_density,
+        psi4_build_net_charge_candidates,
+        psi4_build_parmchk2_cmd,
+        psi4_build_rebuild_failure_payload,
+        psi4_build_rebuild_success_payload,
+        psi4_choose_parameterization_source,
+        psi4_collect_atoms_from_mol2,
+        psi4_collect_atoms_from_xyz,
+        psi4_collect_ligand_charges_from_file,
+        psi4_detect_sqm_charge_mismatch_hint,
+        psi4_element_token,
+        psi4_estimate_net_charge_from_charges,
+        psi4_finalize_leadopt_parameterization_success,
+        psi4_format_antechamber_attempt_brief,
+        psi4_format_antechamber_attempts_failure,
+        psi4_format_tool_rc_failure,
+        psi4_guess_multiplicity_from_atoms,
+        psi4_infer_charge_multiplicity,
+        psi4_load_history_data,
+        psi4_load_mol2_atom_records,
+        psi4_load_mol2_charges_and_bonds,
+        psi4_load_vib_data,
+        psi4_make_leadopt_cached_info,
+        psi4_make_leadopt_generated_info,
+        psi4_make_leadopt_parameterization_info,
+        psi4_map_charge_transfer_between_mol2_records,
+        psi4_map_ligand_charges_from_param_mol2,
+        psi4_merge_notes,
+        psi4_mol2_atom_type_to_element,
+        psi4_normalize_method_basis,
+        psi4_normalize_rdkit_parameterization_payload,
+        psi4_normalize_threads,
+        psi4_orchestrate_leadopt_parameterization,
+        psi4_pcm_solvent_candidates,
+        psi4_pcm_supported_solvents,
+        psi4_pick_charged_mol2_for_rebuild,
+        psi4_prepare_driver_job,
+        psi4_prepare_ir_spectrum,
+        psi4_prepare_leadopt_parameterization_paths,
+        psi4_prepare_pose_source_for_parameterization,
+        psi4_prepare_rdkit_source_for_parameterization,
+        psi4_prepare_rebuild_output_paths,
+        psi4_prepare_tleap_ligand_build,
+        psi4_prepare_vibrational_animation,
+        psi4_qst_align_coords_kabsch,
+        psi4_qst_build_guess_atoms,
+        psi4_qst_reorder_atoms_to_template,
+        psi4_read_cube,
+        psi4_reason_missing_parameterization_tools,
+        psi4_reason_source_for_parameterization_unavailable,
+        psi4_reason_tleap_parameterization_failed,
+        psi4_resolve_density_cube,
+        psi4_resolve_esp_cube,
+        psi4_resolve_homo_lumo_cubes,
+        psi4_resolve_leadopt_cached_parameterization,
+        psi4_resolve_leadopt_parameterization_source,
+        psi4_resolve_leadopt_rdkit_state,
+        psi4_run_leadopt_parameterization_pipeline,
+        psi4_tail_file,
+        psi4_transfer_mol2_charges_to_typed,
+        psi4_validate_leadopt_parameterization_tools,
+        psi4_write_charged_mol2,
+        psi4_write_cube_data,
+    )
+    from redock_runtime import adjust_redocking_grid_size as redock_adjust_grid_size
     from redock_runtime import aggregate_label_runs_runtime as redock_aggregate_label_runs_runtime
     from redock_runtime import best_pose_for_member as redock_best_pose_for_member
+    from redock_runtime import build_redocking_best_rmsd_config as redock_build_best_rmsd_config
+    from redock_runtime import build_redocking_chainwise_ca_alignment as redock_build_chainwise_ca_alignment
     from redock_runtime import build_redocking_combo_object_name as redock_build_combo_object_name
     from redock_runtime import build_redocking_combo_states as redock_build_combo_states
-    from redock_runtime import build_redocking_state_row_map as redock_build_state_row_map
-    from redock_runtime import build_redocking_post_pipeline_context as redock_build_post_pipeline_context
-    from redock_runtime import build_redocking_run_map_runtime as redock_build_run_map_runtime
+    from redock_runtime import build_redocking_comparison_rows as redock_build_comparison_rows
     from redock_runtime import build_redocking_post_apply_state_runtime as redock_build_post_apply_state_runtime
-    from redock_runtime import run_redocking_post_status_runtime as redock_run_post_status_runtime
     from redock_runtime import build_redocking_post_dialog_runtime as redock_build_post_dialog_runtime
+    from redock_runtime import build_redocking_post_pipeline_context as redock_build_post_pipeline_context
+    from redock_runtime import build_redocking_post_summary_runtime as redock_build_post_summary_runtime
+    from redock_runtime import build_redocking_post_transform_runtime as redock_build_post_transform_runtime
+    from redock_runtime import build_redocking_receptor_structure_qc as redock_build_receptor_structure_qc
+    from redock_runtime import build_redocking_reference_grid_info_message as redock_build_reference_grid_info_message
+    from redock_runtime import build_redocking_reference_grid_size as redock_build_reference_grid_size
+    from redock_runtime import build_redocking_run_map_runtime as redock_build_run_map_runtime
+    from redock_runtime import (
+        build_redocking_selected_interaction_post_apply_plan as redock_build_selected_interaction_post_apply_plan,
+    )
+    from redock_runtime import build_redocking_site_qc_payload as redock_build_site_qc_payload
+    from redock_runtime import build_redocking_state_row_map as redock_build_state_row_map
+    from redock_runtime import build_redocking_table_rows as redock_build_table_rows
+    from redock_runtime import (
+        build_redocking_traj_focus_visibility_actions as redock_build_traj_focus_visibility_actions,
+    )
     from redock_runtime import build_redocking_traj_view_entry as redock_build_traj_view_entry
     from redock_runtime import build_redocking_traj_view_plan as redock_build_traj_view_plan
-    from redock_runtime import run_redocking_row_object_actions_runtime as redock_run_row_object_actions_runtime
-    from redock_runtime import prepare_redocking_runtime_views_runtime as redock_prepare_runtime_views_runtime
-    from redock_runtime import build_redocking_traj_focus_visibility_actions as redock_build_traj_focus_visibility_actions
-    from redock_runtime import run_redocking_traj_visibility_runtime as redock_run_traj_visibility_runtime
+    from redock_runtime import build_redocking_unique_atom_maps as redock_build_unique_atom_maps
     from redock_runtime import collect_redocking_traj_view_objects as redock_collect_traj_view_objects
+    from redock_runtime import compute_redocking_rmsd_no_fit as redock_compute_rmsd_no_fit
+    from redock_runtime import (
+        dedupe_redocking_runtime_systems_by_signature as redock_dedupe_runtime_systems_by_signature,
+    )
+    from redock_runtime import (
+        finalize_redocking_reference_ligand_export_result as redock_finalize_reference_ligand_export_result,
+    )
+    from redock_runtime import finalize_redocking_reference_mol_result as redock_finalize_reference_mol_result
     from redock_runtime import load_redocking_traj_members as redock_load_traj_members
-    from redock_runtime import run_redocking_selected_pose_runtime as redock_run_selected_pose_runtime
-    from redock_runtime import resolve_redocking_selected_pose_warning_message as redock_resolve_selected_pose_warning_message
-    from redock_runtime import resolve_redocking_reference_grid_warning_message as redock_resolve_reference_grid_warning_message
-    from redock_runtime import build_redocking_reference_grid_size as redock_build_reference_grid_size
-    from redock_runtime import adjust_redocking_grid_size as redock_adjust_grid_size
-    from redock_runtime import build_redocking_reference_grid_info_message as redock_build_reference_grid_info_message
-    from redock_runtime import run_redocking_selected_interaction_runtime as redock_run_selected_interaction_runtime
-    from redock_runtime import resolve_redocking_selected_interaction_warning_message as redock_resolve_selected_interaction_warning_message
-    from redock_runtime import build_redocking_selected_interaction_post_apply_plan as redock_build_selected_interaction_post_apply_plan
-    from redock_runtime import run_redocking_reference_context_runtime as redock_run_reference_context_runtime
-    from redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
-    from redock_runtime import build_redocking_table_rows as redock_build_table_rows
-    from redock_runtime import pick_best_pose_row as redock_pick_best_pose_row
     from redock_runtime import pick_top_scored_pose_row as redock_pick_top_scored_pose_row
     from redock_runtime import prepare_redocking_base_runtime as redock_prepare_base_runtime
     from redock_runtime import prepare_redocking_ligand_override_runtime as redock_prepare_ligand_override_runtime
-    from redock_runtime import prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan
-    from redock_runtime import finalize_redocking_reference_ligand_export_result as redock_finalize_reference_ligand_export_result
-    from redock_runtime import resolve_redocking_reference_ligand_export_response as redock_resolve_reference_ligand_export_response
+    from redock_runtime import prepare_redocking_reference_flex_runtime as redock_prepare_reference_flex_runtime
+    from redock_runtime import (
+        prepare_redocking_reference_ligand_export_plan as redock_prepare_reference_ligand_export_plan,
+    )
     from redock_runtime import prepare_redocking_reference_mol_plan as redock_prepare_reference_mol_plan
-    from redock_runtime import finalize_redocking_reference_mol_result as redock_finalize_reference_mol_result
-    from redock_runtime import resolve_redocking_rdkit_rmsd_mol_with_config as redock_resolve_rdkit_rmsd_mol_with_config
-    from redock_runtime import build_redocking_unique_atom_maps as redock_build_unique_atom_maps
-    from redock_runtime import compute_redocking_rmsd_no_fit as redock_compute_rmsd_no_fit
-    from redock_runtime import build_redocking_best_rmsd_config as redock_build_best_rmsd_config
+    from redock_runtime import prepare_redocking_runtime_systems_runtime as redock_prepare_runtime_systems_runtime
+    from redock_runtime import prepare_redocking_runtime_views_runtime as redock_prepare_runtime_views_runtime
+    from redock_runtime import recover_redocking_reference_mol_from_pdb as redock_recover_reference_mol_from_pdb
+    from redock_runtime import redocking_traj_visible_for_label as redock_traj_visible_for_label
     from redock_runtime import resolve_redocking_best_rmsd as redock_resolve_best_rmsd
     from redock_runtime import resolve_redocking_rdkit_candidate_atom_maps as redock_resolve_rdkit_candidate_atom_maps
-    from redock_runtime import build_redocking_chainwise_ca_alignment as redock_build_chainwise_ca_alignment
-    from redock_runtime import build_redocking_site_qc_payload as redock_build_site_qc_payload
-    from redock_runtime import build_redocking_receptor_structure_qc as redock_build_receptor_structure_qc
-    from redock_runtime import recover_redocking_reference_mol_from_pdb as redock_recover_reference_mol_from_pdb
-    from redock_runtime import prepare_redocking_reference_flex_runtime as redock_prepare_reference_flex_runtime
-    from redock_runtime import redocking_traj_visible_for_label as redock_traj_visible_for_label
-    from redock_runtime import resolve_redocking_traj_state as redock_resolve_traj_state
-    from redock_runtime import run_redocking_hetatm_preflight_runtime as redock_run_hetatm_preflight_runtime
-    from redock_runtime import prepare_redocking_runtime_systems_runtime as redock_prepare_runtime_systems_runtime
-    from redock_runtime import run_redocking_workflow_orchestrator as redock_run_workflow_orchestrator
-    from redock_runtime import run_redocking_runtime_systems_runtime as redock_run_runtime_systems_runtime
-    from redock_runtime import run_redocking_single_system_runtime as redock_run_single_system_runtime
-    from redock_runtime import build_redocking_post_transform_runtime as redock_build_post_transform_runtime
-    from redock_runtime import build_redocking_post_summary_runtime as redock_build_post_summary_runtime
-    from redock_runtime import build_redocking_comparison_rows as redock_build_comparison_rows
-    from redock_runtime import write_redocking_comparison_summary_csv as redock_write_comparison_summary_csv
+    from redock_runtime import resolve_redocking_rdkit_rmsd_mol_with_config as redock_resolve_rdkit_rmsd_mol_with_config
+    from redock_runtime import (
+        resolve_redocking_reference_grid_warning_message as redock_resolve_reference_grid_warning_message,
+    )
+    from redock_runtime import (
+        resolve_redocking_reference_ligand_export_response as redock_resolve_reference_ligand_export_response,
+    )
+    from redock_runtime import (
+        resolve_redocking_selected_interaction_warning_message as redock_resolve_selected_interaction_warning_message,
+    )
+    from redock_runtime import (
+        resolve_redocking_selected_pose_warning_message as redock_resolve_selected_pose_warning_message,
+    )
     from redock_runtime import resolve_state_for_member as redock_resolve_state_for_member
     from redock_runtime import rows_best_per_member as redock_rows_best_per_member
-    from redock_runtime import dedupe_redocking_runtime_systems_by_signature as redock_dedupe_runtime_systems_by_signature
+    from redock_runtime import run_redocking_hetatm_preflight_runtime as redock_run_hetatm_preflight_runtime
+    from redock_runtime import run_redocking_post_status_runtime as redock_run_post_status_runtime
+    from redock_runtime import run_redocking_reference_context_runtime as redock_run_reference_context_runtime
+    from redock_runtime import run_redocking_row_object_actions_runtime as redock_run_row_object_actions_runtime
+    from redock_runtime import run_redocking_runtime_systems_runtime as redock_run_runtime_systems_runtime
+    from redock_runtime import run_redocking_selected_interaction_runtime as redock_run_selected_interaction_runtime
+    from redock_runtime import run_redocking_selected_pose_runtime as redock_run_selected_pose_runtime
+    from redock_runtime import run_redocking_single_system_runtime as redock_run_single_system_runtime
+    from redock_runtime import run_redocking_traj_frame_runtime as redock_run_traj_frame_runtime
+    from redock_runtime import run_redocking_traj_visibility_runtime as redock_run_traj_visibility_runtime
+    from redock_runtime import run_redocking_workflow_orchestrator as redock_run_workflow_orchestrator
     from redock_runtime import strip_redocking_residue_from_structure_file as redock_strip_residue_from_structure_file
+    from redock_runtime import write_redocking_comparison_summary_csv as redock_write_comparison_summary_csv
+    from small_molecule_runtime import (
+        build_small_molecule_prep_qc,
+        prepare_small_molecule_working_mol,
+        summarize_small_molecule_state,
+    )
     from smina_runtime import format_recent_errors as smina_format_recent_errors
     from smina_runtime import parse_smina_pose_scores as runtime_parse_smina_pose_scores
     from smina_runtime import run_smina_repeats
-    from vs_runtime import build_virtual_screening_summary_lines
-    from vs_runtime import rank_virtual_screening_results
-    from vs_runtime import run_virtual_screening_entries
-    from vs_runtime import normalize_virtual_screening_controls
-    from vs_runtime import normalize_virtual_screening_grid
-    from vs_runtime import format_virtual_screening_library_status
-    from vs_runtime import vs_status_text
-    from vs_runtime import summarize_virtual_screening_results
-    from vs_runtime import vs_prepare_job_paths
+    from structure_fetch_runtime import STRUCTURE_FETCH_SOURCES, build_structure_fetch_request, download_structure_file
+    from task_monitor_runtime import task_monitor_probe_job
+    from trajectory_interaction_runtime import (
+        trajectory_build_selected_trace_payload,
+        trajectory_collect_presence_counts,
+        trajectory_frame_indices,
+        trajectory_interaction_key,
+        trajectory_interaction_label,
+        trajectory_interaction_occ_key,
+        trajectory_normalize_max_distance,
+        trajectory_normalize_step,
+        trajectory_pick_matching_interaction,
+        trajectory_run_interaction_analysis,
+    )
+    from vs_runtime import (
+        build_virtual_screening_summary_lines,
+        format_virtual_screening_library_status,
+        normalize_virtual_screening_controls,
+        normalize_virtual_screening_grid,
+        rank_virtual_screening_results,
+        run_virtual_screening_entries,
+        summarize_virtual_screening_results,
+        vs_prepare_job_paths,
+        vs_status_text,
+    )
 
 QTWEBENGINE_WIDGETS = None
 HAS_QT_WEBENGINE = False
@@ -858,13 +933,23 @@ except Exception:
 # installed package and the legacy root-level PyMOL loader.
 try:
     from .config import (
-        PLUGIN_VERSION, PLUGIN_BUILD, SUITE_NAME, PROJECT_MASTER_FILE_NAME,
-        PROJECT_STATE_FILE_NAME, SUITE_TAGLINE, SUITE_AUTHOR_LINE, resource_string,
+        PLUGIN_BUILD,
+        PLUGIN_VERSION,
+        PROJECT_MASTER_FILE_NAME,
+        PROJECT_STATE_FILE_NAME,
+        SUITE_NAME,
+        SUITE_TAGLINE,
+        resource_string,
     )
 except ImportError:
     from config import (
-        PLUGIN_VERSION, PLUGIN_BUILD, SUITE_NAME, PROJECT_MASTER_FILE_NAME,
-        PROJECT_STATE_FILE_NAME, SUITE_TAGLINE, SUITE_AUTHOR_LINE, resource_string,
+        PLUGIN_BUILD,
+        PLUGIN_VERSION,
+        PROJECT_MASTER_FILE_NAME,
+        PROJECT_STATE_FILE_NAME,
+        SUITE_NAME,
+        SUITE_TAGLINE,
+        resource_string,
     )
 try:
     from .ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
@@ -890,19 +975,19 @@ MPL_FIGURE_CANVAS = None
 try:
     from rdkit import Chem, DataStructs
     from rdkit import Geometry as RDGEOMETRY
-    from rdkit.Chem import (
-        AllChem,
-        Draw,
-        BRICS,
-        Descriptors,
-        Crippen,
-        Lipinski,
-        rdMolDescriptors,
-        rdMolAlign,
-        rdFMCS,
-        QED,
-    )
     from rdkit import RDLogger as RDLOGGER
+    from rdkit.Chem import (
+        BRICS,
+        QED,
+        AllChem,
+        Crippen,
+        Descriptors,
+        Draw,
+        Lipinski,
+        rdFMCS,
+        rdMolAlign,
+        rdMolDescriptors,
+    )
     try:
         from rdkit.Chem.MolStandardize import rdMolStandardize as RDMS
     except Exception:
@@ -941,8 +1026,8 @@ except ImportError:
     HAS_MPL_QT = False
 try:
     import openmm as OMM
-    import openmm.unit as OMM_UNIT
     import openmm.app as OMM_APP
+    import openmm.unit as OMM_UNIT
     HAS_OPENMM = True
     OPENMM_BACKEND = "openmm"
 except Exception:
@@ -2012,7 +2097,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "Import Result...": "Import...",
             "Parameterize Checked": "Parameterize",
             "Check Needs Param": "Needs Param",
-            "Guided Exit Diagnostic": "ABFE-lite",
             "Distribution for Selected Interaction": "Selected Distribution",
             "Distribution (All Interactions)": "All Distributions",
             "Open Prepared Notebook File": "Open Notebook",
@@ -4373,8 +4457,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         the selected interaction dash.
         """
         p = inter.get("prot_coord")
-        l = inter.get("lig_coord")
-        if p is None or l is None:
+        lig_xyz = inter.get("lig_coord")
+        if p is None or lig_xyz is None:
             return
         try:
             st = int(state_idx)
@@ -4407,7 +4491,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception:
             pass
         cmd.pseudoatom(lbl_prot, pos=list(p), state=st)
-        cmd.pseudoatom(lbl_lig, pos=list(l), state=st)
+        cmd.pseudoatom(lbl_lig, pos=list(lig_xyz), state=st)
         cmd.label(lbl_prot, f'"{prot_label}"')
         cmd.label(lbl_lig, f'"{lig_label}"')
         cmd.set("label_color", "green", lbl_prot)
@@ -9551,9 +9635,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 notes.append(f"rdkit_template_sdf_failed:{prep_e}")
         prepared_single_unit = False
         ok1 = False
-        out1 = ""
-        err1 = ""
-        rc1 = 1
         used_charge_method = ""
         used_source_desc = ""
         while source_candidates and (not ok1):
@@ -9602,9 +9683,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                 pass
                             continue
                     ok1 = True
-                    out1 = str(out_try or "")
-                    err1 = str(err_try or "")
-                    rc1 = int(rc_try)
+                    str(out_try or "")
+                    str(err_try or "")
+                    int(rc_try)
                     used_charge_method = str(cm_try)
                     used_source_desc = str(src_desc)
                     if str(cm_try) != str(cm_req):
@@ -12028,7 +12109,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         qmmm_correction_indices = []
         qmmm_coupling_plan = {}
         min_restraint_plan = {}
-        min_restraint_force = None
         min_restraint_parameter = ""
         try:
             _emit(2, "Loading topology")
@@ -12319,7 +12399,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         restraint_plan=min_restraint_plan,
                     )
                     if bool(mk_rest.get("ok", False)):
-                        min_restraint_force = mk_rest.get("force")
+                        mk_rest.get("force")
                         min_restraint_parameter = str(mk_rest.get("parameter", "") or "")
                         counts = dict(mk_rest.get("counts", {}) or {})
                         out["notes"].append(
@@ -13368,31 +13448,45 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         btn_pick_c.clicked.connect(lambda: _pick_to_group(edit_group3))
         btn_pick_d.clicked.connect(lambda: _pick_to_group(edit_group4))
         spin_start = QtWidgets.QDoubleSpinBox()
-        spin_start.setDecimals(3); spin_start.setRange(-200.0, 200.0); spin_start.setValue(0.20)
+        spin_start.setDecimals(3)
+        spin_start.setRange(-200.0, 200.0)
+        spin_start.setValue(0.20)
         form.addRow("CV start (nm)", spin_start)
         spin_end = QtWidgets.QDoubleSpinBox()
-        spin_end.setDecimals(3); spin_end.setRange(-200.0, 200.0); spin_end.setValue(1.20)
+        spin_end.setDecimals(3)
+        spin_end.setRange(-200.0, 200.0)
+        spin_end.setValue(1.20)
         form.addRow("CV end (nm)", spin_end)
         spin_windows = QtWidgets.QSpinBox()
-        spin_windows.setRange(2, 200); spin_windows.setValue(24)
+        spin_windows.setRange(2, 200)
+        spin_windows.setValue(24)
         form.addRow("Number of windows", spin_windows)
         spin_k = QtWidgets.QDoubleSpinBox()
-        spin_k.setDecimals(1); spin_k.setRange(1.0, 200000.0); spin_k.setValue(1500.0)
+        spin_k.setDecimals(1)
+        spin_k.setRange(1.0, 200000.0)
+        spin_k.setValue(1500.0)
         form.addRow("Harmonic k (kJ/mol/nm^2)", spin_k)
         spin_eq = QtWidgets.QSpinBox()
-        spin_eq.setRange(0, 500000000); spin_eq.setValue(50000)
+        spin_eq.setRange(0, 500000000)
+        spin_eq.setValue(50000)
         form.addRow("Equilibration/window (steps)", spin_eq)
         spin_prod = QtWidgets.QSpinBox()
-        spin_prod.setRange(100, 500000000); spin_prod.setValue(200000)
+        spin_prod.setRange(100, 500000000)
+        spin_prod.setValue(200000)
         form.addRow("Production/window (steps)", spin_prod)
         spin_stride = QtWidgets.QSpinBox()
-        spin_stride.setRange(1, 10000000); spin_stride.setValue(200)
+        spin_stride.setRange(1, 10000000)
+        spin_stride.setValue(200)
         form.addRow("Sample stride (steps)", spin_stride)
         spin_temp = QtWidgets.QDoubleSpinBox()
-        spin_temp.setDecimals(1); spin_temp.setRange(50.0, 600.0); spin_temp.setValue(300.0)
+        spin_temp.setDecimals(1)
+        spin_temp.setRange(50.0, 600.0)
+        spin_temp.setValue(300.0)
         form.addRow("Temperature (K)", spin_temp)
         spin_dt = QtWidgets.QDoubleSpinBox()
-        spin_dt.setDecimals(3); spin_dt.setRange(0.1, 5.0); spin_dt.setValue(2.0)
+        spin_dt.setDecimals(3)
+        spin_dt.setRange(0.1, 5.0)
+        spin_dt.setValue(2.0)
         form.addRow("Timestep (fs)", spin_dt)
         cb_periodic = QtWidgets.QCheckBox("Periodic CV")
         cb_periodic.setChecked(False)
@@ -13531,22 +13625,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lbl_preset_summary.setWordWrap(True)
         form.addRow("Preset summary", lbl_preset_summary)
         spin_temp = QtWidgets.QDoubleSpinBox()
-        spin_temp.setDecimals(1); spin_temp.setRange(50.0, 600.0); spin_temp.setValue(300.0)
+        spin_temp.setDecimals(1)
+        spin_temp.setRange(50.0, 600.0)
+        spin_temp.setValue(300.0)
         form.addRow("Temperature (K)", spin_temp)
         spin_bias_factor = QtWidgets.QDoubleSpinBox()
-        spin_bias_factor.setDecimals(2); spin_bias_factor.setRange(1.01, 200.0); spin_bias_factor.setValue(10.0)
+        spin_bias_factor.setDecimals(2)
+        spin_bias_factor.setRange(1.01, 200.0)
+        spin_bias_factor.setValue(10.0)
         form.addRow("Bias factor", spin_bias_factor)
         spin_hill = QtWidgets.QDoubleSpinBox()
-        spin_hill.setDecimals(3); spin_hill.setRange(0.001, 200.0); spin_hill.setValue(1.2)
+        spin_hill.setDecimals(3)
+        spin_hill.setRange(0.001, 200.0)
+        spin_hill.setValue(1.2)
         form.addRow("Hill height (kJ/mol)", spin_hill)
         spin_freq = QtWidgets.QSpinBox()
-        spin_freq.setRange(1, 10000000); spin_freq.setValue(500)
+        spin_freq.setRange(1, 10000000)
+        spin_freq.setValue(500)
         form.addRow("Deposit frequency (steps)", spin_freq)
         spin_save = QtWidgets.QSpinBox()
-        spin_save.setRange(1, 100000000); spin_save.setValue(5000)
+        spin_save.setRange(1, 100000000)
+        spin_save.setValue(5000)
         form.addRow("Bias save frequency (steps)", spin_save)
         spin_total = QtWidgets.QSpinBox()
-        spin_total.setRange(100, 500000000); spin_total.setValue(200000)
+        spin_total.setRange(100, 500000000)
+        spin_total.setValue(200000)
         form.addRow("Total MD steps", spin_total)
         edit_bias_dir = QtWidgets.QLineEdit(os.path.join(self._openmm_workspace_dir(), "metadynamics_bias"))
         form.addRow("Bias directory", edit_bias_dir)
@@ -13619,22 +13722,29 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             edit_force.setReadOnly(True)
             gb_v.addWidget(edit_force, 3, 1, 1, 8)
             spin_min = QtWidgets.QDoubleSpinBox()
-            spin_min.setDecimals(4); spin_min.setRange(-1000.0, 1000.0); spin_min.setValue(0.1 if i == 1 else 0.0)
+            spin_min.setDecimals(4)
+            spin_min.setRange(-1000.0, 1000.0)
+            spin_min.setValue(0.1 if i == 1 else 0.0)
             gb_v.addWidget(QtWidgets.QLabel("minValue"), 4, 0)
             gb_v.addWidget(spin_min, 4, 1)
             spin_max = QtWidgets.QDoubleSpinBox()
-            spin_max.setDecimals(4); spin_max.setRange(-1000.0, 1000.0); spin_max.setValue(1.5 if i == 1 else 3.14)
+            spin_max.setDecimals(4)
+            spin_max.setRange(-1000.0, 1000.0)
+            spin_max.setValue(1.5 if i == 1 else 3.14)
             gb_v.addWidget(QtWidgets.QLabel("maxValue"), 4, 2)
             gb_v.addWidget(spin_max, 4, 3)
             spin_width = QtWidgets.QDoubleSpinBox()
-            spin_width.setDecimals(5); spin_width.setRange(1e-5, 1000.0); spin_width.setValue(0.02 if i == 1 else 0.05)
+            spin_width.setDecimals(5)
+            spin_width.setRange(1e-5, 1000.0)
+            spin_width.setValue(0.02 if i == 1 else 0.05)
             gb_v.addWidget(QtWidgets.QLabel("biasWidth"), 4, 4)
             gb_v.addWidget(spin_width, 4, 5)
             cb_periodic = QtWidgets.QCheckBox("Periodic")
             cb_periodic.setChecked(False if i == 1 else True)
             gb_v.addWidget(cb_periodic, 5, 0, 1, 2)
             spin_grid = QtWidgets.QSpinBox()
-            spin_grid.setRange(0, 5000); spin_grid.setValue(0)
+            spin_grid.setRange(0, 5000)
+            spin_grid.setValue(0)
             spin_grid.setToolTip("0 = auto")
             gb_v.addWidget(QtWidgets.QLabel("gridWidth"), 5, 2)
             gb_v.addWidget(spin_grid, 5, 3)
@@ -13808,20 +13918,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         cmb_restraint.addItem("Flat-bottom restraint", "flat_bottom")
         form.addRow("Restraint type", cmb_restraint)
         spin_rest_k = QtWidgets.QDoubleSpinBox()
-        spin_rest_k.setDecimals(1); spin_rest_k.setRange(0.1, 200000.0); spin_rest_k.setValue(2000.0)
+        spin_rest_k.setDecimals(1)
+        spin_rest_k.setRange(0.1, 200000.0)
+        spin_rest_k.setValue(2000.0)
         form.addRow("Restraint k", spin_rest_k)
         spin_eq = QtWidgets.QSpinBox()
-        spin_eq.setRange(0, 500000000); spin_eq.setValue(30000)
+        spin_eq.setRange(0, 500000000)
+        spin_eq.setValue(30000)
         form.addRow("Equilibration (steps)", spin_eq)
         spin_prod = QtWidgets.QSpinBox()
-        spin_prod.setRange(100, 500000000); spin_prod.setValue(120000)
+        spin_prod.setRange(100, 500000000)
+        spin_prod.setValue(120000)
         form.addRow("Production (steps)", spin_prod)
         try:
             default_repeats = int(getattr(self, "_settings", {}).get("abfe_replica_count", 3))
         except Exception:
             default_repeats = 3
         spin_repeats = QtWidgets.QSpinBox()
-        spin_repeats.setRange(1, 64); spin_repeats.setValue(max(1, int(default_repeats)))
+        spin_repeats.setRange(1, 64)
+        spin_repeats.setValue(max(1, int(default_repeats)))
         form.addRow("Independent repeats", spin_repeats)
         cb_run_now = QtWidgets.QCheckBox("Run ABFE-lite now after saving template")
         cb_run_now.setChecked(False)
@@ -13885,16 +14000,22 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         cmb_precision.addItem("double", "double")
         form.addRow("Precision", cmb_precision)
         spin_min = QtWidgets.QSpinBox()
-        spin_min.setRange(0, 200000); spin_min.setValue(2000)
+        spin_min.setRange(0, 200000)
+        spin_min.setValue(2000)
         form.addRow("Minimization iterations", spin_min)
         spin_temp = QtWidgets.QDoubleSpinBox()
-        spin_temp.setDecimals(1); spin_temp.setRange(50.0, 600.0); spin_temp.setValue(300.0)
+        spin_temp.setDecimals(1)
+        spin_temp.setRange(50.0, 600.0)
+        spin_temp.setValue(300.0)
         form.addRow("Temperature (K)", spin_temp)
         spin_dt = QtWidgets.QDoubleSpinBox()
-        spin_dt.setDecimals(3); spin_dt.setRange(0.1, 5.0); spin_dt.setValue(1.0)
+        spin_dt.setDecimals(3)
+        spin_dt.setRange(0.1, 5.0)
+        spin_dt.setValue(1.0)
         form.addRow("Timestep (fs)", spin_dt)
         spin_steps = QtWidgets.QSpinBox()
-        spin_steps.setRange(100, 500000000); spin_steps.setValue(100000)
+        spin_steps.setRange(100, 500000000)
+        spin_steps.setValue(100000)
         form.addRow("Simulation steps", spin_steps)
         cb_pbc = QtWidgets.QCheckBox("Use periodic boundary conditions")
         cb_pbc.setChecked(True)
@@ -18757,8 +18878,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             selected_components = []
             selected_counts = {"cofactor": 0, "ion": 0, "water": 0}
-            include_template_hetatm = False
-            include_template_water = False
             # Explicit decision gate in build step:
             # if receptor has non-protein components and the checkbox is off,
             # ask the user whether to include/select them now.
@@ -18826,16 +18945,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         return
                     selected_components = list(selected_components or [])
                     selected_counts = self._modeler_component_category_counts(selected_components)
-                    include_template_hetatm = bool(selected_counts.get("cofactor", 0) or selected_counts.get("ion", 0))
-                    include_template_water = bool(selected_counts.get("water", 0))
+                    bool(selected_counts.get("cofactor", 0) or selected_counts.get("ion", 0))
+                    bool(selected_counts.get("water", 0))
                     if (not selected_components) and list(all_components or []):
                         notes = (
                             f"{notes} "
                             "Non-protein option enabled, but no components were selected from receptor."
                         )
                 elif not source_template_selected:
-                    include_template_hetatm = True
-                    include_template_water = True
                     notes = (
                         f"{notes} "
                         "Non-protein option enabled in sequence mode without receptor."
@@ -30817,7 +30934,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if conf is not None:
                 try:
                     p = conf.GetAtomPosition(int(i - 1))
-                    x = float(p.x); y = float(p.y); z = float(p.z)
+                    x = float(p.x)
+                    y = float(p.y)
+                    z = float(p.z)
                 except Exception:
                     x = y = z = 0.0
             atoms.append({
@@ -31268,7 +31387,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         lines = [f"{int(charge)} {int(max(1, multiplicity))}"]
         for a in list(atoms or []):
             sym = self._psi4_element_token(a.get("element", a.get("symbol", "C")))
-            x = float(a.get("x", 0.0)); y = float(a.get("y", 0.0)); z = float(a.get("z", 0.0))
+            x = float(a.get("x", 0.0))
+            y = float(a.get("y", 0.0))
+            z = float(a.get("z", 0.0))
             lines.append(f"{sym} {x:.10f} {y:.10f} {z:.10f}")
         lines.append("units angstrom")
         lines.append("no_reorient")
@@ -32510,7 +32631,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "write_error": "Internal error: missing Psi4 run result.",
                 "job": {},
             }
-        ok = bool(run_result.get("ok_run", False))
+        bool(run_result.get("ok_run", False))
         rc = int(run_result.get("rc", -1))
         err_txt = str(run_result.get("err_txt", "") or "")
         result = run_result.get("result") if isinstance(run_result.get("result"), dict) else run_result.get("result")
@@ -42679,9 +42800,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         mapping_mode = str((map_payload or {}).get("mapping_mode", "") or "")
         reduced_hydrogen_model = bool((map_payload or {}).get("reduced_hydrogen_model", False))
         map_diag = dict((map_payload or {}).get("mapping_diag", {}) or {})
-        n_local = int(system.getNumParticles())
-        local_lig_set = set(int(i) for i in loc_idx)
-        local_to_param = {int(v): int(k) for k, v in param_to_local.items()}
+        int(system.getNumParticles())
+        set(int(i) for i in loc_idx)
+        {int(v): int(k) for k, v in param_to_local.items()}
         counts = {
             "bond": 0,
             "angle": 0,
@@ -46522,6 +46643,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             import io
             import warnings
+
             from Bio.PDB import PDBParser
             pdb_str = cmd.get_pdbstr(self.loaded_object)
             if not pdb_str:
@@ -47114,8 +47236,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             cmd.delete(temp_lig)
             
             # Restore settings
-            if old_dot_sol: cmd.set("dot_solvent", old_dot_sol)
-            if old_dot_den: cmd.set("dot_density", old_dot_den)
+            if old_dot_sol:
+                cmd.set("dot_solvent", old_dot_sol)
+            if old_dot_den:
+                cmd.set("dot_density", old_dot_den)
             
             if free_sasa <= 0.001:
                 return None # Avoid division by zero
@@ -47238,6 +47362,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """2D interaction diagram (RDKit depiction with bond orders and charges, residues placed around it) in
         a matplotlib window; clicking a residue focuses its interaction in the 3D view. Returns the PNG path."""
         import tempfile
+
         from leonardo import interaction_view as iview
         lig_chain, lig_resi, lig_resn = self.ligand_info
         lig_sel = self._pymol_residue_selection(self.loaded_object, lig_chain, lig_resi, lig_resn)
@@ -47359,11 +47484,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             p = coords_2d[idx]
             symbol = atom.GetSymbol()
             c = "black"
-            if symbol == "O": c = "red"
-            elif symbol == "N": c = "blue"
-            elif symbol == "S": c = "orange"
-            elif symbol == "P": c = "purple"
-            elif symbol == "F" or symbol == "Cl": c = "green"
+            if symbol == "O":
+                c = "red"
+            elif symbol == "N":
+                c = "blue"
+            elif symbol == "S":
+                c = "orange"
+            elif symbol == "P":
+                c = "purple"
+            elif symbol == "F" or symbol == "Cl":
+                c = "green"
             
             if symbol != "C":
                 ax.text(p[0], p[1], symbol, color=c, fontsize=10, 
@@ -51519,7 +51649,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if bool(use_replica_aggregate):
                 dg_exp = float(replica_summary.get("dg_exp_mean", numeric_payload.get("dg_exp", np.nan)))
                 dg_cum = float(replica_summary.get("dg_cum_mean", numeric_payload.get("dg_cum", np.nan)))
-                coul_mean = float(replica_summary.get("coul_mean", numeric_payload.get("coul_mean", np.nan)))
                 contact_frac_mean = float(
                     replica_summary.get("contact_frac_mean", numeric_payload.get("contact_frac_mean", np.nan))
                 )
@@ -51579,7 +51708,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             else:
                 dg_exp = float(numeric_payload.get("dg_exp", np.nan))
                 dg_cum = float(numeric_payload.get("dg_cum", np.nan))
-                coul_mean = float(numeric_payload.get("coul_mean", np.nan))
                 contact_frac_mean = float(numeric_payload.get("contact_frac_mean", np.nan))
                 selected_estimator = str(numeric_payload.get("selected_estimator", data.get("selected_estimator", "gated_off")))
                 dg_selected = float(numeric_payload.get("dg_selected_kj", data.get("dg_selected_kj", np.nan)))
@@ -51621,7 +51749,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 run_cum = np.asarray(numeric_payload.get("run_cum", []), dtype=float)
             e_cent = np.asarray(numeric_payload.get("e_cent", []), dtype=float)
             e_pmf = np.asarray(numeric_payload.get("e_pmf", []), dtype=float)
-            finite_min = np.asarray(numeric_payload.get("finite_min", []), dtype=bool)
             r_cent = np.asarray(numeric_payload.get("r_cent", []), dtype=float)
             r_pmf = np.asarray(numeric_payload.get("r_pmf", []), dtype=float)
             has_surface = bool(numeric_payload.get("has_surface", False))
@@ -53630,7 +53757,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not lig:
             return []
         # Map index for stability
-        idx_map = {id(a): i for i, a in enumerate(lig)}
+        {id(a): i for i, a in enumerate(lig)}
         coords = [a["coord"] for a in lig]
         elements = [a["element"].upper() for a in lig]
         adj = {i: set() for i in range(len(lig))}
@@ -55569,7 +55696,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     item = legend_container.takeAt(0)
                     if item.widget():
                         item.widget().deleteLater()
-        except:
+        except Exception:
             pass
     def _init_filter(self):
         combo = getattr(self, "filter_combo", None)

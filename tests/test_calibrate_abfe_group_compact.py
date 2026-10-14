@@ -1,7 +1,6 @@
+import calibrate_abfe_group_compact as cagc
 import numpy as np
 import pandas as pd
-
-import calibrate_abfe_group_compact as cagc
 
 
 def test_merge_docking_table_scales_kcal(tmp_path):

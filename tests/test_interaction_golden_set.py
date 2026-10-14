@@ -20,6 +20,7 @@ chemical-component files (tests/data/interactions_golden/ccd), so the run is off
   1ACL  AChE-decamethonium      quaternary ammonium cation-pi with Trp84 and Trp279
                                 (Harel et al. 1993, PNAS 90:9031)
 """
+
 import os
 import shutil
 import tempfile
@@ -36,9 +37,11 @@ GOLDEN = os.path.join(REPO, "tests", "data", "interactions_golden")
 
 
 def _path(name):
-    for p in (os.path.join(GOLDEN, name),
-              os.path.join(REPO, "examples", "films", "01_molecular_docking", name),
-              os.path.join(REPO, "examples", "films", "08_ensemble_redocking", name)):
+    for p in (
+        os.path.join(GOLDEN, name),
+        os.path.join(REPO, "examples", "films", "01_molecular_docking", name),
+        os.path.join(REPO, "examples", "films", "08_ensemble_redocking", name),
+    ):
         if os.path.isfile(p):
             return p
     raise FileNotFoundError(name)
@@ -54,7 +57,7 @@ def leo():
 
     work = tempfile.mkdtemp(prefix="leo_golden_work_")
     app, ctx, reg = _headless_leonardo(work)
-    ctx.dlg._rcsb_chemcomp_smiles = lambda *a, **k: ""          # offline: no RCSB lookups
+    ctx.dlg._rcsb_chemcomp_smiles = lambda *a, **k: ""  # offline: no RCSB lookups
     cache = {}
 
     def run(pdb, chain, resi, resn):
@@ -65,8 +68,11 @@ def leo():
             cmd.delete("all")
             obj = "g_" + os.path.splitext(os.path.basename(pdb))[0]
             reg.call("load_structure_file", {"path": _path(pdb), "object_name": obj}, ctx)
-            out = reg.call("analyze_interactions", {"object": obj, "ligand_chain": chain,
-                                                    "ligand_resi": resi, "ligand_resn": resn}, ctx)
+            out = reg.call(
+                "analyze_interactions",
+                {"object": obj, "ligand_chain": chain, "ligand_resi": resi, "ligand_resn": resn},
+                ctx,
+            )
             feats = ctx.dlg._cached_features
             cache[key] = {
                 "out": out,
@@ -74,9 +80,11 @@ def leo():
                 "records": [dict(r) for r in ctx.dlg.interactions],
                 "lig_atoms": [dict(a) for a in feats.get("ligand_atoms", [])],
                 "lig_h": sum(1 for a in feats.get("ligand_atoms", []) if str(a.get("element")).upper() == "H"),
-                "objects_with_ligand": [o for o in cmd.get_names("objects", enabled_only=1)
-                                        if cmd.get_type(o) == "object:molecule"
-                                        and cmd.count_atoms(f"({o}) and resn {resn}") > 0],
+                "objects_with_ligand": [
+                    o
+                    for o in cmd.get_names("objects", enabled_only=1)
+                    if cmd.get_type(o) == "object:molecule" and cmd.count_atoms(f"({o}) and resn {resn}") > 0
+                ],
                 "refined": ctx.dlg._ligand_refined_mol,
             }
         return cache[key]
@@ -112,8 +120,11 @@ def _find(records, itype, residue, prot_atom=None, lig_atom=None):
 
 def _assert_has(records, itype, residue, prot_atom=None, lig_atom=None, max_dist=None):
     hits = _find(records, itype, residue, prot_atom, lig_atom)
-    table = "\n".join(f"  {r['type']} {_res(r)} {r['prot_atom']}-{r['lig_atom']} {float(r['distance']):.2f}"
-                      for r in records if r["type"] != "Van der Waals")
+    table = "\n".join(
+        f"  {r['type']} {_res(r)} {r['prot_atom']}-{r['lig_atom']} {float(r['distance']):.2f}"
+        for r in records
+        if r["type"] != "Van der Waals"
+    )
     assert hits, f"missing {itype} {residue} {prot_atom or ''}-{lig_atom or ''}; found:\n{table}"
     if max_dist is not None:
         assert min(float(h["distance"]) for h in hits) <= max_dist
@@ -162,12 +173,12 @@ def test_3ptb_benzamidine(leo):
     assert case["lig_h"] == 9
     recs = case["records"]
     sb = _assert_has(recs, "Salt Bridge", "ASP189", max_dist=4.0)
-    assert len(_find(recs, "Salt Bridge", "ASP189")) == 1          # was 2 (amidine split in two groups)
+    assert len(_find(recs, "Salt Bridge", "ASP189")) == 1  # was 2 (amidine split in two groups)
     pairs = {(p["prot_atom"], p["lig_atom"]) for p in sb[0]["hbond_pairs"]}
     assert len(pairs) >= 2 and "charge-assisted" in sb[0]["details"]
     _assert_has(recs, "Hydrogen Bond", "SER190", "OG", max_dist=3.2)
     _assert_has(recs, "Hydrogen Bond", "GLY219", "O", "N1", max_dist=3.0)
-    assert not _find(recs, "Hydrogen Bond", "ASP189")               # folded into the salt bridge
+    assert not _find(recs, "Hydrogen Bond", "ASP189")  # folded into the salt bridge
     assert not [r for r in recs if r["type"] in ("Cation-Pi", "Metal Coordination", "Halogen Bond")]
 
 
@@ -175,13 +186,13 @@ def test_1iep_imatinib(leo):
     run, _ctx, _reg = leo
     case = run("1IEP.pdb", "A", "201", "STI")
     _assert_invariants(case)
-    assert case["lig_h"] == 32                                      # C29H31N7O + piperazinium H+
+    assert case["lig_h"] == 32  # C29H31N7O + piperazinium H+
     recs = case["records"]
     _assert_has(recs, "Hydrogen Bond", "THR315", "OG1", "N13", max_dist=3.1)
-    _assert_has(recs, "Hydrogen Bond", "MET318", "N", "N3", max_dist=3.1)   # hinge
+    _assert_has(recs, "Hydrogen Bond", "MET318", "N", "N3", max_dist=3.1)  # hinge
     _assert_has(recs, "Hydrogen Bond", "GLU286", None, "N21", max_dist=3.2)  # amide N-H
-    _assert_has(recs, "Hydrogen Bond", "ASP381", "N", "O29", max_dist=3.1)   # amide C=O
-    _assert_has(recs, "Hydrogen Bond", "ILE360", "O", "N51", max_dist=3.0)   # piperazinium N-H
+    _assert_has(recs, "Hydrogen Bond", "ASP381", "N", "O29", max_dist=3.1)  # amide C=O
+    _assert_has(recs, "Hydrogen Bond", "ILE360", "O", "N51", max_dist=3.0)  # piperazinium N-H
     # the amide N21 is not a cation: no "salt bridge" with Glu286 (was reported before)
     assert not _find(recs, "Salt Bridge", "GLU286")
     cations = {str(a.get("ionic_group_id")) for a in case["lig_atoms"] if a.get("is_cation")}
@@ -192,11 +203,11 @@ def test_1m17_erlotinib_hinge(leo):
     run, _ctx, _reg = leo
     case = run("1M17.pdb", "A", "999", "AQ4")
     _assert_invariants(case)
-    assert case["lig_h"] == 23                                      # C22H23N3O4, neutral
+    assert case["lig_h"] == 23  # C22H23N3O4, neutral
     recs = case["records"]
     hinge = _assert_has(recs, "Hydrogen Bond", "MET769", "N", "N2", max_dist=2.8)
     assert hinge[0]["donor_side"] == "protein" and hinge[0]["hbond_mode"] == "heavy_atom_fallback"
-    assert not _find(recs, "Van der Waals", "MET769")               # was misclassified as vdW
+    assert not _find(recs, "Van der Waals", "MET769")  # was misclassified as vdW
     assert not [a for a in case["lig_atoms"] if a.get("is_cation")]
 
 
@@ -204,10 +215,10 @@ def test_2cpp_camphor(leo):
     run, _ctx, _reg = leo
     case = run("2CPP.pdb", "A", "422", "CAM")
     _assert_invariants(case)
-    assert case["lig_h"] == 16                                      # C10H16O (was 18)
+    assert case["lig_h"] == 16  # C10H16O (was 18)
     recs = case["records"]
     tyr = _assert_has(recs, "Hydrogen Bond", "TYR96", "OH", "O", max_dist=2.8)
-    assert tyr[0]["donor_side"] == "protein"                        # camphor has no donor
+    assert tyr[0]["donor_side"] == "protein"  # camphor has no donor
     assert all(r["donor_side"] == "protein" for r in recs if r["type"] == "Hydrogen Bond")
 
 
@@ -215,7 +226,7 @@ def test_3hs4_acetazolamide_zinc(leo):
     run, _ctx, _reg = leo
     case = run("3HS4.pdb", "A", "701", "AZM")
     _assert_invariants(case)
-    assert case["lig_h"] == 6                                       # C4H6N4O3S2 (was 15)
+    assert case["lig_h"] == 6  # C4H6N4O3S2 (was 15)
     recs = case["records"]
     zn = _assert_has(recs, "Metal Coordination", "ZN301", "ZN", "N1", max_dist=2.1)
     assert zn[0]["distance_kind"] == "metal-donor atom"
@@ -251,14 +262,13 @@ def test_1acl_decamethonium_cation_pi(leo):
     recs = case["records"]
     _assert_has(recs, "Cation-Pi", "TRP84", max_dist=5.0)
     _assert_has(recs, "Cation-Pi", "TRP279", max_dist=5.0)
-    assert not [r for r in recs if r["type"] == "Hydrogen Bond"]    # quaternary N has no H
+    assert not [r for r in recs if r["type"] == "Hydrogen Bond"]  # quaternary N has no H
 
 
 def test_input_hydrogens_are_kept_and_used(leo, tmp_path):
     """A ligand that comes with hydrogens keeps them (no replacement by placed ones) and its
     H-bonds are judged with the D-H...A angle of those hydrogens."""
     run, _ctx, _reg = leo
-    from rdkit import Chem
 
     base = run("3PTB.pdb", "A", "1", "BEN")
     mol = base["refined"]
@@ -273,9 +283,11 @@ def test_input_hydrogens_are_kept_and_used(leo, tmp_path):
         p = conf.GetAtomPosition(atom.GetIdx())
         serial += 1
         name = f"H{len(h_lines) + 1}"
-        h_lines.append(f"HETATM{serial:5d} {name:<4s} BEN A   1    {p.x:8.3f}{p.y:8.3f}{p.z:8.3f}  1.00 20.00           H")
-    last_ben = max(i for i, l in enumerate(lines) if l.startswith("HETATM") and l[17:20] == "BEN")
-    out = lines[: last_ben + 1] + h_lines + lines[last_ben + 1:]
+        h_lines.append(
+            f"HETATM{serial:5d} {name:<4s} BEN A   1    {p.x:8.3f}{p.y:8.3f}{p.z:8.3f}  1.00 20.00           H"
+        )
+    last_ben = max(i for i, row in enumerate(lines) if row.startswith("HETATM") and row[17:20] == "BEN")
+    out = lines[: last_ben + 1] + h_lines + lines[last_ben + 1 :]
     path = tmp_path / "3PTB_withH.pdb"
     path.write_text("\n".join(out) + "\n")
     case = run(str(path), "A", "1", "BEN")
@@ -292,18 +304,27 @@ def test_peptide_caps_are_protein_not_ligand(leo):
 
     cmd.delete("all")
     rows = [
-        ("ATOM", "C", "ACE", 1, (-1.2, 1.0, 0.0), "C"), ("ATOM", "O", "ACE", 1, (-1.2, 2.23, 0.0), "O"),
-        ("ATOM", "CH3", "ACE", 1, (-2.5, 0.2, 0.0), "C"), ("ATOM", "N", "ALA", 2, (0.0, 0.3, 0.0), "N"),
-        ("ATOM", "CA", "ALA", 2, (1.3, 1.0, 0.0), "C"), ("ATOM", "C", "ALA", 2, (2.5, 0.1, 0.0), "C"),
-        ("ATOM", "O", "ALA", 2, (2.4, -1.13, 0.0), "O"), ("ATOM", "CB", "ALA", 2, (1.4, 1.9, 1.2), "C"),
-        ("ATOM", "N", "NME", 3, (3.7, 0.7, 0.0), "N"), ("ATOM", "C", "NME", 3, (4.9, -0.1, 0.0), "C"),
+        ("ATOM", "C", "ACE", 1, (-1.2, 1.0, 0.0), "C"),
+        ("ATOM", "O", "ACE", 1, (-1.2, 2.23, 0.0), "O"),
+        ("ATOM", "CH3", "ACE", 1, (-2.5, 0.2, 0.0), "C"),
+        ("ATOM", "N", "ALA", 2, (0.0, 0.3, 0.0), "N"),
+        ("ATOM", "CA", "ALA", 2, (1.3, 1.0, 0.0), "C"),
+        ("ATOM", "C", "ALA", 2, (2.5, 0.1, 0.0), "C"),
+        ("ATOM", "O", "ALA", 2, (2.4, -1.13, 0.0), "O"),
+        ("ATOM", "CB", "ALA", 2, (1.4, 1.9, 1.2), "C"),
+        ("ATOM", "N", "NME", 3, (3.7, 0.7, 0.0), "N"),
+        ("ATOM", "C", "NME", 3, (4.9, -0.1, 0.0), "C"),
     ]
-    block = "".join(f"{rec:<6s}{i + 1:5d} {nm:<4s} {rn} A{ri:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {el:>2s}\n"
-                    for i, (rec, nm, rn, ri, (x, y, z), el) in enumerate(rows))
+    block = "".join(
+        f"{rec:<6s}{i + 1:5d} {nm:<4s} {rn} A{ri:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {el:>2s}\n"
+        for i, (rec, nm, rn, ri, (x, y, z), el) in enumerate(rows)
+    )
     cmd.read_pdbstr(block, "capped")
-    assert ctx.dlg._auto_detect_ligand_in_object("capped") is None   # was ('A', 1, 'ACE')
-    lig = "HETATM   11  C1  LIG A 900       0.000   0.000   4.000  1.00  0.00           C\n" \
-          "HETATM   12  O1  LIG A 900       0.000   1.200   4.300  1.00  0.00           O\n"
+    assert ctx.dlg._auto_detect_ligand_in_object("capped") is None  # was ('A', 1, 'ACE')
+    lig = (
+        "HETATM   11  C1  LIG A 900       0.000   0.000   4.000  1.00  0.00           C\n"
+        "HETATM   12  O1  LIG A 900       0.000   1.200   4.300  1.00  0.00           O\n"
+    )
     cmd.read_pdbstr(block + lig, "capped_lig")
     assert ctx.dlg._auto_detect_ligand_in_object("capped_lig") == ("A", 900, "LIG")
     cmd.delete("all")
@@ -334,7 +355,7 @@ def test_ligand_typing_from_input_hydrogens(leo):
     _run, ctx, _reg = leo
     from rdkit import Chem
 
-    heavy = [l for l in open(_path("3PTB.pdb")) if l.startswith("HETATM") and l[17:20] == "BEN"]
+    heavy = [row for row in open(_path("3PTB.pdb")) if row.startswith("HETATM") and row[17:20] == "BEN"]
     mol = Chem.AddHs(Chem.MolFromSmiles("NC(=[NH2+])c1ccccc1"))
     template = Chem.MolFromPDBBlock("".join(heavy))
     from rdkit.Chem import AllChem
@@ -342,10 +363,12 @@ def test_ligand_typing_from_input_hydrogens(leo):
     placed = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles("NC(=[NH2+])c1ccccc1"), template)
     placed = Chem.AddHs(placed, addCoords=True)
     conf = placed.GetConformer()
-    h_lines = [f"HETATM{9000 + a.GetIdx():5d}  H{k:<2d} BEN A   1    "
-               f"{conf.GetAtomPosition(a.GetIdx()).x:8.3f}{conf.GetAtomPosition(a.GetIdx()).y:8.3f}"
-               f"{conf.GetAtomPosition(a.GetIdx()).z:8.3f}  1.00 20.00           H\n"
-               for k, a in enumerate([a for a in placed.GetAtoms() if a.GetAtomicNum() == 1], start=1)]
+    h_lines = [
+        f"HETATM{9000 + a.GetIdx():5d}  H{k:<2d} BEN A   1    "
+        f"{conf.GetAtomPosition(a.GetIdx()).x:8.3f}{conf.GetAtomPosition(a.GetIdx()).y:8.3f}"
+        f"{conf.GetAtomPosition(a.GetIdx()).z:8.3f}  1.00 20.00           H\n"
+        for k, a in enumerate([a for a in placed.GetAtoms() if a.GetAtomicNum() == 1], start=1)
+    ]
     assert mol is not None and len(h_lines) == 9
     chem, source = ctx.dlg._ligand_chem_from_input("".join(heavy + h_lines), "BEN")
     assert chem is not None and "input hydrogens" in source

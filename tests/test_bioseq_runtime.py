@@ -1,16 +1,18 @@
 import json
 import urllib.parse
 
-from bioseq_runtime import build_external_tool_urls
-from bioseq_runtime import build_motif_summary_lines
-from bioseq_runtime import build_simulation_readiness_report
-from bioseq_runtime import clean_sequence
-from bioseq_runtime import compute_msa_conservation
-from bioseq_runtime import fetch_uniprot_feature_summary
-from bioseq_runtime import find_simple_motifs
-from bioseq_runtime import parse_fasta
-from bioseq_runtime import sequence_basic_metrics
-from bioseq_runtime import sequence_text_residue_offsets
+from bioseq_runtime import (
+    build_external_tool_urls,
+    build_motif_summary_lines,
+    build_simulation_readiness_report,
+    clean_sequence,
+    compute_msa_conservation,
+    fetch_uniprot_feature_summary,
+    find_simple_motifs,
+    parse_fasta,
+    sequence_basic_metrics,
+    sequence_text_residue_offsets,
+)
 
 
 class _FakeResponse:
