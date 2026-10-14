@@ -126,3 +126,12 @@ def test_tddft_on_a_radical_selection_uses_a_doublet(dialog, monkeypatch):
     assert seen["geometry"].startswith("0 2\n")          # before: "0 1", which Psi4 rejects
     build_registry(ctx).call("run_uv_spectrum", {"selection": "acetate", "basis": "sto-3g", "states": 2}, ctx)
     assert seen["geometry"].startswith("-1 1\n")
+
+
+# ------------------------------------------------------------------ build_validated_system(minimize_steps=0)
+def test_zero_minimize_steps_means_no_minimization():
+    from leonardo import component_library_runtime as cl
+
+    rep = cl.build_and_validate(os.path.join(DATA, "3KS3_zn_site.pdb"), family="amber14", minimize_steps=0)
+    # before: OpenMM's maxIterations=0 minimized to convergence (-210 -> -1280 kJ/mol)
+    assert rep["ok"] and rep["energy_minimized_kj"] == rep["energy_start_kj"]
