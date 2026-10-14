@@ -57,8 +57,8 @@ def _value_at(results, path):
     values = walk(results[int(parts[0])], parts[1:])
     if not reducer:
         return values if "*" in parts else values[0]
-    if "*" not in parts and len(values) == 1 and isinstance(values[0], list):
-        values = values[0]                       # '2.scan.rows|count' reduces the list itself
+    if "*" not in parts and len(values) == 1 and (values[0] is None or isinstance(values[0], list)):
+        values = values[0] or []                 # '2.scan.rows|count' reduces the list itself (null: no items)
     name, _, arg = reducer.partition(":")
     if name == "count":
         return len(values)

@@ -101,6 +101,12 @@ def test_count_reduces_a_plain_list():
     assert replay._value_at(results, "2.scan.rows|count") == 3
 
 
+def test_count_of_a_null_list_is_zero():
+    # was 1: [None] was counted as one item, so '2.designs|count' passed an "exact 1" check with no designs
+    assert replay._value_at({2: {"designs": None}}, "2.designs|count") == 0
+    assert replay._value_at({2: {"designs": []}}, "2.designs|count") == 0
+
+
 def test_model_mutant_can_keep_hetero_groups():
     from leonardo.agent.registry import ToolRegistry
     from leonardo.agent.tools import modeling
