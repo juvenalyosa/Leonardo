@@ -285,3 +285,69 @@ def test_metadynamics_smoke_accepts_a_deposit_frequency_that_does_not_divide_the
     out = run_openmm_advanced_template_smoke(payload, str(tmp_path / "meta"))
     assert out["ok"] is True, out
     assert out["steps"] == 30
+
+
+def _place(a, b, c, bond, angle_deg, dihedral_deg):
+    """NeRF: the atom bonded to c with the given c bond length, b-c-d angle and a-b-c-d dihedral."""
+    import math
+
+    import numpy as np
+
+    bc = (c - b) / np.linalg.norm(c - b)
+    n = np.cross(b - a, bc)
+    n /= np.linalg.norm(n)
+    m = np.cross(n, bc)
+    th, ph = math.radians(angle_deg), math.radians(dihedral_deg)
+    d2 = np.array([-bond * math.cos(th), bond * math.sin(th) * math.cos(ph), bond * math.sin(th) * math.sin(ph)])
+    return c + d2[0] * bc + d2[1] * m + d2[2] * n
+
+
+def test_phi_psi_free_energy_map_puts_the_hills_at_their_phi_psi(tmp_path):
+    # hills deposited at a fixed (phi, psi) must give the free-energy minimum at that (phi, psi) in the CSV:
+    # OpenMM's grid is indexed [psi, phi] and spans -180..+180 inclusive
+    import csv
+    import math
+
+    import numpy as np
+    import openmm as mm
+    import openmm.app as app
+    from openmm import unit
+
+    from openmm_dynamics_runtime import _phi_psi_free_energy_grid
+    from openmm_dynamics_runtime import _shift_fes_minimum
+    from openmm_dynamics_runtime import _write_alanine_fes_csv
+
+    p = [np.array([0.0, 0.14, 0.0]), np.array([0.0, 0.0, 0.0]), np.array([0.15, 0.0, 0.0])]
+    p.append(_place(p[0], p[1], p[2], 0.15, 110.0, -100.0))      # phi = -100
+    p.append(_place(p[1], p[2], p[3], 0.15, 110.0, 140.0))       # psi = +140
+    system = mm.System()
+    for _ in p:
+        system.addParticle(0.0)                                    # frozen: every hill lands on the same point
+    system.addForce(mm.HarmonicBondForce())
+    cvs = []
+    for idx in ((0, 1, 2, 3), (1, 2, 3, 4)):
+        f = mm.CustomTorsionForce("theta")
+        f.addTorsion(*idx, [])
+        cvs.append(f)
+    phi = app.BiasVariable(cvs[0], -math.pi, math.pi, 0.3, True, 24)
+    psi = app.BiasVariable(cvs[1], -math.pi, math.pi, 0.3, True, 36)
+    meta = app.Metadynamics(system, [phi, psi], 300.0 * unit.kelvin, 5.0, 1.0 * unit.kilojoule_per_mole, 1)
+    top = app.Topology()
+    res = top.addResidue("DUM", top.addChain())
+    for k in range(len(p)):
+        top.addAtom(f"C{k}", app.element.carbon, res)
+    sim = app.Simulation(top, system, mm.VerletIntegrator(0.001), mm.Platform.getPlatformByName("Reference"))
+    sim.context.setPositions([mm.Vec3(*x) for x in p])
+    meta.step(sim, 5)
+    phi_deg, psi_deg = (math.degrees(v) for v in meta.getCollectiveVariables(sim))
+    assert abs(phi_deg + 100.0) < 0.5 and abs(psi_deg - 140.0) < 0.5
+
+    grid = _phi_psi_free_energy_grid(meta, unit)
+    assert grid.shape == (24, 36)
+    path = tmp_path / "fes.csv"
+    _write_alanine_fes_csv(str(path), _shift_fes_minimum(grid))
+    with open(path) as fh:
+        rows = [{k: float(v) for k, v in r.items()} for r in csv.DictReader(fh)]
+    best = min(rows, key=lambda r: r["diagnostic_grid_kj_mol"])
+    assert abs(best["phi_deg"] - phi_deg) <= 0.5 * 360.0 / 23 + 1e-6
+    assert abs(best["psi_deg"] - psi_deg) <= 0.5 * 360.0 / 35 + 1e-6
