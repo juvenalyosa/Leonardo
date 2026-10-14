@@ -56,6 +56,11 @@ Short films made with Leonardo from real calculations. Click a picture to watch 
   </tr>
 </table>
 
+**Check the numbers yourself.** The calculations behind the films are being published as replay packs that
+re-run without the AI and compare every value with the reference:
+`python -m leonardo.replay verify examples/films/01_molecular_docking`. See
+[Reproducing Leonardo's calculations](docs/REPRODUCIBILITY.md).
+
 ---
 
 ## What's inside

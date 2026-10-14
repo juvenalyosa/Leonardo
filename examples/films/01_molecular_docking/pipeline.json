@@ -1,0 +1,14 @@
+{
+ "name": "Film 01 - trypsin benzamidine redocking",
+ "slug": "film01_trypsin_redocking",
+ "description": "Redock the crystal benzamidine of trypsin (PDB 3PTB) into its own receptor with smina/Vina: three seeded repeats, exhaustiveness 16, pH 7.4.",
+ "format": 1,
+ "parameters": {
+  "pack": {"default": ".", "description": "this pack's folder (filled in by leonardo.replay)"}
+ },
+ "steps": [
+  {"tool": "load_structure_file", "args": {"path": "{{pack}}/3PTB.pdb", "object_name": "trypsin_3PTB"}},
+  {"tool": "run_redocking", "args": {"object": "{{step:1.object}}", "ligand_chain": "A", "ligand_resi": "1",
+   "ligand_resn": "BEN", "exhaustiveness": 16, "repeats": 3, "seed": 20260915, "ph": 7.4}}
+ ]
+}
