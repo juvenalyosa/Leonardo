@@ -57,7 +57,11 @@ def _value_at(results, path):
     values = walk(results[int(parts[0])], parts[1:])
     if not reducer:
         return values if "*" in parts else values[0]
+    if "*" not in parts and len(values) == 1 and isinstance(values[0], list):
+        values = values[0]                       # '2.scan.rows|count' reduces the list itself
     name, _, arg = reducer.partition(":")
+    if name == "count":
+        return len(values)
     nums = [float(v) for v in values if v is not None]
     if name == "max":
         return max(nums)
@@ -65,8 +69,6 @@ def _value_at(results, path):
         return min(nums)
     if name == "mean":
         return sum(nums) / len(nums)
-    if name == "count":
-        return len(values)
     if name == "count_le":
         return sum(1 for v in nums if v <= float(arg))
     if name == "sorted":

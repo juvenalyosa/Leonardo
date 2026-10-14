@@ -164,13 +164,7 @@ class EmbeddedQMMMModel:
                          "distance_ang": float(np.linalg.norm(full[int(atom_j)] - full[int(atom_i)])),
                          "energy_kj_mol": float(res["energy_kj_mol"]), "restraint_kj_mol": float(res["restraint_kj_mol"]),
                          "converged": bool(res["converged"]), "steps": int(res["steps"]), "qm_xyz": xyz.copy()})
-        e = np.array([r["energy_kj_mol"] for r in rows])
-        for r in rows:
-            r["energy_rel_kj_mol"] = float(r["energy_kj_mol"] - e[0])
-        k_max = int(np.argmax(e))
-        return {"ok": True, "rows": rows, "highest_point": dict(rows[k_max]), "lowest_point": dict(rows[int(np.argmin(e))]),
-                "barrier_estimate_kj_mol": float(e[k_max] - e[0]), "n_energy_evaluations": int(self.n_calls),
-                "interior_maximum": bool(0 < k_max < len(rows) - 1)}
+        return dict(scan_summary(rows), n_energy_evaluations=int(self.n_calls))
 
     def relaxed_transfer_scan(self, atom_a, atom_b, atom_c, xi_values_ang, k_kj_mol_ang2=5000.0,
                               fmax_kj_mol_ang=2.0, steps=300, qm_xyz_start=None):
@@ -194,13 +188,7 @@ class EmbeddedQMMMModel:
                          "d_bc_ang": d_bc, "energy_kj_mol": float(res["energy_kj_mol"]),
                          "restraint_kj_mol": float(res["restraint_kj_mol"]), "converged": bool(res["converged"]),
                          "steps": int(res["steps"]), "qm_xyz": xyz.copy()})
-        e = np.array([r["energy_kj_mol"] for r in rows])
-        for r in rows:
-            r["energy_rel_kj_mol"] = float(r["energy_kj_mol"] - e[0])
-        k_max = int(np.argmax(e))
-        return {"ok": True, "rows": rows, "highest_point": dict(rows[k_max]), "lowest_point": dict(rows[int(np.argmin(e))]),
-                "barrier_estimate_kj_mol": float(e[k_max] - e[0]), "n_energy_evaluations": int(self.n_calls),
-                "interior_maximum": bool(0 < k_max < len(rows) - 1)}
+        return dict(scan_summary(rows), n_energy_evaluations=int(self.n_calls))
 
     def refine_ts_dimer(self, qm_xyz_guess, mode_guess=None, fmax_kj_mol_ang=2.0, steps=300, seed=0,
                         max_rotations=8, max_positive_curvature_steps=25, max_energy_rise_kj_mol=105.0):
@@ -299,3 +287,24 @@ def bond_direction_mode(model, atom_i, atom_j):
 
 
 __all__ = ["EmbeddedQMMMModel", "bond_direction_mode", "path_tangent_mode", "KJ_MOL_PER_EV"]
+
+
+def scan_summary(rows):
+    """Energies of a relaxed scan relative to the reactant minimum.
+
+    The barrier is measured from the lowest point on the reactant side of the maximum, not from the first point: a
+    scan often starts slightly above the reactant minimum (here 0.6 kcal/mol in DhlA), and measuring from it would
+    make the barrier depend on where the scan happens to begin. ``energy_rel_kj_mol`` stays relative to the first
+    point (the profile as scanned); ``barrier_from_first_point_kj_mol`` keeps the old definition for comparison."""
+    e = np.array([r["energy_kj_mol"] for r in rows])
+    for r in rows:
+        r["energy_rel_kj_mol"] = float(r["energy_kj_mol"] - e[0])
+    k_max = int(np.argmax(e))
+    k_react = int(np.argmin(e[:k_max + 1]))
+    k_prod = k_max + int(np.argmin(e[k_max:]))
+    return {"ok": True, "rows": rows, "highest_point": dict(rows[k_max]), "lowest_point": dict(rows[int(np.argmin(e))]),
+            "reactant_point": dict(rows[k_react]), "reactant_energy_kj_mol": float(e[k_react]),
+            "barrier_estimate_kj_mol": float(e[k_max] - e[k_react]),
+            "barrier_from_first_point_kj_mol": float(e[k_max] - e[0]),
+            "reaction_energy_kj_mol": float(e[k_prod] - e[k_react]),
+            "interior_maximum": bool(0 < k_max < len(rows) - 1)}

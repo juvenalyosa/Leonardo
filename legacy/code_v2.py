@@ -8844,7 +8844,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return {"ok": False, "error": "Reaction scan atom A and atom B must be different atoms."}
             start_ang = float(op_params.get("start_ang", 1.2))
             end_ang = float(op_params.get("end_ang", 2.8))
-            if (not np.isfinite(start_ang)) or (not np.isfinite(end_ang)) or start_ang <= 0.0 or end_ang <= 0.0:
+            if (not np.isfinite(start_ang)) or (not np.isfinite(end_ang)):
+                return {"ok": False, "error": "Reaction scan start and end must be finite numbers."}
+            # a distance scan needs positive distances; the transfer coordinate xi = d(A-B) - d(B-C) (third atom)
+            # is negative on the reactant side
+            if (not sel_c) and (start_ang <= 0.0 or end_ang <= 0.0):
                 return {"ok": False, "error": "Reaction scan distances must be positive finite numbers."}
             if abs(start_ang - end_ang) < 1.0e-8:
                 return {"ok": False, "error": "Reaction scan start and end distances must differ."}
@@ -12076,7 +12080,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for idx, variant in (out.pop("_component_variants", {}) or {}).items():
                 if h_variants is not None and 0 <= int(idx) < len(h_variants):
                     h_variants[int(idx)] = variant
+            # reproducible hydrogens: OpenMM places some of them with Python's ``random`` and relaxes them on the
+            # fastest platform (GPU sums vary in the last digits); a fixed seed and the Reference platform give
+            # the same prepared structure on every run (QM/MM energies depended on it)
+            import random as _random
+
+            _random.seed(20260915)
             try:
+                _h_platform = OMM.Platform.getPlatformByName("Reference")
+            except Exception:
+                _h_platform = None
+            try:
+                modeller.addHydrogens(ff, pH=float(data.get("ph", 7.4)), variants=h_variants, platform=_h_platform)
+            except TypeError:
                 modeller.addHydrogens(ff, pH=float(data.get("ph", 7.4)), variants=h_variants)
             except Exception:
                 modeller.addHydrogens(pH=float(data.get("ph", 7.4)))
