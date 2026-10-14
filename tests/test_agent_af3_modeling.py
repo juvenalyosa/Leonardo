@@ -341,3 +341,26 @@ def test_model_mutant_refuses_a_chain_with_missing_residues(app, tmp_path, monke
         assert calls["kw"]["final_sequence"][47] == "R"
     finally:
         dlg.close()
+
+
+def test_model_mutant_keeps_structure_labels_only_when_no_residue_moves(app, tmp_path, monkeypatch):
+    """K6del + L8_T9insA keeps the length, but T7 and L8 move one place: labelling the model with the
+    structure's numbers by position would call T7 '6' and L8 '7'."""
+    import code_v2
+
+    cmd.reinitialize()
+    cmd.load(_UBQ, "ubq")
+    cmd.alter("ubq and resi 10", "resi = '9A'")       # an insertion code in the numbering
+    calls = []
+    monkeypatch.setattr(modeling, "_start_modeller", lambda ctx, *a, **k: calls.append(k) or {"job": 1})
+    dlg = code_v2.ProtLigInteractDialog()
+    try:
+        ctx = _Ctx(dlg, str(tmp_path))
+        for i, muts in enumerate((["K6del", "L8_T9insA"], ["K6R", "T7_L8delinsAA", "G9AdelinsS"],
+                                  ["T7_L8delinsA"])):
+            _reg(modeling).call("model_mutant", {"object": "ubq", "mutations": muts, "name": f"m{i}"}, ctx)
+        assert calls[0]["final_sequence"][:10] == "MQIFVTLATG" and calls[0]["labels"] is None
+        assert calls[1]["labels"][:10] == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "9A"]
+        assert calls[2]["labels"] is None
+    finally:
+        dlg.close()

@@ -576,8 +576,14 @@ def register(reg):
         code, path = _stage_self_template(ctx, object, chain)
         extra = {"source": object, "chain": chain, "mutations": list(mutations)}
         post_load = _hetero_copier(object, keep_hetero) if keep_hetero else None
+        # the structure's labels fit the mutant only when no residue moves: a deletion plus an insertion of
+        # the same total length keeps the length but shifts every residue between them
+        keys = [mutator._label_to_key(x) for x in labels]
+        same_positions = all(p["kind"] == "sub" or (p["kind"] == "delins" and keys.index(p["end"])
+                                                    - keys.index(p["start"]) + 1 == len(p["insertion"]))
+                             for p in map(mutator.parse_mutation_label, mutations))
         return _start_modeller(ctx, name, base, [code], final_sequence=mutated, labels=labels
-                               if len(mutated) == len(base) else None, start_pos=int(entry["start"]),
+                               if same_positions else None, start_pos=int(entry["start"]),
                                num_models=num_models, seed=seed, staged={code: path}, align_to=object,
                                align_chain=chain, extra=extra,
                                card=f"Mutant **{name}** ({', '.join(mutations)}) of {object} chain {chain}",
