@@ -190,3 +190,35 @@ def test_genmodels_evaluate_and_select_honors_top_k_and_single_model(tmp_path, m
     )
     assert len(single["selected_cluster_records"]) == 1
     assert os.path.basename(single["selected_cluster_records"][0]["source_path"]) == "m3.pdb"
+
+
+def test_genmodels_buildm_without_seed_draws_a_random_modeller_seed(tmp_path, monkeypatch):
+    """Seed 0/None is documented as random, but Environ() without rand_seed always uses MODELLER's
+    default -8123 and builds identical models; buildm must draw a seed in MODELLER's range and report it."""
+    model_path = tmp_path / "modeling_job" / "modeljuv.B99990001.pdb"
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    model_path.write_text("MODEL\n", encoding="utf-8")
+    env_seeds = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(genmodels, "verify_and_print_alignment", lambda *_a, **_k: None)
+    monkeypatch.setattr(genmodels, "generate_alignment_file", lambda *_a, **_k: None)
+    monkeypatch.setattr(genmodels, "generate_sequence_file", lambda *_a, **_k: None)
+    monkeypatch.setattr(genmodels, "setup_environment",
+                        lambda _d, rand_seed=None, **_k: env_seeds.append(rand_seed) or object())
+    monkeypatch.setattr(genmodels, "salign_multiple_templates",
+                        lambda *_a, **_k: {"aligned_templates_file": "t.ali", "loaded_template_codes": ["3ptbA"]})
+    monkeypatch.setattr(genmodels, "align_query_sequence", lambda *_a, **_k: "q.ali")
+    monkeypatch.setattr(genmodels, "build_models", lambda *_a, **_k: None)
+    monkeypatch.setattr(genmodels, "organize_models", lambda *_a, **_k: [str(model_path)])
+    monkeypatch.setattr(genmodels, "evaluate_and_select", lambda *_a, **_k: {"best_model_path": str(model_path)})
+    monkeypatch.setattr(genmodels.shutil, "move", lambda _src, _dst: None)
+
+    def run(seed):
+        return genmodels.buildm("ACDE", ["3ptbA"], [], 1, 1, 1, modeller_seed=seed, return_metadata=True,
+                                pre_mutated_sequence="ACDE")
+
+    metas = [run(None) for _ in range(4)]
+    assert all(s is not None and -50000 <= s <= -2 for s in env_seeds)
+    assert [m["modeller_seed"] for m in metas] == env_seeds
+    assert len(set(env_seeds)) > 1
+    assert run(-1234)["modeller_seed"] == -1234 and env_seeds[-1] == -1234

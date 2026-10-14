@@ -203,6 +203,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
                      + f"; best DOPE **{scores[0]['dope'] if scores else 'n/a'}** (lower is better; compare only "
                        "models of the same sequence).",
         }
+        if meta.get("modeller_seed") is not None:
+            result["modeller_seed"] = meta["modeller_seed"]       # drawn at random when seed=0
         if fit is not None:
             result["rmsd_to_source_A"] = round(float(fit[0]), 2)
         result.update(extra or {})

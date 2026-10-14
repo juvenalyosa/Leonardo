@@ -502,6 +502,11 @@ def buildm(sequence, templates, mutation, num_models, start_pos, num_processors,
     print("File preparation complete.")
 
     # --- Run modeling ---
+    # No seed means a random run ("Seed 0 = random"); MODELLER's own default seed (-8123) would give the
+    # same models every time, so draw one from MODELLER's documented range and report it.
+    if modeller_seed is None:
+        modeller_seed = _random.SystemRandom().randint(-50000, -2)
+        print(f"Random MODELLER seed: {modeller_seed}")
     # Seed Python/NumPy too (MODELLER uses its own PRNG; this stabilizes any wrapper randomness)
     if modeller_seed is not None:
         try:
@@ -608,6 +613,7 @@ def buildm(sequence, templates, mutation, num_models, start_pos, num_processors,
         "median_dope_score": evaluation.get("median_dope_score", None),
         "elapsed_time_sec": float(evaluation.get("elapsed_time_sec", time.time() - total_start_time)),
         "final_pdb_dir": str(final_pdb_dir),
+        "modeller_seed": int(modeller_seed),
     }
 
     if bool(return_metadata):
