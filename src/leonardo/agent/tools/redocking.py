@@ -10,6 +10,7 @@ from .. import presentation
 from ..jobs import POPEN_GROUP, stop_process
 from ..registry import ToolError
 from . import _headless
+from .docking import _ligand_residue, _residue_selection
 
 _KEEP_HETERO = {"type": "array", "items": {"type": "string"},
                 "description": "Residue names of receptor hetero groups to keep besides ions and known cofactors "
@@ -284,10 +285,13 @@ def register(reg):
                     or str(dlg.cmb_redock_wt_obj.currentText() or "") != object):
                 raise ToolError(f"{object!r} is not offered for redocking (Leonardo lists protein objects "
                                 "only, not generated complexes, poses or redock_* objects)")
-            if ligand_resn:
-                dlg.edit_redock_ref_chain.setText(str(ligand_chain))
-                dlg.edit_redock_ref_resi.setText(str(ligand_resi))
-                dlg.edit_redock_ref_resn.setText(str(ligand_resn))
+            if any(str(v or "").strip() for v in (ligand_chain, ligand_resi, ligand_resn)):
+                # resolve a partial residue (resi alone, resn alone): Leonardo needs both resi and resn,
+                # and with resn blank the given residue was ignored for an auto-detected one
+                lig_c, lig_i, lig_n = _ligand_residue(cmd, object, ligand_chain, ligand_resi, ligand_resn)
+                dlg.edit_redock_ref_chain.setText(lig_c)
+                dlg.edit_redock_ref_resi.setText(lig_i)
+                dlg.edit_redock_ref_resn.setText(lig_n)
             else:
                 dlg._on_redock_autodetect_reference_ligand()
             if mutant_object:
@@ -336,14 +340,17 @@ def register(reg):
         if pose_obj and pose_obj in cmd.get_names("objects"):
             presentation.style_pose(pose_obj, 0)
             cmd.frame(int(best.get("state", 1) or 1))
-            crystal = f"({object}) and resn {ligand[2]} and resi {ligand[1]}"
+            crystal = _residue_selection(object, ligand[0], ligand[1], ligand[2])
+            if not cmd.count_atoms(crystal):
+                crystal = _residue_selection(object, None, ligand[1], ligand[2])
             presentation.style_ligand(crystal)
             presentation.focus(f"({pose_obj}) or ({crystal})")
         success = dict(run.get("top1_success") or {})
-        rms = [r["top1_rmsd_A"] for r in reps if r.get("top1_rmsd_A") is not None]
+        rms = [_num(r.get("top1_rmsd_A"), 2) for r in reps if _num(r.get("top1_rmsd_A")) is not None]
+        rms_text = (("RMSD top-1 " + ", ".join(f"{v:.2f}" for v in rms) + " Å") if rms else
+                    "RMSD unavailable (the poses could not be matched atom by atom to the crystal ligand)")
         card = (f"Redocking of **{ligand[2]}**: top-1 success **{success.get('n_success', 0)}/{success.get('n', 0)}** "
-                f"(RMSD ≤ 2 Å); RMSD top-1 " + ", ".join(f"{float(v):.2f}" for v in rms) + " Å; score "
-                f"{float(best.get('affinity', 0) or 0):.2f} kcal/mol.")
+                f"(RMSD ≤ 2 Å); {rms_text}; score {float(best.get('affinity', 0) or 0):.2f} kcal/mol.")
         comparison = []
         if mutant_object:
             import sys as _sys
