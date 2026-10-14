@@ -146,7 +146,10 @@ def test_modeller_estimate_uses_the_size_of_the_structure():
     """model_mutant / repair_structure_gaps have no sequence argument: every estimate assumed 300 residues."""
     cmd.reinitialize()
     cmd.load(UBQ, "ubq")
-    ctx = AgentContext()
+    class _Dlg:
+        _hw_profile = {"threads": {}}         # never detect/benchmark the machine (that writes ~/.leonardo)
+
+    ctx = AgentContext(_Dlg())
     est = estimates.estimate(ctx, "model_mutant", {"object": "ubq", "num_models": 3})
     assert est["minutes"] == round(0.2 + 3 * 76 * 0.0007, 1)
     assert "seconds" in estimates.estimate(ctx, "model_mutant", {"object": "ubq", "method": "local"})["text"]
