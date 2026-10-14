@@ -74,3 +74,10 @@ def test_no_ligand_fields_clears_the_stale_ligand(cplx):
     dlg = _Dlg()
     _run(dlg)
     assert dlg.seen == ("", "", "")          # Leonardo auto-detects in this object, not the old UNL Z1
+
+
+def test_negative_residue_number(cplx):
+    cplx.pseudoatom("cplx", name="O1", resn="ACT", resi="-5", chain="C", elem="O", pos=[7.0, 0.0, 0.0], hetatm=1)
+    dlg = _Dlg()
+    _run(dlg, ligand_resi="-5")
+    assert dlg.seen == ("C", "-5", "ACT")

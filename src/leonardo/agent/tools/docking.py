@@ -25,7 +25,7 @@ def _ligand_residue(cmd, obj, chain="", resi="", resn=""):
     if resn:
         parts.append(f"resn {resn}")
     if resi:
-        parts.append(f"resi {resi}")
+        parts.append("resi " + ("\\" + resi if resi.startswith("-") else resi))     # "-5" alone is a range
     if chain:
         parts.append(f"chain {chain}")
     sel = " and ".join(parts)
