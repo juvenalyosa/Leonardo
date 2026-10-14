@@ -10609,6 +10609,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             notes.append(
                 f"OpenMM input prepared: atoms={atom_count}, ligand_conect={int(composed.get('conect_count', 0) or 0)}"
             )
+            if composed.get("added_oxt"):
+                notes.append("Added the missing C-terminal OXT to " + ", ".join(composed["added_oxt"][:8]))
             return {"ok": True, "notes": list(notes)}
         except Exception as e:
             return {"ok": False, "error": f"Failed building OpenMM input PDB: {e}", "notes": list(notes)}

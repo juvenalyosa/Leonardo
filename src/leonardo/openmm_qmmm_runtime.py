@@ -709,7 +709,68 @@ def normalize_pdb_conect_records(pdb_lines):
     return list(out)
 
 
+_OXT_AA = _AA3 - {"ACE", "NME", "MSE", "PYL", "SEC"}
+
+
+def add_missing_terminal_oxt(pdb_lines):
+    """
+    Add the carboxylate OXT to C-terminal amino acids that lack it (many crystal structures, PyMOL-built
+    peptides, extracted fragments): without it OpenMM finds no template for the last residue ("missing a
+    terminal capping group") and MD/minimization fail. OXT is placed in the CA-C-O plane, 1.25 A from C,
+    opposite the CA/O bisector. A chain end is the last residue before a TER, a chain change or the end;
+    residues followed by a cap (NME/NHE) are not chain ends. Returns (lines, ["A:5 GLY", ...]).
+    """
+    lines = [str(x or "").rstrip("\n") for x in list(pdb_lines or [])]
+    ends = {}            # residue key -> index of its last atom line
+    order = []
+    prev_key = None
+    for i, line in enumerate(lines):
+        rec = line[:6].strip().upper()
+        if rec == "TER":
+            if prev_key is not None:
+                order.append(prev_key)
+            prev_key = None
+            continue
+        if rec not in {"ATOM", "HETATM"}:
+            continue
+        key = (line[21:22], line[22:27], line[17:20].strip().upper())
+        if prev_key is not None and key != prev_key and key[0] != prev_key[0]:
+            order.append(prev_key)
+        prev_key = key
+        ends[key] = i
+    if prev_key is not None:
+        order.append(prev_key)
+    inserts = []
+    for key in dict.fromkeys(order):
+        if key[2] not in _OXT_AA:
+            continue
+        atoms = {}
+        for line in lines:
+            if line[:6].strip().upper() in {"ATOM", "HETATM"} and (line[21:22], line[22:27], line[17:20].strip().upper()) == key:
+                try:
+                    atoms[line[12:16].strip().upper()] = (line, np.array([float(line[30:38]), float(line[38:46]),
+                                                                         float(line[46:54])]))
+                except ValueError:
+                    pass
+        if "OXT" in atoms or not all(n in atoms for n in ("C", "CA", "O")):
+            continue
+        c = atoms["C"][1]
+        u = sum((atoms[n][1] - c) / max(np.linalg.norm(atoms[n][1] - c), 1e-6) for n in ("CA", "O"))
+        if np.linalg.norm(u) < 1e-6:
+            continue
+        p = c - 1.25 * u / np.linalg.norm(u)
+        tmpl = atoms["O"][0].ljust(80)
+        new = f"{tmpl[:12]} OXT{tmpl[16:30]}{p[0]:8.3f}{p[1]:8.3f}{p[2]:8.3f}{tmpl[54:76]} O".rstrip()
+        inserts.append((ends[key], new, f"{key[0].strip()}:{key[1].strip()} {key[2]}"))
+    added = []
+    for idx, new, label in sorted(inserts, reverse=True):
+        lines.insert(idx + 1, new)
+        added.insert(0, label)
+    return lines, added
+
+
 def compose_openmm_input_pdb(polymer_lines, component_line_blocks):
+    polymer_lines, added_oxt = add_missing_terminal_oxt(polymer_lines)
     serial_next = 1
     merged_atom_lines = []
     merged_conect_lines = []
@@ -788,6 +849,7 @@ def compose_openmm_input_pdb(polymer_lines, component_line_blocks):
         "lines": list(out),
         "atom_count": int(sum(1 for line in out if str(line[:6]).strip().upper() in {"ATOM", "HETATM"})),
         "conect_count": int(sum(1 for line in out if str(line[:6]).strip().upper() == "CONECT")),
+        "added_oxt": list(added_oxt),
     }
 
 
