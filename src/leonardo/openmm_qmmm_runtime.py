@@ -2604,3 +2604,56 @@ __all__ = [
     "run_openmm_qmmm_relaxed_scan",
     "run_openmm_qmmm_ts_search",
 ]
+
+
+def run_openmm_qmmm_reaction_path(
+    xyz_full_ang,
+    atomic_numbers_full,
+    mm_charges_e,
+    atom_rows,
+    form_pairs,
+    break_pairs,
+    config=None,
+    workdir="",
+    bond_pairs=None,
+    lj_sigma_nm=None,
+    lj_epsilon_kj=None,
+    n_images=9,
+):
+    """
+    Reaction path inside the enzyme (``qmmm_path_runtime``): reactant and product minima from the bonds that form
+    (``form_pairs``) and break (``break_pairs``), a climbing-image NEB path between them (the two-endpoint "QST2"
+    idea), the transition state refined with the dimer method and checked by its frequencies, and the IRC from it,
+    which must connect the reactant and the product. The QM region moves in the fixed MM environment with the
+    embedding recomputed at every step. Writes ``reaction_path.xyz`` (reactant, TS, product) and
+    ``irc_profile.csv`` in ``workdir``.
+    """
+    from .qmmm_path_runtime import reaction_path
+
+    cfg = dict(config or {})
+    run_dir = str(workdir or "").strip() or os.path.join(os.getcwd(), "qmmm_reaction_path")
+    os.makedirs(run_dir, exist_ok=True)
+    try:
+        model, reg = _qmmm_embedded_model(xyz_full_ang, atomic_numbers_full, mm_charges_e, atom_rows, cfg, run_dir,
+                                          bond_pairs, lj_sigma_nm, lj_epsilon_kj)
+        res = reaction_path(model, form_pairs, break_pairs, n_images=int(n_images),
+                            fmax_kj_mol_ang=float(cfg.get("fmax_kj_mol_ang", 2.0)))
+    except Exception as exc:
+        return {"ok": False, "operation": "reaction_path", "error": f"QM/MM reaction path failed: {exc}"}
+    xyz_sets = res.pop("qm_xyz", None) or {}
+    if xyz_sets:
+        frames = [xyz_sets[k] for k in ("reactant", "ts", "product") if k in xyz_sets]
+        _write_qm_path(run_dir, model, frames, [f"{k}" for k in ("reactant", "ts", "product") if k in xyz_sets],
+                       "reaction_path.xyz")
+    irc_rows = (res.get("irc") or {}).get("rows") or []
+    if irc_rows:
+        with open(os.path.join(run_dir, "irc_profile.csv"), "w") as fh:
+            fh.write("s_amu_ang,energy_rel_ts_kj_mol," + ",".join(
+                f"d_{a}_{b}_A" for a, b in list(res["form_bonds"]) + list(res["break_bonds"])) + "\n")
+            for r in irc_rows:
+                fh.write(f"{r['s_amu_ang']:.4f},{r['energy_rel_ts_kj_mol']:.4f}," + ",".join(
+                    f"{d:.4f}" for d in r["bonds"]) + "\n")
+    res.update({"operation": "reaction_path", "workdir": run_dir, "qm_atom_count": len(model.qm),
+                "mm_atom_count": len(model.mm), "path_xyz": os.path.join(run_dir, "reaction_path.xyz"),
+                "irc_csv": os.path.join(run_dir, "irc_profile.csv") if irc_rows else ""})
+    return res

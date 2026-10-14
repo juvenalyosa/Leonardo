@@ -55,6 +55,13 @@ QMMM_MOPAC_OPERATION_PROFILES = {
         "remove": ("EF", "TS", "FORCE", "THERMO", "IRC"),
         "region_policy": "reaction_core",
     },
+    "reaction_path": {
+        "label": "QM/MM reaction path (QST2-type path, TS, IRC)",
+        "keywords": ("PM7", "1SCF", "GRAD", "AUX", "QMMM"),
+        "required": ("1SCF", "GRAD", "AUX", "QMMM"),
+        "remove": ("EF", "TS", "FORCE", "THERMO", "IRC"),
+        "region_policy": "reaction_core",
+    },
     "transition_state": {
         "label": "QM/MM transition-state refinement",
         "keywords": ("PM7", "TS", "AUX", "QMMM"),

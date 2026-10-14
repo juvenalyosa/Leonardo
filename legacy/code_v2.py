@@ -7711,6 +7711,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_qmmm_operation.addItem("Thermochemistry", "thermochemistry")
             self.cmb_qmmm_operation.addItem("Reaction scan (distance)", "reaction_scan")
             self.cmb_qmmm_operation.addItem("Transition-state refinement", "transition_state")
+            self.cmb_qmmm_operation.addItem("Reaction path in the enzyme (QST2 path -> TS -> IRC)", "reaction_path")
             self.cmb_qmmm_operation.addItem("MOPAC QST2/SADDLE -> TS", "mopac_qst2")
             self.cmb_qmmm_operation.addItem("MOPAC QST3 -> TS", "mopac_qst3")
             self.cmb_qmmm_operation.addItem("MOPAC TS frequency check", "mopac_ts_frequency")
@@ -8024,6 +8025,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "thermochemistry": "PM7 FORCE THERMO AUX QMMM",
             "thermo": "PM7 FORCE THERMO AUX QMMM",
             "reaction_scan": "PM7 1SCF GRAD AUX QMMM",
+            "reaction_path": "PM7 1SCF GRAD AUX QMMM",
             "transition_state": "PM7 TS AUX QMMM",
             "mopac_qst2": "PM7 SADDLE AUX XYZ",
             "mopac_qst3": "PM7 TS AUX XYZ",
@@ -8802,6 +8804,30 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 except Exception as e:
                     return {"ok": False, "error": f"MM indices: {e}"}
         op_params = dict(self._qmmm_get_operation_params(operation) or {})
+        if operation == "reaction_path":
+            # bonds formed / broken by the reaction: [[sel_a, sel_b], ...] -> atom descriptors, all forced into QM
+            try:
+                for key in ("form", "break"):
+                    cfg[f"path_{key}_atoms"] = [
+                        [dict(self._qmmm_first_atom_descriptor_from_selection(obj, str(a))),
+                         dict(self._qmmm_first_atom_descriptor_from_selection(obj, str(b)))]
+                        for a, b in list(op_params.get(f"{key}_bonds", []) or [])]
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+            if not cfg["path_form_atoms"] and not cfg["path_break_atoms"]:
+                return {"ok": False, "error": "A reaction path needs at least one bond that forms or breaks."}
+            pairs = cfg["path_form_atoms"] + cfg["path_break_atoms"]
+            forced = list(cfg.get("force_qm_atom_descriptors", []) or [])
+            forced_res = list(cfg.get("force_qm_residue_keys", []) or [])
+            for pair in pairs:
+                for atom_desc in pair:
+                    forced.append(dict(atom_desc))
+                    forced_res.append({"chain": str(atom_desc.get("chain", "") or "").strip(),
+                                       "resi": str(atom_desc.get("resi", "") or "").strip(),
+                                       "resn": str(atom_desc.get("resn", "") or "").strip().upper()})
+            cfg["force_qm_atom_descriptors"] = forced
+            cfg["force_qm_residue_keys"] = forced_res
+            cfg["path_n_images"] = int(op_params.get("n_images", 9) or 9)
         if operation == "reaction_scan":
             sel_a = str(op_params.get("sel_a", "") or "").strip()
             sel_b = str(op_params.get("sel_b", "") or "").strip()
@@ -11552,6 +11578,30 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             run_kwargs["lj_sigma_nm"] = lj_sig
             run_kwargs["lj_epsilon_kj"] = lj_eps
         op = str(cfg.get("operation", "probe") or "probe").strip().lower()
+        if op == "reaction_path":
+            pairs = {}
+            for key in ("form", "break"):
+                pairs[key] = []
+                for d_a, d_b in list(cfg.get(f"path_{key}_atoms", []) or []):
+                    ia = self._qmmm_find_topology_atom_index(atom_rows, dict(d_a))
+                    ib = self._qmmm_find_topology_atom_index(atom_rows, dict(d_b))
+                    if ia < 0 or ib < 0:
+                        return {"ok": False, "error": "Could not map a reaction-path bond atom to the prepared topology."}
+                    pairs[key].append((int(ia), int(ib)))
+            return mod.run_openmm_qmmm_reaction_path(
+                xyz_full_ang=run_kwargs["xyz_full_ang"],
+                atomic_numbers_full=run_kwargs["atomic_numbers_full"],
+                mm_charges_e=run_kwargs["mm_charges_e"],
+                atom_rows=run_kwargs["atom_rows"],
+                form_pairs=pairs["form"],
+                break_pairs=pairs["break"],
+                config=dict(cfg),
+                workdir=str(workdir),
+                bond_pairs=run_kwargs.get("bond_pairs"),
+                lj_sigma_nm=run_kwargs.get("lj_sigma_nm"),
+                lj_epsilon_kj=run_kwargs.get("lj_epsilon_kj"),
+                n_images=int(cfg.get("path_n_images", 9)),
+            )
         if op == "reaction_scan":
             d_a = dict(cfg.get("scan_atom_a", {}) or {})
             d_b = dict(cfg.get("scan_atom_b", {}) or {})
@@ -12938,6 +12988,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "optimization": "Optimization",
                 "thermochemistry": "Thermochemistry",
                 "reaction_scan": "Reaction Scan",
+                "reaction_path": "Reaction Path (QST2 -> TS -> IRC)",
                 "md_periodic": "MD + Periodic Probes",
                 "md_coupled": "Force-Coupled QM/MM MD",
                 "redock_rescore": "Pose Rescoring",
