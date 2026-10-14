@@ -172,3 +172,22 @@ def test_receptor_export_keeps_one_altloc(tmp_path):
     atoms = [ln for ln in open(out) if ln.startswith("ATOM")]
     assert [ln[12:16].strip() for ln in atoms].count("OG") == 1 and all(ln[16] == " " for ln in atoms)
     cmd.delete("altrec")
+
+
+def test_docking_ligand_input_is_reprepared_not_the_last_runs_pdbqt(tmp_path):
+    # a docking run stores its prepared PDBQT (_docking_ligand_pdbqt); the next run used it as input,
+    # so a new docking pH or PDBQT charge mode never reached the ligand
+    src = tmp_path / "lig.sdf"
+    src.write_text("x")
+    last_run = tmp_path / "smina_job1" / "ligand_prepared.pdbqt"
+    last_run.parent.mkdir()
+    last_run.write_text("x")
+    dlg = _dialog("_resolve_docking_ligand_input")
+    dlg._docking_ligand_file = str(src)
+    dlg._docking_ligand_pdbqt = str(last_run)
+    assert dlg._resolve_docking_ligand_input() == (str(src), "source")
+    # an explicitly exported PDBQT (Ligand Tools) is still the input
+    exported = tmp_path / "ligprep.pdbqt"
+    exported.write_text("x")
+    dlg._ligand_source_prep_pdbqt = str(exported)
+    assert dlg._resolve_docking_ligand_input() == (str(exported), "source_prep_pdbqt")

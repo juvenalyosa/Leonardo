@@ -759,6 +759,33 @@ def _has_bound_hydrogen(atom, ligand_pool, neighbor_getter=None):
     )
 
 
+def _in_ring(atom, ligand_pool, neighbor_getter=None, max_ring_size=8):
+    """True when ``atom`` closes a heavy-atom cycle (two of its neighbors stay connected without it)."""
+    first = _heavy_neighbors_excluding(atom, ligand_pool, neighbor_getter=neighbor_getter)
+    if len(first) < 2:
+        return False
+    center_id = _atom_identity(atom)
+    for start in first:
+        start_id = _atom_identity(start)
+        targets = {_atom_identity(n) for n in first} - {start_id}
+        seen = {center_id, start_id}
+        frontier = [start]
+        for _depth in range(int(max_ring_size) - 2):
+            nxt = []
+            for cur in frontier:
+                for nbr in _heavy_neighbors_excluding(cur, ligand_pool, neighbor_getter=neighbor_getter):
+                    nid = _atom_identity(nbr)
+                    if nid in targets:
+                        return True
+                    if nid not in seen:
+                        seen.add(nid)
+                        nxt.append(nbr)
+            frontier = nxt
+            if not frontier:
+                break
+    return False
+
+
 def _terminal_oxygen_centers(center_atom, oxygen_atoms, ligand_pool, neighbor_getter=None):
     centers = []
     for oxy in list(oxygen_atoms or []):
@@ -881,6 +908,13 @@ def assign_ligand_ionic_groups_from_topology(ligand_atoms, neighbor_getter=None)
                 +1,
                 f"topology:Ammonium:{idx}",
             )
+            continue
+
+        # A ring carbon between nitrogens is usually a neutral heteroaromatic (adenine,
+        # guanine, aminopyrimidine, imidazole), not an amidinium/guanidinium; without bond
+        # orders the two cannot be told apart, so only acyclic centers are typed here
+        # (charged cyclic amidines still come from formal charges / the RDKit patterns).
+        if elem == "C" and not hetero_oxo and len(nit) >= 2 and _in_ring(atom, atoms, neighbor_getter=neighbor_getter):
             continue
 
         if elem == "C" and not hetero_oxo and len(nit) >= 3:

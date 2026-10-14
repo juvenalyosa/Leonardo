@@ -14,6 +14,32 @@ def _cmd():
     return cmd
 
 
+def _ligand_residue(cmd, obj, chain="", resi="", resn=""):
+    """(chain, resi, resn) of the ligand residue in ``obj`` matching the given fields; all empty when none
+    is given (Leonardo then auto-detects the ligand of ``obj``). Leonardo's ligand resolver needs both
+    resi and resn, else it auto-detects and the given field is ignored."""
+    chain, resi, resn = str(chain or "").strip(), str(resi or "").strip(), str(resn or "").strip()
+    if not resi and not resn:
+        return "", "", ""
+    parts = [f"({obj})"]
+    if resn:
+        parts.append(f"resn {resn}")
+    if resi:
+        parts.append("resi " + ("\\" + resi if resi.startswith("-") else resi))     # "-5" alone is a range
+    if chain:
+        parts.append(f"chain {chain}")
+    sel = " and ".join(parts)
+    found = []
+    for extra in (" and hetatm", ""):
+        space = {"found": found}
+        cmd.iterate(sel + extra, "found.append((chain, resi, resn))", space=space)
+        if found:
+            break
+    if not found:
+        raise ToolError(f"no residue {resn or '*'} {chain}{resi} in {obj!r}")
+    return tuple(str(v) for v in found[0])
+
+
 def register(reg):
     @reg.tool("run_docking", "Dock the prepared ligand (prepare_docking_ligand) into the selected pocket "
               "(select_pocket) with smina. Runs in the background (about 1-10 min per repeat). Returns the "
@@ -107,12 +133,13 @@ def register(reg):
                 cmd = _cmd()
                 if object not in cmd.get_names("objects"):
                     raise ToolError(f"no object named {object!r}")
+                # always (re)set the fields: the previous analysis' ligand stays in them otherwise
+                lig_c, lig_i, lig_n = _ligand_residue(cmd, object, ligand_chain, ligand_resi, ligand_resn)
                 dlg.loaded_object = object
                 dlg._traj_topology_object = object
-                if ligand_resn:
-                    dlg.ligand_chain.setText(str(ligand_chain))
-                    dlg.ligand_resi.setText(str(ligand_resi))
-                    dlg.ligand_resn.setText(str(ligand_resn))
+                dlg.ligand_chain.setText(lig_c)
+                dlg.ligand_resi.setText(lig_i)
+                dlg.ligand_resn.setText(lig_n)
                 label = f"{object} {ligand_resn}{ligand_resi}"
             else:
                 raise ToolError("give pose_rank or object (+ ligand residue)")
