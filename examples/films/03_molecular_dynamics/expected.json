@@ -39,8 +39,8 @@
   "ser195_his57_hbond_fraction": {
    "path": "4.fraction_within_cutoff",
    "kind": "abs",
-   "tol": 0.26,
-   "value": 0.17
+   "tol": 0.33,
+   "value": 0.22
   },
   "fold_kept_max_rmsd_A": {
    "path": "3.rmsd_max_A",
@@ -110,5 +110,13 @@
     0.302
    ]
   }
+ },
+ "measured_12_runs_hbond_fraction": {
+  "mean": 0.222,
+  "sd": 0.108,
+  "range": [
+   0.062,
+   0.444
+  ]
  }
 }
