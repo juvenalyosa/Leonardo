@@ -6205,6 +6205,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._reset_table_filters_to_all()
         self._populate_table()
         self._beautify_scene()
+        self._apply_publication_view()
         # If there are no contacts in this frame, force a protein-centered view so
         # the user does not end up with a ligand-only framing.
         try:
@@ -54853,6 +54854,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 pass
             self._selected_ids.add(rid)
             self._last_live_state = -1
+    def _apply_publication_view(self):
+        """Publication-style scene of the current interactions (white background, one label per residue,
+        dashes by type, camera into the pocket). Off with settings['publication_view'] = False."""
+        try:
+            if hasattr(self, "_settings") and not bool(self._settings.get("publication_view", True)):
+                return None
+            if not self.interactions or not self.ligand_info or not self.loaded_object:
+                return None
+            from leonardo import interaction_view
+            c, i, r = self.ligand_info
+            lig = self._pymol_residue_selection(self.loaded_object, c, i, r)
+            for name in cmd.get_names("objects"):
+                if name.startswith(("int_dash_", "intRes_", "intCloud", "intRingDisc", "lbl_")):
+                    cmd.disable(name)
+            return interaction_view.build_scene(self.loaded_object, lig, list(self.interactions))
+        except Exception as exc:
+            try:
+                self._append_debug_log(f"publication view: {exc}")
+            except Exception:
+                pass
+            return None
     def _beautify_scene(self):
         """Sets up a nice, clean visualization scene."""
         self._ensure_valid_analysis_context()
