@@ -87,6 +87,33 @@ def _abfe_policy_used(dlg, replicas_out=()):
         return ""
 
 
+def _abfe_selected_ci(kw):
+    """95% CI that belongs to the selected ABFE estimate, or None.
+
+    The report's ``ci_low``/``ci_high`` are the bootstrap CI of the exp-average of the raw
+    interaction energy (``dg_exp``), a different quantity from ``dg_selected``. Only the
+    bias-reweighted estimator has its own bootstrap CI (``reweight_ci_*``, on DeltaG(state));
+    the selected value is that DeltaG plus the standard-state correction, so the CI is shifted
+    by the same constant. Rescored (GBSA) estimators have no CI.
+    """
+    def num(key):
+        try:
+            v = float(kw.get(key))
+        except (TypeError, ValueError):
+            return None
+        return v if math.isfinite(v) else None
+
+    if "bias_reweighted" not in str(kw.get("selected_estimator") or ""):
+        return None
+    lo, hi = num("reweight_ci_low"), num("reweight_ci_high")
+    if lo is None or hi is None:
+        return None
+    corr = num("standard_state_correction_kj")
+    if corr is not None:
+        lo, hi = lo + corr, hi + corr
+    return round(lo, 3), round(hi, 3)
+
+
 _LIGAND = {"type": "object", "properties": {"chain": {"type": "string"}, "resi": {"type": "string"},
                                             "resn": {"type": "string"}},
            "description": "ligand residue; auto-detected when omitted"}
@@ -305,6 +332,13 @@ def register(reg):
             keys = ("dg_selected", "selected_estimator", "ci_low", "ci_high", "dg_exp", "dg_pop", "dg_cum",
                     "dg_reweighted_standard", "kd_selected_m", "production_reliability", "n_bound", "n_unbound")
             out = {k: jsonable(kw.get(k)) for k in keys if kw.get(k) is not None}
+            # the report's ci_low/ci_high belong to dg_exp, not to dg_selected
+            for k in ("ci_low", "ci_high"):
+                if k in out:
+                    out[f"dg_exp_{k}"] = out.pop(k)
+            sel_ci = _abfe_selected_ci(kw)
+            if sel_ci is not None:
+                out["ci_low"], out["ci_high"] = sel_ci
             report = reports[-1]["result"] if isinstance(reports[-1]["result"], dict) else {}
             if report.get("message_text"):
                 out["report"] = str(report["message_text"])[:3000]
@@ -325,10 +359,11 @@ def register(reg):
             out["scene"] = ctx.scene(f"ABFE-lite of {object}")
             dg = out.get("dg_selected")
             if dg is not None:
-                out["_card"] = (f"ABFE-lite **ΔG ≈ {dg} kJ/mol** ({out.get('selected_estimator')}; CI "
-                                f"{out.get('ci_low')} to {out.get('ci_high')}); reliability "
-                                f"{out.get('production_reliability')}. Apparent value from a guided-exit protocol, "
-                                "not alchemical ABFE.")
+                ci_txt = (f"; 95% CI {out.get('ci_low')} to {out.get('ci_high')}" if "ci_low" in out
+                          else "; no CI for this estimator")
+                out["_card"] = (f"ABFE-lite **ΔG ≈ {dg} kJ/mol** ({out.get('selected_estimator')}{ci_txt}); "
+                                f"reliability {out.get('production_reliability')}. Apparent value from a "
+                                "guided-exit protocol, not alchemical ABFE.")
             else:
                 out["_card"] = (f"ABFE-lite ran ({out.get('replicas')} replica(s), {sim_ns} ns) but gave **no binding "
                                 f"estimate** (estimator {out.get('selected_estimator')}; bound frames "
