@@ -53,6 +53,7 @@ def build_registry(context):
         extras,
         ligand_editor,
         ligands,
+        macro_interactions,
         materials,
         md,
         md_advanced,
@@ -75,7 +76,7 @@ def build_registry(context):
 
     for module in (structure, view, pockets, pka, ligands, ligand_editor, docking, redocking, screening, md,
                    md_advanced, components, trajectory, modeling, alphafold, bioseq, psi4, mopac, qmanalysis, qmmm, plots,
-                   estimates, extras, pipeline_tools, diagnostics, membrane, materials, design):
+                   estimates, extras, pipeline_tools, diagnostics, membrane, materials, design, macro_interactions):
         module.register(reg)
     components.register_qm(reg)
     return reg

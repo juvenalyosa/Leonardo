@@ -33,6 +33,7 @@ MODULE_TOOLS = {
     "components": {"resolve_components", "build_validated_system", "plan_qm_region"},
     "membrane": {"build_membrane_system", "equilibrate_membrane_system"},
     "materials": {"build_material", "build_protein_surface_system", "cut_qm_cluster"},
+    "macro_interactions": {"analyze_interface"},
 }
 
 
