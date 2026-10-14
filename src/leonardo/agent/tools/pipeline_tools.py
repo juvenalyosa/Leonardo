@@ -41,7 +41,12 @@ def register(reg):
             pipe = P.build_from_history(name, description, parameters, first_step, last_step, steps)
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
-        path, exported = P.save(pipe, export_path)
+        try:
+            path, exported = P.save(pipe, export_path, overwrite=False)
+        except FileExistsError as exc:
+            raise ToolError(f"{exc.args[0]} already exists and was not overwritten; choose another name or "
+                            "export_path, change the saved pipeline with update_pipeline, or delete it first "
+                            "(delete_pipeline)") from None
         return dict(_brief(pipe), file=path, exported=exported,
                     _card=f"Pipeline **{name}** saved ({len(pipe['steps'])} steps; parameters: "
                           + ", ".join(f"{k}={v['default']!r}" for k, v in pipe["parameters"].items())[:300]
@@ -113,6 +118,10 @@ def register(reg):
             repl = [(literal, "{{" + k + "}}")]
             if isinstance(literal, (int, float)) and not isinstance(literal, bool):
                 keys = P._number_keys(pipe["steps"], literal)
+                if k not in keys and len(keys) > 1:
+                    # as in save_pipeline: a number becomes a parameter under one argument, never every equal one
+                    raise ToolError(f"{literal!r} appears under several arguments ({', '.join(sorted(map(str, keys)))}); "
+                                    "name the parameter after the argument it replaces")
                 repl = [(literal, "{{" + k + "}}", {k} if k in keys else keys)]
             pipe["steps"] = [dict(s, args=P._substitute(s["args"], repl)) for s in pipe["steps"]]
             pipe["parameters"][k] = {"default": literal, "description": ""}
@@ -144,6 +153,10 @@ def register(reg):
         if description is not None:
             pipe["description"] = description
         if rename_to:
+            new_path = P.path_for(rename_to)
+            if os.path.abspath(new_path) != os.path.abspath(old_path) and os.path.exists(new_path):
+                raise ToolError(f"a pipeline is already saved as {new_path}; it was not overwritten "
+                                "(choose another name or delete_pipeline it first)")
             pipe["name"], pipe["slug"] = rename_to, P.slug(rename_to)
         path, _ = P.save(pipe)
         if rename_to and os.path.abspath(old_path) != os.path.abspath(path) and os.path.isfile(old_path):
@@ -171,7 +184,11 @@ def register(reg):
         bad = [s["tool"] for s in pipe["steps"] if s["tool"] not in set(reg.names())]
         if bad:
             raise ToolError(f"this pipeline uses tools this Leonardo does not have: {bad}")
-        saved, _ = P.save(pipe)
+        try:
+            saved, _ = P.save(pipe, overwrite=False)
+        except FileExistsError as exc:
+            raise ToolError(f"a pipeline named {pipe['name']!r} is already in the library ({exc.args[0]}); it "
+                            "was not overwritten: delete_pipeline it first or rename one of them") from None
         return dict(_brief(pipe), file=saved, _card=f"Pipeline **{pipe['name']}** imported ({len(pipe['steps'])} steps).")
 
     # -- projects and the scene ------------------------------------------------------------------------ #
