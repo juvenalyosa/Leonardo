@@ -46,6 +46,7 @@ def build_registry(context):
         alphafold,
         bioseq,
         components,
+        design,
         diagnostics,
         docking,
         estimates,
@@ -74,7 +75,7 @@ def build_registry(context):
 
     for module in (structure, view, pockets, pka, ligands, ligand_editor, docking, redocking, screening, md,
                    md_advanced, components, trajectory, modeling, alphafold, bioseq, psi4, mopac, qmanalysis, qmmm, plots,
-                   estimates, extras, pipeline_tools, diagnostics, membrane, materials):
+                   estimates, extras, pipeline_tools, diagnostics, membrane, materials, design):
         module.register(reg)
     components.register_qm(reg)
     return reg

@@ -120,3 +120,79 @@ def test_model_mutant_can_keep_hetero_groups():
     assert changed and post["components_added"] and cmd.count_atoms("mut and resn DCE") == 4
     with pytest.raises(Exception):
         modeling._hetero_copier("wt", ["XYZ"])
+
+
+def _fake_pack(tmp_path, metrics):
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "expected.json").write_text(json.dumps({"metrics": metrics}))
+    return pack
+
+
+def test_record_fails_on_a_missing_metric_and_keeps_its_reference(tmp_path, monkeypatch):
+    pack = _fake_pack(tmp_path, {"rmsd": {"path": "1.rmsd_A", "value": 0.4, "tol": 0.1},
+                                 "poses": {"path": "1.poses.*.rmsd_A|max", "value": 0.5, "tol": 0.1}})
+    monkeypatch.setattr(replay, "run_pipeline", lambda pack, work: ({1: {"poses": []}}, []))
+    monkeypatch.setattr(replay, "environment", lambda: {"platform": "test", "leonardo": "test"})
+    rc = replay.main(["record", str(pack), "--report", str(tmp_path / "r.json")])
+    assert rc == 1                                            # was 0, "ALL CHECKS PASSED"
+    exp = json.load(open(pack / "expected.json"))["metrics"]
+    assert exp["rmsd"]["value"] == 0.4 and exp["poses"]["value"] == 0.5     # not overwritten with null
+
+
+def test_verify_reports_an_uncomparable_metric_instead_of_crashing(tmp_path, monkeypatch):
+    pack = _fake_pack(tmp_path, {"success": {"path": "1.top1_success", "value": 3, "tol": 0},
+                                 "mean": {"path": "1.poses.*.rmsd_A|mean", "value": 0.5, "tol": 0.1}})
+    monkeypatch.setattr(replay, "run_pipeline", lambda pack, work: ({1: {"top1_success": "3/3 repeats",
+                                                                         "poses": []}}, []))
+    monkeypatch.setattr(replay, "environment", lambda: {"platform": "test", "leonardo": "test"})
+    assert replay.main(["verify", str(pack), "--report", str(tmp_path / "r.json")]) == 1
+    assert json.load(open(tmp_path / "r.json"))["ok"] is False
+
+
+def test_replay_stops_at_a_cancelled_job(tmp_path, monkeypatch):
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "pipeline.json").write_text(json.dumps({"name": "p", "parameters": {},
+                                                    "steps": [{"tool": "run_md", "args": {}}]}))
+
+    class Jobs:
+        def status(self, job_id):
+            return {"job_id": job_id, "status": "cancelled"}
+
+    class Ctx:
+        jobs = Jobs()
+
+    class App:
+        def processEvents(self):
+            pass
+
+    class Reg:
+        def call(self, name, args, ctx):
+            return {"job_id": "md-1", "status": "running"}
+
+    monkeypatch.setattr(replay, "_headless_leonardo", lambda work: (App(), Ctx(), Reg()))
+    with pytest.raises(RuntimeError, match=r"step 1 \(run_md\) cancelled"):
+        replay.run_pipeline(str(pack), str(tmp_path))
+
+
+def test_local_mutant_keeps_every_other_atom_in_place(tmp_path):
+    pytest.importorskip("pdbfixer")
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.load(os.path.join(REPO, "examples", "films", "02_dhla_reaction_qmmm", "2DHC.pdb"), "wt")
+    ctx = AgentContext(None)
+    ctx.workspace = lambda sub="": str(tmp_path / sub) if os.makedirs(tmp_path / sub, exist_ok=True) is None else ""
+    reg = build_registry(ctx)
+    res = reg.call("model_mutant", {"object": "wt", "mutations": ["W125A"], "chain": "A", "method": "local",
+                                    "name": "w125a"}, ctx)
+    assert res["max_shift_outside_mutation_A"] < 1e-3 and res["unchanged_atoms"] > 2000
+    assert cmd.count_atoms("w125a and resi 125 and resn ALA and name CB") == 1
+    assert cmd.count_atoms("w125a and resi 125 and name NE1") == 0
+    assert cmd.count_atoms("w125a and resn DCE") == 4 and cmd.count_atoms("w125a and resn HOH") > 0
+    with pytest.raises(Exception):
+        reg.call("model_mutant", {"object": "wt", "mutations": ["G125A"], "chain": "A", "method": "local"}, ctx)

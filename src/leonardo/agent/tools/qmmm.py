@@ -9,7 +9,8 @@ from ..registry import ToolError
 from ._dialogjob import start_finalize_job
 from ._widgets import jsonable, set_combo, set_value
 
-_OPS = ["probe", "electrostatic", "optimization", "thermochemistry", "reaction_scan", "transition_state",
+_OPS = ["probe", "electrostatic", "optimization", "thermochemistry", "reaction_scan", "reaction_path",
+        "transition_state",
         "mopac_ts_frequency", "mopac_irc", "mopac_qst2", "mopac_qst3", "mopac_reaction_path",
         "md_periodic", "md_coupled", "redock_rescore"]
 _MOPAC_DIRECT = {"mopac_ts_frequency", "mopac_irc", "mopac_qst2", "mopac_qst3", "mopac_reaction_path"}
@@ -39,6 +40,42 @@ def _summary(op, probe):
                                                      "frequency_validation", "ts_xyz")})
     out = jsonable(out)             # numpy arrays -> lists before testing for empty values
     return {k: v for k, v in out.items() if v is not None and v != "" and v != {} and v != []}
+
+
+def _reaction_path_result(ctx, object, res):
+    """Summary of a reaction_path run (reactant/product minima, path, TS, IRC)."""
+    from pymol import cmd
+
+    kcal = 4.184
+    out = jsonable({
+        "operation": "reaction_path", "object": object, "ok": bool(res.get("ok")),
+        "reactant": res.get("reactant"), "product": res.get("product"),
+        "path": {k: (res.get("path") or {}).get(k) for k in ("energies_rel_kj_mol", "converged", "steps",
+                                                              "climbing_image")},
+        "ts": res.get("ts"),
+        "irc": {k: (res.get("irc") or {}).get(k) for k in ("connects_reactant_and_product", "reactant_end",
+                                                            "product_end", "n_points")},
+        "barrier_kj_mol": res.get("barrier_kj_mol"), "reverse_barrier_kj_mol": res.get("reverse_barrier_kj_mol"),
+        "reaction_energy_kj_mol": res.get("reaction_energy_kj_mol"), "imaginary_cm1": res.get("imaginary_cm1"),
+        "qm_atom_count": res.get("qm_atom_count"), "mm_atom_count": res.get("mm_atom_count"),
+        "path_xyz": res.get("path_xyz"), "irc_csv": res.get("irc_csv"), "workdir": res.get("workdir"),
+        "n_energy_evaluations": res.get("n_energy_evaluations")})
+    if not res.get("ok"):
+        out["error"] = str(res.get("error") or "QM/MM reaction path failed")
+        out["_card"] = f"QM/MM reaction path on {object} **did not complete**: {out['error']}."
+        return {k: v for k, v in out.items() if v is not None}
+    xyz = str(res.get("path_xyz") or "")
+    if xyz and os.path.isfile(xyz):
+        name = f"qmmm_reaction_path_{object}"[:60]
+        cmd.load(xyz, name)
+        presentation.style_ligand(name)
+        out["qm_object"] = name
+    out["scene"] = ctx.scene(f"QM/MM reaction path on {object}: reactant, transition state, product")
+    out["_card"] = (f"QM/MM reaction path on {object}: barrier **{res['barrier_kj_mol'] / kcal:.2f} kcal/mol** "
+                    f"({res['barrier_kj_mol']:.1f} kJ/mol), reaction energy {res['reaction_energy_kj_mol'] / kcal:+.2f} "
+                    f"kcal/mol; TS with one imaginary mode ({res['imaginary_cm1']:.0f}i cm⁻¹); the IRC connects the "
+                    "reactant and the product. Potential energies with the protein fixed, not free energies.")
+    return {k: v for k, v in out.items() if v is not None}
 
 
 def _path_runs_backwards(reactant, xyz_path):
@@ -179,6 +216,16 @@ def register(reg):
                       "optional third atom: scan the transfer coordinate xi = d(A-B) - d(B-C), atom B moving from "
                       "A to C (SN2 carbon between leaving group A and nucleophile C; proton transfers); start/end are "
                       "xi values, e.g. -1.0 -> 1.0 A; an interior maximum is refined to the transition state")},
+                  "form_bonds": {"type": "array", "items": {"type": "array", "items": {"type": "string"},
+                                                            "minItems": 2, "maxItems": 2},
+                                 "description": "reaction_path: bonds the reaction forms, as pairs of single-atom "
+                                                "selections, e.g. [['resi 124 and name OD2', 'resn DCE and name C1']]"},
+                  "break_bonds": {"type": "array", "items": {"type": "array", "items": {"type": "string"},
+                                                             "minItems": 2, "maxItems": 2},
+                                  "description": "reaction_path: bonds the reaction breaks, e.g. "
+                                                 "[['resn DCE and name C1', 'resn DCE and name CL1']]"},
+                  "path_images": {"type": "integer", "minimum": 5, "maximum": 21,
+                                  "description": "reaction_path: interior images of the path (default 9)"},
                   "scan_start_A": {"type": "number"}, "scan_end_A": {"type": "number"},
                   "scan_points": {"type": "integer", "minimum": 3, "maximum": 60},
                   "timeout_s": {"type": "integer", "minimum": 30, "description": "per MOPAC call"},
@@ -195,7 +242,8 @@ def register(reg):
               permission="compute_heavy", title="QM/MM (MOPAC PM7)")
     def run_qmmm(ctx, object, operation, region_mode="auto_ligand_pocket", qm_selection="", qm_resnames="",
                  qm_cutoff_A=None, max_qm_atoms=None, qm_charge=0, qm_multiplicity=1, solvent="implicit",
-                 scan_atom_a="", scan_atom_b="", scan_atom_c="", scan_start_A=1.2, scan_end_A=2.8, scan_points=9, timeout_s=None,
+                 scan_atom_a="", scan_atom_b="", scan_atom_c="", form_bonds=None, break_bonds=None, path_images=9,
+                 scan_start_A=1.2, scan_end_A=2.8, scan_points=9, timeout_s=None,
                  product_object="", ts_guess_object="", irc_direction="both", irc_max_points=25,
                  md_production_steps=None, md_interval_steps=None, rescore_max_poses=None):
         from pymol import cmd
@@ -247,6 +295,16 @@ def register(reg):
             dlg._qmmm_set_operation_params("reaction_scan", {
                 "sel_a": scan_atom_a, "sel_b": scan_atom_b, "sel_c": scan_atom_c, "start_ang": float(scan_start_A),
                 "end_ang": float(scan_end_A), "n_points": int(scan_points)})
+        if operation == "reaction_path":
+            if not (form_bonds or break_bonds):
+                raise ToolError("reaction_path needs form_bonds and/or break_bonds (pairs of single-atom selections)")
+            for pair in list(form_bonds or []) + list(break_bonds or []):
+                for sel in pair:
+                    if cmd.count_atoms(f"({object}) and ({sel})") != 1:
+                        raise ToolError(f"bond atoms must each select exactly one atom of {object}: {sel!r}")
+            dlg._qmmm_set_operation_params("reaction_path", {
+                "form_bonds": [list(p) for p in form_bonds or []], "break_bonds": [list(p) for p in break_bonds or []],
+                "n_images": int(path_images)})
         if operation in ("md_periodic", "md_coupled", "redock_rescore"):
             params = dict(dlg._qmmm_operation_defaults(operation))
             if md_production_steps:
@@ -273,6 +331,8 @@ def register(reg):
             if not result.get("ok", True):
                 raise ToolError(str(result.get("error") or "QM/MM failed"))
             probe = dict(result.get("qmmm_probe") or {})
+            if operation == "reaction_path":
+                return _reaction_path_result(ctx, object, probe or result)
             if probe and not probe.get("ok", True):
                 raise ToolError(str(probe.get("error") or "QM/MM probe failed"))
             scan = dict(probe.get("scan") or {})

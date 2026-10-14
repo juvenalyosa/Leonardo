@@ -378,3 +378,29 @@ def test_rdkit_hydrophobic_assignment_excludes_heteroatom_bound_carbons():
     assert typed[0]["is_hydrophobic"] is True
     assert typed[1]["is_hydrophobic"] is False
     assert typed[2]["is_hydrophobic"] is False
+
+
+def _embedded_ligand_atoms(smiles):
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    assert AllChem.EmbedMolecule(mol, randomSeed=7) == 0
+    conf = mol.GetConformer()
+    return [
+        _atom(f"{a.GetSymbol()}{a.GetIdx()}", a.GetSymbol(), list(conf.GetAtomPosition(a.GetIdx())), charge_formal=0)
+        for a in mol.GetAtoms()
+    ]
+
+
+def test_topology_ionic_assignment_keeps_neutral_aromatic_heterocycles_uncharged():
+    # A ring carbon between ring nitrogens is a neutral heteroaromatic (adenine, guanine,
+    # aminopyrimidine, imidazole), not an amidinium/guanidinium: these were typed as cations
+    # and gave salt bridges and cation-pi contacts to ATP, GTP and kinase inhibitors.
+    for smiles in ("Nc1ncnc2[nH]cnc12", "Nc1nc2[nH]cnc2c(=O)[nH]1", "Nc1ncccn1", "c1c[nH]cn1"):
+        groups = build_ligand_charge_groups(assign_ligand_ionic_groups_from_topology(_embedded_ligand_atoms(smiles)))
+        assert [g for g in groups if g["charge_sign"] > 0] == [], smiles
+    # acyclic amidine / guanidine stay cationic
+    for smiles, group in (("NC(=N)c1ccccc1", "Amidinium"), ("NC(=N)NCC", "Guanidinium")):
+        groups = build_ligand_charge_groups(assign_ligand_ionic_groups_from_topology(_embedded_ligand_atoms(smiles)))
+        assert [(g["group_type"], g["charge_sign"]) for g in groups] == [(group, +1)], smiles

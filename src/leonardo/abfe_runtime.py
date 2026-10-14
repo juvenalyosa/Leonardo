@@ -6657,7 +6657,15 @@ def build_abfe_post_sampling_metrics(
         if copy_n > 0:
             com_arr[:copy_n, :] = np.asarray(com_raw[:copy_n, :], dtype=float)
     com_finite = np.all(np.isfinite(com_arr), axis=1)
-    if com_finite.size == valid_fe.size:
+    # The standard-state correction needs the volume the ligand explores while
+    # unbound.  A box over bound + unbound frames spans the whole exit path
+    # and inflates V_eff (more favourable DeltaG standard).
+    com_unbound = np.asarray(com_finite, dtype=bool)
+    if com_unbound.size == estimator_unbound_mask.size:
+        com_unbound = np.logical_and(com_unbound, np.asarray(estimator_unbound_mask, dtype=bool))
+    if int(np.sum(com_unbound)) >= 2:
+        com_finite = com_unbound
+    elif com_finite.size == valid_fe.size:
         com_finite = np.logical_and(com_finite, np.asarray(valid_fe, dtype=bool))
     com_eval = np.asarray(com_arr[com_finite], dtype=float)
     if com_eval.shape[0] >= 2:
@@ -7246,7 +7254,15 @@ def build_abfe_free_energy_report_payload(
                 reweight_line += f" | Ceff={float(c_eff_m):.3e} M"
             reweight_line += f" | Kd(app)={float(kd_app_reweighted_m):.3e} M | pKd={float(p_kd_reweighted):.2f}"
             if np.isfinite(float(reweight_ci_low)) and np.isfinite(float(reweight_ci_high)):
-                reweight_line += f" | CI95=[{float(reweight_ci_low):.3f}, {float(reweight_ci_high):.3f}]"
+                # The bootstrap CI is on DeltaG(state); the standard-state value
+                # is shifted by the (constant) correction, so its CI is too.
+                reweight_line += f" | CI95(state)=[{float(reweight_ci_low):.3f}, {float(reweight_ci_high):.3f}]"
+                corr_for_ci = _safe_float(standard_state_correction_kj)
+                if np.isfinite(corr_for_ci):
+                    reweight_line += (
+                        f" | CI95(app,std)=[{float(reweight_ci_low) + corr_for_ci:.3f}, "
+                        f"{float(reweight_ci_high) + corr_for_ci:.3f}]"
+                    )
             if np.isfinite(float(reweight_ess_total)):
                 reweight_line += f" | ESS={float(reweight_ess_total):.1f}"
         conf_txt = str(reweight_confidence_quality or "low").strip().lower()

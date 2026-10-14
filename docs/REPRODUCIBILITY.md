@@ -34,8 +34,9 @@ the reference, prints PASS or FAIL, and writes a report with your machine, Leona
 | [`examples/films/04_mutation_protein_ligand`](../examples/films/04_mutation_protein_ligand) | Trypsin D189A: MODELLER mutant + redocking into wild type and mutant | Verified: identical values across runs |
 | [`examples/films/08_ensemble_redocking`](../examples/films/08_ensemble_redocking) | P450cam + camphor, Monte Carlo receptor ensemble (heme kept) | Verified: identical values across runs |
 | [`examples/films/02_dhla_reaction_qmmm`](../examples/films/02_dhla_reaction_qmmm) | DhlA SN2 step, QM/MM transfer scan + transition state (MOPAC PM7 / Amber14) | Verified: identical values across runs (barrier 8.0 kcal/mol, one imaginary mode) |
-| Film 05 | DhlA W125A, QM/MM | In progress: the one-coordinate scan lets chloride dissociate without forming the C–O bond in the mutant; the reaction path method is being revised |
-| Films 06–07 | Disulfide design | No Leonardo tool yet |
+| [`examples/films/05_mutation_enzyme_reaction`](../examples/films/05_mutation_enzyme_reaction) | DhlA wild type vs W125A: QM/MM reaction paths (QST2-type path, TS, IRC) | Verified: identical values across runs (8.09 → 10.32 kcal/mol) |
+| [`examples/films/06_protein_stability_design`](../examples/films/06_protein_stability_design) | Protein G B1 disulfide design (`design_disulfides`) | Verified: best design K10C/E56C, −51% pair motion |
+| [`examples/films/07_protein_stability_multimutant`](../examples/films/07_protein_stability_multimutant) | Screening five disulfide designs | Verified: identical values across runs |
 
 ## What "the same result" means for each engine
 

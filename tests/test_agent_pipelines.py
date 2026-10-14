@@ -1,4 +1,5 @@
 """Reusable pipelines: parameters, links between steps, library, and running them in the orchestrator."""
+import json
 import os
 
 import pytest
@@ -241,3 +242,58 @@ def test_update_pipeline_keeps_step_links():
     assert out["steps"][3]["args"]["object"] == "{{step:3.object}}"
     with pytest.raises(ToolError):
         reg.call("update_pipeline", {"name": "md", "remove_steps": [3]}, None)
+
+
+# save/import/rename are quick (compute_light, not confirmed under the default policy): they must not replace a
+# saved pipeline or an existing file; only delete_pipeline (destructive, always asked) removes one
+_STEPS = [{"tool": "fetch_structure", "args": {"identifier": "3PTB"}}]
+
+
+def _saved_md(reg):
+    reg.call("save_pipeline", {"name": "md", "steps": _STEPS}, None)
+    return open(P.path_for("md")).read()
+
+
+def test_save_pipeline_does_not_overwrite_a_pipeline_or_a_file(tmp_path):
+    reg = _registry([])
+    first = _saved_md(reg)
+    with pytest.raises(ToolError, match="not overwritten"):
+        reg.call("save_pipeline", {"name": "md", "steps": [{"tool": "run_md", "args": {"object": "X"}}]}, None)
+    assert open(P.path_for("md")).read() == first
+    victim = tmp_path / "notes.json"
+    victim.write_text("keep me")
+    with pytest.raises(ToolError, match="not overwritten"):
+        reg.call("save_pipeline", {"name": "other", "steps": _STEPS, "export_path": str(victim)}, None)
+    assert victim.read_text() == "keep me" and not os.path.exists(P.path_for("other"))
+
+
+def test_import_pipeline_does_not_overwrite_a_saved_one(tmp_path):
+    reg = _registry([])
+    first = _saved_md(reg)
+    shared = tmp_path / "from_a_colleague.json"           # another pipeline that is also called "md"
+    shared.write_text(json.dumps(dict(P.load("md"), steps=[{"tool": "run_md", "args": {"object": "Y"}}])))
+    with pytest.raises(ToolError, match="not overwritten"):
+        reg.call("import_pipeline", {"path": str(shared)}, None)
+    assert open(P.path_for("md")).read() == first
+
+
+def test_update_pipeline_rename_does_not_overwrite_another_pipeline():
+    reg = _registry([])
+    first = _saved_md(reg)
+    reg.call("save_pipeline", {"name": "dock", "steps": _STEPS}, None)
+    with pytest.raises(ToolError, match="not overwritten"):
+        reg.call("update_pipeline", {"name": "dock", "rename_to": "md"}, None)
+    assert open(P.path_for("md")).read() == first and os.path.exists(P.path_for("dock"))
+    reg.call("update_pipeline", {"name": "md", "description": "edited in place"}, None)
+    assert P.load("md")["description"] == "edited in place"
+
+
+def test_update_pipeline_numeric_parameter_replaces_only_its_argument():
+    reg = _registry([])
+    P.save(P.build_from_history("dock", steps=[{"tool": "run_md", "args": {"object": "A", "exhaustiveness": 8,
+                                                                           "num_modes": 8}}], parameters={}))
+    with pytest.raises(ToolError, match="several arguments"):
+        reg.call("update_pipeline", {"name": "dock", "add_parameter": {"effort": 8}}, None)
+    assert P.load("dock")["steps"][0]["args"] == {"object": "A", "exhaustiveness": 8, "num_modes": 8}
+    out = reg.call("update_pipeline", {"name": "dock", "add_parameter": {"exhaustiveness": 8}}, None)
+    assert out["steps"][0]["args"] == {"object": "A", "exhaustiveness": "{{exhaustiveness}}", "num_modes": 8}

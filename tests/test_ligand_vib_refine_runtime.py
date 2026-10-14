@@ -417,4 +417,82 @@ NORMAL_MODES[081]=
     assert parsed["optimized_coords_ang"].shape == (3, 3)
     assert np.allclose(parsed["freq_cm_real"], np.asarray([1406.50, 2807.52, 2863.37]))
     assert parsed["freq_cm_imag"].shape == (3,)
-    assert np.allclose(parsed["ir_intensity_rel"], np.asarray([0.522, 1.244, 0.391]))
+    # intensity = |transition dipole|^2 (the raw T_DIP values were used before)
+    assert np.allclose(parsed["ir_intensity_rel"], np.asarray([0.522, 1.244, 0.391]) ** 2)
+
+
+def test_psi4_stationary_runs_an_open_shell_molecule_with_an_unrestricted_reference(tmp_path):
+    # OH radical (doublet), HF/STO-3G: a few seconds. Without UHF Psi4 stops: "RHF reference is only for singlets".
+    psi4 = pytest.importorskip("psi4")
+    import ligand_vib_refine_runtime as L
+
+    psi4.core.clean_options()
+    atoms =[{"element": "O", "x": 0.0, "y": 0.0, "z": 0.0}, {"element": "H", "x": 0.97, "y": 0.0, "z": 0.0}]
+    res = L._run_psi4_stationary_from_atoms(atoms, str(tmp_path), method="hf", basis="sto-3g", multiplicity=2,
+                                            run_frequency=False, threads=1, memory_gb=1)
+    assert res["ok"] is True, res.get("error")
+    assert res["multiplicity"] == 2 and res["energy_opt_hartree"] < -74.0
+
+
+def test_psi4_stationary_starts_from_clean_options_and_accepts_a_relative_out_dir(tmp_path, monkeypatch):
+    # a staged run executes several Psi4 jobs in one process: options of a previous stage (here a Cartesian
+    # retry) must not carry over, and a relative out_dir must not break the final result write
+    psi4 = pytest.importorskip("psi4")
+    import ligand_vib_refine_runtime as L
+
+    psi4.set_options({"opt_coordinates": "cartesian"})
+    monkeypatch.chdir(tmp_path)
+    atoms = [{"element": "H", "x": 0.0, "y": 0.0, "z": 0.0}, {"element": "H", "x": 0.80, "y": 0.0, "z": 0.0}]
+    res = L._run_psi4_stationary_from_atoms(atoms, "h2_job", method="hf", basis="sto-3g", run_frequency=False,
+                                            threads=1, memory_gb=1)
+    assert res["ok"] is True, res.get("error")
+    assert (tmp_path / "h2_job" / "psi4_result.json").is_file()
+    assert str(psi4.core.get_option("OPTKING", "OPT_COORDINATES")).upper() != "CARTESIAN"
+
+
+def test_psi4_frequency_from_xyz_runs_an_open_shell_molecule(tmp_path):
+    psi4 = pytest.importorskip("psi4")
+    import ligand_vib_refine_runtime as L
+
+    psi4.core.clean_options()          # no reference left over from another test in this process
+    xyz = tmp_path / "oh.xyz"
+    xyz.write_text("2\nOH\nO 0.0 0.0 0.0\nH 0.97 0.0 0.0\n")
+    freq = L.run_psi4_frequency_from_xyz(str(xyz), str(tmp_path / "freq"), method="hf", basis="sto-3g",
+                                         multiplicity=2, threads=1, memory_gb=1)
+    assert freq["ok"] is True, freq.get("error")
+
+
+def test_mopac_vibrational_parse_keeps_imaginary_mode_of_a_saddle_point(tmp_path):
+    # Real MOPAC 23 "PM7 FORCE AUX" output at the HCN <-> HNC transition state: one imaginary mode
+    # (-1390.73) among the 3N-6 vibrations, followed by the six translations/rotations.
+    import ligand_vib_refine_runtime as L
+
+    aux = """
+ ATOM_EL[03]=
+   C  N  H
+ ATOM_X_OPT:ANGSTROMS[09]=
+    0.0005    0.0009    0.0000
+    1.2039   -0.0416   -0.0000
+    0.4592    1.2518    0.0000
+ HEAT_OF_FORMATION:KCAL/MOL=+0.115929D+03
+ VIB._FREQ:CM(-1)[09]=
+ -1390.73  2015.04  2322.00     0.02     0.03     0.03    56.42    29.84    20.20
+ VIB._T_DIP:ELECTRONS[09]=
+ 0.300 0.200 0.100 0.000 0.000 0.000 0.010 0.010 0.010
+ NORMAL_MODES[081]=
+""" + " ".join(["0.1"] * 81)
+    parsed = parse_mopac_vibrational_aux_text(aux)
+    assert parsed["ok"] is True
+    assert np.allclose(parsed["freq_cm_real"], [0.0, 2015.04, 2322.00])
+    assert np.allclose(parsed["freq_cm_imag"], [1390.73, 0.0, 0.0])
+    assert np.allclose(parsed["ir_intensity_rel"], [0.090, 0.040, 0.010])
+    assert parsed["mode_cart_ang"].shape == (3, 3, 3)
+
+    opt = {"parsed": parsed, "method": "PM7"}
+    force = {"parsed": parsed, "method": "PM7"}
+    result = L._build_mopac_result_from_payloads(opt, force_payload=force, out_dir=str(tmp_path))
+    vib = L.psi4_load_vib_data(result, str(tmp_path))
+    summary = L.make_summary_payload(result, vib, {}, {}, {}, {})
+    assert summary["stationary_point_ok"] is False
+    assert summary["qm_imaginary_count"] == 1
+    assert summary["qm_vibrational_mode_count"] == 2      # the imaginary mode is not fitted as a vibration

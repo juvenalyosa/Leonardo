@@ -30,6 +30,10 @@ def build_server(registry, run_on_main, context=None, confirm=None, approval_pol
 
     server = Server(SERVER_NAME)
     needs_confirmation = APPROVAL_POLICIES.get(approval_policy, APPROVAL_POLICIES["heavy"])
+    if callable(confirm):
+        # an external client never had a plan approved: every calculation is asked (in the app, quick ones
+        # run only after the user approves a plan, and "plan_only" relies on that approval)
+        needs_confirmation = needs_confirmation | {"compute_light", "compute_heavy", "destructive"}
 
     @server.list_tools()
     async def _list_tools():

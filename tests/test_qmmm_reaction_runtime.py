@@ -141,3 +141,20 @@ def test_scan_barrier_is_measured_from_the_reactant_minimum():
     assert abs(out["barrier_from_first_point_kj_mol"] - 31.3) < 1e-9
     assert abs(out["reaction_energy_kj_mol"] - (-71.4 + 2.7)) < 1e-9
     assert out["interior_maximum"] and rows[1]["energy_rel_kj_mol"] == -2.7
+
+
+def test_embedded_model_keeps_the_users_extra_mopac_keywords(tmp_path):
+    """Scan/TS steps must use the same MOPAC keywords as the single-point probe (UHF, MOZYME...), not only the
+    method; job-type keywords and the charge/spin line stay under the model's control."""
+    from openmm_qmmm_runtime import _qmmm_embedded_model
+
+    rows = [{"index": i, "name": n, "resn": "HCN" if i < 3 else "DUM", "chain": "A", "resi": "1"}
+            for i, n in enumerate(["C", "N", "H", "X"])]
+    cfg = {"qm_indices": [0, 1, 2], "mm_indices": [3],
+           "mopac_keywords": "PM6 1SCF GRAD AUX(PRECISION=9) QMMM UHF MOZYME CHARGE=1 DOUBLET"}
+    model, _reg = _qmmm_embedded_model(_HCN_XYZ, _HCN_Z, [0.0] * 4, rows, cfg, str(tmp_path))
+    tokens = model.keywords.split()
+    assert tokens[0] == "PM6"
+    assert "UHF" in tokens and "MOZYME" in tokens
+    assert tokens.count("1SCF") == 1 and "CHARGE=1" not in tokens and "DOUBLET" not in tokens
+    assert not any(t.startswith("AUX(") for t in tokens)

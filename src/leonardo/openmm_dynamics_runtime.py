@@ -771,6 +771,10 @@ def run_openmm_metadynamics_smoke(
     if max_v <= min_v:
         max_v = min_v + 0.05
     width = _clip_float(meta.get("bias_width", 0.01), 0.01, 1.0e-5, max(1.0e-4, max_v - min_v))
+    freq = _clip_int(frequency_steps, 2, 1, 1000000)
+    save_freq = _clip_int(save_frequency_steps, 10, 1, 1000000)
+    # OpenMM requires saveFrequency to be a multiple of frequency (callers clip both independently)
+    save_freq = max(freq, ((save_freq + freq - 1) // freq) * freq)
     system = _build_two_particle_system(omm, unit, restraint_center_nm=None)
     cv_force = omm.CustomBondForce("r")
     cv_force.addBond(0, 1, [])
@@ -781,8 +785,8 @@ def run_openmm_metadynamics_smoke(
         _clip_float(temperature_k, 300.0, 50.0, 600.0) * unit.kelvin,
         _clip_float(bias_factor, 3.0, 1.01, 200.0),
         _clip_float(hill_height_kj_mol, 0.05, 0.001, 200.0) * unit.kilojoule_per_mole,
-        _clip_int(frequency_steps, 2, 1, 1000000),
-        _clip_int(save_frequency_steps, 10, 1, 1000000),
+        freq,
+        save_freq,
         str(bias_dir),
     )
     simulation, platform_used = _make_two_particle_simulation(
@@ -943,6 +947,28 @@ def _shift_fes_minimum(fes):
     return arr - float(np.nanmin(arr[finite]))
 
 
+def _phi_psi_free_energy_grid(meta, unit):
+    """
+    Free-energy grid of a [phi, psi] Metadynamics indexed [phi, psi] (kJ/mol).
+
+    OpenMM stores the bias with the variables in reverse order (axis 0 = last CV), so getFreeEnergy()
+    is indexed [psi, phi]; written as-is the phi/psi map comes out transposed.
+    """
+    import numpy as np
+
+    fes = meta.getFreeEnergy()
+    if hasattr(fes, "value_in_unit"):
+        fes = fes.value_in_unit(unit.kilojoule_per_mole)
+    return np.asarray(fes, dtype=float).T
+
+
+def _phi_psi_grid_degrees(n_points):
+    """Angles of OpenMM's periodic bias grid: n points from -180 to +180 inclusive (the ends coincide)."""
+    import numpy as np
+
+    return np.linspace(-180.0, 180.0, int(n_points), endpoint=True)
+
+
 def _fes_rmsd(a, b):
     import numpy as np
 
@@ -959,8 +985,8 @@ def _write_alanine_fes_csv(path, fes):
 
     arr = np.asarray(fes, dtype=float)
     n_phi, n_psi = arr.shape
-    phi_vals = np.linspace(-180.0, 180.0, int(n_phi), endpoint=False)
-    psi_vals = np.linspace(-180.0, 180.0, int(n_psi), endpoint=False)
+    phi_vals = _phi_psi_grid_degrees(n_phi)
+    psi_vals = _phi_psi_grid_degrees(n_psi)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("phi_deg,psi_deg,diagnostic_grid_kj_mol\n")
         for i, phi in enumerate(phi_vals):
@@ -1153,10 +1179,11 @@ def _rmsd_nm(mobile, reference):
     ref_c = ref - ref.mean(axis=0)
     cov = mob_c.T @ ref_c
     u, _s, vt = np.linalg.svd(cov)
-    rot = vt.T @ u.T
+    # rows are points: the rotation that maps mob_c onto ref_c acts from the right as u @ vt
+    rot = u @ vt
     if np.linalg.det(rot) < 0.0:
-        vt[-1, :] *= -1.0
-        rot = vt.T @ u.T
+        u[:, -1] *= -1.0
+        rot = u @ vt
     aligned = mob_c @ rot
     diff = aligned - ref_c
     return float(np.sqrt(np.mean(np.sum(diff * diff, axis=1))))
@@ -1513,7 +1540,7 @@ def run_openmm_alanine_dipeptide_fes(
     stable_needed = _clip_int(stable_blocks, 2, 1, 100)
     for block in range(1, int(max_b) + 1):
         meta.step(simulation, int(steps_b))
-        fes = _shift_fes_minimum(meta.getFreeEnergy())
+        fes = _shift_fes_minimum(_phi_psi_free_energy_grid(meta, unit))
         rmsd = _fes_rmsd(fes, previous) if previous is not None else float("nan")
         if previous is not None and isfinite(rmsd) and float(rmsd) <= float(threshold):
             stable_count += 1

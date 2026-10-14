@@ -489,6 +489,39 @@ GRADIENTS:KCAL/MOL/ANGSTROM[09]=
     assert math.isclose(parsed["heat_of_formation_ev"], -57.7823 / 23.060548, rel_tol=1e-5)
 
 
+def test_parse_mopac_aux_takes_final_gradients_not_the_first_optimization_step():
+    # Layout of a real MOPAC 23 "PM7 EF GRAD AUX" water run: every optimization step writes
+    # GRADIENTS_UPDATED before the final GRADIENTS block of the converged geometry.
+    aux_text = """
+ ATOM_EL[03]=
+   O  H  H
+ HEAT_OF_FORM_UPDATED:KCAL/MOL=-0.488821D+02
+ GRADIENT_NORM_UPDATED:KCAL/MOL/ANG=+0.121321D+03
+ ATOM_X_UPDATED:ANGSTROMS[09]=
+    0.0000    0.0000    0.0000
+    1.1000    0.0000    0.0000
+   -0.3000    1.0000    0.0000
+ GRADIENTS_UPDATED:KCAL/MOL/ANGSTROM[09]=
+  -56.4973  -39.9191   0.0000  82.0217  -9.6842   0.0000 -25.5245  49.6032   0.0000
+ HEAT_OF_FORMATION:KCAL/MOL=-0.577998D+02
+ GRADIENT_NORM:KCAL/MOL/ANGSTROM=+0.302314D+00
+ ATOM_X_OPT:ANGSTROMS[09]=
+    0.0191    0.0110    0.0000
+    0.9666   -0.0021    0.0000
+   -0.2397    0.9419    0.0000
+ ATOM_CHARGES[03]=
+  -0.64918  0.32462  0.32456
+ GRADIENTS:KCAL/MOL/ANGSTROM[09]=
+  -0.2362  -0.0117   0.0000   0.1615   0.0493   0.0000   0.0747  -0.0376   0.0000
+"""
+    parsed = parse_mopac_aux_text(aux_text)
+    assert parsed["ok"] is True
+    final = np.array([[-0.2362, -0.0117, 0.0], [0.1615, 0.0493, 0.0], [0.0747, -0.0376, 0.0]])
+    assert np.allclose(parsed["gradients_kcal_mol_ang"], final)
+    assert np.allclose(parsed["optimized_coords_ang"][0], [0.0191, 0.0110, 0.0])
+    assert math.isclose(parsed["heat_of_formation_kcal_mol"], -57.7998, rel_tol=1e-9)
+
+
 def test_mopac_input_writer_knows_transition_metals_and_rejects_unknown():
     import pytest
     txt = build_mopac_input_text([25, 8], np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))

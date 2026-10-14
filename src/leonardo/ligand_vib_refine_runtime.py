@@ -15,6 +15,7 @@ from .psi4_runtime import (
     psi4_guess_multiplicity_from_atoms,
     psi4_load_vib_data,  # noqa: F401 - compatibility re-export
     psi4_prepare_ir_spectrum,  # noqa: F401 - compatibility re-export
+    psi4_reference_for_multiplicity,
 )
 
 AVOGADRO = 6.02214076e23
@@ -599,14 +600,16 @@ def parse_mopac_vibrational_aux_text(aux_text):
     raw_ir = _mopac_extract_float_vector_after_key(txt, "VIB._T_DIP:ELECTRONS")
     raw_modes = _mopac_extract_float_vector_after_key(txt, "NORMAL_MODES")
     n_vib_target = int(max(0, 3 * nat - (5 if nat == 2 else 6)))
-    pos_idx = np.where(np.isfinite(raw_freq) & (raw_freq > 5.0))[0]
-    if int(pos_idx.size) > int(n_vib_target) and int(n_vib_target) > 0:
-        order = np.argsort(raw_freq[pos_idx])
-        pos_idx = pos_idx[order[-int(n_vib_target) :]]
-        pos_idx = np.sort(pos_idx)
-    freq_real = np.asarray(raw_freq[pos_idx], dtype=float).reshape(-1) if pos_idx.size else np.zeros((0,), dtype=float)
-    freq_imag = np.zeros_like(freq_real, dtype=float)
-    ir_rel = np.asarray(raw_ir[pos_idx], dtype=float).reshape(-1) if (pos_idx.size and raw_ir.size > int(np.max(pos_idx))) else np.zeros((freq_real.size,), dtype=float)
+    # MOPAC's AUX lists the 3N-6 vibrations first, then the translations/rotations.  Imaginary modes are
+    # negative numbers there; they are kept (Psi4 convention: real part 0, magnitude in freq_cm_imag) so
+    # that a saddle point is not reported as a minimum with a rotation promoted in its place.
+    n_take = int(min(int(raw_freq.size), int(n_vib_target)))
+    pos_idx = np.asarray([i for i in range(n_take) if np.isfinite(raw_freq[i])], dtype=int)
+    signed = np.asarray(raw_freq[pos_idx], dtype=float).reshape(-1) if pos_idx.size else np.zeros((0,), dtype=float)
+    freq_real = np.where(signed < 0.0, 0.0, signed)
+    freq_imag = np.where(signed < 0.0, -signed, 0.0)
+    # VIB._T_DIP is the transition dipole; the IR intensity goes as its square (as |dmu|^2 on the MM side)
+    ir_rel = np.square(np.asarray(raw_ir[pos_idx], dtype=float).reshape(-1)) if (pos_idx.size and raw_ir.size > int(np.max(pos_idx))) else np.zeros((freq_real.size,), dtype=float)
     mode_cart = np.zeros((0, 0, 0), dtype=float)
     ncart = int(3 * nat)
     if int(raw_modes.size) >= int(ncart * ncart) and pos_idx.size:
@@ -824,11 +827,14 @@ def _run_psi4_stationary_from_atoms(
         raise ValueError("No atoms were provided for Psi4 job")
     molecule_block = build_psi4_molecule_block_from_atoms(atom_rows, charge=int(charge), multiplicity=int(max(1, multiplicity)))
     result = {"ok": False, "operation": "stationary" if bool(run_frequency) else "optimize_only"}
+    out_dir = os.path.abspath(str(out_dir))      # the result file is written after chdir(out_dir)
     cwd_prev = os.getcwd()
     try:
         _ensure_dir(out_dir)
         os.chdir(out_dir)
         psi4.core.clean()
+        # options persist in the process: a previous stage's reference or Cartesian retry must not leak in
+        psi4.core.clean_options()
         psi4.set_memory(f"{int(max(1, memory_gb))} GB")
         psi4.set_num_threads(int(max(1, threads)))
         psi4.core.set_output_file("psi4_run.out", False)
@@ -844,6 +850,10 @@ def _run_psi4_stationary_from_atoms(
                 "d_convergence": 1.0e-8,
                 "write_trajectory": True,
             }
+            # Psi4's default RHF/RKS stops on any non-singlet ("RHF reference is only for singlets")
+            reference = psi4_reference_for_multiplicity(method, multiplicity=int(max(1, multiplicity)))
+            if reference:
+                opts["reference"] = reference
             if bool(cartesian):
                 # Retry flat/problematic systems in Cartesian coordinates if redundant internals fail.
                 opts["opt_coordinates"] = "cartesian"
@@ -1193,24 +1203,28 @@ def run_psi4_frequency_from_xyz(
         raise ValueError("No atoms were recovered from XYZ for Psi4 frequency job")
     molecule_block = build_psi4_molecule_block_from_atoms(atoms, charge=int(charge), multiplicity=int(max(1, multiplicity)))
     result = {"ok": False, "operation": "frequency_only"}
+    out_dir = os.path.abspath(str(out_dir))
     cwd_prev = os.getcwd()
     try:
         os.chdir(out_dir)
         psi4.core.clean()
+        psi4.core.clean_options()
         psi4.set_memory(f"{int(max(1, memory_gb))} GB")
         psi4.set_num_threads(int(max(1, threads)))
         psi4.core.set_output_file("psi4_run.out", False)
         psi4.geometry(molecule_block)
-        psi4.set_options(
-            {
-                "basis": str(basis),
-                "scf_type": "df",
-                "maxiter": 200,
-                "e_convergence": 1.0e-8,
-                "d_convergence": 1.0e-8,
-                "write_trajectory": True,
-            }
-        )
+        freq_opts = {
+            "basis": str(basis),
+            "scf_type": "df",
+            "maxiter": 200,
+            "e_convergence": 1.0e-8,
+            "d_convergence": 1.0e-8,
+            "write_trajectory": True,
+        }
+        reference = psi4_reference_for_multiplicity(method, multiplicity=int(max(1, multiplicity)))
+        if reference:
+            freq_opts["reference"] = reference
+        psi4.set_options(freq_opts)
         efreq, wfn_freq = psi4.frequency(str(method), return_wfn=True)
         result["energy_opt_hartree"] = None
         result["energy_freq_hartree"] = float(efreq)
