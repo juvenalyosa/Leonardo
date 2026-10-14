@@ -242,6 +242,11 @@ def register(reg):
                   "ensemble_keep_ligand_space": {"type": "boolean", "description": (
                       "holo-like ensemble: keep the crystal ligand's volume (soft) while sampling, so side chains "
                       "do not close the pocket; better for redocking that ligand, biased toward it")},
+                  "ensemble_seed": {"type": "integer", "minimum": 1,
+                                    "description": "Monte Carlo seed for the receptor ensemble (default 1)"},
+                  "ensemble_reproducible": {"type": "boolean", "description": (
+                      "sample the ensemble on one CPU thread so the same seed gives the identical ensemble "
+                      "(slower; for audits and replay packs)")},
                   "keep_hetero": _KEEP_HETERO,
                   "grid_size_A": dict(_XYZ, description="manual box edges x,y,z in A (2-120), as the GUI's "
                                                        "'Adjust grid box'; default: auto from the crystal ligand "
@@ -255,7 +260,7 @@ def register(reg):
     def run_redocking(ctx, object, ligand_chain="", ligand_resi="", ligand_resn="", exhaustiveness=16, repeats=3,
                       seed=1001, ph=7.4, mutant_object="", ensemble_structures=0, ensemble_temperature_K=300.0,
                       ensemble_site_radius_A=6.0, keep_hetero=None, grid_size_A=None, grid_padding_A=None,
-                      ensemble_keep_ligand_space=False,
+                      ensemble_keep_ligand_space=False, ensemble_seed=1, ensemble_reproducible=False,
                       grid_center_A=None):
         from pymol import cmd
 
@@ -308,6 +313,8 @@ def register(reg):
                     dlg.spin_redock_mc_radius.setValue(float(ensemble_site_radius_A))
                     if hasattr(dlg, "cb_redock_mc_keep_ligand_space"):
                         dlg.cb_redock_mc_keep_ligand_space.setChecked(bool(ensemble_keep_ligand_space))
+            dlg._redock_mc_seed = int(ensemble_seed)
+            dlg._redock_mc_reproducible = bool(ensemble_reproducible)
             _apply_grid_box(dlg, object, grid_padding_A, grid_size_A)
             grid_box = _grid_box_info(dlg, object, grid_center_A)
             dlg._redock_last_mc_ensemble = {}
