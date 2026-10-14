@@ -109,6 +109,27 @@ def test_out_of_range_values_are_reported_not_clamped():
     assert "rgba(31, 58, 110, 0.12)" in pill_style("#1F3A6E")
 
 
+def test_redrawn_ring_discs_keep_the_interaction_color():
+    """The interaction colors are '#RRGGBB' strings: _make_ring_disc passed them to cmd.get_color_tuple
+    ('Unknown color') and every pi-stacking / T-shaped / cation-pi disc was drawn yellow."""
+    from pymol import cmd
+
+    d = _dummy("_refresh_ring_discs", "_make_ring_disc", "_type_color_name")
+    d._settings = {}
+    ring = {"centroid": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 1.5}
+    d.interactions = [{"type": "Pi-Pi Stacking", "prot_ring": ring, "ligand_ring": ring}]
+    d._selected_ids = [0]
+    cmd.reinitialize()
+    try:
+        d._refresh_ring_discs()
+        cgo = cmd.get_session()["names"]
+        disc = next(n for n in cgo if n and n[0] == "intRingDiscProt_0")
+        rgb = disc[5][2][0][0][1][8:11]          # CYLINDER x1 y1 z1 x2 y2 z2 r | r1 g1 b1 ...
+        assert [round(v, 3) for v in rgb] == [round(v, 3) for v in code_v2._hex_to_rgb("#F6A83E")]
+    finally:
+        cmd.reinitialize()
+
+
 def test_describe_object_counts_only_its_own_residues_for_a_blank_chain():
     """'chain  and name CA' (blank chain id) selected the alpha carbons of every other object: an MD/SDF
     structure without chain ids was reported with the residues of the whole session."""
