@@ -1208,16 +1208,18 @@ def run_psi4_frequency_from_xyz(
         psi4.set_num_threads(int(max(1, threads)))
         psi4.core.set_output_file("psi4_run.out", False)
         psi4.geometry(molecule_block)
-        psi4.set_options(
-            {
-                "basis": str(basis),
-                "scf_type": "df",
-                "maxiter": 200,
-                "e_convergence": 1.0e-8,
-                "d_convergence": 1.0e-8,
-                "write_trajectory": True,
-            }
-        )
+        freq_opts = {
+            "basis": str(basis),
+            "scf_type": "df",
+            "maxiter": 200,
+            "e_convergence": 1.0e-8,
+            "d_convergence": 1.0e-8,
+            "write_trajectory": True,
+        }
+        reference = psi4_reference_for_multiplicity(method, multiplicity=int(max(1, multiplicity)))
+        if reference:
+            freq_opts["reference"] = reference
+        psi4.set_options(freq_opts)
         efreq, wfn_freq = psi4.frequency(str(method), return_wfn=True)
         result["energy_opt_hartree"] = None
         result["energy_freq_hartree"] = float(efreq)

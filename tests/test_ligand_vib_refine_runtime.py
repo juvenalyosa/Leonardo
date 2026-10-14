@@ -423,14 +423,27 @@ NORMAL_MODES[081]=
 
 def test_psi4_stationary_runs_an_open_shell_molecule_with_an_unrestricted_reference(tmp_path):
     # OH radical (doublet), HF/STO-3G: a few seconds. Without UHF Psi4 stops: "RHF reference is only for singlets".
-    pytest.importorskip("psi4")
+    psi4 = pytest.importorskip("psi4")
     import ligand_vib_refine_runtime as L
 
-    atoms = [{"element": "O", "x": 0.0, "y": 0.0, "z": 0.0}, {"element": "H", "x": 0.97, "y": 0.0, "z": 0.0}]
+    psi4.core.clean_options()
+    atoms =[{"element": "O", "x": 0.0, "y": 0.0, "z": 0.0}, {"element": "H", "x": 0.97, "y": 0.0, "z": 0.0}]
     res = L._run_psi4_stationary_from_atoms(atoms, str(tmp_path), method="hf", basis="sto-3g", multiplicity=2,
                                             run_frequency=False, threads=1, memory_gb=1)
     assert res["ok"] is True, res.get("error")
     assert res["multiplicity"] == 2 and res["energy_opt_hartree"] < -74.0
+
+
+def test_psi4_frequency_from_xyz_runs_an_open_shell_molecule(tmp_path):
+    psi4 = pytest.importorskip("psi4")
+    import ligand_vib_refine_runtime as L
+
+    psi4.core.clean_options()          # no reference left over from another test in this process
+    xyz = tmp_path / "oh.xyz"
+    xyz.write_text("2\nOH\nO 0.0 0.0 0.0\nH 0.97 0.0 0.0\n")
+    freq = L.run_psi4_frequency_from_xyz(str(xyz), str(tmp_path / "freq"), method="hf", basis="sto-3g",
+                                         multiplicity=2, threads=1, memory_gb=1)
+    assert freq["ok"] is True, freq.get("error")
 
 
 def test_mopac_vibrational_parse_keeps_imaginary_mode_of_a_saddle_point(tmp_path):
