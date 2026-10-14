@@ -135,3 +135,24 @@ def test_zero_minimize_steps_means_no_minimization():
     rep = cl.build_and_validate(os.path.join(DATA, "3KS3_zn_site.pdb"), family="amber14", minimize_steps=0)
     # before: OpenMM's maxIterations=0 minimized to convergence (-210 -> -1280 kJ/mol)
     assert rep["ok"] and rep["energy_minimized_kj"] == rep["energy_start_kj"]
+
+
+# ------------------------------------------------------------------ protein on graphene: sane energies
+def test_graphene_sheet_does_not_repel_itself(tmp_path):
+    pytest.importorskip("ase")
+    import openmm as mm
+    from openmm import unit
+
+    from leonardo import materials_runtime as mat
+
+    rep = mat.build_protein_surface_system(os.path.join(DATA, "GGCGG.pdb"), material="graphene", layers=1,
+                                           water_above_nm=0.8, ionic_strength_molar=0.0, minimize_steps=50,
+                                           out_dir=str(tmp_path))
+    # before: the frozen sheet's own C-C pairs (0.14 nm, sigma 0.34 nm) gave ~+1.8e7 kJ/mol
+    assert rep["ok"] and rep["energy_minimized_kj"] < 0, (rep["energy_start_kj"], rep["energy_minimized_kj"])
+    system = mm.XmlSerializer.deserialize(open(os.path.join(str(tmp_path), "surface_system.xml")).read())
+    nb = [f for f in system.getForces() if isinstance(f, mm.NonbondedForce)][0]
+    n_c = sum(1 for i in range(system.getNumParticles()) if system.getParticleMass(i).value_in_unit(unit.dalton) == 0)
+    excluded = sum(1 for k in range(nb.getNumExceptions()) if nb.getExceptionParameters(k)[0] >= 0
+                   and system.getParticleMass(nb.getExceptionParameters(k)[0]).value_in_unit(unit.dalton) == 0)
+    assert excluded == n_c * 12 // 2              # 3 + 6 + 3 neighbours within 0.3 nm per C, each pair once

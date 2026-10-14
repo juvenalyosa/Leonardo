@@ -480,6 +480,8 @@ def build_protein_surface_system(pdb_path, material="Au", facet="111", layers=4,
         if i in mat_set or j in mat_set:
             system.removeConstraint(k)
     pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
+    if material == "graphene":
+        _exclude_graphene_neighbours(system, pos_nm, mat_idx, (lx, ly))
     mat_resn = {a.residue.name for a in modeller.topology.atoms() if a.index in mat_set}
     report["metal_restraints"] = cl.add_coordination_restraints(system, modeller.topology, pos_nm,
                                                                 skip_resn=mat_resn)
@@ -537,6 +539,32 @@ def build_protein_surface_system(pdb_path, material="Au", facet="111", layers=4,
     with open(os.path.join(out_dir, "surface_report.json"), "w") as fh:
         json.dump(report, fh, indent=2, default=str)
     return report
+
+
+def _exclude_graphene_neighbours(system, pos_nm, mat_idx, cell_xy, cutoff_nm=0.3):
+    """
+    The Steele carbon LJ describes the sheet-adsorbate interaction; the sheet itself is covalent and has no
+    bonded terms here, so its C-C neighbours (0.142/0.246/0.284 nm, far inside sigma = 0.34 nm) would add
+    ~1e7 kJ/mol of LJ repulsion to every reported energy. They are frozen: exclude them (minimum image in xy).
+    """
+    import openmm as mm
+
+    P = np.array([pos_nm[i] for i in mat_idx], dtype=float)
+    cell = np.array([cell_xy[0], cell_xy[1]], dtype=float)
+    pairs = []
+    for a in range(len(P) - 1):
+        d = P[a + 1:] - P[a]
+        d[:, :2] -= cell * np.round(d[:, :2] / cell)
+        for b in np.nonzero(np.einsum("ij,ij->i", d, d) < cutoff_nm ** 2)[0]:
+            pairs.append((mat_idx[a], mat_idx[a + 1 + int(b)]))
+    for f in system.getForces():
+        if isinstance(f, mm.NonbondedForce):
+            for i, j in pairs:
+                f.addException(i, j, 0.0, 0.1, 0.0, replace=True)
+        elif isinstance(f, mm.CustomNonbondedForce):
+            for i, j in pairs:
+                f.addExclusion(i, j)
+    return len(pairs)
 
 
 def _add_thiol_anchors(system, topology, pos_nm, spec, mat_idx, r_lo=0.24, r_hi=0.26, k=50000.0):
