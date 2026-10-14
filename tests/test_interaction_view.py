@@ -147,3 +147,22 @@ def test_2d_map_leaves_rdkit_depiction_settings_alone(tmp_path):
     atoms = _benzamidinium()
     V.draw_2d_map(str(tmp_path / "m.png"), _interactions(atoms), atoms, fetch_ccd=False)
     assert rdDepictor.GetPreferCoordGen() == before
+
+
+def test_bond_orders_by_atom_name_ignore_crystal_contacts(monkeypatch):
+    """A non-bonded pair within the distance cutoff (crystal strain) must not become a bond when the PDB
+    component's bond table is available: connectivity comes from the atom names."""
+    atoms = _benzamidinium()
+    xyz = {n: np.array(x) for n, _e, x in atoms}
+    # pull N1 next to C3 (1,3 pair): the distance rule alone would bond them
+    xyz["N1"] = xyz["C2"] + (xyz["N1"] - xyz["C2"]) * 0.2 + (xyz["C3"] - xyz["C2"]) * 0.75
+    squeezed = [(n, e, tuple(xyz[n])) for n, e, _x in atoms]
+    bonds = [("N1", "C1", "SING"), ("C1", "N2", "DOUB"), ("C1", "C2", "SING")]
+    ring = ["C2", "C3", "C4", "C5", "C6", "C7"]
+    bonds += [(ring[i], ring[(i + 1) % 6], "AROM") for i in range(6)]
+    comp = {"atoms": [{"name": n, "element": e.upper(), "charge": 0, "xyz": x} for n, e, x in atoms],
+            "bonds": bonds}
+    monkeypatch.setattr("leonardo.component_library_runtime.ccd_component", lambda *a, **k: comp)
+    mol, _names, info = V.ligand_molecule(squeezed, resn="BEN", fetch_ccd=False)
+    assert "atom names" in info["bond_orders"]
+    assert mol.GetNumBonds() == 9 and sum(1 for b in mol.GetBonds() if b.GetIsAromatic()) == 6

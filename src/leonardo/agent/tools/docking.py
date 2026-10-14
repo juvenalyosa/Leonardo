@@ -49,7 +49,11 @@ def _ligand_residue(cmd, obj, chain="", resi="", resn=""):
         if found:
             break
     if not found:
-        raise ToolError(f"no residue {resn or '*'} {chain}{resi} in {obj!r}")
+        present = set()
+        cmd.iterate(f"({obj}) and hetatm and not resn HOH+WAT+DOD", "present.add((resn, chain, resi))",
+                    space={"present": present})
+        listed = ", ".join(f"{n} {c}{i}".strip() for n, c, i in sorted(present)[:12]) or "none"
+        raise ToolError(f"no residue {resn or '*'} {chain}{resi} in {obj!r}; hetero residues present: {listed}")
     return tuple(str(v) for v in found[0])
 
 

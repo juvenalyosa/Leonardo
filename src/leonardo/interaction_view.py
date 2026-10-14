@@ -186,7 +186,8 @@ DISTANCE_LABEL_A = 0.78
 
 def label_box(text, height):
     """Approximate (width, height) in Angstrom of a label of ``height`` Angstrom."""
-    return (0.62 * height * len(str(text)) + 0.3, 1.25 * height)
+    # measured on ray-traced PyMOL labels (font 7, negative label_size): 0.44 h per character, 0.57 h tall
+    return (0.46 * height * len(str(text)) + 0.3, 0.75 * height)
 
 
 def place_label(anchor, away_from, box, groups, radii=(1.0, 1.5, 2.1, 2.8, 3.6, 4.5), bounds=None):
@@ -460,6 +461,9 @@ def build_scene(obj, lig_sel, interactions, *, prefix="iv", show_contacts=False,
         st = style_of(itype)
         rgb = rgb01(st["hex"])
         seg = _dashed_cylinder(p, q, rgb, st["radius"], st["dash"], st["gap"])
+        if itype == "Salt Bridge":
+            # charge-group centroids, not atoms: mark both ends
+            rings += _ring_marker(p, rgb, 0.13) + _ring_marker(q, rgb, 0.13)
         if itype in RING_TYPES:
             rings += _ring_marker(q, rgb)
             if "Pi-Pi" in itype:
@@ -637,6 +641,48 @@ def export_figure(path, interactions, width=1800, height=1200, title="", subtitl
 
 # ----------------------------------------------------------------------------------------- ligand 2D
 
+def _bonds_from_ccd_names(mol, names, resn, fetch_ccd=True):
+    """Heavy-atom molecule with the bonds and orders of the PDB chemical component, matched by atom name
+    (the crystal geometry is not used for connectivity). None when the names do not all match."""
+    from rdkit import Chem
+
+    try:
+        from .component_library_runtime import ccd_component
+
+        comp = ccd_component(resn, fetch=fetch_ccd)
+    except Exception:
+        return None
+    if not comp:
+        return None
+    known = {a["name"] for a in comp["atoms"]}
+    if not names or any(n not in known for n in names):
+        return None
+    index = {n: i for i, n in enumerate(names)}
+    order = {"SING": Chem.BondType.SINGLE, "DOUB": Chem.BondType.DOUBLE, "TRIP": Chem.BondType.TRIPLE,
+             "AROM": Chem.BondType.AROMATIC}
+    rw = Chem.RWMol(mol)
+    for b in list(rw.GetBonds()):
+        rw.RemoveBond(b.GetBeginAtomIdx(), b.GetEndAtomIdx())
+    for a1, a2, kind in comp["bonds"]:
+        if a1 in index and a2 in index:
+            rw.AddBond(index[a1], index[a2], order.get(kind, Chem.BondType.SINGLE))
+    charges = {a["name"]: int(a.get("charge", 0) or 0) for a in comp["atoms"]}
+    for n, i in index.items():
+        rw.GetAtomWithIdx(i).SetFormalCharge(charges.get(n, 0))
+        rw.GetAtomWithIdx(i).SetNoImplicit(False)
+    out = rw.GetMol()
+    try:
+        Chem.SanitizeMol(out)
+        if out.GetNumConformers():
+            Chem.AssignStereochemistryFrom3D(out)
+    except Exception:
+        return None
+    return out
+
+
+_MAX_HEAVY_BONDS = {"C": 4, "N": 4, "O": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1, "S": 6, "P": 5, "B": 4, "Se": 2}
+
+
 def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4):
     """
     RDKit molecule (heavy atoms, correct bond orders and formal charges) from the ligand's atoms
@@ -657,12 +703,22 @@ def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4):
         rw.AddAtom(Chem.Atom(elem if elem else "C"))
     xyz = np.array([x for _n, _e, x in heavy])
     pt = Chem.GetPeriodicTable()
+    pairs = []
     for i in range(len(heavy)):
         for j in range(i + 1, len(heavy)):
             ri = pt.GetRcovalent(rw.GetAtomWithIdx(i).GetAtomicNum())
             rj = pt.GetRcovalent(rw.GetAtomWithIdx(j).GetAtomicNum())
-            if float(np.linalg.norm(xyz[i] - xyz[j])) <= ri + rj + 0.45:
-                rw.AddBond(i, j, Chem.BondType.SINGLE)
+            d = float(np.linalg.norm(xyz[i] - xyz[j]))
+            if d <= ri + rj + 0.45:
+                pairs.append((d, i, j))
+    # crystal geometry can bring a non-bonded pair within the cutoff: keep the shortest bonds of an atom up
+    # to its maximum valence (an extra C-O "bond" made a 3-ring and broke the template match)
+    degree = [0] * len(heavy)
+    for d, i, j in sorted(pairs):
+        if degree[i] < _MAX_HEAVY_BONDS.get(heavy[i][1], 6) and degree[j] < _MAX_HEAVY_BONDS.get(heavy[j][1], 6):
+            rw.AddBond(i, j, Chem.BondType.SINGLE)
+            degree[i] += 1
+            degree[j] += 1
     conf = Chem.Conformer(len(heavy))
     for i, x in enumerate(xyz):
         conf.SetAtomPosition(i, Point3D(*[float(v) for v in x]))
@@ -672,14 +728,21 @@ def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4):
     names = {n: i for i, (n, _e, _x) in enumerate(heavy)}
     info = {"bond_orders": "single bonds only", "charges": "none"}
 
-    assigned = None
+    assigned = _bonds_from_ccd_names(mol, [n for n, _e, _x in heavy], resn, fetch_ccd) if resn else None
+    if assigned is not None:
+        info["bond_orders"] = f"PDB chemical component {str(resn).upper()} (atom names)"
     try:
         from .component_library_runtime import ccd_reference
+
+        if assigned is not None:
+            raise StopIteration          # already assigned from the named bond table
 
         ref = ccd_reference(resn, fetch=fetch_ccd) if resn else None
         if ref is not None and ref.GetNumAtoms() == mol.GetNumAtoms():
             assigned = AllChem.AssignBondOrdersFromTemplate(ref, mol)
             info["bond_orders"] = f"PDB chemical component {str(resn).upper()}"
+    except StopIteration:
+        pass
     except Exception:
         assigned = None
     if assigned is None:
@@ -687,7 +750,7 @@ def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4):
             from .component_library_runtime import _bond_orders_from_geometry
 
             assigned = _bond_orders_from_geometry(mol)
-            info["bond_orders"] = "perceived from the 3D geometry"
+            info["bond_orders"] = "the 3D geometry (perceived)"
         except Exception:
             assigned = mol
     try:
@@ -1043,8 +1106,8 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
     cmd.enable(obj)
     for key, value in (("bg_rgb", [1.0, 1.0, 1.0]), ("bg_gradient", 0), ("ray_opaque_background", 1),
                        ("depth_cue", 0), ("ray_trace_fog", 0), ("fog", 0), ("antialias", 2),
-                       ("ray_trace_mode", 0), ("ray_shadows", 0), ("ambient", 0.45), ("direct", 0.6),
-                       ("reflect", 0.2), ("specular", 0.2), ("orthoscopic", 1), ("cartoon_fancy_helices", 1),
+                       ("ray_trace_mode", 0), ("ray_interior_color", "grey80"), ("ray_shadows", 0),
+                       ("ambient", 0.45), ("direct", 0.6), ("reflect", 0.2), ("specular", 0.2), ("orthoscopic", 1), ("cartoon_fancy_helices", 1),
                        ("cartoon_smooth_loops", 1), ("cartoon_ring_mode", 0),
                        ("cartoon_nucleic_acid_mode", 4), ("stick_radius", 0.15), ("valence", 0),
                        ("label_font_id", 7), ("label_outline_color", "white"), ("float_labels", 0),
