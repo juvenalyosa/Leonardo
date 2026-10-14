@@ -127,3 +127,17 @@ def test_dimer_stops_instead_of_climbing_from_a_minimum(tmp_path):
     ts = model.refine_ts_dimer(start, mode_guess=None, max_positive_curvature_steps=5, steps=100)
     assert ts["converged"] is False and "no negative curvature" in ts["stopped_reason"]
     assert ts["steps"] < 20
+
+
+def test_scan_barrier_is_measured_from_the_reactant_minimum():
+    from leonardo.qmmm_reaction_runtime import scan_summary
+
+    # the scan starts 2.7 kJ/mol above the reactant minimum (as in the DhlA SN2 scan)
+    energies = [0.0, -2.7, -2.1, 1.2, 8.2, 18.7, 28.7, 31.3, 20.5, -3.9, -32.0, -55.2, -71.4]
+    rows = [{"point": i + 1, "energy_kj_mol": e} for i, e in enumerate(energies)]
+    out = scan_summary(rows)
+    assert out["highest_point"]["point"] == 8 and out["reactant_point"]["point"] == 2
+    assert abs(out["barrier_estimate_kj_mol"] - 34.0) < 1e-9
+    assert abs(out["barrier_from_first_point_kj_mol"] - 31.3) < 1e-9
+    assert abs(out["reaction_energy_kj_mol"] - (-71.4 + 2.7)) < 1e-9
+    assert out["interior_maximum"] and rows[1]["energy_rel_kj_mol"] == -2.7

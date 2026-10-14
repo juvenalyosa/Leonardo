@@ -30,10 +30,12 @@ the reference, prints PASS or FAIL, and writes a report with your machine, Leona
 | Pack | Calculation | Status |
 |---|---|---|
 | [`examples/films/01_molecular_docking`](../examples/films/01_molecular_docking) | Trypsin + benzamidine redocking (smina/Vina) | Verified: same seed gives identical values; 8 other seeds stay within 0.002 Å and 0.006 kcal/mol |
-| [`examples/films/03_molecular_dynamics`](../examples/films/03_molecular_dynamics) | Apo trypsin MD (OpenMM, implicit solvent) | Verified statistically: averages over 3 runs within the tolerances (RMSD 1.05–1.31 Å, Ser195–His57 3.78–4.05 Å) |
+| [`examples/films/03_molecular_dynamics`](../examples/films/03_molecular_dynamics) | Apo trypsin MD (OpenMM, implicit solvent) | Verified statistically: 8 runs, references = means, tolerances ≈ 3 SD (Ser195–His57 3.98 ± 0.16 Å) |
 | [`examples/films/04_mutation_protein_ligand`](../examples/films/04_mutation_protein_ligand) | Trypsin D189A: MODELLER mutant + redocking into wild type and mutant | Verified: identical values across runs |
 | [`examples/films/08_ensemble_redocking`](../examples/films/08_ensemble_redocking) | P450cam + camphor, Monte Carlo receptor ensemble (heme kept) | Verified: identical values across runs |
-| Films 02, 05–07 | QM/MM, protein design | Planned |
+| [`examples/films/02_dhla_reaction_qmmm`](../examples/films/02_dhla_reaction_qmmm) | DhlA SN2 step, QM/MM transfer scan + transition state (MOPAC PM7 / Amber14) | Verified: identical values across runs (barrier 8.0 kcal/mol, one imaginary mode) |
+| Film 05 | DhlA W125A, QM/MM | In progress: the one-coordinate scan lets chloride dissociate without forming the C–O bond in the mutant; the reaction path method is being revised |
+| Films 06–07 | Disulfide design | No Leonardo tool yet |
 
 ## What "the same result" means for each engine
 

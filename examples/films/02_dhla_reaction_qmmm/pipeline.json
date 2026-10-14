@@ -1,0 +1,17 @@
+{
+ "name": "Film 02 - DhlA SN2 QM/MM reaction path",
+ "slug": "film02_dhla_qmmm",
+ "description": "First step of haloalkane dehalogenase DhlA (PDB 2DHC): Asp124 OD2 attacks C1 of 1,2-dichloroethane and chloride leaves (SN2). Relaxed QM/MM scan of the transfer coordinate xi = d(CL1-C1) - d(C1-OD2) from -1.6 to +1.6 A (13 points) with MOPAC PM7 embedded in Amber14; QM region = dichloroethane + Asp124 side chain (charge -1); the maximum is refined to the transition state.",
+ "format": 1,
+ "parameters": {
+  "pack": {"default": ".", "description": "this pack's folder (filled in by leonardo.replay)"}
+ },
+ "steps": [
+  {"tool": "load_structure_file", "args": {"path": "{{pack}}/2DHC.pdb", "object_name": "dhla_2DHC"}},
+  {"tool": "run_qmmm", "args": {"object": "{{step:1.object}}", "operation": "reaction_scan",
+   "region_mode": "pymol_selection", "qm_selection": "resn DCE or (resi 124 and name CB+CG+OD1+OD2)",
+   "qm_charge": -1, "qm_multiplicity": 1, "solvent": "gas",
+   "scan_atom_a": "resn DCE and name CL1", "scan_atom_b": "resn DCE and name C1",
+   "scan_atom_c": "resi 124 and name OD2", "scan_start_A": -1.6, "scan_end_A": 1.6, "scan_points": 13}}
+ ]
+}

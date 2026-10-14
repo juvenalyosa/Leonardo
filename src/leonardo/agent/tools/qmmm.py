@@ -26,6 +26,9 @@ def _summary(op, probe):
     if scan:
         out["scan"] = {"rows": jsonable(scan.get("rows") or []),
                        "barrier_estimate_kj_mol": scan.get("barrier_estimate_kj_mol"),
+                       "barrier_from_first_point_kj_mol": scan.get("barrier_from_first_point_kj_mol"),
+                       "reaction_energy_kj_mol": scan.get("reaction_energy_kj_mol"),
+                       "reactant_point": scan.get("reactant_point"),
                        "highest_point": jsonable(scan.get("highest_point")),
                        "interior_maximum": scan.get("interior_maximum"),
                        "profile_csv": scan.get("profile_csv"), "path_xyz": scan.get("path_xyz")}
@@ -287,7 +290,8 @@ def register(reg):
                 out["qm_object"] = name
             presentation.focus(out.get("qm_object") or object, buffer=6.0)
             out["scene"] = ctx.scene(f"QM/MM {operation} on {object}")
-            barrier = (out.get("scan") or {}).get("barrier_estimate_kj_mol") or (out.get("ts") or {}).get("barrier_kj_mol")
+            # the refined transition state, when it converged, is a better barrier than the highest scan point
+            barrier = (out.get("ts") or {}).get("barrier_kj_mol") or (out.get("scan") or {}).get("barrier_estimate_kj_mol")
             e = out.get("energy_qm_hartree")
             out["_card"] = (f"QM/MM **{operation}** on {object}"
                             + (f"; QM region {out['qm_region']}" if out.get("qm_region") else "")

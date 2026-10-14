@@ -58,7 +58,7 @@ Short films from real calculations with the open engines Leonardo uses (smina/Vi
 
 **Check the numbers yourself.** Films 01–07 were calculated with scripted runs of these engines; the same
 calculations are being redone through Leonardo's own tools and published as replay packs. The packs re-run
-without the AI and compare every value with the reference (films 01, 03, 04 and 08 so far):
+without the AI and compare every value with the reference (films 01–04 and 08 so far):
 `python -m leonardo.replay verify examples/films/01_molecular_docking`. See
 [Reproducing Leonardo's calculations](docs/REPRODUCIBILITY.md).
 

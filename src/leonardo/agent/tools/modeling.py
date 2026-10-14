@@ -226,6 +226,37 @@ def _component_label(comp):
     return f"{comp.get('resn', '?')} {comp.get('chain', '') or '-'}:{comp.get('resi', '?')} ({comp.get('category', '')})"
 
 
+def _hetero_copier(source, keep_hetero):
+    """post_load for model_mutant: copy hetero groups of the original (by residue name, or 'all' non-water) into
+    the superposed mutant, where MODELLER built the protein only. Checked before the run starts."""
+    cmd = _cmd()
+    names = [str(x).strip().upper() for x in keep_hetero or [] if str(x).strip()]
+    water = "resn HOH+WAT+DOD+H2O"
+    if "ALL" in names:
+        sel = f"({source}) and not polymer and not {water}"
+    else:
+        sel = f"({source}) and not polymer and resn {'+'.join(names)}"
+    if cmd.count_atoms(sel) == 0:
+        raise ToolError(f"keep_hetero: no {', '.join(names)} hetero atoms in {source}")
+    space = {"res": set()}
+    cmd.iterate(sel, "res.add((resn, chain, resi))", space=space)
+    groups = sorted(space["res"])
+
+    def post_load(name):
+        tmp = f"_{name}_hetero"
+        cmd.create(tmp, sel)
+        cmd.alter(tmp, "type = 'HETATM'")
+        merged = f"_{name}_merged"
+        cmd.create(merged, f"({name}) or ({tmp})")
+        cmd.delete(tmp)
+        cmd.delete(name)
+        cmd.set_name(merged, name)
+        added = [f"{r}{c and ' ' + c}{i}".replace("  ", " ") for r, c, i in groups]
+        return True, {"components_added": added}
+
+    return post_load
+
+
 def select_template_components(components, residues=None, categories=None):
     """
     Template non-protein components to carry into the model, as Leonardo's component chooser would:
@@ -511,9 +542,13 @@ def register(reg):
                   "name": {"type": "string"},
                   "num_models": {"type": "integer", "minimum": 1, "maximum": 20},
                   "seed": {"type": "integer", "minimum": 0},
+                  "keep_hetero": {"type": "array", "items": {"type": "string"}, "description": (
+                      "hetero groups of the original to copy into the mutant at their original positions (the "
+                      "mutant is superposed on it), by residue name, e.g. ['DCE'] for a bound substrate, ['HEM']; "
+                      "'all' = every non-water hetero group. Default: none (MODELLER builds the protein only)")},
               }, "required": ["object", "mutations"]},
               permission="compute_heavy", title="Mutant model (MODELLER)")
-    def model_mutant(ctx, object, mutations, chain="", name="", num_models=3, seed=1):
+    def model_mutant(ctx, object, mutations, chain="", name="", num_models=3, seed=1, keep_hetero=None):
         from ... import mutator
 
         chain, entry = _chain_entry(ctx, object, chain)
@@ -531,10 +566,12 @@ def register(reg):
         if entry.get("internal_gaps"):
             extra["warning"] = (f"chain {chain} has missing residues {entry['internal_gaps']}; they stay missing "
                                 "(use repair_structure_gaps first for a complete chain)")
+        post_load = _hetero_copier(object, keep_hetero) if keep_hetero else None
         return _start_modeller(ctx, name, base, [code], final_sequence=mutated, labels=labels
                                if len(mutated) == len(base) else None, start_pos=int(entry["start"]),
                                num_models=num_models, seed=seed, staged={code: path}, align_to=object, extra=extra,
-                               card=f"Mutant **{name}** ({', '.join(mutations)}) of {object} chain {chain}")
+                               card=f"Mutant **{name}** ({', '.join(mutations)}) of {object} chain {chain}",
+                               post_load=post_load)
 
     @reg.tool("repair_structure_gaps", "Fill missing residues (internal gaps, and optionally the missing termini) "
               "of a crystal structure chain with MODELLER, using the structure as template and the full sequence "

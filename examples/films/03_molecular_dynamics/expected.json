@@ -1,5 +1,5 @@
 {
- "description": "Reference values from a recorded run; MD trajectories are chaotic, so tolerances come from repeated runs (see README.md).",
+ "description": "MD trajectories are chaotic: references are the means of 8 runs and tolerances about 3 standard deviations of those runs (see README.md).",
  "metrics": {
   "frames": {
    "path": "3.frames",
@@ -10,37 +10,37 @@
    "path": "3.rmsd_final_A",
    "kind": "abs",
    "tol": 0.5,
-   "value": 1.29
+   "value": 1.1
   },
   "ca_rmsd_max_A": {
    "path": "3.rmsd_max_A",
    "kind": "abs",
-   "tol": 0.5,
-   "value": 1.32
+   "tol": 0.3,
+   "value": 1.31
   },
   "ca_rmsf_mean_A": {
    "path": "3.rmsf_mean_A",
    "kind": "abs",
-   "tol": 0.15,
+   "tol": 0.12,
    "value": 0.66
   },
   "ser195_his57_mean_A": {
    "path": "4.mean_A",
    "kind": "abs",
-   "tol": 0.4,
-   "value": 3.819
+   "tol": 0.5,
+   "value": 3.98
   },
   "ser195_his57_sd_A": {
    "path": "4.sd_A",
    "kind": "abs",
-   "tol": 0.2,
-   "value": 0.436
+   "tol": 0.15,
+   "value": 0.46
   },
   "ser195_his57_hbond_fraction": {
    "path": "4.fraction_within_cutoff",
    "kind": "abs",
-   "tol": 0.25,
-   "value": 0.216
+   "tol": 0.26,
+   "value": 0.17
   },
   "fold_kept_max_rmsd_A": {
    "path": "3.rmsd_max_A",
@@ -61,30 +61,54 @@
   "meeko": "0.7.1",
   "numpy": "1.26.4"
  },
- "measured_spread_3_runs": {
-  "ca_rmsd_final_A": [
-   1.05,
-   1.31
-  ],
-  "ca_rmsd_max_A": [
-   1.32,
-   1.48
-  ],
-  "ca_rmsf_mean_A": [
-   0.66,
-   0.67
-  ],
-  "ser195_his57_mean_A": [
-   3.781,
-   4.054
-  ],
-  "ser195_his57_sd_A": [
-   0.436,
-   0.491
-  ],
-  "ser195_his57_hbond_fraction": [
-   0.144,
-   0.302
-  ]
+ "measured_8_runs": {
+  "ca_rmsd_final_A": {
+   "mean": 1.103,
+   "sd": 0.159,
+   "range": [
+    0.79,
+    1.31
+   ]
+  },
+  "ca_rmsd_max_A": {
+   "mean": 1.314,
+   "sd": 0.088,
+   "range": [
+    1.14,
+    1.48
+   ]
+  },
+  "ca_rmsf_mean_A": {
+   "mean": 0.662,
+   "sd": 0.033,
+   "range": [
+    0.6,
+    0.73
+   ]
+  },
+  "ser195_his57_mean_A": {
+   "mean": 3.983,
+   "sd": 0.163,
+   "range": [
+    3.781,
+    4.228
+   ]
+  },
+  "ser195_his57_sd_A": {
+   "mean": 0.461,
+   "sd": 0.038,
+   "range": [
+    0.399,
+    0.51
+   ]
+  },
+  "ser195_his57_hbond_fraction": {
+   "mean": 0.171,
+   "sd": 0.085,
+   "range": [
+    0.062,
+    0.302
+   ]
+  }
  }
 }

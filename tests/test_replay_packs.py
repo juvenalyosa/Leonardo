@@ -60,7 +60,7 @@ def test_film01_pack_verifies(tmp_path):
                QT_QPA_PLATFORM="offscreen")
     report = tmp_path / "report.json"
     out = subprocess.run([sys.executable, "-m", "leonardo.replay", "verify", PACK, "--report", str(report)],
-                         capture_output=True, text=True, env=env, timeout=900)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=900)
     assert out.returncode == 0, out.stdout[-3000:] + out.stderr[-3000:]
     assert json.load(open(report))["ok"]
 
@@ -94,3 +94,29 @@ def test_trajectory_distance_measures_every_frame():
     assert res["max_A"] > res["min_A"] and res["fraction_within_cutoff"] == 0.5
     with pytest.raises(Exception):
         reg.call("trajectory_distance", {"object": "traj", "atom_a": "name C*", "atom_b": "name CA"}, ctx)
+
+
+def test_count_reduces_a_plain_list():
+    results = {2: {"scan": {"rows": [{"e": 1}, {"e": 2}, {"e": 3}]}}}
+    assert replay._value_at(results, "2.scan.rows|count") == 3
+
+
+def test_model_mutant_can_keep_hetero_groups():
+    from leonardo.agent.registry import ToolRegistry
+    from leonardo.agent.tools import modeling
+
+    reg = ToolRegistry()
+    modeling.register(reg)
+    props = {s.name: s for s in reg.specs()}["model_mutant"].parameters["properties"]
+    assert props["keep_hetero"]["type"] == "array"
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    cmd.reinitialize()
+    cmd.load(os.path.join(REPO, "examples", "films", "02_dhla_reaction_qmmm", "2DHC.pdb"), "wt")
+    cmd.create("mut", "wt and polymer")
+    copier = modeling._hetero_copier("wt", ["DCE"])
+    changed, post = copier("mut")
+    assert changed and post["components_added"] and cmd.count_atoms("mut and resn DCE") == 4
+    with pytest.raises(Exception):
+        modeling._hetero_copier("wt", ["XYZ"])

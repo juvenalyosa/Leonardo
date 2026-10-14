@@ -2471,7 +2471,9 @@ def run_openmm_qmmm_relaxed_scan(
             ts_block = {
                 "converged": bool(ts["converged"]), "stopped_reason": ts["stopped_reason"], "steps": int(ts["steps"]),
                 "energy_kj_mol": float(ts["energy_kj_mol"]),
-                "barrier_kj_mol": (float(ts["energy_kj_mol"] - rows[0]["energy_kj_mol"]) if ts["converged"] else None),
+                # from the reactant minimum of the scan (not its first point)
+                "barrier_kj_mol": (float(ts["energy_kj_mol"] - scan["reactant_energy_kj_mol"]) if ts["converged"]
+                                   else None),
                 "curvature_ev_ang2": float(ts["curvature_ev_ang2"]),
                 "frequencies_cm1": None if freq is None else [float(v) for v in np.sort(freq["freq_cm_signed"])[:8]],
                 "frequency_validation": None if freq is None else dict(freq["validation"]),
@@ -2489,6 +2491,9 @@ def run_openmm_qmmm_relaxed_scan(
         "scan_start_ang": float(scan_start_ang), "scan_end_ang": float(scan_end_ang),
         "n_points": len(rows), "n_successful": int(sum(1 for r in rows if r["converged"])),
         "rows": public_rows, "barrier_estimate_kj_mol": float(scan["barrier_estimate_kj_mol"]),
+        "barrier_from_first_point_kj_mol": float(scan["barrier_from_first_point_kj_mol"]),
+        "reaction_energy_kj_mol": float(scan["reaction_energy_kj_mol"]),
+        "reactant_point": int(scan["reactant_point"]["point"]),
         "highest_point": {k: v for k, v in top.items() if k != "qm_xyz"},
         "interior_maximum": bool(scan["interior_maximum"]),
         "n_energy_evaluations": int(scan["n_energy_evaluations"]),
