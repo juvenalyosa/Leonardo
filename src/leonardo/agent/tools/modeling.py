@@ -97,12 +97,13 @@ def _ca_table(sel):
 
 def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(), labels=None, start_pos=1,
                     num_models=5, seed=1, staged=None, align_to="", extra=None, card="", run_root=None,
-                    post_load=None):
+                    post_load=None, align_chain=""):
     """
     Run genmodels.buildm in a child process as a job and load the best model as ``name``.
     ``staged``: {template_code: pdb path} copied where buildm looks before downloading from RCSB.
     ``labels``: residue label per residue of the final sequence (numbering of the source structure);
-    otherwise the model is numbered from ``start_pos``. ``align_to``: object the model is superposed on.
+    otherwise the model is numbered from ``start_pos``. ``align_to``: object the model is superposed on
+    (only its chain ``align_chain`` when given: in a homodimer the other chain fits just as well).
     ``run_root``: run folder made beforehand (e.g. holding a fetched template); ``post_load(name)`` runs on the
     loaded best model and returns (changed: bool, result fields: dict).
     """
@@ -170,7 +171,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         cmd.load(best, name)
         fit = None
         if align_to and align_to in cmd.get_names("objects"):
-            fit = cmd.super(f"({name}) and name CA", f"({align_to}) and polymer and name CA")
+            target = f"({align_to}) and polymer and name CA" + (f' and chain "{align_chain}"' if align_chain else "")
+            fit = cmd.super(f"({name}) and name CA", target)
         renumbered = renumber(cmd)
         changed, post = False, {}
         if callable(post_load):
@@ -576,7 +578,8 @@ def register(reg):
         post_load = _hetero_copier(object, keep_hetero) if keep_hetero else None
         return _start_modeller(ctx, name, base, [code], final_sequence=mutated, labels=labels
                                if len(mutated) == len(base) else None, start_pos=int(entry["start"]),
-                               num_models=num_models, seed=seed, staged={code: path}, align_to=object, extra=extra,
+                               num_models=num_models, seed=seed, staged={code: path}, align_to=object,
+                               align_chain=chain, extra=extra,
                                card=f"Mutant **{name}** ({', '.join(mutations)}) of {object} chain {chain}",
                                post_load=post_load)
 
@@ -623,5 +626,5 @@ def register(reg):
                  "identity_to_reference": gap.get("identity"), "coverage": gap.get("coverage")}
         return _start_modeller(ctx, name, seq, [code], labels=[None if x is None else str(x) for x in gap.get("residue_labels") or []],
                                start_pos=int(entry["start"]), num_models=num_models, seed=seed, staged={code: path},
-                               align_to=object, extra=extra,
+                               align_to=object, align_chain=chain, extra=extra,
                                card=f"**{name}**: {n_fill} missing residue(s) of {object} chain {chain} built")

@@ -55,6 +55,53 @@ def test_bioseq_object_sequence_does_not_fuse_chains():
     assert bioseq._sequence_from(object="one") == "ACDEFGHIKLMN"
 
 
+def test_mutant_of_chain_b_is_superposed_on_chain_b(tmp_path, monkeypatch):
+    """The model of chain B of a homodimer was fitted on all Cα of the object and landed on chain A."""
+    import json
+    import os
+
+    import numpy as np
+
+    cmd.reinitialize()
+    cmd.load(os.path.join(os.path.dirname(__file__), "data", "components", "1UBQ.pdb"), "ca")
+    cmd.remove("ca and not polymer")
+    cmd.create("cb", "ca")
+    cmd.alter("cb", "chain = 'B'")
+    cmd.translate([30, 0, 0], "cb", camera=0)
+    cmd.create("dimer", "ca or cb")
+    cmd.delete("ca or cb")
+    cmd.create("_mdl", "dimer and chain B")         # stands in for MODELLER's model of chain B
+    cmd.alter("_mdl", "chain = 'A'")
+    cmd.translate([5, 40, -10], "_mdl", camera=0)
+    cmd.rotate("y", 70, "_mdl", camera=0)
+    run_root = tmp_path / "run"
+    (run_root / "pdbs").mkdir(parents=True)
+    cmd.save(str(run_root / "pdbs" / "m1.pdb"), "_mdl")
+    cmd.delete("_mdl")
+    (run_root / "agent_result.json").write_text(json.dumps({"best_model_path": "pdbs/m1.pdb"}))
+
+    class _Proc:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    class _Jobs:
+        def start(self, kind, poll, cancel=None, description=""):
+            return poll()
+
+    monkeypatch.setattr(modeling.subprocess, "Popen", lambda *a, **k: _Proc())
+    ctx = _Ctx()
+    ctx.jobs = _Jobs()
+    ctx.workspace = lambda sub="": str(tmp_path)
+    out = modeling._start_modeller(ctx, "mut", "A" * 76, ["sdimB"], run_root=str(run_root), align_to="dimer",
+                                   align_chain="B")
+    assert out["done"] and out["result"]["rmsd_to_source_A"] < 0.1
+    centre = np.array(cmd.get_coords("mut and name CA")).mean(0)
+    chain_b = np.array(cmd.get_coords("dimer and chain B and name CA")).mean(0)
+    assert np.linalg.norm(centre - chain_b) < 0.5
+
+
 def test_align_reports_moved_residues_and_colors_them():
     cmd.reinitialize()
     cmd.read_pdbstr(_HELIX, "ref")
