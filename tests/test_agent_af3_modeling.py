@@ -306,3 +306,38 @@ def test_server_json_from_af3_payload_skips_smiles_ligands(tmp_path):
     assert [e.get("proteinChain", e.get("ligand")) for e in job["sequences"]] == [
         {"sequence": "MKTAYIAK", "count": 1}, {"sequence": "MKTAYIAK", "count": 1}, {"ligand": "CCD_ATP", "count": 1}]
     assert skipped == ["CCO"]
+
+
+def test_prepare_af3_input_job_fasta_keeps_chains_separate(af_dlg, tmp_path):
+    """The job FASTA has one record per chain; the chains were fused into one protein before."""
+    out = _reg(alphafold).call("prepare_af3_input", dict(
+        sequence=f"{PROT}:{PROT[::-1]}", job_name="cplx", **_missing_dirs(tmp_path)), _Ctx(af_dlg, str(tmp_path)))
+    fasta = [p for p in os.listdir(out["job_dir"]) if p.endswith(".fasta")]
+    assert len(fasta) == 1
+    records = [ln for ln in open(os.path.join(out["job_dir"], fasta[0])).read().split("\n") if ln and ln[0] != ">"]
+    assert records == [PROT, PROT[::-1]]
+
+
+_UBQ = os.path.join(os.path.dirname(__file__), "data", "components", "1UBQ.pdb")
+
+
+def test_model_mutant_refuses_a_chain_with_missing_residues(app, tmp_path, monkeypatch):
+    """MODELLER bonds the residues on either side of a break (29 and 35 of a gapped ubiquitin end up 1.4 A
+    apart instead of 7.1 A), so a gapped chain is refused instead of being modelled with a false warning."""
+    import code_v2
+
+    cmd.reinitialize()
+    cmd.load(_UBQ, "ubq")
+    cmd.create("gapped", "ubq and not resi 30-34")
+    calls = {}
+    monkeypatch.setattr(modeling, "_start_modeller", lambda ctx, *a, **k: calls.update(args=a, kw=k) or {"job": 1})
+    dlg = code_v2.ProtLigInteractDialog()
+    try:
+        ctx = _Ctx(dlg, str(tmp_path))
+        with pytest.raises(ToolError, match="repair_structure_gaps"):
+            _reg(modeling).call("model_mutant", {"object": "gapped", "mutations": ["K48R"]}, ctx)
+        assert not calls
+        _reg(modeling).call("model_mutant", {"object": "ubq", "mutations": ["K48R"]}, ctx)
+        assert calls["kw"]["final_sequence"][47] == "R"
+    finally:
+        dlg.close()

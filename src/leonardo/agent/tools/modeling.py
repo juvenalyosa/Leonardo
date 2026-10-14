@@ -552,6 +552,14 @@ def register(reg):
         from ... import mutator
 
         chain, entry = _chain_entry(ctx, object, chain)
+        breaks = list(entry.get("chain_breaks") or [])
+        if breaks:
+            # the observed sequence has no break marker, so MODELLER would bond the residues on either side of
+            # each break and pull the chain together across the missing segment
+            where = ", ".join(f"{b.get('after')}/{b.get('before')}" for b in breaks[:8])
+            raise ToolError(f"chain {chain} of {object} is broken ({where}: missing residues); MODELLER would join "
+                            "the residues on either side of each break with a peptide bond and distort the "
+                            "structure. Run repair_structure_gaps first and mutate the repaired object.")
         base = str(entry["observed_seq"])
         labels = [str(x) for x in entry["residue_labels"]]
         try:
@@ -563,9 +571,6 @@ def register(reg):
             raise ToolError(f"an object named {name!r} already exists")
         code, path = _stage_self_template(ctx, object, chain)
         extra = {"source": object, "chain": chain, "mutations": list(mutations)}
-        if entry.get("internal_gaps"):
-            extra["warning"] = (f"chain {chain} has missing residues {entry['internal_gaps']}; they stay missing "
-                                "(use repair_structure_gaps first for a complete chain)")
         post_load = _hetero_copier(object, keep_hetero) if keep_hetero else None
         return _start_modeller(ctx, name, base, [code], final_sequence=mutated, labels=labels
                                if len(mutated) == len(base) else None, start_pos=int(entry["start"]),
