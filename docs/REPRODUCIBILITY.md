@@ -1,0 +1,45 @@
+# Reproducing Leonardo's calculations
+
+Leonardo's AI assistant turns a request into a sequence of tool calls. A language model is not deterministic:
+the same prompt can lead to slightly different tool calls on different runs, for example a different
+exhaustiveness or a different site radius. Reproducibility therefore does not come from the prompt. It comes
+from the **recorded tool calls**.
+
+Every tool call the assistant makes is recorded with its exact arguments, seeds included. A finished protocol can
+be saved as a **pipeline**, and a pipeline can be replayed without the AI.
+
+## Replay packs
+
+A replay pack is a folder with:
+
+- the input files;
+- `pipeline.json`, the exact tool calls;
+- `expected.json`, the reference values with tolerances;
+- `prompt.md`, the plain-language request.
+
+To check a pack on your own machine:
+
+```bash
+python -m leonardo.replay verify examples/films/01_molecular_docking
+```
+
+The command re-runs the pipeline headless, without the AI and without an API key. It compares every value with
+the reference, prints PASS or FAIL, and writes a report with your machine, Leonardo version and engine versions.
+`python -m leonardo.replay record <pack>` writes new reference values after a deliberate change.
+
+| Pack | Calculation | Status |
+|---|---|---|
+| [`examples/films/01_molecular_docking`](../examples/films/01_molecular_docking) | Trypsin + benzamidine redocking (smina/Vina) | Verified: same seed gives identical values; 8 other seeds stay within 0.002 Å and 0.006 kcal/mol |
+| Films 02–08 | QM/MM, molecular dynamics, mutations, protein design, ensemble redocking | Planned |
+
+## What "the same result" means for each engine
+
+| Engine | What to expect | Check |
+|---|---|---|
+| smina/Vina docking | Same seed: identical on the same build (measured). Other seeds: tiny spread for a well-defined pocket (measured for trypsin) | Values within tolerance, same success verdict |
+| Monte Carlo receptor ensembles | Identical with `reproducible=True` (CPU, one thread). Measured and covered by a test | Exact |
+| Molecular dynamics (OpenMM) | Trajectories diverge between machines and on GPUs; averages do not | Statistics within a confidence interval |
+| Quantum chemistry (Psi4, MOPAC) | Deterministic to about 1e-6 | Energies within 0.01 kcal/mol |
+
+The tolerances in each pack are set from repeated runs. So far they have been measured only on macOS (Apple
+Silicon); results from other machines are welcome.

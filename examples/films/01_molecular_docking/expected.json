@@ -1,0 +1,70 @@
+{
+ "description": "Reference values from a recorded run; tolerances from repeated runs and other seeds (see README.md).",
+ "metrics": {
+  "success_count": {
+   "path": "2.top1_success",
+   "kind": "exact",
+   "value": "3/3 repeats with RMSD <= 2 A"
+  },
+  "repeat1_seed": {
+   "path": "2.repeats.0.seed",
+   "kind": "exact",
+   "value": 20260915
+  },
+  "repeat1_top1_rmsd_A": {
+   "path": "2.repeats.0.top1_rmsd_A",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.3865713963091999
+  },
+  "repeat1_top1_score_kcal_mol": {
+   "path": "2.repeats.0.top1_score_kcal_mol",
+   "kind": "abs",
+   "tol": 0.1,
+   "value": -6.11103392
+  },
+  "repeat2_top1_rmsd_A": {
+   "path": "2.repeats.1.top1_rmsd_A",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.3868206589909883
+  },
+  "repeat2_top1_score_kcal_mol": {
+   "path": "2.repeats.1.top1_score_kcal_mol",
+   "kind": "abs",
+   "tol": 0.1,
+   "value": -6.11436224
+  },
+  "repeat3_top1_rmsd_A": {
+   "path": "2.repeats.2.top1_rmsd_A",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.38671996759067623
+  },
+  "repeat3_top1_score_kcal_mol": {
+   "path": "2.repeats.2.top1_score_kcal_mol",
+   "kind": "abs",
+   "tol": 0.1,
+   "value": -6.11190653
+  },
+  "shown_pose_rmsd_A": {
+   "path": "2.shown_pose.rmsd_A",
+   "kind": "abs",
+   "tol": 0.15,
+   "value": 0.3868206589909883
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a9 (2026-10-13-r1)",
+  "python": "3.11.14",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-14T10:01:37",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ }
+}

@@ -91,3 +91,6 @@ draft/results/pipeline_comparison_statistics.csv
 draft/results/abfe_lite_diagnostic_pmf.csv
 draft/results/redocking_seed_summary_3ptb_ben.csv
 redocking_real_1hsg/
+
+# replay packs: machine-specific verification reports
+examples/films/*/last_report.json
