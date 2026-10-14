@@ -20,6 +20,28 @@ def _cmd():
     return cmd
 
 
+_Z = {"H": 1, "C": 6, "N": 7, "O": 8, "F": 9, "P": 15, "S": 16, "CL": 17, "BR": 35, "I": 53}
+
+
+def _atomic_number(element):
+    sym = str(element or "").strip()
+    if sym.upper() in _Z:
+        return _Z[sym.upper()]
+    try:
+        from openmm.app import element
+
+        return int(element.Element.getBySymbol(sym[:1].upper() + sym[1:].lower()).atomic_number)
+    except Exception:
+        return None
+
+
+def electron_count(atoms, charge):
+    """Electrons of a molecule from its atoms' elements (any element: Fe, Zn, Mg, Se...) and net charge;
+    None when an element is unknown (never counted as carbon)."""
+    z = [_atomic_number(a.get("element", "")) for a in atoms]
+    return None if None in z else sum(z) - int(charge)
+
+
 def _need_object(name):
     if name not in _cmd().get_names("objects"):
         raise ToolError(f"no object named {name!r}")
@@ -304,15 +326,14 @@ def register(reg):
         with _headless.quiet() as q:
             dlg._psi4_auto_charge_multiplicity(atoms=atoms, source_file="", source_meta={}, quiet=True)
         charge, mult = int(dlg.spin_psi4_charge.value()), int(dlg.spin_psi4_mult.value())
-        z = {"H": 1, "C": 6, "N": 7, "O": 8, "F": 9, "P": 15, "S": 16, "CL": 17, "BR": 35, "I": 53}
-        n_el = sum(z.get(str(a.get("element", "C")).upper(), 6) for a in atoms) - charge
+        n_el = electron_count(atoms, charge)
         hyd = sum(1 for a in atoms if str(a.get("element", "")).upper() == "H")
         notes = [m["text"][:300] for m in q.messages]
         return {"charge": charge, "multiplicity": mult, "atoms": len(atoms), "electrons": n_el,
                 "hydrogens_present": hyd, "notes": notes[:3],
                 "warning": "no hydrogens in the selection: add them (or use the protonated ligand) before QM"
                 if hyd == 0 else "",
-                "_card": f"Charge **{charge:+d}**, multiplicity **{mult}** ({len(atoms)} atoms, {n_el} electrons)"
+                "_card": f"Charge **{charge:+d}**, multiplicity **{mult}** ({len(atoms)} atoms, {n_el if n_el is not None else '?'} electrons)"
                          + ("; ⚠ no hydrogens in the selection, so the charge ignores protonation: use the "
                             "protonated ligand (prepare_docking_ligand / compute_pka) for QM" if hyd == 0 else "")
                          + "."}

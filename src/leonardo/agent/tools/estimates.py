@@ -131,7 +131,15 @@ def estimate(ctx, tool, args):
         m = n * 0.15 * 8.0 / max(1, int(thr.get("smina") or 4))
         return {"minutes": round(m, 1), "text": f"~{hw._fmt(m)} for up to {n} analogs"}
     if tool in ("build_homology_model", "model_mutant", "repair_structure_gaps"):
-        n_res = len(str(a.get("sequence", ""))) or 300
+        if tool == "model_mutant" and a.get("method") == "local":
+            return {"minutes": 0.1, "text": "~seconds (only the mutated side chains are rebuilt)"}
+        n_res = len(str(a.get("sequence", "")))
+        if not n_res and a.get("object"):
+            # mutants and gap repairs model one chain of a loaded structure (there is no sequence argument)
+            chain = str(a.get("chain") or "")
+            n_res = _count(f"({a['object']}) and polymer.protein and name CA"
+                           + (f" and chain {chain}" if chain else ""))
+        n_res = n_res or 300
         m = 0.2 + int(a.get("num_models", 5 if tool == "build_homology_model" else 3)) * n_res * 0.0007
         return {"minutes": round(m, 1), "text": f"~{hw._fmt(m)} (MODELLER)"}
     if tool == "predict_structure_alphafold":
