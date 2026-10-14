@@ -95,7 +95,8 @@ def test_out_of_range_values_are_reported_not_clamped():
     from leonardo.agent.tools._widgets import set_value
     from leonardo.agent.ui.style import pill_style
 
-    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    # keep a reference: an unreferenced QApplication is collected at once and the next widget aborts Python
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])  # noqa: F841
 
     class Dlg:
         spin = QtWidgets.QSpinBox()
