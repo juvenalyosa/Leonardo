@@ -946,13 +946,19 @@ def _extract_first_float(text, patterns):
     return None
 
 
+def _aux_key_pattern(key):
+    # The key must start its line and may only be followed by units and a size ("GRADIENTS:KCAL/MOL/ANGSTROM[09]="):
+    # a bare prefix match took GRADIENTS_UPDATED, the first step of an EF/TS optimization, for the final GRADIENTS.
+    return rf"^\s*{re.escape(key)}(?::[^\[=\n]*)?(?:\[\d+\])?\s*="
+
+
 def _extract_float_vector_after_key(text, key):
     src = str(text or "")
     k = str(key or "").strip()
     if not k:
         return np.zeros((0,), dtype=float)
     pat = (
-        rf"{re.escape(k)}[^\n=]*=\s*(.*?)"
+        rf"{_aux_key_pattern(k)}\s*(.*?)"
         rf"(?=\n\s*[A-Z][A-Z0-9_./:\-\[\]\(\)]*[^\n=]*=|\Z)"
     )
     m = re.search(pat, src, flags=re.IGNORECASE | re.DOTALL | re.MULTILINE)
@@ -971,7 +977,7 @@ def _extract_token_vector_after_key(text, key):
     k = str(key or "").strip()
     if k:
         pat = (
-            rf"{re.escape(k)}[^\n=]*=\s*(.*?)"
+            rf"{_aux_key_pattern(k)}\s*(.*?)"
             rf"(?=\n\s*[A-Z][A-Z0-9_./:\-\[\]\(\)]*[^\n=]*=|\Z)"
         )
         m = re.search(pat, src, flags=re.IGNORECASE | re.DOTALL | re.MULTILINE)
