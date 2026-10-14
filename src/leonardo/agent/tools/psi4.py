@@ -464,11 +464,22 @@ def register_cluster(reg):
         set_combo(dlg, "cmb_psi4_method", method)
         set_combo(dlg, "cmb_psi4_basis", basis)
         set_value(dlg, "spin_psi4_threads", int(threads or recommended(ctx, "psi4", 4)))
-        set_value(dlg, "cb_psi4_auto_spin", charge is None and multiplicity is None)
-        if charge is not None:
-            set_value(dlg, "spin_psi4_charge", int(charge))
-        if multiplicity is not None:
-            set_value(dlg, "spin_psi4_mult", int(multiplicity))
+        # Leonardo's auto mode has no charge source for a cluster and reuses the charge spin box (the previous
+        # job's value): resolve charge/multiplicity here, from the call and the cluster's electron count
+        from .qmviz import _Z
+
+        z = [_Z.get(str(a.get("element", "")).strip().capitalize(), 0) for a in _cluster_atoms(dlg)]
+        n_el = sum(z) if all(z) else None
+        if charge is None and multiplicity is None and n_el is not None and n_el % 2:
+            raise ToolError(f"the cluster has an odd number of electrons ({n_el}) at charge 0: give its charge "
+                            "(e.g. -1 per Asp/Glu carboxylate or thiolate, +1 per Lys/Arg/protonated His) and, "
+                            "for a radical, the multiplicity")
+        charge = 0 if charge is None else int(charge)
+        if multiplicity is None:
+            multiplicity = 1 if n_el is None or (n_el - charge) % 2 == 0 else 2
+        set_value(dlg, "cb_psi4_auto_spin", False)
+        set_value(dlg, "spin_psi4_charge", int(charge))
+        set_value(dlg, "spin_psi4_mult", int(multiplicity))
         for attr, val in (("cb_psi4_cluster_preopt", preoptimize), ("cb_psi4_cluster_classical", classical_premin),
                           ("cb_psi4_cluster_run_qst3", qst3_refine), ("cb_psi4_cluster_run_irc", irc),
                           ("cb_psi4_cluster_freeze_backbone", freeze_backbone)):

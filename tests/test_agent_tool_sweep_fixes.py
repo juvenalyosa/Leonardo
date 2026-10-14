@@ -139,6 +139,29 @@ def test_psi4_charge_and_multiplicity_from_the_molecule_not_the_last_job(dialog)
     assert _psi4_spin(dialog, object="acetate", charge=-1) == (-1, 1)
 
 
+def test_cluster_reaction_does_not_inherit_the_previous_charge(dialog, monkeypatch):
+    from pymol import cmd
+
+    cmd.load(os.path.join(DATA, "GGCGG.pdb"), "pepc")
+    cmd.remove("pepc and elem H")
+    cmd.h_add("pepc")
+    ctx = AgentContext(dialog)
+    reg = build_registry(ctx)
+    reg.call("build_reaction_cluster", {"object": "pepc", "center_selection": "pepc and resi 3 and name SG",
+                                        "radius_A": 3.0}, ctx)
+    monkeypatch.setattr(dialog, "_on_psi4_cluster_run_workflow", lambda *a, **k: None)
+    dialog.spin_psi4_charge.setValue(1)          # left over from an earlier job (e.g. NH4+)
+    dialog.spin_psi4_mult.setValue(2)
+    reg.call("run_cluster_reaction", {"bonds_forming": [["pepc and resi 3 and name SG", "pepc and resi 3 and name N"]],
+                                      "method": "hf", "basis": "sto-3g"}, ctx)
+    if dialog.cb_psi4_auto_spin.isChecked():     # before the fix: auto mode, which reads that spin box
+        atoms = list(dialog._psi4_cluster_state.get("reactant_atoms") or dialog._psi4_cluster_state.get("atoms"))
+        got = dialog._psi4_auto_charge_multiplicity(atoms=atoms, quiet=True)[:2]
+    else:
+        got = (dialog.spin_psi4_charge.value(), dialog.spin_psi4_mult.value())
+    assert got == (0, 1)
+
+
 def test_psi4_orbital_energies_of_an_open_shell_job(tmp_path):
     (tmp_path / "psi4_run.out").write_text(
         "    Alpha Occupied:\n\n       1A    -11.005535     2A     -0.904490\n       5A     -0.356248\n\n"
