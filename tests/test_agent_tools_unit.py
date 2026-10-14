@@ -130,6 +130,48 @@ def test_redrawn_ring_discs_keep_the_interaction_color():
         cmd.reinitialize()
 
 
+def trajectory_build_selected_trace_payload(rid):
+    """Stands in for code_v2's function (interaction_distribution spies on the dialog's module)."""
+    return {"occupancy_pct": 50.0, "distance_mean": 2.9, "n_frames": 4, "rid": rid}
+
+
+class _TrajDlg:
+    loaded_object = ""
+
+    def _on_compute_reference_interactions(self):
+        mk = [("Hydrogen Bond", "ASP", "A", "189"), ("Hydrophobic", "LEU", "A", "768"),
+              ("Van der Waals", "MET", "B", "769")]
+        self.interactions = [{"type": t, "prot_res": f"{n} {c}{r}", "prot_resn": n, "prot_chain": c, "prot_resi": r,
+                              "prot_atom": "X", "lig_atom": "Y", "distance": 3.0} for t, n, c, r in mk]
+
+    def _run_selected_interaction_distribution(self):
+        trajectory_build_selected_trace_payload(self._last_clicked_rid)
+
+
+def test_interaction_distribution_finds_the_residue_as_documented():
+    """The description's example ('ASP189') never matched Leonardo's 'ASP A189'; 'A76' matched 'LEU A768'."""
+    from pymol import cmd
+
+    from leonardo.agent.registry import ToolError
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.pseudoatom("traj", pos=[0.0, 0.0, 0.0])
+    dlg = _TrajDlg()
+    ctx = AgentContext(dlg)
+    reg = build_registry(ctx)
+    try:
+        for name, rid in (("ASP189", 0), ("asp 189", 0), ("A:768", 1), ("MET B769", 2), ("B:MET769", 2)):
+            out = reg.call("interaction_distribution", {"object": "traj", "residue": name}, ctx)
+            assert dlg._last_clicked_rid == rid, name
+            assert out["frames"] == 4
+        for wrong in ("A76", "ASP18", "B:189"):
+            with pytest.raises(ToolError, match="no interaction"):
+                reg.call("interaction_distribution", {"object": "traj", "residue": wrong}, ctx)
+    finally:
+        cmd.reinitialize()
+
+
 def test_describe_object_counts_only_its_own_residues_for_a_blank_chain():
     """'chain  and name CA' (blank chain id) selected the alpha carbons of every other object: an MD/SDF
     structure without chain ids was reported with the residues of the whole session."""

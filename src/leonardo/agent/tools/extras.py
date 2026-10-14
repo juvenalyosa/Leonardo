@@ -25,6 +25,21 @@ def _need_object(name):
         raise ToolError(f"no object named {name!r}")
 
 
+def _residue_keys(it):
+    """The ways a user names the protein residue of an interaction ('ASP189', 'ASP A189', 'A:189', 'A:ASP189',
+    '189'); Leonardo's prot_res is 'ASP A189', so a substring test never matched 'ASP189' (and 'A76'
+    matched 'LEU A768')."""
+    resn = str(it.get("prot_resn") or "").upper()
+    chain = str(it.get("prot_chain") or "").upper()
+    resi = str(it.get("prot_resi") or "").upper()
+    if not resi:
+        m = re.match(r"^\s*(\S+)\s+(\S+)\s*$", str(it.get("prot_res", "")))
+        resn, resi = (m.group(1).upper(), m.group(2).upper()) if m else (resn, resi)
+    keys = {resn + resi, resn + chain + resi, f"{chain}:{resi}", f"{chain}:{resn}{resi}", resi,
+            str(it.get("prot_res", "")).upper().replace(" ", "")}
+    return {k for k in keys if k and k != ":"}
+
+
 def register(reg):
     # -- docking setup ---------------------------------------------------------------------------- #
     @reg.tool("set_docking_box", "Define the docking box by hand: centered on a selection (e.g. a crystal ligand "
@@ -181,7 +196,7 @@ def register(reg):
             dlg._on_compute_reference_interactions()
         inter = list(getattr(dlg, "interactions", []) or [])
         key = str(residue).upper().replace(" ", "")
-        idx = [i for i, it in enumerate(inter) if key in str(it.get("prot_res", "")).upper().replace(" ", "")
+        idx = [i for i, it in enumerate(inter) if key in _residue_keys(it)
                and (not interaction_type or interaction_type.lower() in str(it.get("type", "")).lower())]
         if not idx:
             raise ToolError(f"no interaction with {residue} in the reference frame; interactions: "
