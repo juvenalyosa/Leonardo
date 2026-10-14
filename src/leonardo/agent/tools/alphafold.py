@@ -442,7 +442,7 @@ def register(reg):
         job_name = re.sub(r"[^A-Za-z0-9_]", "_", str(job_name)) or "af3_job"
         payload = af3_payload(job_name, chains, ligands or [], dna_sequences or [], rna_sequences or [], seed)
         _af3_settings(ctx, "auto", af3_model_dir, af3_db_dir, af3_docker_image, seed)
-        set_value(dlg, "txt_af_sequence", "".join(chains))
+        set_value(dlg, "txt_af_sequence", ":".join(chains))  # chains stay separate in the job FASTA
         set_value(dlg, "edit_af_job_name", job_name)
         bundle = None
         with _headless.quiet() as q, _Af3JsonPatch(dlg, payload):

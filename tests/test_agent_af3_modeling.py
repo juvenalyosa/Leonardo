@@ -306,3 +306,61 @@ def test_server_json_from_af3_payload_skips_smiles_ligands(tmp_path):
     assert [e.get("proteinChain", e.get("ligand")) for e in job["sequences"]] == [
         {"sequence": "MKTAYIAK", "count": 1}, {"sequence": "MKTAYIAK", "count": 1}, {"ligand": "CCD_ATP", "count": 1}]
     assert skipped == ["CCO"]
+
+
+def test_prepare_af3_input_job_fasta_keeps_chains_separate(af_dlg, tmp_path):
+    """The job FASTA has one record per chain; the chains were fused into one protein before."""
+    out = _reg(alphafold).call("prepare_af3_input", dict(
+        sequence=f"{PROT}:{PROT[::-1]}", job_name="cplx", **_missing_dirs(tmp_path)), _Ctx(af_dlg, str(tmp_path)))
+    fasta = [p for p in os.listdir(out["job_dir"]) if p.endswith(".fasta")]
+    assert len(fasta) == 1
+    records = [ln for ln in open(os.path.join(out["job_dir"], fasta[0])).read().split("\n") if ln and ln[0] != ">"]
+    assert records == [PROT, PROT[::-1]]
+
+
+_UBQ = os.path.join(os.path.dirname(__file__), "data", "components", "1UBQ.pdb")
+
+
+def test_model_mutant_refuses_a_chain_with_missing_residues(app, tmp_path, monkeypatch):
+    """MODELLER bonds the residues on either side of a break (29 and 35 of a gapped ubiquitin end up 1.4 A
+    apart instead of 7.1 A), so a gapped chain is refused instead of being modelled with a false warning."""
+    import code_v2
+
+    cmd.reinitialize()
+    cmd.load(_UBQ, "ubq")
+    cmd.create("gapped", "ubq and not resi 30-34")
+    calls = {}
+    monkeypatch.setattr(modeling, "_start_modeller", lambda ctx, *a, **k: calls.update(args=a, kw=k) or {"job": 1})
+    dlg = code_v2.ProtLigInteractDialog()
+    try:
+        ctx = _Ctx(dlg, str(tmp_path))
+        with pytest.raises(ToolError, match="repair_structure_gaps"):
+            _reg(modeling).call("model_mutant", {"object": "gapped", "mutations": ["K48R"]}, ctx)
+        assert not calls
+        _reg(modeling).call("model_mutant", {"object": "ubq", "mutations": ["K48R"]}, ctx)
+        assert calls["kw"]["final_sequence"][47] == "R"
+    finally:
+        dlg.close()
+
+
+def test_model_mutant_keeps_structure_labels_only_when_no_residue_moves(app, tmp_path, monkeypatch):
+    """K6del + L8_T9insA keeps the length, but T7 and L8 move one place: labelling the model with the
+    structure's numbers by position would call T7 '6' and L8 '7'."""
+    import code_v2
+
+    cmd.reinitialize()
+    cmd.load(_UBQ, "ubq")
+    cmd.alter("ubq and resi 10", "resi = '9A'")       # an insertion code in the numbering
+    calls = []
+    monkeypatch.setattr(modeling, "_start_modeller", lambda ctx, *a, **k: calls.append(k) or {"job": 1})
+    dlg = code_v2.ProtLigInteractDialog()
+    try:
+        ctx = _Ctx(dlg, str(tmp_path))
+        for i, muts in enumerate((["K6del", "L8_T9insA"], ["K6R", "T7_L8delinsAA", "G9AdelinsS"],
+                                  ["T7_L8delinsA"])):
+            _reg(modeling).call("model_mutant", {"object": "ubq", "mutations": muts, "name": f"m{i}"}, ctx)
+        assert calls[0]["final_sequence"][:10] == "MQIFVTLATG" and calls[0]["labels"] is None
+        assert calls[1]["labels"][:10] == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "9A"]
+        assert calls[2]["labels"] is None
+    finally:
+        dlg.close()

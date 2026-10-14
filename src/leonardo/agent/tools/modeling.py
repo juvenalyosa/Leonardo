@@ -97,12 +97,13 @@ def _ca_table(sel):
 
 def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(), labels=None, start_pos=1,
                     num_models=5, seed=1, staged=None, align_to="", extra=None, card="", run_root=None,
-                    post_load=None):
+                    post_load=None, align_chain=""):
     """
     Run genmodels.buildm in a child process as a job and load the best model as ``name``.
     ``staged``: {template_code: pdb path} copied where buildm looks before downloading from RCSB.
     ``labels``: residue label per residue of the final sequence (numbering of the source structure);
-    otherwise the model is numbered from ``start_pos``. ``align_to``: object the model is superposed on.
+    otherwise the model is numbered from ``start_pos``. ``align_to``: object the model is superposed on
+    (only its chain ``align_chain`` when given: in a homodimer the other chain fits just as well).
     ``run_root``: run folder made beforehand (e.g. holding a fetched template); ``post_load(name)`` runs on the
     loaded best model and returns (changed: bool, result fields: dict).
     """
@@ -170,7 +171,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
         cmd.load(best, name)
         fit = None
         if align_to and align_to in cmd.get_names("objects"):
-            fit = cmd.super(f"({name}) and name CA", f"({align_to}) and polymer and name CA")
+            target = f"({align_to}) and polymer and name CA" + (f' and chain "{align_chain}"' if align_chain else "")
+            fit = cmd.super(f"({name}) and name CA", target)
         renumbered = renumber(cmd)
         changed, post = False, {}
         if callable(post_load):
@@ -203,6 +205,8 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
                      + f"; best DOPE **{scores[0]['dope'] if scores else 'n/a'}** (lower is better; compare only "
                        "models of the same sequence).",
         }
+        if meta.get("modeller_seed") is not None:
+            result["modeller_seed"] = meta["modeller_seed"]       # drawn at random when seed=0
         if fit is not None:
             result["rmsd_to_source_A"] = round(float(fit[0]), 2)
         result.update(extra or {})
@@ -552,6 +556,14 @@ def register(reg):
         from ... import mutator
 
         chain, entry = _chain_entry(ctx, object, chain)
+        breaks = list(entry.get("chain_breaks") or [])
+        if breaks:
+            # the observed sequence has no break marker, so MODELLER would bond the residues on either side of
+            # each break and pull the chain together across the missing segment
+            where = ", ".join(f"{b.get('after')}/{b.get('before')}" for b in breaks[:8])
+            raise ToolError(f"chain {chain} of {object} is broken ({where}: missing residues); MODELLER would join "
+                            "the residues on either side of each break with a peptide bond and distort the "
+                            "structure. Run repair_structure_gaps first and mutate the repaired object.")
         base = str(entry["observed_seq"])
         labels = [str(x) for x in entry["residue_labels"]]
         try:
@@ -563,13 +575,17 @@ def register(reg):
             raise ToolError(f"an object named {name!r} already exists")
         code, path = _stage_self_template(ctx, object, chain)
         extra = {"source": object, "chain": chain, "mutations": list(mutations)}
-        if entry.get("internal_gaps"):
-            extra["warning"] = (f"chain {chain} has missing residues {entry['internal_gaps']}; they stay missing "
-                                "(use repair_structure_gaps first for a complete chain)")
         post_load = _hetero_copier(object, keep_hetero) if keep_hetero else None
+        # the structure's labels fit the mutant only when no residue moves: a deletion plus an insertion of
+        # the same total length keeps the length but shifts every residue between them
+        keys = [mutator._label_to_key(x) for x in labels]
+        same_positions = all(p["kind"] == "sub" or (p["kind"] == "delins" and keys.index(p["end"])
+                                                    - keys.index(p["start"]) + 1 == len(p["insertion"]))
+                             for p in map(mutator.parse_mutation_label, mutations))
         return _start_modeller(ctx, name, base, [code], final_sequence=mutated, labels=labels
-                               if len(mutated) == len(base) else None, start_pos=int(entry["start"]),
-                               num_models=num_models, seed=seed, staged={code: path}, align_to=object, extra=extra,
+                               if same_positions else None, start_pos=int(entry["start"]),
+                               num_models=num_models, seed=seed, staged={code: path}, align_to=object,
+                               align_chain=chain, extra=extra,
                                card=f"Mutant **{name}** ({', '.join(mutations)}) of {object} chain {chain}",
                                post_load=post_load)
 
@@ -616,5 +632,5 @@ def register(reg):
                  "identity_to_reference": gap.get("identity"), "coverage": gap.get("coverage")}
         return _start_modeller(ctx, name, seq, [code], labels=[None if x is None else str(x) for x in gap.get("residue_labels") or []],
                                start_pos=int(entry["start"]), num_models=num_models, seed=seed, staged={code: path},
-                               align_to=object, extra=extra,
+                               align_to=object, align_chain=chain, extra=extra,
                                card=f"**{name}**: {n_fill} missing residue(s) of {object} chain {chain} built")
