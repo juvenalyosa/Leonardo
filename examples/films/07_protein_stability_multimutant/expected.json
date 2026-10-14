@@ -1,0 +1,62 @@
+{
+ "description": "Reference values from a recorded run; designs are refined reproducibly (seeded, single CPU thread). Structural design and rigidity model, not a measured stability.",
+ "metrics": {
+  "candidates": {
+   "path": "2.n_candidates",
+   "kind": "exact",
+   "value": 18
+  },
+  "designs_refined": {
+   "path": "2.designs|count",
+   "kind": "exact",
+   "value": 5
+  },
+  "designs_passing": {
+   "path": "2.n_passing",
+   "kind": "exact",
+   "value": 4
+  },
+  "best_design": {
+   "path": "2.best.label",
+   "kind": "exact",
+   "value": "A20C/A26C"
+  },
+  "best_ss_A": {
+   "path": "2.best.ss_A",
+   "kind": "abs",
+   "tol": 0.02,
+   "value": 2.037
+  },
+  "best_chi3_deg": {
+   "path": "2.best.chi3_deg",
+   "kind": "abs",
+   "tol": 3.0,
+   "value": 84.8
+  },
+  "best_ca_shift_A": {
+   "path": "2.best.ca_rmsd_A",
+   "kind": "abs",
+   "tol": 0.05,
+   "value": 0.2
+  },
+  "best_pair_motion_change_pct": {
+   "path": "2.best.rigidity.pair_relative_motion_change_pct",
+   "kind": "abs",
+   "tol": 1.0,
+   "value": -41.14043508029742
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a9 (2026-10-13-r1)",
+  "python": "3.11.14",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-14T13:25:13",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ }
+}

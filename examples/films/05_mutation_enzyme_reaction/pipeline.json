@@ -1,0 +1,84 @@
+{
+ "name": "Film 05 - DhlA wild type vs W125A, QM/MM reaction paths",
+ "slug": "film05_dhla_w125a_reaction_path",
+ "description": "First step of DhlA (Asp124 OD2 attacks C1 of 1,2-dichloroethane, CL1 leaves) in the wild type and in the W125A mutant (Trp125 lines the halide-binding site), each with the same QM/MM reaction-path workflow: reactant and product minima, climbing-image NEB path (QST2-type), dimer TS with frequencies, IRC connecting reactant and product. MOPAC PM7 embedded in Amber14, QM region = dichloroethane + Asp124 side chain (charge -1). Mutant built locally: only residue 125 is rebuilt and every other atom (substrate and waters included) keeps its exact position, so the two QM/MM environments differ only at the mutation.",
+ "format": 1,
+ "parameters": {
+  "pack": {
+   "default": ".",
+   "description": "this pack's folder (filled in by leonardo.replay)"
+  }
+ },
+ "steps": [
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/2DHC.pdb",
+    "object_name": "dhla_2DHC"
+   }
+  },
+  {
+   "tool": "run_qmmm",
+   "args": {
+    "object": "{{step:1.object}}",
+    "operation": "reaction_path",
+    "region_mode": "pymol_selection",
+    "qm_selection": "resn DCE or (resi 124 and name CB+CG+OD1+OD2)",
+    "qm_charge": -1,
+    "qm_multiplicity": 1,
+    "solvent": "gas",
+    "form_bonds": [
+     [
+      "resi 124 and name OD2",
+      "resn DCE and name C1"
+     ]
+    ],
+    "break_bonds": [
+     [
+      "resn DCE and name C1",
+      "resn DCE and name CL1"
+     ]
+    ],
+    "path_images": 9
+   }
+  },
+  {
+   "tool": "model_mutant",
+   "args": {
+    "object": "{{step:1.object}}",
+    "mutations": [
+     "W125A"
+    ],
+    "chain": "A",
+    "name": "dhla_W125A",
+    "method": "local",
+    "seed": 1
+   }
+  },
+  {
+   "tool": "run_qmmm",
+   "args": {
+    "object": "{{step:3.object}}",
+    "operation": "reaction_path",
+    "region_mode": "pymol_selection",
+    "qm_selection": "resn DCE or (resi 124 and name CB+CG+OD1+OD2)",
+    "qm_charge": -1,
+    "qm_multiplicity": 1,
+    "solvent": "gas",
+    "form_bonds": [
+     [
+      "resi 124 and name OD2",
+      "resn DCE and name C1"
+     ]
+    ],
+    "break_bonds": [
+     [
+      "resn DCE and name C1",
+      "resn DCE and name CL1"
+     ]
+    ],
+    "path_images": 9
+   }
+  }
+ ]
+}

@@ -1,0 +1,89 @@
+{
+ "description": "Reference values from a recorded run (QM/MM potential energies with the protein fixed, kJ/mol; not free energies). Tolerances from repeated runs (see README.md).",
+ "metrics": {
+  "wt_ok": {
+   "path": "2.ok",
+   "kind": "exact",
+   "value": true
+  },
+  "wt_irc_connects": {
+   "path": "2.irc.connects_reactant_and_product",
+   "kind": "exact",
+   "value": true
+  },
+  "wt_ts_imaginary_modes": {
+   "path": "2.ts.frequency_validation.imaginary_mode_count",
+   "kind": "exact",
+   "value": 1
+  },
+  "wt_imaginary_cm1": {
+   "path": "2.imaginary_cm1",
+   "kind": "abs",
+   "tol": 20.0,
+   "value": 403.67573
+  },
+  "wt_barrier_kj_mol": {
+   "path": "2.barrier_kj_mol",
+   "kind": "abs",
+   "tol": 2.0,
+   "value": 33.83327
+  },
+  "wt_reaction_energy_kj_mol": {
+   "path": "2.reaction_energy_kj_mol",
+   "kind": "abs",
+   "tol": 4.0,
+   "value": -101.07969
+  },
+  "w125a_ok": {
+   "path": "4.ok",
+   "kind": "exact",
+   "value": true
+  },
+  "w125a_irc_connects": {
+   "path": "4.irc.connects_reactant_and_product",
+   "kind": "exact",
+   "value": true
+  },
+  "w125a_ts_imaginary_modes": {
+   "path": "4.ts.frequency_validation.imaginary_mode_count",
+   "kind": "exact",
+   "value": 1
+  },
+  "w125a_imaginary_cm1": {
+   "path": "4.imaginary_cm1",
+   "kind": "abs",
+   "tol": 20.0,
+   "value": 425.06001
+  },
+  "w125a_barrier_kj_mol": {
+   "path": "4.barrier_kj_mol",
+   "kind": "abs",
+   "tol": 2.0,
+   "value": 43.15791
+  },
+  "w125a_reaction_energy_kj_mol": {
+   "path": "4.reaction_energy_kj_mol",
+   "kind": "abs",
+   "tol": 4.0,
+   "value": -81.7119
+  },
+  "mutant_max_shift_outside_A": {
+   "path": "3.max_shift_outside_mutation_A",
+   "kind": "max",
+   "value": 0.0
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a9 (2026-10-13-r1)",
+  "python": "3.11.14",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-14T13:18:54",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ }
+}

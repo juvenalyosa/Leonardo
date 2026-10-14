@@ -174,3 +174,25 @@ def test_replay_stops_at_a_cancelled_job(tmp_path, monkeypatch):
     monkeypatch.setattr(replay, "_headless_leonardo", lambda work: (App(), Ctx(), Reg()))
     with pytest.raises(RuntimeError, match=r"step 1 \(run_md\) cancelled"):
         replay.run_pipeline(str(pack), str(tmp_path))
+
+
+def test_local_mutant_keeps_every_other_atom_in_place(tmp_path):
+    pytest.importorskip("pdbfixer")
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.load(os.path.join(REPO, "examples", "films", "02_dhla_reaction_qmmm", "2DHC.pdb"), "wt")
+    ctx = AgentContext(None)
+    ctx.workspace = lambda sub="": str(tmp_path / sub) if os.makedirs(tmp_path / sub, exist_ok=True) is None else ""
+    reg = build_registry(ctx)
+    res = reg.call("model_mutant", {"object": "wt", "mutations": ["W125A"], "chain": "A", "method": "local",
+                                    "name": "w125a"}, ctx)
+    assert res["max_shift_outside_mutation_A"] < 1e-3 and res["unchanged_atoms"] > 2000
+    assert cmd.count_atoms("w125a and resi 125 and resn ALA and name CB") == 1
+    assert cmd.count_atoms("w125a and resi 125 and name NE1") == 0
+    assert cmd.count_atoms("w125a and resn DCE") == 4 and cmd.count_atoms("w125a and resn HOH") > 0
+    with pytest.raises(Exception):
+        reg.call("model_mutant", {"object": "wt", "mutations": ["G125A"], "chain": "A", "method": "local"}, ctx)

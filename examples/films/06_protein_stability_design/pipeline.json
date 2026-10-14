@@ -1,0 +1,13 @@
+{
+ "name": "Film 06 - protein G B1 disulfide design",
+ "slug": "06_protein_stability_design",
+ "description": "Design disulfide bonds for protein G B1 (PDB 1PGA): refine the 12 best candidate pairs as Cys/Cys models with Amber14 and pick the best one that passes the natural-disulfide filters; report how much the cross-link stiffens the protein (Gaussian network model).",
+ "format": 1,
+ "parameters": {
+  "pack": {"default": ".", "description": "this pack's folder (filled in by leonardo.replay)"}
+ },
+ "steps": [
+  {"tool": "load_structure_file", "args": {"path": "{{pack}}/1PGA.pdb", "object_name": "proteinG_1PGA"}},
+  {"tool": "design_disulfides", "args": {"object": "{{step:1.object}}", "max_candidates": 12, "seed": 20260915}}
+ ]
+}

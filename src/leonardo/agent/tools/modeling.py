@@ -230,6 +230,96 @@ def _component_label(comp):
     return f"{comp.get('resn', '?')} {comp.get('chain', '') or '-'}:{comp.get('resi', '?')} ({comp.get('category', '')})"
 
 
+_THREE = {"A": "ALA", "R": "ARG", "N": "ASN", "D": "ASP", "C": "CYS", "Q": "GLN", "E": "GLU", "G": "GLY", "H": "HIS",
+          "I": "ILE", "L": "LEU", "K": "LYS", "M": "MET", "F": "PHE", "P": "PRO", "S": "SER", "T": "THR", "W": "TRP",
+          "Y": "TYR", "V": "VAL"}
+
+
+def _local_mutant(ctx, object, mutations, chain, name, seed):
+    """Substitutions with every non-mutated atom kept in place: PDBFixer replaces only the mutated residues and
+    rebuilds their side chains (seeded, Reference platform); the result is checked atom by atom."""
+    import random
+
+    import numpy as np
+    import openmm as mm
+    from openmm import app
+    from pdbfixer import PDBFixer
+
+    from ... import mutator
+    from .components import _save_object
+
+    cmd = _cmd()
+    if object not in cmd.get_names("objects"):
+        raise ToolError(f"no object named {object!r}")
+    chains = cmd.get_chains(f"({object}) and polymer.protein")
+    chain = chain or (chains[0] if len(chains) == 1 else "")
+    if not chain:
+        raise ToolError(f"{object} has several chains ({', '.join(chains)}): give chain")
+    edits, keys = [], set()
+    for label in mutations:
+        try:
+            p = mutator.parse_mutation_label(label)
+        except Exception as exc:
+            raise ToolError(f"mutation error: {exc}") from exc
+        if p["kind"] != "sub" or len(p["insertion"]) != 1:
+            raise ToolError(f"method='local' supports substitutions only ({label}); use method='modeller'")
+        resi = str(p["start"])
+        space = {"found": []}
+        cmd.iterate(f"({object}) and chain {chain} and resi {resi} and name CA", "found.append(resn)", space=space)
+        if not space["found"]:
+            raise ToolError(f"no residue {resi} in chain {chain} of {object}")
+        old_resn = space["found"][0]
+        one = {v: k for k, v in _THREE.items()}.get(old_resn.upper(), "")
+        if p.get("start_aa") and one and one != p["start_aa"]:
+            raise ToolError(f"{label}: residue {resi} of chain {chain} is {old_resn}, not {p['start_aa']}")
+        edits.append(f"{old_resn}-{resi}-{_THREE[p['insertion']]}")
+        keys.add((chain, resi))
+    name = re.sub(r"[^A-Za-z0-9_]", "_", name or f"{object}_{'_'.join(mutations)}")[:60]
+    if name in cmd.get_names("objects"):
+        raise ToolError(f"an object named {name!r} already exists")
+    src = _save_object(ctx, object, sub="modeling")
+    random.seed(int(seed) or 1)
+    fixer = PDBFixer(filename=src, platform=mm.Platform.getPlatformByName("Reference"))
+    try:
+        fixer.applyMutations(edits, chain)
+    except Exception as exc:
+        raise ToolError(f"mutation failed: {exc}") from exc
+    fixer.missingResidues = {}
+    fixer.findMissingAtoms()
+    # rebuild only the mutated residues: other incomplete side chains of the crystal stay as they are (as in the
+    # wild type), so both structures differ only at the mutation
+    fixer.missingAtoms = {r: a for r, a in fixer.missingAtoms.items() if (r.chain.id, str(r.id)) in keys}
+    fixer.missingTerminals = {}
+    fixer.addMissingAtoms(seed=int(seed) or 1)
+    out = os.path.join(ctx.workspace("modeling"), f"{name}.pdb")
+    with open(out, "w") as fh:
+        app.PDBFile.writeFile(fixer.topology, fixer.positions, fh, keepIds=True)
+    cmd.load(out, name)
+    # check: every atom outside the mutated residues is where it was
+    def coords(obj, sel):
+        rows = {}
+        space = {"rows": rows}
+        cmd.iterate_state(1, f"({obj}) and not ({sel})", "rows[(chain, resi, resn, name)] = (x, y, z)", space=space)
+        return rows
+    mutated_sel = " or ".join(f"(chain {c} and resi {r})" for c, r in keys)
+    a, b = coords(object, mutated_sel), coords(name, mutated_sel)
+    common = [k for k in a if k in b]
+    max_shift = max((float(np.linalg.norm(np.subtract(a[k], b[k]))) for k in common), default=0.0)
+    missing = sorted(set(a) - set(b))[:5]
+    if max_shift > 1.0e-3 or missing:
+        cmd.delete(name)
+        raise ToolError(f"local mutant changed atoms outside the mutation (max shift {max_shift:.3f} A; "
+                        f"missing {missing}); not loaded")
+    register_in_leonardo(ctx, name, out)
+    presentation.style_protein(name)
+    cmd.show("sticks", f"({name}) and ({mutated_sel}) and not name N+C+O")
+    return {"object": name, "best_model": out, "method": "local", "mutations": list(mutations), "chain": chain,
+            "source": object, "unchanged_atoms": len(common), "max_shift_outside_mutation_A": round(max_shift, 6),
+            "scene": ctx.scene(f"{name}: local mutant of {object}"),
+            "_card": f"Mutant **{name}** ({', '.join(mutations)}) of {object}: only the mutated side chains were "
+                     f"rebuilt; {len(common)} other atoms kept exactly in place."}
+
+
 def _hetero_copier(source, keep_hetero):
     """post_load for model_mutant: copy hetero groups of the original (by residue name, or 'all' non-water) into
     the superposed mutant, where MODELLER built the protein only. Checked before the run starts."""
@@ -550,11 +640,20 @@ def register(reg):
                       "hetero groups of the original to copy into the mutant at their original positions (the "
                       "mutant is superposed on it), by residue name, e.g. ['DCE'] for a bound substrate, ['HEM']; "
                       "'all' = every non-water hetero group. Default: none (MODELLER builds the protein only)")},
+                  "method": {"type": "string", "enum": ["modeller", "local"], "description": (
+                      "'modeller' (default): MODELLER rebuilds the whole protein around the mutation (good models, "
+                      "but every side chain can move). 'local': substitutions only; only the mutated side chains are "
+                      "rebuilt and every other atom (waters, ligands, substrates included) keeps its exact "
+                      "coordinates. Use 'local' to compare energies of wild type and mutant (QM/MM, MM-GBSA): "
+                      "with MODELLER, moved charged surface side chains change electrostatics far from the mutation")},
               }, "required": ["object", "mutations"]},
               permission="compute_heavy", title="Mutant model (MODELLER)")
-    def model_mutant(ctx, object, mutations, chain="", name="", num_models=3, seed=1, keep_hetero=None):
+    def model_mutant(ctx, object, mutations, chain="", name="", num_models=3, seed=1, keep_hetero=None,
+                     method="modeller"):
         from ... import mutator
 
+        if method == "local":
+            return _local_mutant(ctx, object, mutations, chain, name, seed)
         chain, entry = _chain_entry(ctx, object, chain)
         breaks = list(entry.get("chain_breaks") or [])
         if breaks:

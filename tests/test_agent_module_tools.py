@@ -23,6 +23,7 @@ MODULE_TOOLS = {
     "psi4": {"run_psi4"},
     "qmmm": {"run_qmmm"},
     "md": {"run_md", "minimize_structure"},
+    "design": {"design_disulfides"},
     "md_advanced": {"run_enhanced_sampling", "list_md_components", "configure_md_components"},
     "ligand_editor": {"open_ligand_editor", "ligand_sketch_state", "edit_ligand_sketch", "build_ligand_from_sketch"},
     "diagnostics": {"read_diagnostics_log", "list_tasks", "readiness_report", "export_figure",

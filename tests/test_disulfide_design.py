@@ -45,3 +45,17 @@ def test_k10c_e56c_refines_to_a_good_disulfide(tmp_path):
     assert ok and 1.95 <= geom["ss_A"] <= 2.15 and 65 <= abs(geom["chi3_deg"]) <= 115 and geom["ca_rmsd_A"] < 0.7
     text = open(tmp_path / "k10c_e56c.pdb").read()
     assert "CYX" in text or "CONECT" in text
+
+
+def test_tools_expose_disulfide_design_and_the_reaction_path_operation():
+    from leonardo.agent.registry import ToolRegistry
+    from leonardo.agent.tools import design, qmmm
+
+    reg = ToolRegistry()
+    design.register(reg)
+    qmmm.register(reg)
+    specs = {s.name: s for s in reg.specs()}
+    assert specs["design_disulfides"].permission == "compute_heavy"
+    props = specs["run_qmmm"].parameters["properties"]
+    assert "reaction_path" in props["operation"]["enum"]
+    assert props["form_bonds"]["type"] == "array" and props["break_bonds"]["type"] == "array"

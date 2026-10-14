@@ -1,0 +1,13 @@
+{
+ "name": "Film 07 - screening five disulfide designs",
+ "slug": "07_protein_stability_multimutant",
+ "description": "Screen the five best-ranked disulfide candidates of protein G B1 (PDB 1PGA): refine each as a Cys/Cys model with Amber14 and check S-S distance, C-S-S angles, chi3 and Calpha shift; report which pass and why the others fail.",
+ "format": 1,
+ "parameters": {
+  "pack": {"default": ".", "description": "this pack's folder (filled in by leonardo.replay)"}
+ },
+ "steps": [
+  {"tool": "load_structure_file", "args": {"path": "{{pack}}/1PGA.pdb", "object_name": "proteinG_1PGA"}},
+  {"tool": "design_disulfides", "args": {"object": "{{step:1.object}}", "max_candidates": 5, "seed": 20260915}}
+ ]
+}
