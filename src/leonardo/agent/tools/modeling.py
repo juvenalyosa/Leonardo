@@ -299,7 +299,9 @@ def _local_mutant(ctx, object, mutations, chain, name, seed):
     def coords(obj, sel):
         rows = {}
         space = {"rows": rows}
-        cmd.iterate_state(1, f"({obj}) and not ({sel})", "rows[(chain, resi, resn, name)] = (x, y, z)", space=space)
+        # the mutant was built from the first alternate location only (_save_object)
+        cmd.iterate_state(1, f"({obj}) and not ({sel}) and not alt B+C+D", "rows[(chain, resi, resn, name)] = (x, y, z)",
+                          space=space)
         return rows
     mutated_sel = " or ".join(f"(chain {c} and resi {r})" for c, r in keys)
     a, b = coords(object, mutated_sel), coords(name, mutated_sel)

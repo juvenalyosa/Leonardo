@@ -202,3 +202,32 @@ def test_local_mutant_keeps_every_other_atom_in_place(tmp_path):
     assert cmd.count_atoms("w125a and resn DCE") == 4 and cmd.count_atoms("w125a and resn HOH") > 0
     with pytest.raises(Exception):
         reg.call("model_mutant", {"object": "wt", "mutations": ["G125A"], "chain": "A", "method": "local"}, ctx)
+
+
+def test_local_mutant_of_a_structure_with_alternate_locations(tmp_path):
+    # the mutant is built from alt A only; the check compared it with alt B and rejected every such structure
+    # ("changed atoms outside the mutation (max shift 0.400 A)")
+    pytest.importorskip("pdbfixer")
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    alt = tmp_path / "1pga_alt.pdb"
+    with open(alt, "w") as fh:
+        for ln in open(os.path.join(REPO, "examples", "films", "06_protein_stability_design", "1PGA.pdb")):
+            if ln.startswith("ATOM") and ln[22:26].strip() == "20":
+                fh.write(ln[:16] + "A" + ln[17:54] + "  0.50" + ln[60:])
+                fh.write(ln[:16] + "B" + ln[17:30] + f"{float(ln[30:38]) + 0.4:8.3f}" + ln[38:54] + "  0.50" + ln[60:])
+            else:
+                fh.write(ln)
+    cmd.reinitialize()
+    cmd.load(str(alt), "wt")
+    assert cmd.count_atoms("wt and alt B") > 0
+    ctx = AgentContext(None)
+    ctx.workspace = lambda sub="": str(tmp_path / sub) if os.makedirs(tmp_path / sub, exist_ok=True) is None else ""
+    reg = build_registry(ctx)
+    res = reg.call("model_mutant", {"object": "wt", "mutations": ["K10A"], "chain": "A", "method": "local",
+                                    "name": "k10a"}, ctx)
+    assert res["max_shift_outside_mutation_A"] < 1e-3
+    assert cmd.count_atoms("k10a and resi 10 and resn ALA and name CB") == 1
