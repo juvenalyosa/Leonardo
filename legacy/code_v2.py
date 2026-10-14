@@ -47182,9 +47182,65 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not self.ligand_info:
             return
         try:
-            self._generate_2d_map()
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate 2D map: {e}")
+            self._generate_2d_map_figure()
+        except Exception as exc:
+            self._append_debug_log(f"2D map: publication renderer failed ({exc}); using the basic map")
+            try:
+                self._generate_2d_map()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate 2D map: {e}")
+    def _generate_2d_map_figure(self, path=None, show=True):
+        """2D interaction diagram (RDKit depiction with bond orders and charges, residues placed around it) in
+        a matplotlib window; clicking a residue focuses its interaction in the 3D view. Returns the PNG path."""
+        import tempfile
+        from leonardo import interaction_view as iview
+        lig_chain, lig_resi, lig_resn = self.ligand_info
+        lig_sel = self._pymol_residue_selection(self.loaded_object, lig_chain, lig_resi, lig_resn)
+        interactions = list(self.interactions or [])
+        if not interactions:
+            raise ValueError("no interactions to draw")
+        if path is None:
+            path = os.path.join(tempfile.mkdtemp(prefix="leonardo_map_"), "interaction_map.png")
+        out = iview.draw_2d_map(path, interactions, iview.ligand_atoms_from_pymol(lig_sel), resn=lig_resn,
+                                title=f"{lig_resn} {lig_chain}{lig_resi}".strip(),
+                                subtitle=f"{self.loaded_object} · {len(interactions)} interactions")
+        if not show:
+            return out["image"]
+        import matplotlib.image as mpimg
+        img = mpimg.imread(out["image"])
+        h, w = img.shape[0], img.shape[1]
+        fig = plt.figure(figsize=(w / 100.0, h / 100.0), dpi=100)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.imshow(img)
+        ax.set_axis_off()
+        try:
+            fig.canvas.manager.set_window_title(f"Interaction map — {lig_resn} {lig_chain}{lig_resi}")
+        except Exception:
+            pass
+        hotspots = list(out.get("hotspots") or [])
+        def _on_click(event):
+            try:
+                if event.inaxes is not ax or event.xdata is None:
+                    return
+                for spot in hotspots:
+                    x0, y0, x1, y1 = spot["rect"]
+                    if x0 <= event.xdata <= x1 and y0 <= event.ydata <= y1 and spot["interactions"]:
+                        self._focus_interaction_by_id(int(spot["interactions"][0]), ensure_visible=True,
+                                                      update_table=True, zoom_to=True)
+                        return
+            except Exception:
+                return
+        try:
+            cid = fig.canvas.mpl_connect("button_press_event", _on_click)
+        except Exception:
+            cid = None
+        self._interaction_2d_map_context = {"fig": fig, "ax": ax, "items": [], "selected_rid": -1,
+                                            "click_cid": cid, "image": out["image"]}
+        try:
+            plt.show(block=False)
+        except TypeError:
+            plt.show()
+        return out["image"]
     def _generate_2d_map(self):
         lig_chain, lig_resi, lig_resn = self.ligand_info
         lig_sel = self._pymol_residue_selection(self.loaded_object, lig_chain, lig_resi, lig_resn)

@@ -172,6 +172,7 @@ def register(reg):
             raise ToolError("; ".join(errors) or "no interactions found")
         counts = Counter(str(i.get("type", "")) for i in interactions)
         top = sorted(interactions, key=lambda i: float(i.get("distance", 99) or 99))[:15]
+        view = {}
         try:
             cmd = _cmd()
             obj = str(dlg.loaded_object or "")
@@ -184,16 +185,20 @@ def register(reg):
                 one = _residue_selection(obj, li[0], li[1], li[2])
                 lig = one if cmd.count_atoms(one) else _residue_selection(obj, None, li[1], li[2])
             if cmd.count_atoms(lig):
-                presentation.declutter(keep=[obj] + [n for n in cmd.get_names("objects") if n.startswith(("int", "lbl_"))])
+                from leonardo import interaction_view
+
                 if obj.startswith("dock_complex"):
                     receptor = str(getattr(dlg, "_docking_receptor_object", "") or "")
                     if receptor:
                         cmd.disable(receptor)      # the complex already holds the receptor
-                presentation.style_ligand(lig)
-                presentation.show_pocket_residues(obj, f"byres (({obj}) and polymer within 4.0 of ({lig}))",
-                                                  name="ai_contacts")
-                cmd.label("ai_contacts and name CA", '"%s%s" % (resn, resi)')
-                presentation.focus(lig, buffer=8.0)
+                # publication-style scene: one label per residue, dashes by type, contacts de-emphasized
+                for name in cmd.get_names("objects"):
+                    if name.startswith(("int_dash_", "intRes_", "intCloud", "intRingDisc", "lbl_")):
+                        cmd.disable(name)
+                view = interaction_view.build_scene(obj, lig, interactions)
+                # the contact residues of the analyzed copy, as a selection the user can reuse
+                cmd.select("ai_contacts", f"byres (({obj}) and polymer within 4.0 of ({lig}))")
+                cmd.deselect()
         except Exception as exc:
             q.messages.append({"kind": "warning", "title": "view", "text": f"view setup: {exc}"})
         card = (f"**{len(interactions)} interactions** in {label}: "
@@ -206,5 +211,6 @@ def register(reg):
                          "ligand_atom": i.get("lig_atom"), "distance_A": round(float(i.get("distance", 0)), 2)}
                         for i in top],
             "scene": ctx.scene(f"interactions: {label}"),
+            "view": view,
             "leonardo_messages": [m for m in q.messages if m["kind"] != "information"][:5],
         }
