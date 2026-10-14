@@ -9,6 +9,7 @@ A pack is a folder with
 
     python -m leonardo.replay verify examples/films/01_molecular_docking
     python -m leonardo.replay record examples/films/01_molecular_docking   # (re)write the reference values
+    python -m leonardo.replay verify my_pack --set protein=1HRC --set mutation=K13A   # other parameter values
 
 ``kind``: "abs" (|observed - value| <= tol), "exact" (equal), "max" (observed <= value).
 The language model never runs here: the same tool calls with the same seeds are replayed, which is what makes
@@ -141,11 +142,29 @@ def _headless_leonardo(workdir):
     return app, ctx, build_registry(ctx)
 
 
-def run_pipeline(pack, workdir, progress=print):
+def parse_values(items):
+    """--set NAME=VALUE options -> {name: value}; a VALUE that is JSON (7.4, 10, true, ["A", "B"]) keeps its type."""
+    out = {}
+    for item in items or []:
+        name, sep, raw = str(item).partition("=")
+        if not sep or not name.strip():
+            raise ValueError(f"--set expects NAME=VALUE, got {item!r}")
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            value = raw
+        out[name.strip()] = value
+    return out
+
+
+def run_pipeline(pack, workdir, progress=print, values=None):
+    """Run the pack's pipeline; ``values`` replaces parameter defaults (unknown names are an error)."""
     from leonardo.agent import pipelines as P
 
     pipe = P.load(os.path.join(pack, "pipeline.json"))
+    given = dict(values or {})
     values = {"pack": os.path.abspath(pack)} if "pack" in (pipe.get("parameters") or {}) else {}
+    values.update(given)
     steps, _vals = P.instantiate(pipe, values)
     app, ctx, reg = _headless_leonardo(workdir)
     results, timing = {}, []
@@ -181,6 +200,8 @@ def main(argv=None):
     ap.add_argument("--keep", action="store_true", help="keep the working folder")
     ap.add_argument("--report", default="", help="write the report JSON here (default: <pack>/last_report.json)")
     ap.add_argument("--dump", default="", help="also write every step's full result to this JSON file")
+    ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
+                    help="run with another value of a pipeline parameter (repeatable), e.g. --set protein=1HRC")
     a = ap.parse_args(argv)
     pack = os.path.abspath(a.pack)
     expected_path = os.path.join(pack, "expected.json")
@@ -188,7 +209,8 @@ def main(argv=None):
     work = tempfile.mkdtemp(prefix="leonardo_replay_")
     started = time.time()
     try:
-        results, timing = run_pipeline(pack, work)
+        values = parse_values(a.set)
+        results, timing = run_pipeline(pack, work, **({"values": values} if values else {}))
     finally:
         if not a.keep:
             shutil.rmtree(work, ignore_errors=True)
