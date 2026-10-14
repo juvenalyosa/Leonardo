@@ -827,11 +827,14 @@ def _run_psi4_stationary_from_atoms(
         raise ValueError("No atoms were provided for Psi4 job")
     molecule_block = build_psi4_molecule_block_from_atoms(atom_rows, charge=int(charge), multiplicity=int(max(1, multiplicity)))
     result = {"ok": False, "operation": "stationary" if bool(run_frequency) else "optimize_only"}
+    out_dir = os.path.abspath(str(out_dir))      # the result file is written after chdir(out_dir)
     cwd_prev = os.getcwd()
     try:
         _ensure_dir(out_dir)
         os.chdir(out_dir)
         psi4.core.clean()
+        # options persist in the process: a previous stage's reference or Cartesian retry must not leak in
+        psi4.core.clean_options()
         psi4.set_memory(f"{int(max(1, memory_gb))} GB")
         psi4.set_num_threads(int(max(1, threads)))
         psi4.core.set_output_file("psi4_run.out", False)
@@ -1200,10 +1203,12 @@ def run_psi4_frequency_from_xyz(
         raise ValueError("No atoms were recovered from XYZ for Psi4 frequency job")
     molecule_block = build_psi4_molecule_block_from_atoms(atoms, charge=int(charge), multiplicity=int(max(1, multiplicity)))
     result = {"ok": False, "operation": "frequency_only"}
+    out_dir = os.path.abspath(str(out_dir))
     cwd_prev = os.getcwd()
     try:
         os.chdir(out_dir)
         psi4.core.clean()
+        psi4.core.clean_options()
         psi4.set_memory(f"{int(max(1, memory_gb))} GB")
         psi4.set_num_threads(int(max(1, threads)))
         psi4.core.set_output_file("psi4_run.out", False)

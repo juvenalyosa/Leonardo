@@ -434,6 +434,22 @@ def test_psi4_stationary_runs_an_open_shell_molecule_with_an_unrestricted_refere
     assert res["multiplicity"] == 2 and res["energy_opt_hartree"] < -74.0
 
 
+def test_psi4_stationary_starts_from_clean_options_and_accepts_a_relative_out_dir(tmp_path, monkeypatch):
+    # a staged run executes several Psi4 jobs in one process: options of a previous stage (here a Cartesian
+    # retry) must not carry over, and a relative out_dir must not break the final result write
+    psi4 = pytest.importorskip("psi4")
+    import ligand_vib_refine_runtime as L
+
+    psi4.set_options({"opt_coordinates": "cartesian"})
+    monkeypatch.chdir(tmp_path)
+    atoms = [{"element": "H", "x": 0.0, "y": 0.0, "z": 0.0}, {"element": "H", "x": 0.80, "y": 0.0, "z": 0.0}]
+    res = L._run_psi4_stationary_from_atoms(atoms, "h2_job", method="hf", basis="sto-3g", run_frequency=False,
+                                            threads=1, memory_gb=1)
+    assert res["ok"] is True, res.get("error")
+    assert (tmp_path / "h2_job" / "psi4_result.json").is_file()
+    assert str(psi4.core.get_option("OPTKING", "OPT_COORDINATES")).upper() != "CARTESIAN"
+
+
 def test_psi4_frequency_from_xyz_runs_an_open_shell_molecule(tmp_path):
     psi4 = pytest.importorskip("psi4")
     import ligand_vib_refine_runtime as L
