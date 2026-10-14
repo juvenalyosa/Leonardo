@@ -40,6 +40,21 @@ def test_build_rejects_bad_template_codes():
         _reg().call("build_homology_model", {"sequence": "A" * 30, "templates": ["1m17"], "name": "m"}, _Ctx())
 
 
+def test_bioseq_object_sequence_does_not_fuse_chains():
+    """analyze_sequence on a multi-chain object analyzed chains A and B joined as one protein."""
+    from leonardo.agent.tools import bioseq
+
+    cmd.reinitialize()
+    cmd.fab("ACDEFGHIKL", "two", chain="A")
+    cmd.fab("MNPQRSTVWY", "_b", chain="B")
+    cmd.create("two", "two or _b")
+    with pytest.raises(ToolError, match="chains"):
+        bioseq._sequence_from(object="two")
+    assert bioseq._sequence_from(object="two", chain="B") == "MNPQRSTVWY"
+    cmd.fab("ACDEFGHIKLMN", "one", chain="A")
+    assert bioseq._sequence_from(object="one") == "ACDEFGHIKLMN"
+
+
 def test_align_reports_moved_residues_and_colors_them():
     cmd.reinitialize()
     cmd.read_pdbstr(_HELIX, "ref")
