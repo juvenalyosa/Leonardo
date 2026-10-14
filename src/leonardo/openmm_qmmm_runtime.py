@@ -769,8 +769,45 @@ def add_missing_terminal_oxt(pdb_lines):
     return lines, added
 
 
+def uniquify_residue_atom_names(pdb_lines):
+    """
+    Give every atom of a residue a unique name (element + counter) when names repeat inside it. PyMOL names
+    SDF/MOL atoms by element only ("C", "C", ...), and OpenMM's PDB reader keeps one atom per name: the
+    ligand then lost its other atoms, matched no template and was dropped from the MD system.
+    Returns (lines, ["PHL A:201", ...]) for the residues renamed.
+    """
+    lines = [str(x or "").rstrip("\n") for x in list(pdb_lines or [])]
+    by_res = OrderedDict()
+    for i, line in enumerate(lines):
+        if line[:6].strip().upper() in {"ATOM", "HETATM"}:
+            by_res.setdefault((line[17:20], line[21:22], line[22:27]), []).append(i)
+    renamed = []
+    for key, idx in by_res.items():
+        names = [lines[i][12:16].strip() for i in idx]
+        if len(set(names)) == len(names):
+            continue
+        counts = {}
+        for i in idx:
+            line = lines[i].ljust(80)
+            elem = line[76:78].strip() or re.sub(r"[^A-Za-z]", "", line[12:16])[:1] or "X"
+            elem = elem[0].upper() + elem[1:].lower()
+            counts[elem] = counts.get(elem, 0) + 1
+            name = f"{elem.upper()}{counts[elem]}"[:4]
+            field = f" {name:<3s}" if len(elem) == 1 and len(name) < 4 else f"{name:<4s}"
+            lines[i] = (line[:12] + field + line[16:]).rstrip()
+        renamed.append(f"{key[0].strip()} {key[1].strip()}:{key[2].strip()}")
+    return lines, renamed
+
+
 def compose_openmm_input_pdb(polymer_lines, component_line_blocks):
     polymer_lines, added_oxt = add_missing_terminal_oxt(polymer_lines)
+    renamed = []
+    blocks = []
+    for block in list(component_line_blocks or []):
+        block, names = uniquify_residue_atom_names(block)
+        blocks.append(block)
+        renamed.extend(names)
+    component_line_blocks = blocks
     serial_next = 1
     merged_atom_lines = []
     merged_conect_lines = []
@@ -850,6 +887,7 @@ def compose_openmm_input_pdb(polymer_lines, component_line_blocks):
         "atom_count": int(sum(1 for line in out if str(line[:6]).strip().upper() in {"ATOM", "HETATM"})),
         "conect_count": int(sum(1 for line in out if str(line[:6]).strip().upper() == "CONECT")),
         "added_oxt": list(added_oxt),
+        "renamed_atoms": list(renamed),
     }
 
 

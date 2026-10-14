@@ -53,6 +53,47 @@ def test_oxt_not_duplicated_and_caps_and_ligands_left_alone():
     assert add_missing_terminal_oxt(ligand)[1] == []
 
 
+PHENOL_BLOCK = """\
+HETATM    1  C   PHL A 201      26.434  31.354  31.347  0.00  0.00           C
+HETATM    2  C   PHL A 201      25.078  31.480  31.656  0.00  0.00           C
+HETATM    3  C   PHL A 201      24.163  30.534  31.190  0.00  0.00           C
+HETATM    4  C   PHL A 201      24.601  29.461  30.414  0.00  0.00           C
+HETATM    5  C   PHL A 201      25.955  29.333  30.105  0.00  0.00           C
+HETATM    6  C   PHL A 201      26.860  30.278  30.572  0.00  0.00           C
+HETATM    7  O   PHL A 201      28.174  30.116  30.246  0.00  0.00           O
+HETATM    8  H   PHL A 201      27.134  32.096  31.715  0.00  0.00           H
+HETATM    9  H   PHL A 201      24.734  32.315  32.260  0.00  0.00           H
+HETATM   10  H   PHL A 201      23.108  30.634  31.432  0.00  0.00           H
+HETATM   11  H   PHL A 201      23.890  28.724  30.051  0.00  0.00           H
+HETATM   12  H   PHL A 201      26.303  28.499  29.501  0.00  0.00           H
+HETATM   13  H   PHL A 201      28.681  30.845  30.639  0.00  0.00           H
+CONECT    1    2    8    6
+CONECT    2    1    3    9
+CONECT    3    2    4   10
+CONECT    4    3    5   11
+CONECT    5    4    6   12
+CONECT    6    5    1    7
+CONECT    7    6   13
+""".splitlines()
+
+
+def test_ligand_with_element_only_atom_names_keeps_all_its_atoms(tmp_path):
+    app = pytest.importorskip("openmm.app")
+    # PyMOL names SDF atoms by element only; OpenMM's PDB reader merged them (13 -> 3 atoms) and the ligand,
+    # parameterized just before, matched no template and was silently dropped from run_md
+    out = compose_openmm_input_pdb(_heavy_polymer_lines(os.path.join(DATA, "GGCGG.pdb")), [PHENOL_BLOCK])
+    path = tmp_path / "cplx.pdb"
+    path.write_text("\n".join(out["lines"]) + "\n")
+    pdb = app.PDBFile(str(path))
+    lig = [r for r in pdb.topology.residues() if r.name == "PHL"][0]
+    names = [a.name for a in lig.atoms()]
+    assert len(names) == 13 and len(set(names)) == 13 and names[:2] == ["C1", "C2"] and "O1" in names
+    assert sum(1 for b in pdb.topology.bonds() if b[0].residue is lig) == 13      # CONECT bonds kept
+    assert out["renamed_atoms"] == ["PHL A:201"]
+    unchanged = ["HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C"]
+    assert compose_openmm_input_pdb([], [unchanged])["renamed_atoms"] == []
+
+
 # ------------------------------------------------------------------ Psi4 charge / multiplicity
 @pytest.fixture(scope="module")
 def dialog(tmp_path_factory):

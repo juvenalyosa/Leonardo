@@ -10611,6 +10611,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             if composed.get("added_oxt"):
                 notes.append("Added the missing C-terminal OXT to " + ", ".join(composed["added_oxt"][:8]))
+            if composed.get("renamed_atoms"):
+                notes.append("Gave unique atom names to " + ", ".join(composed["renamed_atoms"][:8])
+                             + " (repeated names would merge atoms in OpenMM)")
             return {"ok": True, "notes": list(notes)}
         except Exception as e:
             return {"ok": False, "error": f"Failed building OpenMM input PDB: {e}", "notes": list(notes)}
