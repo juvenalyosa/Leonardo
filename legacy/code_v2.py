@@ -12459,13 +12459,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 out["ok"] = True
                 _emit(100, "QM/MM probe completed", status="Completed")
                 return out
-            if ensemble != "nve":
-                try:
-                    simulation.context.setVelocitiesToTemperature(
-                        max(1.0, float(data.get("temperature_k", 300.0))) * OMM_UNIT.kelvin
-                    )
-                except Exception:
-                    pass
+            # NVE too: a Verlet integrator has no thermostat, so these initial velocities are the only place the
+            # requested temperature enters (without them the run starts at 0 K from the energy minimum)
+            try:
+                simulation.context.setVelocitiesToTemperature(
+                    max(1.0, float(data.get("temperature_k", 300.0))) * OMM_UNIT.kelvin
+                )
+            except Exception:
+                pass
             dyn_step_counter = 0
             qmmm_update_counter = 0
             def _run_steps_with_qmmm_coupling(n_steps, stage_label, progress_start, progress_span):
