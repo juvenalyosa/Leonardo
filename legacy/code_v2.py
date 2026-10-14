@@ -258,6 +258,7 @@ try:
     from .interaction_typing_runtime import is_protein_hydrophobic_residue
     from .interaction_typing_runtime import protein_aromatic_ring_atom_names
     from .interaction_typing_runtime import protein_hbond_acceptor_atom_names
+    from .interaction_typing_runtime import protein_donor_hydrogen_count
     from .interaction_typing_runtime import protein_hbond_donor_atom_names
     from .interaction_typing_runtime import protein_hydrophobic_atom_names
     from .interaction_typing_runtime import protein_metal_donor_atom_names
@@ -315,6 +316,7 @@ try:
     from .component_library_runtime import coordination_variants as component_coordination_variants
     from .component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
     from .component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from .component_library_runtime import ligand_bond_orders_from_pdb as component_ligand_bond_orders_from_pdb
     from .openmm_qmmm_runtime import read_openmm_forcefield_residue_names
     from .openmm_dynamics_runtime import apply_openmm_cv_preset
     from .openmm_dynamics_runtime import build_openmm_capability_report
@@ -659,6 +661,7 @@ except Exception:
     from interaction_typing_runtime import is_protein_hydrophobic_residue
     from interaction_typing_runtime import protein_aromatic_ring_atom_names
     from interaction_typing_runtime import protein_hbond_acceptor_atom_names
+    from interaction_typing_runtime import protein_donor_hydrogen_count
     from interaction_typing_runtime import protein_hbond_donor_atom_names
     from interaction_typing_runtime import protein_hydrophobic_atom_names
     from interaction_typing_runtime import protein_metal_donor_atom_names
@@ -716,6 +719,7 @@ except Exception:
     from component_library_runtime import coordination_variants as component_coordination_variants
     from component_library_runtime import add_coordination_restraints as component_add_coordination_restraints
     from component_library_runtime import install_qm_placeholders as component_install_qm_placeholders
+    from component_library_runtime import ligand_bond_orders_from_pdb as component_ligand_bond_orders_from_pdb
     from openmm_qmmm_runtime import read_openmm_forcefield_residue_names
     from openmm_dynamics_runtime import apply_openmm_cv_preset
     from openmm_dynamics_runtime import build_openmm_capability_report
@@ -1029,6 +1033,9 @@ ATOM_DEFS = {
     "halogens": ["F", "CL", "BR", "I"],
     "metals": ["ZN", "MG", "CA", "FE", "MN", "CU", "NI", "CO", "K", "NA"],
 }
+# Metal elements that can coordinate a ligand, also when the ion sits inside another
+# hetero residue (heme FE, a FE2/CU1 ion): matched by element, not only by residue name.
+INTERACTION_METAL_ELEMENTS = frozenset({"ZN", "MG", "CA", "FE", "MN", "CU", "NI", "CO", "K", "NA", "CD", "HG"})
 # Common PDB residue names for nucleotides (DNA/RNA)
 NUCLEOTIDE_RESN = set(["A", "C", "G", "U", "DA", "DC", "DG", "DT", "I", "DI"])
 # Canonical amino-acid mapping used by protein modeling/mutation workflow.
@@ -5293,6 +5300,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         resn = str(a.resn).strip()
                         if not resn or resn in ATOM_DEFS["metals"] or resn == "HOH":
                             continue
+                        if resn.upper() in OPENMM_PEPTIDE_CAPS:
+                            continue          # ACE/NME caps are backbone, not ligands
                         ch = self._normalize_chain_id(a.chain)
                         ri = self._resi_to_int(a.resi)
                         el = str(getattr(a, "symbol", "")).strip().upper()
@@ -5324,7 +5333,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         max_atoms = 0
         best = None
         for res in self.structure.get_residues():
-            if not is_aa(res) and res.get_resname() not in ATOM_DEFS["metals"] and res.get_resname() != "HOH":
+            if (
+                not is_aa(res)
+                and res.get_resname() not in ATOM_DEFS["metals"]
+                and res.get_resname() != "HOH"
+                and res.get_resname().upper() not in OPENMM_PEPTIDE_CAPS
+            ):
                 heavy_atoms = [a for a in res if a.element != "H"]
                 if len(heavy_atoms) > max_atoms:
                     max_atoms = len(heavy_atoms)
@@ -5338,7 +5352,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         seen = set()
         for res in self.structure.get_residues():
             resn = res.get_resname()
-            if is_aa(res) or resn in ATOM_DEFS["metals"] or resn == "HOH":
+            if is_aa(res) or resn in ATOM_DEFS["metals"] or resn == "HOH" or resn.upper() in OPENMM_PEPTIDE_CAPS:
                 continue
             chain_id = res.parent.id
             resi = res.id[1]
@@ -6012,6 +6026,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Error", "Specify ligand info.")
             return
         self._ligand_refined_mol = None
+        self._ligand_refined_keep_input_h = False
         self.ligand_info = lig
         try:
             self._append_debug_log(
@@ -6101,6 +6116,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     do_refine = True
                 else:
                     self._append_debug_log("Single-PDB ligand hydrogens/chemistry look valid; no refinement needed.")
+                    # still type the ligand from a model with bond orders (groups, rings, donor/acceptor
+                    # roles); the input hydrogens are kept for the geometry
+                    try:
+                        self._refine_ligand_geometry(target_ph=default_ph, update_scene=False)
+                        self._ligand_refined_keep_input_h = True
+                    except Exception as chem_e:
+                        self._ligand_refined_mol = None
+                        self._append_debug_log(f"Ligand chemistry model unavailable ({chem_e}); typing from the input.")
                 if do_refine:
                     try:
                         self._settings["target_ph"] = float(self._target_ph)
@@ -6111,11 +6134,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         self._refine_ligand_geometry(target_ph=self._target_ph, update_scene=False)
                         self._append_debug_log("Ligand chemistry refinement completed successfully.")
                     except Exception as ref_e:
-                        self._append_debug_log(f"Ligand chemistry refinement failed: {ref_e}")
-                        QtWidgets.QMessageBox.critical(
-                            self,
-                            "Repair Failed",
-                            f"Chemistry repair failed:\n{ref_e}\n\nProceeding with current structure.",
+                        # not fatal: the ligand is typed from its input atoms or the topology rules
+                        self._append_debug_log(
+                            f"Ligand chemistry refinement failed ({ref_e}); typing the ligand from its input atoms."
                         )
             elif target_res is not None:
                 if not has_ligand_h:
@@ -6205,6 +6226,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._reset_table_filters_to_all()
         self._populate_table()
         self._beautify_scene()
+        self._apply_publication_view()
         # If there are no contacts in this frame, force a protein-centered view so
         # the user does not end up with a ligand-only framing.
         try:
@@ -46120,6 +46142,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             poly_count = int(cmd.count_atoms(f"({complex_obj}) and polymer"))
             if poly_count <= 0:
                 raise RuntimeError("Complex object contains no protein atoms.")
+            # the complex now holds the pose: the single-pose intermediate and the pose sources
+            # would show a second copy of the ligand on top of it
+            try:
+                if self._pymol_object_exists(pose_single):
+                    cmd.delete(pose_single)
+                for src in pose_sources:
+                    if self._pymol_object_exists(src):
+                        cmd.disable(src)
+            except Exception:
+                pass
             cmd.show("cartoon", f"({complex_obj}) and polymer")
             self._apply_ball_and_stick_style(f"({complex_obj}) and not polymer", sphere_scale=0.22, stick_radius=0.16)
             self._apply_element_colors(f"({complex_obj}) and not polymer")
@@ -46702,7 +46734,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             el = "C"
                     is_ligand = (chain_id == lig_chain and int(resi) == int(lig_resi) and resn == lig_resn)
                     idx = int(getattr(a, "index", 0) or 0)
-                    is_polymer = idx in polymer_indices
+                    # ACE/NME caps are not "polymer" in PyMOL but are protein backbone, not ligands
+                    is_polymer = idx in polymer_indices or (
+                        resn.upper() in OPENMM_PEPTIDE_CAPS and not is_ligand
+                    )
                     atom_info = {
                         "atom": None,
                         "resn": resn,
@@ -46750,7 +46785,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         features["protein_h_acceptors"].append(atom_info)
                     if atom_name in hydrophobic_atoms and atom_info["element"] == "C":
                         features["protein_hydrophobic"].append(atom_info)
-                elif resn in ATOM_DEFS["metals"]:
+                elif resn in ATOM_DEFS["metals"] or str(atom_info.get("element", "")).upper() in INTERACTION_METAL_ELEMENTS:
                     features["metals"].append(atom_info)
         else:
             for atom in self.structure.get_atoms():
@@ -46776,7 +46811,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "coord": atom.coord,
                     "name": atom.name,
                     "element": atom.element,
-                    "origin": "ligand" if is_ligand else ("protein" if is_aa(res) else "other"),
+                    "origin": "ligand" if is_ligand else ("protein" if (is_aa(res) or resn in OPENMM_PEPTIDE_CAPS) else "other"),
                 }
                 if is_ligand:
                     features["ligand_atoms"].append(atom_info)
@@ -46788,7 +46823,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         features["ligand_hydrophobic"].append(atom_info)
                     if atom.element in ["O", "N", "S"]:
                         features["ligand_metal_acceptors"].append(atom_info)
-                elif is_aa(res):
+                elif is_aa(res) or resn in OPENMM_PEPTIDE_CAPS:
                     features["protein_atoms"].append(atom_info)
                     pos_atoms = protein_positive_atom_names(resn)
                     neg_atoms = protein_negative_atom_names(resn)
@@ -46805,7 +46840,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         features["protein_h_acceptors"].append(atom_info)
                     if atom.name in hydrophobic_atoms and atom.element == "C":
                         features["protein_hydrophobic"].append(atom_info)
-                elif resn in ATOM_DEFS["metals"]:
+                elif resn in ATOM_DEFS["metals"] or str(atom_info.get("element", "")).upper() in INTERACTION_METAL_ELEMENTS:
                     features["metals"].append(atom_info)
         features["protein_rings"] = self._find_rings(features["protein_atoms"], ATOM_DEFS["protein_aromatic_rings"])
         features["ligand_rings"] = self._detect_ligand_rings(features)
@@ -46876,25 +46911,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             f"{c[0]:8.3f}{c[1]:8.3f}{c[2]:8.3f}  1.00  0.00           {el:>2s}  "
                         )
                         pdb_lines.append(s)
-                    mol = Chem.MolFromPDBBlock("\n".join(pdb_lines), removeHs=False)
+                    chem_mol = None
+                    refined = getattr(self, "_ligand_refined_mol", None)
+                    if refined is not None:
+                        try:
+                            feat_names = {str(a["name"]).strip().upper() for a in features["ligand_atoms"]}
+                            ref_names = set()
+                            for at in refined.GetAtoms():
+                                if at.GetAtomicNum() == 1:
+                                    continue
+                                info = at.GetPDBResidueInfo()
+                                if info:
+                                    ref_names.add(info.GetName().strip().upper())
+                            # Use refined chemistry if it maps to current ligand atom names.
+                            if feat_names and len(feat_names & ref_names) >= max(2, int(0.5 * len(feat_names))):
+                                chem_mol = refined
+                        except Exception:
+                            chem_mol = None
+                    if chem_mol is None:
+                        # no refined model (trajectory, failed refinement): the input atoms with bond
+                        # orders. A molecule read from the PDB lines alone has only single bonds (rings
+                        # saturated, amide N "ammonium"); typing from it is worse than the topology rules.
+                        chem_mol, chem_src = self._ligand_chem_from_input("\n".join(pdb_lines), lig_resn)
+                        if not getattr(self, "_traj_mode", False):
+                            self._append_debug_log(f"Ligand chemistry for typing: {chem_src}.")
+                    mol = chem_mol
                     if mol:
-                        chem_mol = mol
-                        refined = getattr(self, "_ligand_refined_mol", None)
-                        if refined is not None:
-                            try:
-                                feat_names = {str(a["name"]).strip().upper() for a in features["ligand_atoms"]}
-                                ref_names = set()
-                                for at in refined.GetAtoms():
-                                    if at.GetAtomicNum() == 1:
-                                        continue
-                                    info = at.GetPDBResidueInfo()
-                                    if info:
-                                        ref_names.add(info.GetName().strip().upper())
-                                # Use refined chemistry if it maps to current ligand atom names.
-                                if feat_names and len(feat_names & ref_names) >= max(2, int(0.5 * len(feat_names))):
-                                    chem_mol = refined
-                            except Exception:
-                                chem_mol = mol
                         rd_to_feat_idx = self._map_rdkit_atoms_to_feature_indices(chem_mol, features["ligand_atoms"])
                         chem_mol_for_roles = chem_mol
                         self._annotate_ligand_groups(chem_mol, features, rd_to_feat_idx=rd_to_feat_idx)
@@ -46988,6 +47030,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 features["ligand_hydrophobic"] = [
                     a for a in features["ligand_atoms"] if bool(a.get("is_hydrophobic", False))
                 ]
+                # the flags pass returns new dicts: point the role lists at them too
+                features["ligand_h_donors"] = [a for a in features["ligand_atoms"] if bool(a.get("hbond_donor"))]
+                features["ligand_h_acceptors"] = [a for a in features["ligand_atoms"] if bool(a.get("hbond_acceptor"))]
                 blocked_cation_groups = {"Ammonium", "Aromatic Cation", "Iminium", "Amidinium", "Guanidinium"}
                 features["ligand_metal_acceptors"] = [
                     a
@@ -47182,9 +47227,65 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if not self.ligand_info:
             return
         try:
-            self._generate_2d_map()
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate 2D map: {e}")
+            self._generate_2d_map_figure()
+        except Exception as exc:
+            self._append_debug_log(f"2D map: publication renderer failed ({exc}); using the basic map")
+            try:
+                self._generate_2d_map()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate 2D map: {e}")
+    def _generate_2d_map_figure(self, path=None, show=True):
+        """2D interaction diagram (RDKit depiction with bond orders and charges, residues placed around it) in
+        a matplotlib window; clicking a residue focuses its interaction in the 3D view. Returns the PNG path."""
+        import tempfile
+        from leonardo import interaction_view as iview
+        lig_chain, lig_resi, lig_resn = self.ligand_info
+        lig_sel = self._pymol_residue_selection(self.loaded_object, lig_chain, lig_resi, lig_resn)
+        interactions = list(self.interactions or [])
+        if not interactions:
+            raise ValueError("no interactions to draw")
+        if path is None:
+            path = os.path.join(tempfile.mkdtemp(prefix="leonardo_map_"), "interaction_map.png")
+        out = iview.draw_2d_map(path, interactions, iview.ligand_atoms_from_pymol(lig_sel), resn=lig_resn,
+                                title=f"{lig_resn} {lig_chain}{lig_resi}".strip(),
+                                subtitle=f"{self.loaded_object} · {len(interactions)} interactions")
+        if not show:
+            return out["image"]
+        import matplotlib.image as mpimg
+        img = mpimg.imread(out["image"])
+        h, w = img.shape[0], img.shape[1]
+        fig = plt.figure(figsize=(w / 100.0, h / 100.0), dpi=100)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.imshow(img)
+        ax.set_axis_off()
+        try:
+            fig.canvas.manager.set_window_title(f"Interaction map — {lig_resn} {lig_chain}{lig_resi}")
+        except Exception:
+            pass
+        hotspots = list(out.get("hotspots") or [])
+        def _on_click(event):
+            try:
+                if event.inaxes is not ax or event.xdata is None:
+                    return
+                for spot in hotspots:
+                    x0, y0, x1, y1 = spot["rect"]
+                    if x0 <= event.xdata <= x1 and y0 <= event.ydata <= y1 and spot["interactions"]:
+                        self._focus_interaction_by_id(int(spot["interactions"][0]), ensure_visible=True,
+                                                      update_table=True, zoom_to=True)
+                        return
+            except Exception:
+                return
+        try:
+            cid = fig.canvas.mpl_connect("button_press_event", _on_click)
+        except Exception:
+            cid = None
+        self._interaction_2d_map_context = {"fig": fig, "ax": ax, "items": [], "selected_rid": -1,
+                                            "click_cid": cid, "image": out["image"]}
+        try:
+            plt.show(block=False)
+        except TypeError:
+            plt.show()
+        return out["image"]
     def _generate_2d_map(self):
         lig_chain, lig_resi, lig_resn = self.ligand_info
         lig_sel = self._pymol_residue_selection(self.loaded_object, lig_chain, lig_resi, lig_resn)
@@ -52183,6 +52284,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if element_filter and a["element"].upper() not in element_filter:
                 continue
             d = distance(a["coord"], target["coord"])
+            if d < 0.05:
+                # the same atom as another dict: ligand atom lists are rebuilt (hydrophobic flags,
+                # ionic groups) while donor/acceptor lists keep the earlier dicts, so "is" misses
+                # it and the atom became its own neighbour (D-A-X angle NaN: every heavy-atom
+                # H-bond to a ligand acceptor was rejected)
+                continue
             if d <= self._bond_threshold(a["element"], target["element"]):
                 res.append(a)
         return res
@@ -52428,7 +52535,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     f"(H-X distance outside 0.55-1.35 Å)."
                 )
                 return result
-            expected = self._repair_and_protonate(observed, target_ph=float(target_ph))
+            # the expected model needs bond orders too (all-single bonds read from the PDB inflate
+            # the expected hydrogen count and every comparison fails or passes for the wrong reason)
+            heavy_bo, _bo_src = self._ligand_bond_order_mol(pdb_block, lig_resn)
+            expected = (self._repair_and_protonate(heavy_bo, target_ph=float(target_ph))
+                        if heavy_bo is not None else None)
             if expected is None:
                 result["status"] = "correct"
                 result["needs_refine"] = False
@@ -52490,6 +52601,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             return
         if getattr(self, "_traj_mode", False) or self._is_trajectory_object():
             return
+        if getattr(self, "_ligand_refined_keep_input_h", False):
+            return                    # the input hydrogens were valid: keep them
         lig_atoms = list(features.get("ligand_atoms", []))
         if not lig_atoms:
             return
@@ -52544,6 +52657,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "name": atom_name,
                     "element": "H",
                     "origin": "ligand",
+                    "placed": True,          # modelled by Leonardo, not observed
                 }
             )
             added += 1
@@ -53007,6 +53121,76 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             print(f"Repair Failed during Sanitize/AddHs: {e}")
             return None
+    def _ligand_chem_from_input(self, pdb_block, resn=""):
+        """(RDKit mol, source) for typing a ligand from its input atoms: bond orders on the heavy atoms
+        and, when the input has hydrogens, those hydrogens (formal charges follow from them: an N
+        with four bonds is +1, a lone O on a single bond is -1). (None, reason) without bond orders."""
+        heavy, source = self._ligand_bond_order_mol(pdb_block, resn)
+        if heavy is None:
+            return None, f"none ({source}); topology rules used"
+        try:
+            raw = Chem.MolFromPDBBlock(str(pdb_block or ""), removeHs=False, sanitize=False)
+            h_coords = []
+            if raw is not None and raw.GetNumConformers():
+                rconf = raw.GetConformer()
+                h_coords = [rconf.GetAtomPosition(a.GetIdx()) for a in raw.GetAtoms() if a.GetAtomicNum() == 1]
+            if not h_coords:
+                return heavy, f"{source}, implicit hydrogens"
+            rw = Chem.RWMol(heavy)
+            Chem.Kekulize(rw, clearAromaticFlags=True)
+            conf = rw.GetConformer()
+            n_heavy = rw.GetNumAtoms()
+            for p in h_coords:
+                best, best_d = None, 1.35
+                for i in range(n_heavy):
+                    d = (conf.GetAtomPosition(i) - p).Length()
+                    if d < best_d:
+                        best, best_d = i, d
+                if best is None:
+                    continue
+                hi = rw.AddAtom(Chem.Atom(1))
+                rw.AddBond(best, hi, Chem.BondType.SINGLE)
+                conf.SetAtomPosition(hi, p)
+            for a in list(rw.GetAtoms())[:n_heavy]:
+                a.SetNoImplicit(True)
+                a.SetNumExplicitHs(0)
+                a.SetFormalCharge(0)
+                valence = sum(int(round(b.GetBondTypeAsDouble())) for b in a.GetBonds())
+                if a.GetSymbol() == "N" and valence == 4:
+                    a.SetFormalCharge(1)
+                elif a.GetSymbol() == "O" and valence == 1:
+                    a.SetFormalCharge(-1)
+                elif a.GetSymbol() == "O" and valence == 3:
+                    a.SetFormalCharge(1)
+            out = rw.GetMol()
+            Chem.SanitizeMol(out)
+            return out, f"{source}, input hydrogens"
+        except Exception as exc:
+            return heavy, f"{source}, implicit hydrogens (input hydrogens not usable: {exc})"
+    def _ligand_bond_order_mol(self, pdb_block, resn=""):
+        """(heavy-atom RDKit mol with bond orders, source) for a ligand PDB block; (None, reason) on failure.
+        CCD template of the residue first, then Leonardo's SMILES hint, then Open Babel on the geometry."""
+        if not HAS_RDKIT:
+            return None, "RDKit unavailable"
+        cache = getattr(self, "_ligand_bond_order_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ligand_bond_order_cache = cache
+        key = (str(resn or "").strip().upper(), str(pdb_block or ""))
+        if key in cache:
+            mol, source = cache[key]
+            return (Chem.Mol(mol) if mol is not None else None), source
+        mol, source = component_ligand_bond_orders_from_pdb(pdb_block, resn=resn)
+        if mol is None and resn:
+            try:
+                hint = str(self._openmm_component_smiles_hint({"resn": resn}) or "")
+            except Exception:
+                hint = ""
+            if hint:
+                mol, source = component_ligand_bond_orders_from_pdb(pdb_block, resn="", smiles_hint=hint,
+                                                                    fetch_ccd=False)
+        cache[key] = (mol, source)
+        return (Chem.Mol(mol) if mol is not None else None), source
     def _refine_ligand_geometry(self, target_ph=None, update_scene=False):
         """
         Orchestrates the repair and PyMOL update.
@@ -53023,11 +53207,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if not pdb_str:
                  raise ValueError("Could not extract ligand PDB from PyMOL.")
                  
-            # 2. Load into RDKit
-            mol = Chem.MolFromPDBBlock(pdb_str, removeHs=False)
-            if not mol:
-                 raise ValueError("RDKit failed to parse ligand PDB.")
-                 
+            # 2. Load into RDKit with bond orders (a PDB has none: read as all-single bonds an
+            #    aromatic ring became a cyclohexane and got twice the hydrogens)
+            mol, bo_source = self._ligand_bond_order_mol(pdb_str, l_n)
+            if mol is None:
+                 raise ValueError(f"Could not assign ligand bond orders: {bo_source}")
+            self._ligand_bond_order_source = str(bo_source)
+            self._append_debug_log(f"Ligand bond orders: {bo_source}.")
+
             # 3. RUN REPAIR
             use_ph = float(target_ph if target_ph is not None else getattr(self, "_target_ph", 7.4))
             target_mol = self._repair_and_protonate(mol, target_ph=use_ph)
@@ -53580,9 +53767,10 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 _coord_key(rec.get("lig_coord")),
             )
             if key in seen:
-                return
+                return None
             seen.add(key)
             interactions.append(rec)
+            return rec
 
         def _is_ligand_oxyanion(atom):
             return bool(is_ligand_anion_center(atom))
@@ -53617,8 +53805,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
 
         sb_cut = float(GEOMETRY_CRITERIA["salt_bridge_dist"])
         sb_best = {}
-        sb_group_suppression = set()
-        sb_atom_suppression = set()
+        # Salt bridge / H-bond policy: an H-bond between an atom of a protein charge group and
+        # an atom of the oppositely charged ligand group (Asp189 OD1/OD2 ... benzamidinium N1/N2)
+        # is the same contact as the salt bridge, a charge-assisted H-bond. It is reported once,
+        # as the Salt Bridge record, which lists the atom pairs in "hbond_pairs" and says
+        # "charge-assisted" in its details. H-bonds of the same atoms to other partners (Gly219
+        # O, Ser190 OG) stay separate Hydrogen Bond records.
+        sb_records = []
 
         def _register_salt_bridge(prot_group, lig_group):
             d = float(distance(prot_group["center"], lig_group["center"]))
@@ -53654,7 +53847,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 f"{prot_group.get('group_type', 'charge')} ↔ {lig_group.get('group_type', 'charge')} "
                 f"center-center {float(payload['distance']):.1f}Å"
             )
-            add_interaction(
+            rec = add_interaction(
                 "Salt Bridge",
                 prot_atom,
                 lig_atom,
@@ -53664,29 +53857,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "prot_charge_group": dict(prot_group),
                     "lig_charge_group": dict(lig_group),
                     "charge_center_distance": float(payload["distance"]),
+                    "hbond_pairs": [],
                 },
                 prot_coord=prot_group.get("center"),
                 lig_coord=lig_group.get("center"),
             )
-            sb_group_suppression.add(
-                (
-                    str(prot_group.get("chain", "") or ""),
-                    str(prot_group.get("resi", "") or ""),
-                    str(lig_group.get("group_id", "") or ""),
-                )
-            )
-            for latom in list(lig_group.get("atoms", []) or []):
-                sb_atom_suppression.add(
+            if rec is not None:
+                sb_records.append(
                     (
-                        str(prot_group.get("chain", "") or ""),
-                        str(prot_group.get("resi", "") or ""),
-                        _atom_key(latom),
+                        rec,
+                        {_atom_key(a) for a in list(prot_group.get("atoms", []) or [])},
+                        {_atom_key(a) for a in list(lig_group.get("atoms", []) or [])},
                     )
                 )
+
+        def _salt_bridge_of(prot_atom, lig_atom):
+            pk, lk = _atom_key(prot_atom), _atom_key(lig_atom)
+            for rec, prot_keys, lig_keys in sb_records:
+                if pk in prot_keys and lk in lig_keys:
+                    return rec
+            return None
 
         hb_cut = float(GEOMETRY_CRITERIA["h_bond_dist"])
         hb_ha_cut = float(GEOMETRY_CRITERIA["h_bond_ha_dist"])
         hb_fallback_angle = 90.0
+        hb_heavy_crit = dict(GEOMETRY_CRITERIA, h_bond_fallback_angle=hb_fallback_angle)
         lig_h_acceptors = list(features.get("ligand_h_acceptors", []) or [])
         lig_h_donors = list(features.get("ligand_h_donors", []) or [])
         if (not lig_h_acceptors) and features.get("ligand_h_donors_acceptors"):
@@ -53695,165 +53890,202 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             lig_h_donors = list(features["ligand_h_donors_acceptors"])
         grid_lig_acc = self._NeighborGrid(lig_h_acceptors, cell_size=max(hb_cut, hb_ha_cut))
         grid_prot_acc = self._NeighborGrid(features["protein_h_acceptors"], cell_size=max(hb_cut, hb_ha_cut))
-        hb_stats = {"prot_explicit": 0, "prot_fallback": 0, "lig_explicit": 0, "lig_fallback": 0}
+        hb_stats = {"explicit_h": 0, "heavy_atom": 0, "charge_assisted": 0, "metal_bound_skipped": 0}
+
+        # Atoms bound to a metal ion are not H-bond partners: a His N or Asp O coordinating Zn has
+        # no free lone pair (and the His H, if any, sits on the other N); a ligand atom bound to the
+        # metal does not accept (it may still donate, e.g. the sulfonamide NH to Thr199 in CA II).
+        metal_bound_prot = set()
+        metal_bound_lig = set()
+        metal_list = list(features.get("metals", []) or [])
+        if metal_list:
+            grid_prot_any = self._NeighborGrid(features["protein_atoms"], cell_size=3.5)
+            for metal in metal_list:
+                m_cut = float(metal_coordination_cutoff(metal.get("element", ""), criteria=GEOMETRY_CRITERIA))
+                for p_atom in grid_prot_any.query(metal["coord"], m_cut):
+                    if str(p_atom.get("element", "")).upper() in ("N", "O", "S"):
+                        if float(distance(p_atom["coord"], metal["coord"])) <= m_cut:
+                            metal_bound_prot.add(_atom_key(p_atom))
+                for l_atom in list(features.get("ligand_atoms", []) or []):
+                    if str(l_atom.get("element", "")).upper() in ("N", "O", "S"):
+                        if float(distance(l_atom["coord"], metal["coord"])) <= m_cut:
+                            metal_bound_lig.add(_atom_key(l_atom))
+
         hb_best = {}
 
-        def is_suppressed(prot_atom, lig_atom):
-            gid = str(lig_atom.get("ionic_group_id", "") or "").strip()
-            pkey = (str(prot_atom.get("chain", "") or ""), str(prot_atom.get("resi", "") or ""))
-            if gid and (pkey[0], pkey[1], gid) in sb_group_suppression:
-                return True
-            return (pkey[0], pkey[1], _atom_key(lig_atom)) in sb_atom_suppression
+        prot_c_by_res = {}
 
-        def _store_hbond_candidate(key, prot_atom, lig_atom, report_dist, score_dist, score_angle, details, extra):
-            candidate = {
-                "prot_atom": dict(prot_atom),
-                "lig_atom": dict(lig_atom),
-                "report_dist": float(report_dist),
-                "details": str(details),
-                "extra": dict(extra or {}),
+        def _heavy_neighbors(atom):
+            pool = features["ligand_atoms"] if atom.get("origin") == "ligand" else features["protein_atoms"]
+            out = [n for n in self._neighbors(atom, pool) if str(n.get("element", "")).upper() != "H"]
+            if atom.get("origin") == "protein" and str(atom.get("name", "")) == "N":
+                # _neighbors stays inside the residue: add the peptide C of the previous residue, so
+                # the backbone N-H direction (opposite C and CA) is known
+                if not prot_c_by_res:
+                    for p in features["protein_atoms"]:
+                        if str(p.get("name", "")) == "C":
+                            prot_c_by_res.setdefault(str(p.get("chain", "")), []).append(p)
+                for c_atom in prot_c_by_res.get(str(atom.get("chain", "")), []):
+                    if c_atom.get("resi") != atom.get("resi") and float(distance(c_atom["coord"], atom["coord"])) <= 1.5:
+                        out.append(c_atom)
+                        break
+            return out
+
+        def _rotatable_donor(donor, hs):
+            heavy = _heavy_neighbors(donor)
+            if len(heavy) != 1:
+                return False                  # ring/backbone/secondary N-H: H fixed by the heavy atoms
+            if str(donor.get("element", "")).upper() in ("O", "S") or len(hs) >= 3:
+                return True                   # OH, SH, NH3+
+            pool = features["ligand_atoms"] if donor.get("origin") == "ligand" else features["protein_atoms"]
+            # NH2 on a tetrahedral atom (amine, sulfonamide) rotates; on an sp2 C (amide,
+            # amidinium, aniline) it is held in the plane
+            return len(self._neighbors(heavy[0], pool)) >= 4
+
+        def _donor_h_capacity(donor, hs):
+            if hs:
+                return len(hs)
+            if donor.get("origin") == "protein":
+                return protein_donor_hydrogen_count(donor.get("resn", ""), donor.get("name", ""))
+            return None
+
+        def _consider_hbond(donor, acceptor, prot_atom, lig_atom, donor_side):
+            if _atom_key(prot_atom) in metal_bound_prot:
+                hb_stats["metal_bound_skipped"] += 1
+                return
+            if donor_side == "protein" and _atom_key(lig_atom) in metal_bound_lig:
+                hb_stats["metal_bound_skipped"] += 1
+                return
+            hs = list(self._donor_hydrogens(donor, features) or [])
+            placed = bool(hs) and all(bool(h.get("placed")) for h in hs)
+            best = None
+            for h in hs:
+                geom = classify_hbond_geometry(donor, acceptor, hydrogen=h, criteria=GEOMETRY_CRITERIA)
+                if bool(geom.get("ok", False)) and (best is None or float(geom["angle"]) > float(best[0]["angle"])):
+                    best = (geom, h)
+            # Hydrogens Leonardo placed are not observed. Where the chemistry fixes them (amide,
+            # amidinium, aniline, ring N-H) they are trusted; a rotatable OH/SH/NH3+/SO2NH2
+            # hydrogen points wherever RDKit put it, so that donor (and any donor without
+            # hydrogens) is judged by the heavy-atom geometry instead.
+            if best is None and (not hs or (placed and _rotatable_donor(donor, hs))):
+                geom = classify_hbond_geometry(
+                    donor,
+                    acceptor,
+                    acceptor_neighbors=_heavy_neighbors(acceptor),
+                    donor_neighbors=_heavy_neighbors(donor),
+                    criteria=hb_heavy_crit,
+                )
+                if bool(geom.get("ok", False)):
+                    best = (geom, None)
+            if best is None:
+                return
+            geom, h = best
+            mode_rank = 0 if geom.get("mode") == "explicit_hydrogen" else 1
+            extra = {
+                "donor_side": donor_side,
+                "hbond_mode": str(geom.get("mode", "")),
+                "distance_kind": "D...A",
+                "da_distance": float(geom["da_distance"]),
+                "ha_distance": (float(geom["ha_distance"]) if geom.get("ha_distance") is not None else None),
+                "hbond_angle": float(geom["angle"]),
+                "hbond_geometry": dict(geom),
             }
-            _store_best(hb_best, key, candidate, (-float(score_angle), float(score_dist), float(report_dist)))
+            if h is not None:
+                extra["h_coord"] = h["coord"]
+                extra["h_owner"] = donor_side
+                extra["h_placed"] = bool(h.get("placed"))
+            # one record per protein-atom/ligand-atom pair, whichever side donates
+            key = (_atom_key(prot_atom), _atom_key(lig_atom))
+            _store_best(
+                hb_best,
+                key,
+                {
+                    "prot_atom": dict(prot_atom),
+                    "lig_atom": dict(lig_atom),
+                    "geom": dict(geom),
+                    "extra": extra,
+                    "donor_key": (donor_side,) + _atom_key(donor),
+                    "donor_h_capacity": _donor_h_capacity(donor, hs),
+                },
+                (mode_rank, float(geom["da_distance"]), -float(geom["angle"])),
+            )
+            hb_stats["explicit_h" if mode_rank == 0 else "heavy_atom"] += 1
 
         for p_d in list(features.get("protein_h_donors", []) or []):
-            donor_key = ("prot",) + _atom_key(p_d)
-            p_hs = list(self._donor_hydrogens(p_d, features) or [])
-            if p_hs:
-                for h in p_hs:
-                    for l_a in grid_lig_acc.query(h["coord"], hb_ha_cut):
-                        if not bool(l_a.get("hbond_acceptor", True)):
-                            continue
-                        if is_suppressed(p_d, l_a):
-                            continue
-                        geom = classify_hbond_geometry(
-                            p_d,
-                            l_a,
-                            hydrogen=h,
-                            criteria=GEOMETRY_CRITERIA,
-                        )
-                        if not bool(geom.get("ok", False)):
-                            continue
-                        _store_hbond_candidate(
-                            donor_key,
-                            p_d,
-                            l_a,
-                            float(geom["distance"]),
-                            float(geom["da_distance"]),
-                            float(geom["angle"]),
-                            str(geom["details"]),
-                            {
-                                "h_coord": h["coord"],
-                                "h_owner": "protein",
-                                "da_distance": float(geom["da_distance"]),
-                                "hbond_geometry": dict(geom),
-                            },
-                        )
-                        hb_stats["prot_explicit"] += 1
-            else:
-                for l_a in grid_lig_acc.query(p_d["coord"], hb_cut):
-                    if not bool(l_a.get("hbond_acceptor", True)):
-                        continue
-                    if is_suppressed(p_d, l_a):
-                        continue
-                    x = self._acceptor_heavy_neighbor(l_a, features)
-                    geom = classify_hbond_geometry(
-                        p_d,
-                        l_a,
-                        acceptor_neighbor=x,
-                        criteria=dict(GEOMETRY_CRITERIA, h_bond_fallback_angle=hb_fallback_angle),
-                    )
-                    if not bool(geom.get("ok", False)):
-                        continue
-                    _store_hbond_candidate(
-                        donor_key,
-                        p_d,
-                        l_a,
-                        float(geom["distance"]),
-                        float(geom["da_distance"]),
-                        float(geom["angle"]),
-                        str(geom["details"]),
-                        {"da_distance": float(geom["da_distance"]), "hbond_geometry": dict(geom)},
-                    )
-                    hb_stats["prot_fallback"] += 1
+            for l_a in grid_lig_acc.query(p_d["coord"], hb_cut):
+                if not bool(l_a.get("hbond_acceptor", True)):
+                    continue
+                _consider_hbond(p_d, l_a, p_d, l_a, "protein")
 
         for l_d in lig_h_donors:
             if str(l_d.get("element", "")).upper() not in ("O", "N", "S"):
                 continue
             if bool(l_d.get("is_anion", False)) or not bool(l_d.get("hbond_donor", True)):
                 continue
-            donor_key = ("lig",) + _atom_key(l_d)
-            l_hs = list(self._donor_hydrogens(l_d, features) or [])
-            if l_hs:
-                for h in l_hs:
-                    for p_a in grid_prot_acc.query(h["coord"], hb_ha_cut):
-                        if is_suppressed(p_a, l_d):
-                            continue
-                        geom = classify_hbond_geometry(
-                            l_d,
-                            p_a,
-                            hydrogen=h,
-                            criteria=GEOMETRY_CRITERIA,
-                        )
-                        if not bool(geom.get("ok", False)):
-                            continue
-                        _store_hbond_candidate(
-                            donor_key,
-                            p_a,
-                            l_d,
-                            float(geom["distance"]),
-                            float(geom["da_distance"]),
-                            float(geom["angle"]),
-                            str(geom["details"]),
-                            {
-                                "h_coord": h["coord"],
-                                "h_owner": "ligand",
-                                "da_distance": float(geom["da_distance"]),
-                                "hbond_geometry": dict(geom),
-                            },
-                        )
-                        hb_stats["lig_explicit"] += 1
-            else:
-                for p_a in grid_prot_acc.query(l_d["coord"], hb_cut):
-                    if is_suppressed(p_a, l_d):
-                        continue
-                    x = self._acceptor_heavy_neighbor(p_a, features)
-                    geom = classify_hbond_geometry(
-                        l_d,
-                        p_a,
-                        acceptor_neighbor=x,
-                        criteria=dict(GEOMETRY_CRITERIA, h_bond_fallback_angle=hb_fallback_angle),
-                    )
-                    if not bool(geom.get("ok", False)):
-                        continue
-                    _store_hbond_candidate(
-                        donor_key,
-                        p_a,
-                        l_d,
-                        float(geom["distance"]),
-                        float(geom["da_distance"]),
-                        float(geom["angle"]),
-                        str(geom["details"]),
-                        {"da_distance": float(geom["da_distance"]), "hbond_geometry": dict(geom)},
-                    )
-                    hb_stats["lig_fallback"] += 1
+            for p_a in grid_prot_acc.query(l_d["coord"], hb_cut):
+                _consider_hbond(l_d, p_a, p_a, l_d, "ligand")
 
+        # A donor cannot make more H-bonds than it has hydrogens: without explicit H the heavy-atom
+        # test lets Thr OG1 "donate" to two ring N; keep its best one(s). Explicit-H bonds are per
+        # hydrogen already and a bifurcated one is kept.
+        by_donor = defaultdict(list)
         for payload in list(hb_best.values()):
+            by_donor[payload["candidate"]["donor_key"]].append(payload)
+        hb_kept = []
+        for _dkey, payloads in by_donor.items():
+            payloads.sort(key=lambda p: tuple(p["score"]))
+            cap = payloads[0]["candidate"].get("donor_h_capacity")
+            n_heavy = 0
+            for payload in payloads:
+                if payload["candidate"]["extra"].get("hbond_mode") != "explicit_hydrogen":
+                    if cap is not None and n_heavy >= int(cap):
+                        hb_stats["capped"] = hb_stats.get("capped", 0) + 1
+                        continue
+                    n_heavy += 1
+                hb_kept.append(payload)
+
+        for payload in hb_kept:
             cand = dict(payload.get("candidate", {}) or {})
+            geom = dict(cand.get("geom", {}) or {})
+            extra = dict(cand.get("extra", {}) or {})
+            sb_rec = _salt_bridge_of(cand["prot_atom"], cand["lig_atom"])
+            if sb_rec is not None:
+                sb_rec["hbond_pairs"].append(
+                    {
+                        "prot_atom": str(cand["prot_atom"].get("name", "") or ""),
+                        "lig_atom": str(cand["lig_atom"].get("name", "") or ""),
+                        "da_distance": float(geom["da_distance"]),
+                        "donor_side": extra.get("donor_side"),
+                        "hbond_mode": extra.get("hbond_mode"),
+                    }
+                )
+                hb_stats["charge_assisted"] += 1
+                continue
             add_interaction(
                 "Hydrogen Bond",
                 cand["prot_atom"],
                 cand["lig_atom"],
-                float(cand["report_dist"]),
-                cand.get("details", ""),
-                extra=cand.get("extra", {}),
+                float(geom["da_distance"]),
+                str(geom.get("details", "")) + (" (protein donor)" if extra.get("donor_side") == "protein" else " (ligand donor)"),
+                extra=extra,
             )
+        for rec, _pk, _lk in sb_records:
+            pairs = sorted(rec.get("hbond_pairs", []) or [], key=lambda p: float(p["da_distance"]))
+            rec["hbond_pairs"] = pairs
+            if pairs:
+                rec["details"] = (
+                    str(rec.get("details", ""))
+                    + "; charge-assisted H-bond "
+                    + ", ".join(f"{p['prot_atom']}···{p['lig_atom']} {float(p['da_distance']):.1f}Å" for p in pairs)
+                )
 
         if not update_coords:
             try:
                 self._append_debug_log(
                     "H-bond engine stats: "
-                    f"prot_explicit={hb_stats['prot_explicit']}, prot_fallback={hb_stats['prot_fallback']}, "
-                    f"lig_explicit={hb_stats['lig_explicit']}, lig_fallback={hb_stats['lig_fallback']}."
+                    f"explicit_h={hb_stats['explicit_h']}, heavy_atom={hb_stats['heavy_atom']}, "
+                    f"charge_assisted={hb_stats['charge_assisted']}, "
+                    f"metal_bound_skipped={hb_stats['metal_bound_skipped']}."
                 )
             except Exception:
                 pass
@@ -53865,22 +54097,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         )
         grid_lig_macc = self._NeighborGrid(features["ligand_metal_acceptors"], cell_size=metal_scan_cut)
         for metal in metal_rows:
-            best = None
+            # every ligand donor atom inside the ion's cutoff is a coordination bond (a chelating
+            # hydroxamate or carboxylate binds with two atoms; keeping only the closest lost one)
             cutoff = float(metal_coordination_cutoff(metal.get("element", ""), criteria=GEOMETRY_CRITERIA))
             for l_acc in grid_lig_macc.query(metal["coord"], cutoff):
                 geom = validate_metal_coordination(metal, l_acc, criteria=GEOMETRY_CRITERIA)
                 if not bool(geom.get("ok", False)):
                     continue
-                d = float(geom["distance"])
-                if best is None or d < best["distance"]:
-                    best = {"lig_atom": dict(l_acc), "distance": d, "details": str(geom["details"])}
-            if best is not None:
                 add_interaction(
                     "Metal Coordination",
                     metal,
-                    best["lig_atom"],
-                    float(best["distance"]),
-                    str(best.get("details", "")),
+                    dict(l_acc),
+                    float(geom["distance"]),
+                    str(geom.get("details", "")),
+                    extra={"metal_cutoff": float(cutoff)},
                 )
 
         hal_cut = float(GEOMETRY_CRITERIA["halogen_dist"])
@@ -54141,9 +54371,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     "chain": lig_chain,
                     "name": str(data.get("min_lig_atom") or ""),
                 },
-                float(distance(prot_com, lig_com)),
-                details="Cluster",
+                # the closest C...C distance (PLIP); the drawn line joins the cluster centres
+                float(data.get("min_dist", 0.0)),
+                details="Cluster",          # drawing keys on this exact text
                 extra={
+                    "cluster_com_distance": float(distance(prot_com, lig_com)),
                     "cluster_min_prot_atom": data.get("min_prot_atom"),
                     "cluster_min_lig_atom": data.get("min_lig_atom"),
                     "cluster_min_distance": float(data.get("min_dist", 0.0)),
@@ -54797,6 +55029,27 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 pass
             self._selected_ids.add(rid)
             self._last_live_state = -1
+    def _apply_publication_view(self):
+        """Publication-style scene of the current interactions (white background, one label per residue,
+        dashes by type, camera into the pocket). Off with settings['publication_view'] = False."""
+        try:
+            if hasattr(self, "_settings") and not bool(self._settings.get("publication_view", True)):
+                return None
+            if not self.interactions or not self.ligand_info or not self.loaded_object:
+                return None
+            from leonardo import interaction_view
+            c, i, r = self.ligand_info
+            lig = self._pymol_residue_selection(self.loaded_object, c, i, r)
+            for name in cmd.get_names("objects"):
+                if name.startswith(("int_dash_", "intRes_", "intCloud", "intRingDisc", "lbl_")):
+                    cmd.disable(name)
+            return interaction_view.build_scene(self.loaded_object, lig, list(self.interactions))
+        except Exception as exc:
+            try:
+                self._append_debug_log(f"publication view: {exc}")
+            except Exception:
+                pass
+            return None
     def _beautify_scene(self):
         """Sets up a nice, clean visualization scene."""
         self._ensure_valid_analysis_context()

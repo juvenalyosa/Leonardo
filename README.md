@@ -75,6 +75,7 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 | **Protein modeling** | Homology models, mutants, gap repair, terminal extensions; AlphaFold/ColabFold predictions (local GPU or Google Colab) and AlphaFold 3 inputs for proteins with ligands, DNA or RNA | MODELLER, ColabFold, AlphaFold 3 |
 | **Ligands** | Draw molecules in the 2D editor, import SMILES, files or PubChem, predict pKa and protonation, build 3D, parameterize for MD | RDKit, Open Babel, Meeko, AmberTools (GAFF2/AM1-BCC) |
 | **Pockets & docking** | Find pockets, dock, analyze interactions, redock to validate, run virtual screening and lead optimization | fpocket, smina/Vina, ProLIF |
+| **Interactions** | Protein–ligand contacts (H-bonds, salt bridges, π-stacking, cation–π, halogen bonds, metals) checked on a golden set of crystal complexes; protein–protein and protein–DNA/RNA interfaces with buried area and groove readout; publication figures in 3D and 2D | RDKit, PyMOL, PDB Chemical Component Dictionary |
 | **Molecular dynamics** | Solvate, minimize and simulate; analyze RMSD, RMSF, interaction occupancy and energies; set up umbrella sampling and metadynamics; estimate binding with ABFE-lite | OpenMM, MDAnalysis, MDTraj, pymbar |
 | **Complex systems** | Automatic parameters for cofactors (heme, NAD, ATP), metal sites, modified and phosphorylated residues, and ligands bound to Cys, Lys or Ser; validated builds with charge and stability checks | CHARMM36, Amber ff14SB/phosaa/lipid17/GLYCAM, GAFF2, PDB Chemical Component Dictionary |
 | **Membranes** | Orient membrane proteins (OPM or predicted helices), embed them in single lipids or mixtures (POPC:cholesterol, POPE:POPG, asymmetric leaflets), equilibrate with a membrane barostat | OpenMM, PACKMOL-Memgen |
@@ -89,7 +90,7 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 
 Leonardo's assistant is **one AI agent**: a single conversation with a large language model of
 your choice, either Anthropic Claude or OpenAI, using your own API key. It works only through
-**116 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
+**118 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
 terminal, no file-system access and no code execution, so it can do only what those tools do.
 
 **How it works.** It first looks at what is loaded, then writes a short **plan** and waits for

@@ -1238,6 +1238,231 @@ def _bond_lengths_check(mol):
         return mol
 
 
+# aromatic ring bonds are 1.33-1.42 A in small-molecule structures; crystal ligands at 2-3 A
+# resolution stretch them to ~1.47 (imatinib in 1IEP), a saturated C-C is 1.53
+_AROMATIC_RING_BOND_MAX = 1.50
+_AROMATIC_RING_BOND_MEAN_MAX = 1.47
+_AROMATIC_RING_BOND_S_MAX = 1.80
+
+
+def _planar_rings(mol, max_dev=0.12):
+    """Atom-index tuples of the 5/6-membered rings whose atoms lie in a plane and whose bonds are
+    all short enough to be aromatic (a cyclohexane or a saturated ring fails both)."""
+    import numpy as np
+
+    conf = mol.GetConformer()
+    out = []
+    for ring in mol.GetRingInfo().AtomRings():
+        if len(ring) not in (5, 6):
+            continue
+        atoms = [mol.GetAtomWithIdx(i) for i in ring]
+        if any(a.GetSymbol() not in ("C", "N", "O", "S") for a in atoms):
+            continue
+        if any(a.GetSymbol() == "C" and a.GetDegree() > 3 for a in atoms):
+            continue
+        pts = np.array([[conf.GetAtomPosition(i).x, conf.GetAtomPosition(i).y, conf.GetAtomPosition(i).z]
+                        for i in ring])
+        centered = pts - pts.mean(axis=0)
+        normal = np.linalg.svd(centered)[2][-1]
+        if float(np.max(np.abs(centered @ normal))) > max_dev:
+            continue
+        lengths = []
+        ok = True
+        for k in range(len(ring)):
+            a, b = ring[k], ring[(k + 1) % len(ring)]
+            d = (conf.GetAtomPosition(a) - conf.GetAtomPosition(b)).Length()
+            if "S" in (mol.GetAtomWithIdx(a).GetSymbol(), mol.GetAtomWithIdx(b).GetSymbol()):
+                ok = ok and d <= _AROMATIC_RING_BOND_S_MAX
+            else:
+                ok = ok and d <= _AROMATIC_RING_BOND_MAX
+                lengths.append(d)
+        if ok and lengths and sum(lengths) / len(lengths) <= _AROMATIC_RING_BOND_MEAN_MAX:
+            out.append(tuple(ring))
+    return out
+
+
+def _bond_orders_from_planarity(mol):
+    """
+    Last-resort bond orders of a heavy-atom molecule from its 3D geometry: flat rings with short
+    bonds are aromatic, short exocyclic C=O / C=N / C=C / S=O are double, very short C-C / C-N are
+    triple. Pyrrole-type ring N get their H by trial until RDKit can kekulize. Open Babel misreads
+    some heteroaromatics (imatinib's pyrimidine); this keeps a flat ring flat.
+    """
+    import itertools
+
+    from rdkit import Chem
+
+    rw = Chem.RWMol(mol)
+    for b in rw.GetBonds():
+        b.SetBondType(Chem.BondType.SINGLE)
+        b.SetIsAromatic(False)
+    for a in rw.GetAtoms():
+        a.SetIsAromatic(False)
+        a.SetNoImplicit(False)
+        a.SetNumExplicitHs(0)
+        a.SetFormalCharge(0)
+    rw.UpdatePropertyCache(strict=False)
+    Chem.GetSymmSSSR(rw)
+    conf = rw.GetConformer()
+    aromatic = set()
+    for ring in _planar_rings(rw):
+        for k in range(len(ring)):
+            bond = rw.GetBondBetweenAtoms(ring[k], ring[(k + 1) % len(ring)])
+            bond.SetBondType(Chem.BondType.AROMATIC)
+            bond.SetIsAromatic(True)
+        for i in ring:
+            rw.GetAtomWithIdx(i).SetIsAromatic(True)
+            aromatic.add(i)
+
+    def length(b):
+        return (conf.GetAtomPosition(b.GetBeginAtomIdx()) - conf.GetAtomPosition(b.GetEndAtomIdx())).Length()
+
+    def free_valence(a):
+        used = sum(1.5 if x.GetIsAromatic() else x.GetBondTypeAsDouble() for x in a.GetBonds())
+        return {"C": 4, "N": 3, "O": 2, "S": 6, "P": 5}.get(a.GetSymbol(), 0) - used
+
+    for b in sorted(rw.GetBonds(), key=length):
+        if b.GetIsAromatic():
+            continue
+        a1, a2 = b.GetBeginAtom(), b.GetEndAtom()
+        pair = frozenset((a1.GetSymbol(), a2.GetSymbol()))
+        d = length(b)
+        if pair == frozenset(("C",)) and d <= 1.24 or pair == frozenset(("C", "N")) and d <= 1.20:
+            if free_valence(a1) >= 2 and free_valence(a2) >= 2:
+                b.SetBondType(Chem.BondType.TRIPLE)
+            continue
+        limits = {frozenset(("C", "O")): 1.30, frozenset(("C", "N")): 1.32, frozenset(("C",)): 1.38,
+                  frozenset(("S", "O")): 1.52, frozenset(("P", "O")): 1.55, frozenset(("N", "O")): 1.26}
+        lim = limits.get(pair)
+        if lim is None or d > lim:
+            continue
+        if a1.GetIsAromatic() and a2.GetIsAromatic():
+            continue
+        if any(a.GetIsAromatic() and a.GetSymbol() == "C" for a in (a1, a2)) and pair != frozenset(("C", "O")):
+            continue
+        if free_valence(a1) >= 1 and free_valence(a2) >= 1:
+            b.SetBondType(Chem.BondType.DOUBLE)
+    for a in rw.GetAtoms():
+        if a.GetSymbol() == "N" and a.GetDegree() == 4:
+            a.SetFormalCharge(1)             # quaternary ammonium
+    candidates = [i for i in aromatic if rw.GetAtomWithIdx(i).GetSymbol() == "N"
+                  and rw.GetAtomWithIdx(i).GetDegree() == 2]
+    base = rw.GetMol()
+    for n in range(0, min(3, len(candidates)) + 1):
+        for combo in itertools.combinations(candidates, n):
+            trial = Chem.RWMol(base)
+            for i in combo:
+                trial.GetAtomWithIdx(i).SetNumExplicitHs(1)
+            try:
+                out = trial.GetMol()
+                Chem.SanitizeMol(out)
+                return out
+            except Exception:
+                continue
+    raise ValueError("could not assign bond orders from the geometry")
+
+
+def _geometry_contradicts(mol, crystal):
+    """True when ``mol`` (bond orders from some source) leaves a flat aromatic-looking ring of
+    ``crystal`` without any aromatic or double bond (Open Babel read tetrabromobenzotriazole's
+    benzene ring as a tetrabromocyclohexene)."""
+    from rdkit import Chem
+
+    probe = Chem.RWMol(crystal)
+    probe.UpdatePropertyCache(strict=False)
+    Chem.GetSymmSSSR(probe)
+    for ring in _planar_rings(probe):
+        for i in ring:
+            a = mol.GetAtomWithIdx(i)
+            if a.GetSymbol() == "C" and not a.GetIsAromatic() and not any(
+                    b.GetBondType() in (Chem.BondType.DOUBLE, Chem.BondType.AROMATIC) for b in a.GetBonds()):
+                return True
+    return False
+
+
+GENERIC_LIGAND_NAMES = frozenset({"UNL", "UNK", "LIG", "MOL", "DRG", "INH", "XXX", "LG1", "L01", "UNX"})
+
+
+def ligand_bond_orders_from_pdb(pdb_block, resn="", smiles_hint="", fetch_ccd=True, ccd_timeout=6):
+    """
+    Heavy-atom RDKit molecule of one ligand residue given as a PDB block, with bond orders.
+
+    A PDB block carries no bond orders: RDKit's proximity bonding makes every bond single, so an
+    aromatic ring is read as a cyclohexane and protonating that molecule roughly doubles the
+    hydrogens (benzamidine got 17 H instead of 9, a quinazoline N became an amine). Bond orders
+    come from, in order: the PDB chemical component (``resn``), ``smiles_hint``, Open Babel's
+    perception from the 3D geometry. Atom order, coordinates and PDB atom names of the input are
+    kept. Returns ``(mol, source)``; ``mol`` is None when nothing worked (``source`` says why).
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    raw = Chem.MolFromPDBBlock(str(pdb_block or ""), removeHs=False, sanitize=False)
+    if raw is None or raw.GetNumAtoms() == 0:
+        return None, "RDKit could not read the ligand coordinates"
+    heavy = Chem.RWMol(raw)
+    for idx in sorted((a.GetIdx() for a in raw.GetAtoms() if a.GetAtomicNum() == 1), reverse=True):
+        heavy.RemoveAtom(idx)
+    crystal = heavy.GetMol()
+    for atom in crystal.GetAtoms():
+        atom.SetNoImplicit(False)
+        atom.SetNumExplicitHs(0)
+        atom.SetFormalCharge(0)
+    try:
+        crystal.UpdatePropertyCache(strict=False)
+    except Exception:
+        pass
+    n_heavy = crystal.GetNumAtoms()
+
+    def _finish(mol, source):
+        out = Chem.Mol(mol)
+        for i, atom in enumerate(out.GetAtoms()):
+            info = crystal.GetAtomWithIdx(i).GetPDBResidueInfo()
+            if info is not None:
+                atom.SetMonomerInfo(info)
+        Chem.SanitizeMol(out)
+        return out, source
+
+    templates = []
+    code = str(resn or "").strip().upper()
+    if code in GENERIC_LIGAND_NAMES:
+        code = ""                          # docking/MD placeholder names, not chemical components
+    try:
+        ref = ccd_reference(code, fetch=fetch_ccd, timeout=ccd_timeout) if code else None
+    except Exception:
+        ref = None
+    if ref is not None:
+        templates.append((ref, f"PDB chemical component {str(resn).strip().upper()}"))
+    if smiles_hint:
+        try:
+            hint = Chem.MolFromSmiles(str(smiles_hint))
+            if hint is not None:
+                templates.append((Chem.RemoveHs(hint), "SMILES template"))
+        except Exception:
+            pass
+    for ref, source in templates:
+        ref_heavy = Chem.RemoveHs(ref, sanitize=False)
+        if ref_heavy.GetNumAtoms() != n_heavy:
+            continue                       # a missing/extra atom in the crystal: the template cannot map
+        try:
+            return _finish(AllChem.AssignBondOrdersFromTemplate(ref_heavy, crystal), source)
+        except Exception:
+            continue
+    errors = []
+    try:
+        ob_mol = _bond_orders_from_geometry(crystal)
+        if not _geometry_contradicts(ob_mol, crystal):
+            return _finish(ob_mol, "inferred from the geometry (Open Babel)")
+        errors.append("Open Babel left a flat ring saturated")
+    except Exception as exc:
+        errors.append(f"Open Babel: {exc}")
+    try:
+        return _finish(_bond_orders_from_planarity(crystal), "inferred from ring planarity and bond lengths")
+    except Exception as exc:
+        errors.append(f"geometry: {exc}")
+    return None, "no bond orders: no matching chemical component template; " + "; ".join(errors)
+
+
 def assign_ligand_chemistry(residue, positions_nm, ph=7.4, fetch_ccd=True):
     """
     Heavy-atom molecule of a ligand residue with bond orders (CCD template, else inferred from the

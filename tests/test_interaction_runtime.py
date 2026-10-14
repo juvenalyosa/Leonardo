@@ -404,3 +404,127 @@ def test_topology_ionic_assignment_keeps_neutral_aromatic_heterocycles_uncharged
     for smiles, group in (("NC(=N)c1ccccc1", "Amidinium"), ("NC(=N)NCC", "Guanidinium")):
         groups = build_ligand_charge_groups(assign_ligand_ionic_groups_from_topology(_embedded_ligand_atoms(smiles)))
         assert [(g["group_type"], g["charge_sign"]) for g in groups] == [(group, +1)], smiles
+
+
+def test_hbond_distance_is_always_donor_acceptor():
+    donor = _atom("N", "N", [0.0, 0.0, 0.0])
+    hydrogen = _atom("H", "H", [1.0, 0.0, 0.0])
+    acceptor = _atom("O", "O", [2.9, 0.0, 0.0])
+    explicit = classify_hbond_geometry(donor, acceptor, hydrogen=hydrogen)
+    heavy = classify_hbond_geometry(donor, acceptor)
+    # it used to be H...A (1.9) with explicit H and D...A (2.9) without
+    assert abs(explicit["distance"] - 2.9) < 1e-6 and abs(explicit["ha_distance"] - 1.9) < 1e-6
+    assert abs(heavy["distance"] - 2.9) < 1e-6 and heavy["ha_distance"] is None
+    assert explicit["distance_kind"] == heavy["distance_kind"] == "D...A"
+
+
+def test_hbond_heavy_atom_mode_uses_polar_contact_cutoff():
+    donor = _atom("N", "N", [0.0, 0.0, 0.0])
+    near = classify_hbond_geometry(donor, _atom("O", "O", [3.5, 0.0, 0.0]))
+    far = classify_hbond_geometry(donor, _atom("O", "O", [3.9, 0.0, 0.0]))
+    hydrogen = _atom("H", "H", [1.0, 0.0, 0.0])
+    far_explicit = classify_hbond_geometry(donor, _atom("O", "O", [3.7, 0.0, 0.0]), hydrogen=hydrogen)
+    assert near["ok"] is True
+    assert far["ok"] is False and far["reason"] == "donor_acceptor_distance"
+    assert far_explicit["ok"] is True            # with the H known PLIP's criteria apply
+
+
+def test_hbond_ring_nitrogen_judged_by_lone_pair_direction():
+    # pyridine-like N with ring neighbours at +-120 deg; donor straight along the lone pair
+    acceptor = _atom("N1", "N", [0.0, 0.0, 0.0])
+    c2 = _atom("C2", "C", [-0.67, 1.16, 0.0])
+    c6 = _atom("C6", "C", [-0.67, -1.16, 0.0])
+    donor = _atom("N", "N", [2.9, 0.0, 0.0], resn="MET", chain="A")
+    res = classify_hbond_geometry(donor, acceptor, acceptor_neighbors=[c2, c6])
+    assert res["ok"] is True and res["angle"] > 170.0
+    # the closest single neighbour gave ~120 deg here and 97 deg for the real EGFR hinge
+    # a donor in the ring plane behind C2 is not an H-bond
+    behind = _atom("N", "N", [-2.2, 2.3, 0.0], resn="MET", chain="A")
+    assert classify_hbond_geometry(behind, acceptor, acceptor_neighbors=[c2, c6])["ok"] is False
+
+
+def test_hbond_backbone_donor_must_point_at_acceptor():
+    # backbone N with C(prev) and CA: its H lies opposite them
+    donor = _atom("N", "N", [0.0, 0.0, 0.0], resn="GLY", chain="A")
+    c_prev = _atom("C", "C", [-0.7, 1.2, 0.0], resn="GLY", chain="A")
+    ca = _atom("CA", "C", [-0.7, -1.2, 0.0], resn="GLY", chain="A")
+    front = _atom("O1", "O", [2.9, 0.0, 0.0])
+    back = _atom("O1", "O", [-2.0, 2.0, 0.5])
+    assert classify_hbond_geometry(donor, front, donor_neighbors=[c_prev, ca])["ok"] is True
+    bad = classify_hbond_geometry(donor, back, donor_neighbors=[c_prev, ca])
+    assert bad["ok"] is False and bad["reason"] == "donor_neighbor_angle"
+
+
+def test_pi_ring_angle_is_reported_between_0_and_90():
+    protein_ring = {"centroid": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}
+    # anti-parallel normals (157 deg) are the same plane orientation as 23 deg
+    tilt = np.radians(157.0)
+    ligand_ring = {"centroid": np.array([0.3, 0.0, 3.8]), "normal": np.array([np.sin(tilt), 0.0, np.cos(tilt)])}
+    res = classify_pi_ring_pair(protein_ring, ligand_ring)
+    assert res["ok"] is True and res["type"] == "Pi-Pi Stacking"
+    assert abs(res["angle"] - 23.0) < 1e-6 and "angle 23°" in res["details"]
+
+
+def test_every_record_says_what_its_distance_measures():
+    from interaction_runtime import INTERACTION_DISTANCE_KIND, build_interaction_record
+
+    prot = _atom("OD1", "O", [0.0, 0.0, 0.0], resn="ASP", chain="A")
+    lig = _atom("N1", "N", [2.9, 0.0, 0.0])
+    for itype, kind in INTERACTION_DISTANCE_KIND.items():
+        assert build_interaction_record(itype, prot, lig, 2.9)["distance_kind"] == kind
+
+
+def test_protein_hydrophobic_atoms_are_carbons_bonded_only_to_carbon():
+    from interaction_runtime import protein_hydrophobic_atom_names
+
+    assert "NE1" not in protein_hydrophobic_atom_names("TRP")
+    assert "CD1" not in protein_hydrophobic_atom_names("TRP")      # bonded to NE1
+    assert "CZ" not in protein_hydrophobic_atom_names("TYR")       # bonded to OH
+    assert "CD" not in protein_hydrophobic_atom_names("PRO")       # bonded to N
+    assert "CD1" in protein_hydrophobic_atom_names("LEU")
+
+
+def test_protein_donor_hydrogen_counts():
+    from interaction_typing_runtime import protein_donor_hydrogen_count
+
+    assert protein_donor_hydrogen_count("THR", "OG1") == 1
+    assert protein_donor_hydrogen_count("LYS", "NZ") == 3
+    assert protein_donor_hydrogen_count("ARG", "NH1") == 2
+    assert protein_donor_hydrogen_count("GLN", "NE2") == 2
+    assert protein_donor_hydrogen_count("HIS", "NE2") == 1
+    assert protein_donor_hydrogen_count("PRO", "N") == 0
+    assert protein_donor_hydrogen_count("ALA", "N") == 1
+
+
+_BEN_PDB = """\
+HETATM 1632  C1  BEN A   1      -1.853  14.311  16.658  1.00 19.86           C
+HETATM 1633  C2  BEN A   1      -2.107  15.653  16.758  1.00 19.86           C
+HETATM 1634  C3  BEN A   1      -1.774  16.341  17.932  1.00 19.86           C
+HETATM 1635  C4  BEN A   1      -1.175  15.662  19.005  1.00 19.86           C
+HETATM 1636  C5  BEN A   1      -0.914  14.295  18.885  1.00 19.86           C
+HETATM 1637  C6  BEN A   1      -1.257  13.634  17.708  1.00 19.86           C
+HETATM 1638  C   BEN A   1      -2.193  13.627  15.496  1.00 19.86           C
+HETATM 1639  N1  BEN A   1      -2.797  14.235  14.491  1.00 19.86           N
+HETATM 1640  N2  BEN A   1      -1.762  12.391  15.309  1.00 19.86           N
+"""
+
+
+def test_ligand_bond_orders_from_pdb_keeps_the_aromatic_ring(tmp_path, monkeypatch):
+    """A PDB has no bond orders: read as all-single the benzamidine ring became a cyclohexane and
+    protonation gave 17 H instead of 9."""
+    import pytest
+
+    pytest.importorskip("rdkit")
+    from rdkit import Chem
+    from leonardo.component_library_runtime import ligand_bond_orders_from_pdb
+
+    monkeypatch.setenv("LEONARDO_PARAMETERS_DIR", str(tmp_path))      # empty: no CCD template
+    for kwargs in ({"smiles_hint": "[NH2+]=C(N)c1ccccc1"}, {}):       # template, then Open Babel
+        if not kwargs:
+            pytest.importorskip("openbabel")
+        mol, source = ligand_bond_orders_from_pdb(_BEN_PDB, resn="", fetch_ccd=False, **kwargs)
+        assert mol is not None, source
+        assert sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) == 6, source
+        assert [a.GetPDBResidueInfo().GetName().strip() for a in mol.GetAtoms()][-2:] == ["N1", "N2"]
+        # benzamidine (8 H) or, with the charged template, benzamidinium (9 H); never 16-17
+        assert Chem.AddHs(mol).GetNumAtoms() - mol.GetNumAtoms() in (8, 9)

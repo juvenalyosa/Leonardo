@@ -258,16 +258,43 @@ def register(reg):
         dlg = ctx.dlg
         if not getattr(dlg, "ligand_info", None) or not getattr(dlg, "interactions", None):
             raise ToolError("analyze the interactions of a complex first (analyze_interactions)")
-        import matplotlib.pyplot as plt
-
-        before = set(plt.get_fignums())
-        with _headless.quiet() as q, _headless.plots_allowed():
-            dlg._on_show_2d_map()
-        if not set(plt.get_fignums()) - before:
-            raise ToolError("; ".join(m["text"] for m in q.messages) or "no 2D map was drawn")
         path = os.path.join(ctx.workspace("plots"), time.strftime("interaction_map_%H%M%S.png"))
-        plt.figure(plt.get_fignums()[-1]).savefig(path, dpi=110)
+        try:
+            with _headless.quiet(), _headless.plots_allowed():
+                dlg._generate_2d_map_figure(path=path, show=True)
+        except Exception as exc:
+            raise ToolError(f"the 2D map could not be drawn: {exc}")
+        if not os.path.isfile(path):
+            raise ToolError("no 2D map was drawn")
         return {"image": path, "_image": path, "_card": "2D interaction map of the current complex."}
+
+    @reg.tool("export_interaction_figure", "Publication-quality figure of the current protein-ligand interactions "
+              "(after analyze_interactions): the ray-traced 3D view with a legend, and the 2D diagram.",
+              {"properties": {"folder": {"type": "string"}, "width": {"type": "integer"},
+                              "height": {"type": "integer"}}},
+              permission="compute_light", title="Interaction figure")
+    def export_interaction_figure(ctx, folder="", width=2400, height=1600):
+        from leonardo import interaction_view
+
+        dlg = ctx.dlg
+        inter = list(getattr(dlg, "interactions", []) or [])
+        li = getattr(dlg, "ligand_info", None)
+        if not inter or not li:
+            raise ToolError("analyze the interactions of a complex first (analyze_interactions)")
+        folder = os.path.abspath(os.path.expanduser(folder)) if folder else ctx.workspace("figures")
+        os.makedirs(folder, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        chain, resi, resn = li[0], li[1], li[2]
+        title = f"{resn} {chain}{resi}".strip()
+        sub = f"{dlg.loaded_object} \u00b7 {len(inter)} interactions"
+        fig3d = os.path.join(folder, f"interactions_3d_{stamp}.png")
+        map2d = os.path.join(folder, f"interactions_2d_{stamp}.png")
+        width, height = max(600, min(int(width), 6000)), max(400, min(int(height), 4000))
+        with _headless.quiet():
+            interaction_view.export_figure(fig3d, inter, width, height, title=title, subtitle=sub)
+            dlg._generate_2d_map_figure(path=map2d, show=False)
+        return {"figure_3d": fig3d, "map_2d": map2d, "_image": fig3d,
+                "_card": f"Interaction figure saved: `{fig3d}` and the 2D diagram `{map2d}`."}
 
     @reg.tool("export_interactions_csv", "Write the current protein-ligand interaction table to a CSV file.",
               {"properties": {"path": {"type": "string"}}},
