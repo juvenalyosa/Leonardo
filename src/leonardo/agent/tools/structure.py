@@ -16,12 +16,10 @@ def _cmd():
 
 def _object_summary(obj):
     cmd = _cmd()
-    chains = cmd.get_chains(obj)
-    n_res = {}
-    for ch in chains:
-        space = {"res": set()}
-        cmd.iterate(f"({obj}) and polymer and chain {ch} and name CA", "res.add(resi)", space=space)
-        n_res[ch or "-"] = len(space["res"])
+    # one pass grouped by chain: "chain " with a blank chain id selects atoms of other objects
+    space = {"res": {ch or "-": set() for ch in cmd.get_chains(obj)}}
+    cmd.iterate(f"({obj}) and polymer and name CA", "res.setdefault(chain or '-', set()).add(resi)", space=space)
+    n_res = {ch: len(v) for ch, v in space["res"].items()}
     ligands = []
     space = {"seen": {}}
     cmd.iterate(f"({obj}) and not polymer and not resn {_WATER}",

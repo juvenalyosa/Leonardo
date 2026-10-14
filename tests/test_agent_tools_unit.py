@@ -107,3 +107,26 @@ def test_out_of_range_values_are_reported_not_clamped():
     set_value(Dlg, "spin", 20)
     assert Dlg.spin.value() == 20
     assert "rgba(31, 58, 110, 0.12)" in pill_style("#1F3A6E")
+
+
+def test_describe_object_counts_only_its_own_residues_for_a_blank_chain():
+    """'chain  and name CA' (blank chain id) selected the alpha carbons of every other object: an MD/SDF
+    structure without chain ids was reported with the residues of the whole session."""
+    from pymol import cmd
+
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.fab("ACDEFGHIK", "other", chain="A")
+    cmd.fab("GAG", "nochain", chain="A")
+    cmd.alter("nochain", "chain=''")
+    cmd.pseudoatom("lig", name="C1", resn="UNK", resi="0", elem="C", pos=[30.0, 0.0, 0.0], hetatm=1)
+    cmd.alter("lig", "chain=''")
+    ctx = AgentContext()
+    reg = build_registry(ctx)
+    try:
+        assert reg.call("describe_object", {"object": "nochain"}, ctx)["chains"] == {"-": 3}
+        assert reg.call("describe_object", {"object": "other"}, ctx)["chains"] == {"A": 9}
+        assert reg.call("describe_object", {"object": "lig"}, ctx)["chains"] == {"-": 0}
+    finally:
+        cmd.reinitialize()
