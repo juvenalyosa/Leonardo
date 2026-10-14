@@ -53,6 +53,10 @@ def test_bioseq_object_sequence_does_not_fuse_chains():
     assert bioseq._sequence_from(object="two", chain="B") == "MNPQRSTVWY"
     cmd.fab("ACDEFGHIKLMN", "one", chain="A")
     assert bioseq._sequence_from(object="one") == "ACDEFGHIKLMN"
+    cmd.fnab("GATTACA", "_dna", mode="DNA", form="B", dbl_helix=0)   # protein-DNA complex: one protein chain
+    cmd.alter("_dna", "chain = 'D'")
+    cmd.create("cplx", "one or _dna")
+    assert bioseq._sequence_from(object="cplx") == "ACDEFGHIKLMN"
 
 
 def test_mutant_of_chain_b_is_superposed_on_chain_b(tmp_path, monkeypatch):

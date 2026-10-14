@@ -21,7 +21,8 @@ def _sequence_from(sequence="", object="", chain=""):
             chains = sorted(set(cmd.get_chains(f"({object}) and polymer.protein")))
             if len(chains) > 1:
                 raise ToolError(f"{object} has chains {chains}; say which one")
-        sel = f"({object}) and polymer" + (f" and chain {chain}" if chain else "")
+        # polymer.protein: DNA/RNA letters (ACGTU) would pass as amino acids
+        sel = f"({object}) and polymer.protein" + (f" and chain {chain}" if chain else "")
         fasta = cmd.get_fastastr(sel)
         seq = "".join(ln for ln in fasta.splitlines() if not ln.startswith(">")).replace("?", "X").upper()
     else:
