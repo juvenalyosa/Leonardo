@@ -40,6 +40,30 @@ _PROTEIN_HBOND_DONORS = {
 }
 
 
+# Hydrogens each protein donor atom carries: without explicit hydrogens a donor
+# cannot make more heavy-atom H-bonds than this (Thr OG1 donates one).
+_PROTEIN_DONOR_H_COUNT = {
+    "N": 1,
+    "NZ": 3,
+    "NE": 1,
+    "NH1": 2,
+    "NH2": 2,
+    "ND1": 1,
+    "NE2": 1,
+    "NE1": 1,
+    "ND2": 2,
+    "OG": 1,
+    "OG1": 1,
+    "OH": 1,
+    "SG": 1,
+}
+_PROTEIN_DONOR_H_COUNT_BY_RESIDUE = {
+    ("GLN", "NE2"): 2,
+    ("LYN", "NZ"): 2,
+    ("PRO", "N"): 0,
+}
+
+
 _PROTEIN_HBOND_ACCEPTORS = {
     "ASP": ("OD1", "OD2"),
     "GLU": ("OE1", "OE2"),
@@ -131,6 +155,15 @@ def protein_negative_atom_names(resn):
 
 def protein_hbond_donor_atom_names(resn):
     return _lookup_atom_names(_PROTEIN_HBOND_DONORS, resn)
+
+
+def protein_donor_hydrogen_count(resn, atom_name):
+    """Hydrogens a protein donor atom carries (backbone N: 1, Lys NZ: 3, ...); None if unknown."""
+    name = str(atom_name or "").strip().upper()
+    key = (normalize_interaction_residue_name(resn), name)
+    if key in _PROTEIN_DONOR_H_COUNT_BY_RESIDUE:
+        return _PROTEIN_DONOR_H_COUNT_BY_RESIDUE[key]
+    return _PROTEIN_DONOR_H_COUNT.get(name)
 
 
 def protein_hbond_acceptor_atom_names(resn):

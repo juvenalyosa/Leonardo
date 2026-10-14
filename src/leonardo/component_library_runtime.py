@@ -1238,6 +1238,74 @@ def _bond_lengths_check(mol):
         return mol
 
 
+def ligand_bond_orders_from_pdb(pdb_block, resn="", smiles_hint="", fetch_ccd=True, ccd_timeout=6):
+    """
+    Heavy-atom RDKit molecule of one ligand residue given as a PDB block, with bond orders.
+
+    A PDB block carries no bond orders: RDKit's proximity bonding makes every bond single, so an
+    aromatic ring is read as a cyclohexane and protonating that molecule roughly doubles the
+    hydrogens (benzamidine got 17 H instead of 9, a quinazoline N became an amine). Bond orders
+    come from, in order: the PDB chemical component (``resn``), ``smiles_hint``, Open Babel's
+    perception from the 3D geometry. Atom order, coordinates and PDB atom names of the input are
+    kept. Returns ``(mol, source)``; ``mol`` is None when nothing worked (``source`` says why).
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    raw = Chem.MolFromPDBBlock(str(pdb_block or ""), removeHs=False, sanitize=False)
+    if raw is None or raw.GetNumAtoms() == 0:
+        return None, "RDKit could not read the ligand coordinates"
+    heavy = Chem.RWMol(raw)
+    for idx in sorted((a.GetIdx() for a in raw.GetAtoms() if a.GetAtomicNum() == 1), reverse=True):
+        heavy.RemoveAtom(idx)
+    crystal = heavy.GetMol()
+    for atom in crystal.GetAtoms():
+        atom.SetNoImplicit(False)
+        atom.SetNumExplicitHs(0)
+        atom.SetFormalCharge(0)
+    try:
+        crystal.UpdatePropertyCache(strict=False)
+    except Exception:
+        pass
+    n_heavy = crystal.GetNumAtoms()
+
+    def _finish(mol, source):
+        out = Chem.Mol(mol)
+        for i, atom in enumerate(out.GetAtoms()):
+            info = crystal.GetAtomWithIdx(i).GetPDBResidueInfo()
+            if info is not None:
+                atom.SetMonomerInfo(info)
+        Chem.SanitizeMol(out)
+        return out, source
+
+    templates = []
+    try:
+        ref = ccd_reference(resn, fetch=fetch_ccd, timeout=ccd_timeout) if resn else None
+    except Exception:
+        ref = None
+    if ref is not None:
+        templates.append((ref, f"PDB chemical component {str(resn).strip().upper()}"))
+    if smiles_hint:
+        try:
+            hint = Chem.MolFromSmiles(str(smiles_hint))
+            if hint is not None:
+                templates.append((Chem.RemoveHs(hint), "SMILES template"))
+        except Exception:
+            pass
+    for ref, source in templates:
+        ref_heavy = Chem.RemoveHs(ref, sanitize=False)
+        if ref_heavy.GetNumAtoms() != n_heavy:
+            continue                       # a missing/extra atom in the crystal: the template cannot map
+        try:
+            return _finish(AllChem.AssignBondOrdersFromTemplate(ref_heavy, crystal), source)
+        except Exception:
+            continue
+    try:
+        return _finish(_bond_orders_from_geometry(crystal), "inferred from the geometry (Open Babel)")
+    except Exception as exc:
+        return None, f"no bond orders: no matching chemical component template and Open Babel failed ({exc})"
+
+
 def assign_ligand_chemistry(residue, positions_nm, ph=7.4, fetch_ccd=True):
     """
     Heavy-atom molecule of a ligand residue with bond orders (CCD template, else inferred from the
