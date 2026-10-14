@@ -172,6 +172,27 @@ def test_interaction_distribution_finds_the_residue_as_documented():
         cmd.reinitialize()
 
 
+def test_show_lead_optimization_hit_returns_the_interactions_it_computed(monkeypatch):
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    monkeypatch.setattr("leonardo.agent.presentation.save_step_scene", lambda *a, **k: {"scene": "s"})
+    monkeypatch.setattr("leonardo.agent.presentation.focus", lambda *a, **k: None)
+
+    class Dlg:
+        _leadopt_results = [{"name": "a1", "smiles": "CCO"}, {"name": "a2", "smiles": "CCN"}]
+
+        def _on_leadopt_compute_interactions_selected(self):
+            self.loaded_object = "leadopt_complex_rank1"
+            self.interactions = [{"type": "Hydrogen Bond", "prot_res": "MET A769", "distance": 2.9},
+                                 {"type": "Hydrophobic", "prot_res": "LEU A694", "distance": 3.7}]
+
+    ctx = AgentContext(Dlg())
+    out = build_registry(ctx).call("show_lead_optimization_hit", {"rank": 1}, ctx)
+    assert out["interactions_total"] == 2
+    assert out["interactions_by_type"] == {"Hydrogen Bond": 1, "Hydrophobic": 1}
+    assert out["closest"][0] == {"type": "Hydrogen Bond", "residue": "MET A769", "distance_A": 2.9}
+
+
 def test_describe_object_counts_only_its_own_residues_for_a_blank_chain():
     """'chain  and name CA' (blank chain id) selected the alpha carbons of every other object: an MD/SDF
     structure without chain ids was reported with the residues of the whole session."""

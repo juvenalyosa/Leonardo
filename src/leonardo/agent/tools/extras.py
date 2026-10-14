@@ -430,6 +430,20 @@ def register(reg):
         r = rows[int(rank) - 1]
         if obj:
             presentation.focus(obj, buffer=6.0)
-        return {"rank": rank, "name": r.get("name"), "smiles": r.get("smiles"), "complex": obj,
-                "scene": ctx.scene(f"lead optimization analog #{rank}"),
-                "_card": f"Analog **#{rank} {r.get('name')}** loaded as `{obj}`."}
+        out = {"rank": rank, "name": r.get("name"), "smiles": r.get("smiles"), "complex": obj,
+               "scene": ctx.scene(f"lead optimization analog #{rank}"),
+               "_card": f"Analog **#{rank} {r.get('name')}** loaded as `{obj}`."}
+        if interactions:
+            # computed by Leonardo but not returned before: the caller asked for them
+            from collections import Counter
+
+            inter = list(getattr(dlg, "interactions", []) or [])
+            counts = Counter(str(i.get("type", "")) for i in inter)
+            out["interactions_total"] = len(inter)
+            out["interactions_by_type"] = dict(counts)
+            out["closest"] = [{"type": i.get("type"), "residue": i.get("prot_res"),
+                               "distance_A": round(float(i.get("distance", 0) or 0), 2)}
+                              for i in sorted(inter, key=lambda i: float(i.get("distance", 99) or 99))[:10]]
+            out["_card"] += (f" {len(inter)} interactions (" + ", ".join(f"{n} {t}" for t, n in counts.most_common())
+                             + ")." if inter else " No interactions found.")
+        return out
