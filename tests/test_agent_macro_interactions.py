@@ -48,7 +48,9 @@ def test_default_chains_card_and_objects(env):
     assert "ASP39:D" in out["interface_residues"]["B"] and "Buried SASA" in out["_card"]
     sels = out["objects"]["selections"]
     assert cmd.count_atoms(sels["both"]) > 0 and cmd.count_atoms(sels["side_b"]) > 0
-    assert "iface_brs_hb" in out["objects"]["dash_objects"] and "iface_brs_hb" in cmd.get_names("objects")
+    assert "ivf_H-bond" in out["objects"]["dash_objects"] and "ivf_H-bond" in cmd.get_names("objects")
+    assert "ivf_Salt_bridge" in out["objects"]["dash_objects"] and out["objects"]["view"]["labels"] >= 5
+    assert cmd.count_atoms("ivf_labels") == out["objects"]["view"]["labels"]
     assert any(r["type"] == "Salt Bridge" and r["a"] == "ARG83:A NH2" and r["b"] == "ASP39:D OD1"
                for r in out["top_contacts"])
     # a second run replaces, not duplicates, its objects

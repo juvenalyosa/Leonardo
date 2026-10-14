@@ -6,6 +6,7 @@ functions (selections, dash objects, style) so the visuals can be restyled witho
 analysis.
 """
 
+import os
 import re
 
 from ..registry import ToolError
@@ -81,6 +82,21 @@ def select_interface(obj, result, prefix):
         names[side] = name
     cmd.select(f"{prefix}_res", f"{names['A']} or {names['B']}", enable=0)
     return {"side_a": names["A"], "side_b": names["B"], "both": f"{prefix}_res"}
+
+
+def _index_selection(obj, indices):
+    """Compact PyMOL selection of atom indices ('index 1-200+305-410')."""
+    idx = sorted({int(i) for i in indices})
+    if not idx:
+        return "none"
+    ranges, start, prev = [], idx[0], idx[0]
+    for i in idx[1:]:
+        if i != prev + 1:
+            ranges.append(f"{start}-{prev}" if prev > start else f"{start}")
+            start = i
+        prev = i
+    ranges.append(f"{start}-{prev}" if prev > start else f"{start}")
+    return f"({obj}) and index " + "+".join(ranges)
 
 
 def _atom_sel(obj, ref):
@@ -197,12 +213,13 @@ def register(reg):
                                   "description": "Shrake-Rupley in numpy (default, also per residue) or PyMOL "
                                                  "get_area (total only)"},
                   "show": {"type": "boolean", "description": "create selections and dash objects (default true)"},
+                  "figure_path": {"type": "string", "description": "also save a ray-traced figure with a legend (PNG)"},
                   "max_rows": {"type": "integer", "minimum": 1, "maximum": 100,
                                "description": "rows of top contacts / hotspots to return (default 15)"},
               }, "required": ["object"]},
               permission="compute_light", title="Macromolecular interface")
     def analyze_interface(ctx, object, selection_a="", selection_b="", include_waters=True, sasa_method="numpy",
-                          show=True, max_rows=15):
+                          show=True, max_rows=15, figure_path=""):
         from ... import macro_interaction_runtime as rt
 
         cmd = _cmd()
@@ -231,14 +248,39 @@ def register(reg):
                 if name.startswith(prefix + "_"):
                     cmd.delete(name)
             sels = select_interface(object, result, prefix)
-            dashes = draw_interaction_dashes(object, result, prefix)
-            style_interface_minimal(object, sels, dashes)
-            objects = {"selections": sels, "dash_objects": dashes}
             try:
-                cmd.zoom(sels["both"], buffer=4.0)
-            except Exception:
-                pass
+                from ... import interaction_view
 
+                side_sels = {}
+                for side in ("A", "B"):
+                    name = f"{prefix}_side_{side.lower()}"
+                    cmd.select(name, _index_selection(object, [atoms[i]["pymol_index"] for i in positions[side]]),
+                               enable=0)
+                    side_sels[side] = name
+                view = interaction_view.build_interface_scene(object, side_sels["A"], side_sels["B"],
+                                                              result["interactions"], result["hotspots"])
+                objects = {"selections": dict(sels, partner_a=side_sels["A"], partner_b=side_sels["B"]),
+                           "dash_objects": view["dash_objects"], "view": view}
+            except Exception as exc:
+                # minimal fallback: sticks and plain distance objects
+                dashes = draw_interaction_dashes(object, result, prefix)
+                style_interface_minimal(object, sels, dashes)
+                objects = {"selections": sels, "dash_objects": dashes, "view_note": f"basic view ({exc})"}
+                try:
+                    cmd.zoom(sels["both"], buffer=4.0)
+                except Exception:
+                    pass
+
+        if show and figure_path and objects.get("view"):
+            from ... import interaction_view
+
+            figure_path = os.path.abspath(os.path.expanduser(str(figure_path)))
+            sides = result["sides"]
+            interaction_view.export_figure(
+                figure_path, result["interactions"], 2000, 1300, title=f"{object} interface",
+                subtitle=f"{sides['A']['selection']} vs {sides['B']['selection']}",
+                items=interaction_view.interface_legend_items(result["interactions"]))
+            objects["figure"] = figure_path
         max_rows = int(max_rows or 15)
         top = [r for r in result["interactions"] if r["type"] != "Hydrophobic"][:max_rows]
         if len(top) < max_rows:
