@@ -35,7 +35,7 @@ Status: **pre-release for testing and manuscript verification**
 
 ## Watch Leonardo in action
 
-Short films made with Leonardo from real calculations. Click a picture to watch it on YouTube.
+Short films from real calculations with the open engines Leonardo uses (smina/Vina, OpenMM, MOPAC). Click a picture to watch it on YouTube.
 
 <table>
   <tr>
@@ -56,8 +56,9 @@ Short films made with Leonardo from real calculations. Click a picture to watch 
   </tr>
 </table>
 
-**Check the numbers yourself.** The calculations behind the films are being published as replay packs that
-re-run without the AI and compare every value with the reference:
+**Check the numbers yourself.** Films 01–07 were calculated with scripted runs of these engines; the same
+calculations are being redone through Leonardo's own tools and published as replay packs. The packs re-run
+without the AI and compare every value with the reference (films 01 and 08 so far):
 `python -m leonardo.replay verify examples/films/01_molecular_docking`. See
 [Reproducing Leonardo's calculations](docs/REPRODUCIBILITY.md).
 
