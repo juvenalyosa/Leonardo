@@ -274,3 +274,14 @@ def test_rmsd_cv_is_zero_for_a_rigidly_rotated_copy():
     assert _rmsd_nm((ref + noise) @ rot.T, ref) <= expected + 1e-9
     # a mirror image cannot be superposed by a proper rotation
     assert _rmsd_nm(ref * np.array([1.0, 1.0, -1.0]), ref) > 0.1
+
+
+def test_metadynamics_smoke_accepts_a_deposit_frequency_that_does_not_divide_the_save_interval(tmp_path):
+    # run_enhanced_sampling saves the template with frequency 4 / save 5000; the smoke test clips them to 4 / 10,
+    # which OpenMM rejects unless the save interval is rounded to a multiple of the deposit frequency
+    payload = {"workflow": "metadynamics",
+               "parameters": {"collective_variables": [], "total_steps": 1000, "frequency_steps": 4,
+                              "save_frequency_steps": 5000}}
+    out = run_openmm_advanced_template_smoke(payload, str(tmp_path / "meta"))
+    assert out["ok"] is True, out
+    assert out["steps"] == 30

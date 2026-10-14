@@ -771,6 +771,10 @@ def run_openmm_metadynamics_smoke(
     if max_v <= min_v:
         max_v = min_v + 0.05
     width = _clip_float(meta.get("bias_width", 0.01), 0.01, 1.0e-5, max(1.0e-4, max_v - min_v))
+    freq = _clip_int(frequency_steps, 2, 1, 1000000)
+    save_freq = _clip_int(save_frequency_steps, 10, 1, 1000000)
+    # OpenMM requires saveFrequency to be a multiple of frequency (callers clip both independently)
+    save_freq = max(freq, ((save_freq + freq - 1) // freq) * freq)
     system = _build_two_particle_system(omm, unit, restraint_center_nm=None)
     cv_force = omm.CustomBondForce("r")
     cv_force.addBond(0, 1, [])
@@ -781,8 +785,8 @@ def run_openmm_metadynamics_smoke(
         _clip_float(temperature_k, 300.0, 50.0, 600.0) * unit.kelvin,
         _clip_float(bias_factor, 3.0, 1.01, 200.0),
         _clip_float(hill_height_kj_mol, 0.05, 0.001, 200.0) * unit.kilojoule_per_mole,
-        _clip_int(frequency_steps, 2, 1, 1000000),
-        _clip_int(save_frequency_steps, 10, 1, 1000000),
+        freq,
+        save_freq,
         str(bias_dir),
     )
     simulation, platform_used = _make_two_particle_simulation(
