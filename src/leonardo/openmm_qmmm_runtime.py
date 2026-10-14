@@ -2640,6 +2640,31 @@ def run_openmm_qmmm_reaction_path(
                             fmax_kj_mol_ang=float(cfg.get("fmax_kj_mol_ang", 2.0)))
     except Exception as exc:
         return {"ok": False, "operation": "reaction_path", "error": f"QM/MM reaction path failed: {exc}"}
+    irc_frames = res.pop("irc_frames", None)
+    if irc_frames:
+        # IRC geometries (reactant -> TS -> product) with the identity of every QM atom: an animation or a
+        # later analysis does not need to re-run the path
+        by_index = {int(r.get("index", -1)): r for r in list(atom_rows or [])}
+        atoms = []
+        for k, i in enumerate(model.qm):
+            r = dict(by_index.get(int(i), {}) or {})
+            atoms.append({"qm_index": k, "index": int(i), "name": str(r.get("name", "") or ""),
+                          "resname": str(r.get("resname", r.get("resn", "")) or ""),
+                          "resid": str(r.get("resid", r.get("resi", "")) or ""),
+                          "chain": str(r.get("chain", "") or ""), "atomic_number": int(model.z[int(i)])})
+        with open(os.path.join(run_dir, "qm_atoms.json"), "w") as fh:
+            json.dump(atoms, fh, indent=1)
+        bonds = [(int(a), int(b)) for a, b in list(res["form_bonds"]) + list(res["break_bonds"])]
+        xyz = np.asarray(irc_frames["qm_xyz"], dtype=float)
+        full_idx = {int(i): k for k, i in enumerate(model.qm)}
+        dist = np.array([[float(np.linalg.norm(f[full_idx[b]] - f[full_idx[a]])) for a, b in bonds] for f in xyz])
+        np.savez_compressed(os.path.join(run_dir, "irc_path.npz"), coords=xyz,
+                            s=np.asarray(irc_frames["s_amu_ang"]),
+                            relative_kj_mol=np.asarray(irc_frames["energy_rel_reactant_kj_mol"]),
+                            ts_index=int(irc_frames["ts_index"]), bond_distances=dist,
+                            bonds=np.asarray(bonds), n_form=len(res["form_bonds"]))
+        res["irc_npz"] = os.path.join(run_dir, "irc_path.npz")
+        res["qm_atoms_json"] = os.path.join(run_dir, "qm_atoms.json")
     xyz_sets = res.pop("qm_xyz", None) or {}
     if xyz_sets:
         frames = [xyz_sets[k] for k in ("reactant", "ts", "product") if k in xyz_sets]

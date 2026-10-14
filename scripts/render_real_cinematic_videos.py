@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import pymol2
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'artifacts/cinematic_real'
+OUT = Path(os.environ.get('LEONARDO_FILM_REAL', ROOT / 'artifacts/cinematic_real'))
 W, H = 1920, 1080
 MW, MH = 1180, 780
 INK = '#16303F'

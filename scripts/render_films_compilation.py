@@ -136,7 +136,7 @@ def intro_frame(t, tiles):
             txt(ld, (102, 262 + j * 104 + 20 * (1 - act3)), line, 88, INK if j == 0 else TEAL, True)
         steps = [("01", "Ask in plain language", "\u201cDock this ligand and check the\ncrystal pose.\u201d"),
                  ("02", "It plans, you approve", "One AI agent writes a plan and\nwaits for your OK."),
-                 ("03", "Real science runs", "114 tools: docking, MD, QM/MM,\nmodeling, design."),
+                 ("03", "Real science runs", "116 tools: docking, MD, QM/MM,\nmodeling, design."),
                  ("04", "Every number checked", "Quality checks on every result.\nNothing invented.")]
         for i, (num, head, body) in enumerate(steps):
             a = ease((t - 10.8 - 0.6 * i) / 0.5)
@@ -213,7 +213,7 @@ def outro_frame(t):
     txt(ld, (78, 350), "Ask in plain language.", 83, bold=True)
     txt(ld, (78, 452), "Get verified science.", 83, TEAL, True)
     ld.line((86, 600, 86 + int(92 * ease((t - 0.4) / 0.8)), 600), fill=GOLD, width=4)
-    txt(ld, (86, 632), "Open-source PyMOL plugin · one AI agent · 114 scientific tools · macOS and Linux", 24, MUTED)
+    txt(ld, (86, 632), "Open-source PyMOL plugin · one AI agent · 116 scientific tools · macOS and Linux", 24, MUTED)
     txt(ld, (86, 680), "github.com/juvenalyosa/Leonardo", 30, INK, True)
     style.faded(im, layer, a)
     return im.convert("RGB")

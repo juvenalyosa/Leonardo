@@ -58,7 +58,8 @@ def _reaction_path_result(ctx, object, res):
         "barrier_kj_mol": res.get("barrier_kj_mol"), "reverse_barrier_kj_mol": res.get("reverse_barrier_kj_mol"),
         "reaction_energy_kj_mol": res.get("reaction_energy_kj_mol"), "imaginary_cm1": res.get("imaginary_cm1"),
         "qm_atom_count": res.get("qm_atom_count"), "mm_atom_count": res.get("mm_atom_count"),
-        "path_xyz": res.get("path_xyz"), "irc_csv": res.get("irc_csv"), "workdir": res.get("workdir"),
+        "path_xyz": res.get("path_xyz"), "irc_csv": res.get("irc_csv"), "irc_npz": res.get("irc_npz"),
+        "qm_atoms_json": res.get("qm_atoms_json"), "workdir": res.get("workdir"),
         "n_energy_evaluations": res.get("n_energy_evaluations")})
     if not res.get("ok"):
         out["error"] = str(res.get("error") or "QM/MM reaction path failed")

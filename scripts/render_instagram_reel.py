@@ -114,7 +114,7 @@ def outro_frame(t, t_global):
     grow = ease((t - 0.3) / 0.6)
     ld.line((W / 2 - 120 * grow, 880, W / 2 + 120 * grow, 880), fill=GOLD, width=5)
     centered(ld, 930, "Docking · Molecular dynamics · QM/MM", 32, MUTED)
-    centered(ld, 978, "Mutations · Protein design · 114 AI-driven tools", 32, MUTED)
+    centered(ld, 978, "Mutations · Protein design · 116 AI-driven tools", 32, MUTED)
     centered(ld, 1090, "Open source · launching soon", 40, INK, True)
     centered(ld, 1150, "github.com/juvenalyosa/Leonardo", 34, MUTED)
     centered(ld, 1700, 'Music: "Getting it Done" by Kevin MacLeod (incompetech.com) · CC BY 4.0', 22, MUTED)

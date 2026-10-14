@@ -21,8 +21,8 @@ import render_real_cinematic_videos as base
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-OLD = ROOT / 'artifacts/cinematic_real'
-OUT = ROOT / 'artifacts/cinematic_v2'
+OLD = Path(os.environ.get('LEONARDO_FILM_REAL', ROOT / 'artifacts/cinematic_real'))
+OUT = Path(os.environ.get('LEONARDO_FILM_V2', ROOT / 'artifacts/cinematic_v2'))
 W, H = 1920, 1080
 MW, MH = 1600, 900
 INK = '#142E3B'
@@ -190,6 +190,7 @@ def setup(c, kind, data):
         c.color('gold', 'quantum')
         c.color('teal', 'quantum and resi 124 and elem C')
         c.color('oxygen', 'quantum and elem O')
+        c.color('nitrogen', 'quantum and elem N')
         c.color('hydrogen', 'quantum and elem H')
         c.set_color('chlorine', [0.32, 0.63, 0.40])
         c.color('chlorine', 'quantum and elem Cl')
@@ -392,12 +393,12 @@ def composite(kind, molecule, locator, plot, idx, data, seconds, total, labels=N
         if kind == 'qmmm' and labels:
             # Atom-registered leaders use the actual PyMOL camera projection.
             for name, caption, position in [
-                ('CB', 'Asp124 · nucleophile', (86, 453)),
+                ('OD2', 'Asp124 · nucleophile', (86, 453)),
                 ('CL1', 'Cl1 · leaving group', (774, 453)),
             ]:
                 anchor = np.array(labels[name]) * scale + np.array([px, py])
                 tx, ty = position
-                edge = (tx + 135, ty + 28) if name == 'CB' else (tx, ty + 28)
+                edge = (tx + 135, ty + 28) if name == 'OD2' else (tx, ty + 28)
                 ld.line((edge[0], edge[1], float(anchor[0]), float(anchor[1])), fill='#9BAFB7', width=1)
                 txt(ld, (tx, ty), caption, 17, MUTED)
             caption = (
@@ -424,7 +425,8 @@ def composite(kind, molecule, locator, plot, idx, data, seconds, total, labels=N
         note = {
             'docking': '9 poses · crystal-reference comparison',
             'qmmm': 'Reactant → transition state → alkyl–enzyme',
-            'md': '12 ps production · 120 saved structures',
+            'md': (f"{float(data['production_ps']):g} ps production · {len(data['analysis'])} saved structures"
+                   if 'production_ps' in data else '12 ps production · 120 saved structures'),
         }[kind]
         txt(ld, (1092, 300), note, 19, MUTED)
         layer.paste(plot.resize((805, 575), Image.Resampling.LANCZOS), (1050, 338))
@@ -447,10 +449,10 @@ def composite(kind, molecule, locator, plot, idx, data, seconds, total, labels=N
             detail = f"Crystal RMSD  {data[idx]['crystal_rmsd_A']:.2f} Å"
             label = 'Benzamidinium · Asp189 recognition pocket'
         else:
-            state = f"SAVED STRUCTURE  {idx+1:03d} / 120"
+            state = f"SAVED STRUCTURE  {idx+1:03d} / {len(data['analysis'])}"
             metric = f"{data['analysis'][idx,1]:.1f}"
             unit = 'ps'
-            detail = f"Cα RMSD  {data['analysis'][idx,2]:.2f} Å     300 K"
+            detail = f"Cα RMSD  {data['analysis'][idx,2]:.2f} Å     {float(data.get('temperature_K', 300)):g} K"
             label = 'Ser195 · His57 · Asp102'
         txt(ld, (84, 826), state, 18, TEAL, True)
         txt(ld, (79, 858), metric, 68, bold=True)
@@ -583,7 +585,7 @@ def render(kind, frames=576, fps=24, preview=False, start_frame=0, stop_frame=No
                 rot = actual[:9].reshape(3, 3).T
                 factor = MH / (2 * abs(actual[11]) * math.tan(math.radians(float(c.get('field_of_view'))) / 2))
                 labels = {}
-                for atom in ['CB', 'CL1']:
+                for atom in ['OD2', 'CL1']:
                     point = c.get_coords('quantum and name ' + atom)[0]
                     projected = rot @ (point - actual[12:15]) + actual[9:12]
                     labels[atom] = (MW / 2 + factor * projected[0], MH / 2 - factor * projected[1])

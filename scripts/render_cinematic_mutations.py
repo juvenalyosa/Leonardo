@@ -20,9 +20,9 @@ import pymol2
 import render_cinematic_v2 as style
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'artifacts/cinematic_v2'
+OUT = Path(os.environ.get('LEONARDO_FILM_V2', ROOT / 'artifacts/cinematic_v2'))
 WORK = OUT / 'mutations'
-OLD = ROOT / 'artifacts/cinematic_real'
+OLD = Path(os.environ.get('LEONARDO_FILM_REAL', ROOT / 'artifacts/cinematic_real'))
 W, H = 1920, 1080
 TEAL, GOLD, INK, MUTED, LINE = style.TEAL, style.GOLD, style.INK, style.MUTED, style.LINE
 NAMES = {'binding': '04_mutation_protein_ligand', 'enzyme': '05_mutation_enzyme_reaction'}

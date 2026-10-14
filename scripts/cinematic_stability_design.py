@@ -22,7 +22,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'artifacts/cinematic_v2'
+OUT = Path(os.environ.get('LEONARDO_FILM_V2', ROOT / 'artifacts/cinematic_v2'))
 WORK = OUT / 'stability_design'
 DATA = WORK / 'data'
 

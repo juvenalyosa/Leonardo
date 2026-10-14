@@ -1,7 +1,7 @@
 {
  "name": "Film 05 - DhlA wild type vs W125A, QM/MM reaction paths",
  "slug": "film05_dhla_w125a_reaction_path",
- "description": "First step of DhlA (Asp124 OD2 attacks C1 of 1,2-dichloroethane, CL1 leaves) in the wild type and in the W125A mutant (Trp125 lines the halide-binding site), each with the same QM/MM reaction-path workflow: reactant and product minima, climbing-image NEB path (QST2-type), dimer TS with frequencies, IRC connecting reactant and product. MOPAC PM7 embedded in Amber14, QM region = dichloroethane + Asp124 side chain (charge -1). Mutant built locally: only residue 125 is rebuilt and every other atom (substrate and waters included) keeps its exact position, so the two QM/MM environments differ only at the mutation.",
+ "description": "First step of DhlA (Asp124 OD2 attacks C1 of 1,2-dichloroethane, CL1 leaves) in the wild type and in the W125A mutant (Trp125 lines the halide-binding site), each with the same QM/MM reaction-path workflow: reactant and product minima, climbing-image NEB path (QST2-type), dimer TS with frequencies, IRC connecting reactant and product. MOPAC PM7 embedded in Amber14, QM region = dichloroethane + the whole Asp124 residue (20 atoms; Leonardo puts the full residue of every reacting atom in QM), charge -1. Mutant built locally: only residue 125 is rebuilt and every other atom (substrate and waters included) keeps its exact position, so the two QM/MM environments differ only at the mutation.",
  "format": 1,
  "parameters": {
   "pack": {
