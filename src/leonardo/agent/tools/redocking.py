@@ -285,7 +285,7 @@ def register(reg):
                     or str(dlg.cmb_redock_wt_obj.currentText() or "") != object):
                 raise ToolError(f"{object!r} is not offered for redocking (Leonardo lists protein objects "
                                 "only, not generated complexes, poses or redock_* objects)")
-            if str(ligand_resn or "").strip() or str(ligand_resi or "").strip():
+            if any(str(v or "").strip() for v in (ligand_chain, ligand_resi, ligand_resn)):
                 # resolve a partial residue (resi alone, resn alone): Leonardo needs both resi and resn,
                 # and with resn blank the given residue was ignored for an auto-detected one
                 lig_c, lig_i, lig_n = _ligand_residue(cmd, object, ligand_chain, ligand_resi, ligand_resn)

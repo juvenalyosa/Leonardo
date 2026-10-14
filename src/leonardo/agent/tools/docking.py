@@ -31,6 +31,8 @@ def _ligand_residue(cmd, obj, chain="", resi="", resn=""):
     resi and resn, else it auto-detects and the given field is ignored."""
     chain, resi, resn = str(chain or "").strip(), str(resi or "").strip(), str(resn or "").strip()
     if not resi and not resn:
+        if chain:          # it would be dropped for an auto-detected ligand, possibly in another chain
+            raise ToolError("ligand_chain alone does not name a residue: give ligand_resi or ligand_resn too")
         return "", "", ""
     parts = [f"({obj})"]
     if resn:

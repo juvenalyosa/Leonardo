@@ -205,6 +205,10 @@ def test_run_redocking_resolves_a_partial_ligand_residue(dlg):
     assert seen[-1] == ("X", "901", "ACT")
     with pytest.raises(ToolError, match="no residue"):
         reg.call("run_redocking", {"object": "prot", "ligand_resn": "XYZ"}, ctx)
+    n = len(seen)
+    with pytest.raises(ToolError, match="ligand_chain alone"):        # was dropped for an auto-detected ligand
+        reg.call("run_redocking", {"object": "prot", "ligand_chain": "Y"}, ctx)
+    assert len(seen) == n
 
 
 def test_residue_selection_is_one_residue():

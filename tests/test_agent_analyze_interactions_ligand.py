@@ -68,6 +68,8 @@ def test_resi_alone_and_unknown_residue(cplx):
     assert dlg.seen == ("A", "500", "HEM")
     with pytest.raises(ToolError, match="no residue"):
         _run(_Dlg(), ligand_resn="XYZ")
+    with pytest.raises(ToolError, match="ligand_chain alone"):        # was ignored (auto-detected ligand)
+        _run(_Dlg(), ligand_chain="B")
 
 
 def test_no_ligand_fields_clears_the_stale_ligand(cplx):
