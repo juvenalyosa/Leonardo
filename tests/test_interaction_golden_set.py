@@ -10,7 +10,7 @@ chemical-component files (tests/data/interactions_golden/ccd), so the run is off
                                 (Marquart et al. 1983, Acta Cryst B39:480)
   1IEP  Abl-imatinib            Thr315, Met318 hinge, Glu286, Asp381 backbone, piperazinium-Ile360 O
                                 (Nagar et al. 2002, Cancer Res 62:4236)
-  1M17  EGFR-erlotinib          Met769 N...quinazoline N1 (file name N2) 2.7 A; Gly772? no: only hinge
+  1M17  EGFR-erlotinib          hinge Met769 N...quinazoline N1 (atom N2 in the file), 2.7 A
                                 (Stamos et al. 2002, JBC 277:46265)
   2CPP  P450cam-camphor         camphor O...Tyr96 OH (Poulos et al. 1987, JMB 195:687)
   3HS4  CA II-acetazolamide     Zn-N1 (sulfonamide), N1-H...Thr199 OG1, Thr199 N...O1, Gln92 NE2
@@ -307,3 +307,48 @@ def test_peptide_caps_are_protein_not_ligand(leo):
     cmd.read_pdbstr(block + lig, "capped_lig")
     assert ctx.dlg._auto_detect_ligand_in_object("capped_lig") == ("A", 900, "LIG")
     cmd.delete("all")
+
+
+@pytest.mark.parametrize("pdb, resn, resi", [("3PTB.pdb", "BEN", "1"), ("1IEP.pdb", "STI", "201")])
+def test_ligand_without_chemical_component_name(leo, tmp_path, pdb, resn, resi):
+    """A docked or renamed ligand (UNL) has no CCD template: its bond orders come from the geometry
+    (Open Babel, or ring planarity where Open Babel misreads imatinib's pyrimidine) and the result
+    must match the named ligand."""
+    run, _ctx, _reg = leo
+    named = run(pdb, "A", resi, resn)
+    text = open(_path(pdb)).read().replace(f" {resn} A", " UNL A")
+    path = tmp_path / f"{resn}_as_UNL.pdb"
+    path.write_text(text)
+    case = run(str(path), "A", resi, "UNL")
+    assert case["lig_h"] == named["lig_h"]
+
+    def key(recs):
+        return sorted((r["type"], _res(r), r["prot_atom"], r["lig_atom"]) for r in recs if r["type"] != "Van der Waals")
+
+    assert key(case["records"]) == key(named["records"])
+
+
+def test_ligand_typing_from_input_hydrogens(leo):
+    """Without a refined model (trajectories), the ligand is typed from its own atoms: bond orders on
+    the heavy atoms and the input hydrogens, whose count sets the formal charge."""
+    _run, ctx, _reg = leo
+    from rdkit import Chem
+
+    heavy = [l for l in open(_path("3PTB.pdb")) if l.startswith("HETATM") and l[17:20] == "BEN"]
+    mol = Chem.AddHs(Chem.MolFromSmiles("NC(=[NH2+])c1ccccc1"))
+    template = Chem.MolFromPDBBlock("".join(heavy))
+    from rdkit.Chem import AllChem
+
+    placed = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles("NC(=[NH2+])c1ccccc1"), template)
+    placed = Chem.AddHs(placed, addCoords=True)
+    conf = placed.GetConformer()
+    h_lines = [f"HETATM{9000 + a.GetIdx():5d}  H{k:<2d} BEN A   1    "
+               f"{conf.GetAtomPosition(a.GetIdx()).x:8.3f}{conf.GetAtomPosition(a.GetIdx()).y:8.3f}"
+               f"{conf.GetAtomPosition(a.GetIdx()).z:8.3f}  1.00 20.00           H\n"
+               for k, a in enumerate([a for a in placed.GetAtoms() if a.GetAtomicNum() == 1], start=1)]
+    assert mol is not None and len(h_lines) == 9
+    chem, source = ctx.dlg._ligand_chem_from_input("".join(heavy + h_lines), "BEN")
+    assert chem is not None and "input hydrogens" in source
+    assert Chem.GetFormalCharge(chem) == 1
+    assert sum(1 for a in chem.GetAtoms() if a.GetIsAromatic()) == 6
+    assert sum(1 for a in chem.GetAtoms() if a.GetAtomicNum() == 1) == 9

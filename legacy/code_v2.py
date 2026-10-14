@@ -6134,11 +6134,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         self._refine_ligand_geometry(target_ph=self._target_ph, update_scene=False)
                         self._append_debug_log("Ligand chemistry refinement completed successfully.")
                     except Exception as ref_e:
-                        self._append_debug_log(f"Ligand chemistry refinement failed: {ref_e}")
-                        QtWidgets.QMessageBox.critical(
-                            self,
-                            "Repair Failed",
-                            f"Chemistry repair failed:\n{ref_e}\n\nProceeding with current structure.",
+                        # not fatal: the ligand is typed from its input atoms or the topology rules
+                        self._append_debug_log(
+                            f"Ligand chemistry refinement failed ({ref_e}); typing the ligand from its input atoms."
                         )
             elif target_res is not None:
                 if not has_ligand_h:
@@ -46912,25 +46910,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             f"{c[0]:8.3f}{c[1]:8.3f}{c[2]:8.3f}  1.00  0.00           {el:>2s}  "
                         )
                         pdb_lines.append(s)
-                    mol = Chem.MolFromPDBBlock("\n".join(pdb_lines), removeHs=False)
+                    chem_mol = None
+                    refined = getattr(self, "_ligand_refined_mol", None)
+                    if refined is not None:
+                        try:
+                            feat_names = {str(a["name"]).strip().upper() for a in features["ligand_atoms"]}
+                            ref_names = set()
+                            for at in refined.GetAtoms():
+                                if at.GetAtomicNum() == 1:
+                                    continue
+                                info = at.GetPDBResidueInfo()
+                                if info:
+                                    ref_names.add(info.GetName().strip().upper())
+                            # Use refined chemistry if it maps to current ligand atom names.
+                            if feat_names and len(feat_names & ref_names) >= max(2, int(0.5 * len(feat_names))):
+                                chem_mol = refined
+                        except Exception:
+                            chem_mol = None
+                    if chem_mol is None:
+                        # no refined model (trajectory, failed refinement): the input atoms with bond
+                        # orders. A molecule read from the PDB lines alone has only single bonds (rings
+                        # saturated, amide N "ammonium"); typing from it is worse than the topology rules.
+                        chem_mol, chem_src = self._ligand_chem_from_input("\n".join(pdb_lines), lig_resn)
+                        if not getattr(self, "_traj_mode", False):
+                            self._append_debug_log(f"Ligand chemistry for typing: {chem_src}.")
+                    mol = chem_mol
                     if mol:
-                        chem_mol = mol
-                        refined = getattr(self, "_ligand_refined_mol", None)
-                        if refined is not None:
-                            try:
-                                feat_names = {str(a["name"]).strip().upper() for a in features["ligand_atoms"]}
-                                ref_names = set()
-                                for at in refined.GetAtoms():
-                                    if at.GetAtomicNum() == 1:
-                                        continue
-                                    info = at.GetPDBResidueInfo()
-                                    if info:
-                                        ref_names.add(info.GetName().strip().upper())
-                                # Use refined chemistry if it maps to current ligand atom names.
-                                if feat_names and len(feat_names & ref_names) >= max(2, int(0.5 * len(feat_names))):
-                                    chem_mol = refined
-                            except Exception:
-                                chem_mol = mol
                         rd_to_feat_idx = self._map_rdkit_atoms_to_feature_indices(chem_mol, features["ligand_atoms"])
                         chem_mol_for_roles = chem_mol
                         self._annotate_ligand_groups(chem_mol, features, rd_to_feat_idx=rd_to_feat_idx)
@@ -53059,6 +53064,52 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             print(f"Repair Failed during Sanitize/AddHs: {e}")
             return None
+    def _ligand_chem_from_input(self, pdb_block, resn=""):
+        """(RDKit mol, source) for typing a ligand from its input atoms: bond orders on the heavy atoms
+        and, when the input has hydrogens, those hydrogens (formal charges follow from them: an N
+        with four bonds is +1, a lone O on a single bond is -1). (None, reason) without bond orders."""
+        heavy, source = self._ligand_bond_order_mol(pdb_block, resn)
+        if heavy is None:
+            return None, f"none ({source}); topology rules used"
+        try:
+            raw = Chem.MolFromPDBBlock(str(pdb_block or ""), removeHs=False, sanitize=False)
+            h_coords = []
+            if raw is not None and raw.GetNumConformers():
+                rconf = raw.GetConformer()
+                h_coords = [rconf.GetAtomPosition(a.GetIdx()) for a in raw.GetAtoms() if a.GetAtomicNum() == 1]
+            if not h_coords:
+                return heavy, f"{source}, implicit hydrogens"
+            rw = Chem.RWMol(heavy)
+            Chem.Kekulize(rw, clearAromaticFlags=True)
+            conf = rw.GetConformer()
+            n_heavy = rw.GetNumAtoms()
+            for p in h_coords:
+                best, best_d = None, 1.35
+                for i in range(n_heavy):
+                    d = (conf.GetAtomPosition(i) - p).Length()
+                    if d < best_d:
+                        best, best_d = i, d
+                if best is None:
+                    continue
+                hi = rw.AddAtom(Chem.Atom(1))
+                rw.AddBond(best, hi, Chem.BondType.SINGLE)
+                conf.SetAtomPosition(hi, p)
+            for a in list(rw.GetAtoms())[:n_heavy]:
+                a.SetNoImplicit(True)
+                a.SetNumExplicitHs(0)
+                a.SetFormalCharge(0)
+                valence = sum(int(round(b.GetBondTypeAsDouble())) for b in a.GetBonds())
+                if a.GetSymbol() == "N" and valence == 4:
+                    a.SetFormalCharge(1)
+                elif a.GetSymbol() == "O" and valence == 1:
+                    a.SetFormalCharge(-1)
+                elif a.GetSymbol() == "O" and valence == 3:
+                    a.SetFormalCharge(1)
+            out = rw.GetMol()
+            Chem.SanitizeMol(out)
+            return out, f"{source}, input hydrogens"
+        except Exception as exc:
+            return heavy, f"{source}, implicit hydrogens (input hydrogens not usable: {exc})"
     def _ligand_bond_order_mol(self, pdb_block, resn=""):
         """(heavy-atom RDKit mol with bond orders, source) for a ligand PDB block; (None, reason) on failure.
         CCD template of the residue first, then Leonardo's SMILES hint, then Open Babel on the geometry."""
@@ -53805,9 +53856,23 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
 
         hb_best = {}
 
+        prot_c_by_res = {}
+
         def _heavy_neighbors(atom):
             pool = features["ligand_atoms"] if atom.get("origin") == "ligand" else features["protein_atoms"]
-            return [n for n in self._neighbors(atom, pool) if str(n.get("element", "")).upper() != "H"]
+            out = [n for n in self._neighbors(atom, pool) if str(n.get("element", "")).upper() != "H"]
+            if atom.get("origin") == "protein" and str(atom.get("name", "")) == "N":
+                # _neighbors stays inside the residue: add the peptide C of the previous residue, so
+                # the backbone N-H direction (opposite C and CA) is known
+                if not prot_c_by_res:
+                    for p in features["protein_atoms"]:
+                        if str(p.get("name", "")) == "C":
+                            prot_c_by_res.setdefault(str(p.get("chain", "")), []).append(p)
+                for c_atom in prot_c_by_res.get(str(atom.get("chain", "")), []):
+                    if c_atom.get("resi") != atom.get("resi") and float(distance(c_atom["coord"], atom["coord"])) <= 1.5:
+                        out.append(c_atom)
+                        break
+            return out
 
         def _rotatable_donor(donor, hs):
             heavy = _heavy_neighbors(donor)
