@@ -169,3 +169,64 @@ def test_external_calls_need_confirmation_for_heavy_tools():
         client.call_tool("run_docking", {})
     assert client.call_tool("color_by_chain", {"object": "x"}) == {"ok": True}
     assert asked == ["run_docking"] and log == ["color x"]
+
+
+def test_external_calls_are_confirmed_under_every_policy_without_a_plan():
+    # an external MCP client never had a plan approved: "plan_only" must not let it run MD/docking unasked,
+    # and "heavy" must not let it run quick calculations unasked (in the app they need plan approval)
+    log = []
+    reg = _registry(log)
+
+    @reg.tool("find_pockets", "Pockets.", permission="compute_light")
+    def pockets(ctx):
+        log.append("pockets")
+        return {"n": 1}
+
+    for policy, tool in (("plan_only", "run_docking"), ("heavy", "find_pockets")):
+        asked = []
+
+        def confirm(spec, args):
+            asked.append(spec.name)
+            return False
+        client = McpToolClient(build_server(reg, run_on_main=lambda fn: fn(), confirm=confirm,
+                                            approval_policy=policy))
+        with pytest.raises(ToolError, match="declined"):
+            client.call_tool(tool, {})
+        assert client.call_tool("list_objects", {}) == {"objects": ["3PTB"]}
+        client.close()
+        assert asked == [tool], policy
+    assert log == ["list", "list"]
+
+
+def test_tool_call_limit_also_stops_calls_refused_before_a_plan():
+    # a model that keeps calling a gated (or unknown) tool while planning must still hit the limit
+    log = []
+    turns = [[("tool", "run_docking", {})], [("tool", "no_such_tool", {})]] * 8
+    sess, prov, ui = _session(turns, [], log)
+    sess.max_tool_calls = 5
+    assert sess.send("dock") == "stopped"
+    results = [r for kind, rs in prov.transcript if kind == "tool_results" for r in rs]
+    assert len(results) == 6 and "Tool-call limit (5)" in results[-1]["content"]
+    assert log == []
+
+    turns = [[("tool", "mark_step", {"step": 1, "status": "running"})] for _ in range(8)]
+    sess, prov, ui = _session(turns, [], log)
+    sess.max_tool_calls = 3
+    assert sess.send("loop") == "stopped"
+
+
+def test_job_cancelled_from_elsewhere_is_followed_to_its_end():
+    # an uninterruptible job reports "cancelling" until it ends: that is not an unexpected state
+    log = []
+    states = iter([{"status": "running"}, {"status": "cancelling"}, {"status": "cancelling"},
+                   {"status": "cancelled", "error": ""}])
+    reg = _registry(log)
+
+    def execute(name, args):
+        if name == "job_status":
+            return next(states)
+        return {"job_id": "md-1", "status": "running"}
+    sess = AgentSession(ScriptedProvider([]), reg, UI([]), execute=execute, poll_interval=0.0)
+    with pytest.raises(ToolError) as err:
+        sess._wait_if_pending({"job_id": "md-1", "status": "running"})
+    assert "md-1 cancelled" in str(err.value) and "unexpected" not in str(err.value)

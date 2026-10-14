@@ -263,6 +263,14 @@ class AgentSession:
         text = content if isinstance(content, str) else result_to_text(content)
         return {"id": call.id, "content": text, "is_error": bool(is_error), "_stop": bool(stop)}
 
+    def _over_limit(self):
+        self.tool_calls += 1
+        return self.tool_calls > self.max_tool_calls
+
+    def _limit_result(self, call):
+        return self._result(call, f"Tool-call limit ({self.max_tool_calls}) reached for this request; "
+                                  "summarize what was done and stop.", is_error=True, stop=True)
+
     def _handle_call(self, call):
         # every tool call must get a result, or the provider rejects the rest of the conversation
         try:
@@ -273,6 +281,10 @@ class AgentSession:
     def _handle_call_inner(self, call):
         if self.cancelled():
             return self._result(call, "Stopped by the user before this call ran.", is_error=True, stop=True)
+        # every call the model makes counts (also refused, unknown and mark_step calls), so a model stuck
+        # repeating one never loops forever; only the calls that wait for the user are free
+        if call.name not in ("propose_plan", "ask_user") and self._over_limit():
+            return self._limit_result(call)
         if call.name == "propose_plan":
             return self._handle_plan(call)
         if call.name == "ask_user":
@@ -324,10 +336,8 @@ class AgentSession:
         if self.phase == "planning" and not spec.planning_allowed:
             return self._result(call, f"{call.name} can only run after the user approves a plan; call "
                                       "propose_plan first.", is_error=True)
-        self.tool_calls += 1
-        if self.tool_calls > self.max_tool_calls:
-            return self._result(call, f"Tool-call limit ({self.max_tool_calls}) reached for this request; "
-                                      "summarize what was done and stop.", is_error=True, stop=True)
+        if getattr(self, "_in_pipeline", False) and self._over_limit():     # pipeline steps count too
+            return self._limit_result(call)
         try:
             spec, args = self.registry.validate(call.name, call.arguments)
         except ToolError as exc:
@@ -470,7 +480,7 @@ class AgentSession:
             status = str(state.get("status", ""))
             if status == "done":
                 return dict(state.get("result") or {}, job_id=job_id, elapsed_s=state.get("elapsed_s"))
-            if status not in ("running", "queued", "failed", "cancelled", "unknown"):
+            if status not in ("running", "queued", "cancelling", "failed", "cancelled", "unknown"):
                 raise ToolError(f"{job_id}: unexpected job state {str(state)[:300]}")
             if status in ("failed", "cancelled", "unknown"):
                 raise ToolError(f"{job_id} {status}: {state.get('error', '')}")
