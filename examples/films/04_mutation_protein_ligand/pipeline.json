@@ -1,0 +1,17 @@
+{
+ "name": "Film 04 - trypsin D189A mutant redocking",
+ "slug": "film04_trypsin_d189a",
+ "description": "Build the trypsin D189A mutant with MODELLER (3 models, seed 1) and redock benzamidine into wild type and mutant with smina/Vina: three seeded repeats (seed 20260915), exhaustiveness 16, pH 7.4.",
+ "format": 1,
+ "parameters": {
+  "pack": {"default": ".", "description": "this pack's folder (filled in by leonardo.replay)"}
+ },
+ "steps": [
+  {"tool": "load_structure_file", "args": {"path": "{{pack}}/3PTB.pdb", "object_name": "trypsin_3PTB"}},
+  {"tool": "model_mutant", "args": {"object": "{{step:1.object}}", "mutations": ["D189A"], "chain": "A",
+   "name": "trypsin_D189A", "num_models": 3, "seed": 1}},
+  {"tool": "run_redocking", "args": {"object": "{{step:1.object}}", "ligand_chain": "A", "ligand_resi": "1",
+   "ligand_resn": "BEN", "exhaustiveness": 16, "repeats": 3, "seed": 20260915, "ph": 7.4,
+   "mutant_object": "{{step:2.object}}"}}
+ ]
+}

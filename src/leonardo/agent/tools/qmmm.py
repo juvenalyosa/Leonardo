@@ -172,6 +172,10 @@ def register(reg):
                   "solvent": {"type": "string", "enum": ["gas", "implicit", "explicit"]},
                   "scan_atom_a": {"type": "string", "description": "selection of the first atom (reaction_scan)"},
                   "scan_atom_b": {"type": "string", "description": "selection of the second atom"},
+                  "scan_atom_c": {"type": "string", "description": (
+                      "optional third atom: scan the transfer coordinate xi = d(A-B) - d(B-C), atom B moving from "
+                      "A to C (SN2 carbon between leaving group A and nucleophile C; proton transfers); start/end are "
+                      "xi values, e.g. -1.0 -> 1.0 A; an interior maximum is refined to the transition state")},
                   "scan_start_A": {"type": "number"}, "scan_end_A": {"type": "number"},
                   "scan_points": {"type": "integer", "minimum": 3, "maximum": 60},
                   "timeout_s": {"type": "integer", "minimum": 30, "description": "per MOPAC call"},
@@ -188,7 +192,7 @@ def register(reg):
               permission="compute_heavy", title="QM/MM (MOPAC PM7)")
     def run_qmmm(ctx, object, operation, region_mode="auto_ligand_pocket", qm_selection="", qm_resnames="",
                  qm_cutoff_A=None, max_qm_atoms=None, qm_charge=0, qm_multiplicity=1, solvent="implicit",
-                 scan_atom_a="", scan_atom_b="", scan_start_A=1.2, scan_end_A=2.8, scan_points=9, timeout_s=None,
+                 scan_atom_a="", scan_atom_b="", scan_atom_c="", scan_start_A=1.2, scan_end_A=2.8, scan_points=9, timeout_s=None,
                  product_object="", ts_guess_object="", irc_direction="both", irc_max_points=25,
                  md_production_steps=None, md_interval_steps=None, rescore_max_poses=None):
         from pymol import cmd
@@ -234,11 +238,11 @@ def register(reg):
         if timeout_s:
             set_value(dlg, "spin_qmmm_timeout", int(timeout_s))
         if operation == "reaction_scan":
-            for sel in (scan_atom_a, scan_atom_b):
+            for sel in (scan_atom_a, scan_atom_b) + ((scan_atom_c,) if scan_atom_c else ()):
                 if not sel or cmd.count_atoms(f"({object}) and ({sel})") != 1:
                     raise ToolError(f"scan atoms must each select exactly one atom of {object}: {sel!r}")
             dlg._qmmm_set_operation_params("reaction_scan", {
-                "sel_a": scan_atom_a, "sel_b": scan_atom_b, "start_ang": float(scan_start_A),
+                "sel_a": scan_atom_a, "sel_b": scan_atom_b, "sel_c": scan_atom_c, "start_ang": float(scan_start_A),
                 "end_ang": float(scan_end_A), "n_points": int(scan_points)})
         if operation in ("md_periodic", "md_coupled", "redock_rescore"):
             params = dict(dlg._qmmm_operation_defaults(operation))

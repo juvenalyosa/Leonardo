@@ -73,3 +73,24 @@ def test_list_reducers_do_not_depend_on_order():
     assert replay._value_at(results, "2.poses.*.rmsd_A|count_le:2.0") == 2
     assert replay._value_at(results, "2.poses.*.rmsd_A|count") == 3
     assert replay._value_at(results, "2.poses.*.rmsd_A|sorted") == [0.48, 0.6, 12.4]
+
+
+def test_trajectory_distance_measures_every_frame():
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.fragment("ser", "traj")
+    cmd.create("traj", "traj", 1, 2)
+    cmd.translate([0.0, 0.0, 1.0], "traj and name OG", state=2, camera=0)
+    ctx = AgentContext(None)
+    reg = build_registry(ctx)
+    d1 = cmd.get_distance("traj and name OG", "traj and name CA", state=1)
+    res = reg.call("trajectory_distance", {"object": "traj", "atom_a": "name OG", "atom_b": "name CA",
+                                           "cutoff_A": 2.6}, ctx)
+    assert res["frames"] == 2 and abs(res["distance_A"][0] - round(d1, 2)) < 1e-6
+    assert res["max_A"] > res["min_A"] and res["fraction_within_cutoff"] == 0.5
+    with pytest.raises(Exception):
+        reg.call("trajectory_distance", {"object": "traj", "atom_a": "name C*", "atom_b": "name CA"}, ctx)

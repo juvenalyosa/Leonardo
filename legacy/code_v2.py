@@ -8807,17 +8807,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             sel_b = str(op_params.get("sel_b", "") or "").strip()
             if not sel_a or not sel_b:
                 return {"ok": False, "error": "Configure reaction scan atom selections first."}
+            # optional third atom: transfer coordinate xi = d(A-B) - d(B-C) (B moves from A to C; SN2, proton
+            # transfers), with the maximum refined to the transition state
+            sel_c = str(op_params.get("sel_c", "") or "").strip()
             try:
                 cfg["scan_atom_a"] = dict(self._qmmm_first_atom_descriptor_from_selection(obj, sel_a))
                 cfg["scan_atom_b"] = dict(self._qmmm_first_atom_descriptor_from_selection(obj, sel_b))
+                if sel_c:
+                    cfg["scan_atom_c"] = dict(self._qmmm_first_atom_descriptor_from_selection(obj, sel_c))
+                else:
+                    cfg.pop("scan_atom_c", None)
             except Exception as e:
                 return {"ok": False, "error": str(e)}
+            scan_keys = ("scan_atom_a", "scan_atom_b") + (("scan_atom_c",) if sel_c else ())
             forced = list(cfg.get("force_qm_atom_descriptors", []) or [])
-            forced.append(dict(cfg["scan_atom_a"]))
-            forced.append(dict(cfg["scan_atom_b"]))
+            for scan_key in scan_keys:
+                forced.append(dict(cfg[scan_key]))
             cfg["force_qm_atom_descriptors"] = list(forced)
             forced_res = list(cfg.get("force_qm_residue_keys", []) or [])
-            for scan_key in ("scan_atom_a", "scan_atom_b"):
+            for scan_key in scan_keys:
                 atom_desc = dict(cfg.get(scan_key, {}) or {})
                 forced_res.append(
                     {

@@ -36,19 +36,19 @@
    "path": "2.poses.*.rmsd_A|min",
    "kind": "abs",
    "tol": 0.15,
-   "value": 0.363
+   "value": 0.357
   },
   "worst_member_rmsd_A": {
    "path": "2.poses.*.rmsd_A|max",
    "kind": "abs",
    "tol": 0.15,
-   "value": 0.559
+   "value": 0.562
   },
   "best_score_kcal_mol": {
    "path": "2.poses.*.score_kcal_mol|min",
    "kind": "abs",
    "tol": 0.1,
-   "value": -7.807
+   "value": -7.811
   },
   "kept_heme": {
    "path": "2.kept_hetero",
@@ -63,7 +63,7 @@
   "python": "3.11.14",
   "platform": "macOS-26.6.2-arm64-arm-64bit",
   "machine": "arm64",
-  "date": "2026-10-14T10:18:55",
+  "date": "2026-10-14T11:17:28",
   "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
   "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 21:04:48",
   "openmm": "8.4",

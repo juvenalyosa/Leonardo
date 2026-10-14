@@ -30,8 +30,10 @@ the reference, prints PASS or FAIL, and writes a report with your machine, Leona
 | Pack | Calculation | Status |
 |---|---|---|
 | [`examples/films/01_molecular_docking`](../examples/films/01_molecular_docking) | Trypsin + benzamidine redocking (smina/Vina) | Verified: same seed gives identical values; 8 other seeds stay within 0.002 Å and 0.006 kcal/mol |
-| [`examples/films/08_ensemble_redocking`](../examples/films/08_ensemble_redocking) | P450cam + camphor, Monte Carlo receptor ensemble (heme kept) | Ensemble identical across runs; docking into the members within 0.01 Å and 0.004 kcal/mol (not yet bit-identical) |
-| Films 02–07 | QM/MM, molecular dynamics, mutations, protein design | Planned |
+| [`examples/films/03_molecular_dynamics`](../examples/films/03_molecular_dynamics) | Apo trypsin MD (OpenMM, implicit solvent) | Verified statistically: averages over 3 runs within the tolerances (RMSD 1.05–1.31 Å, Ser195–His57 3.78–4.05 Å) |
+| [`examples/films/04_mutation_protein_ligand`](../examples/films/04_mutation_protein_ligand) | Trypsin D189A: MODELLER mutant + redocking into wild type and mutant | Verified: identical values across runs |
+| [`examples/films/08_ensemble_redocking`](../examples/films/08_ensemble_redocking) | P450cam + camphor, Monte Carlo receptor ensemble (heme kept) | Verified: identical values across runs |
+| Films 02, 05–07 | QM/MM, protein design | Planned |
 
 ## What "the same result" means for each engine
 

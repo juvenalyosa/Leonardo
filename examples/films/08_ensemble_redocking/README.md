@@ -25,14 +25,11 @@ All four receptor conformations recover the crystal pose. The top-1 RMSD is 0.36
 
 ## How reproducible it is (measured, macOS arm64)
 
-| Part | Result over 3 runs |
-|---|---|
-| Monte Carlo ensemble | Identical: acceptance 0.314, side-chain shifts 0.00, 0.44, 0.47 and 0.59 Å |
-| Docking into the members | Within about 0.01 Å and 0.004 kcal/mol (best member 0.363, 0.374 and 0.372 Å), and 4/4 successes every time |
+Replays are identical to the reference to the last digit, ensemble and docking alike.
 
-The docking step is not yet bit-identical in ensemble mode, unlike the single-receptor pack
-`01_molecular_docking`. The cause has not been found yet. The differences are far inside the tolerances
-(±0.15 Å, ±0.1 kcal/mol) and do not change the result.
+Before this pack was made, ensemble redocking ignored the requested docking seed: it always ran smina with a
+random seed. As a result, two runs differed by about 0.01 Å. This was fixed: in ensemble mode the seed is now
+kept, with one docking run per member.
 
 The numbers shown in film 08 come from an earlier panel run made with the same tool, but without the
 reproducible ensemble options (`artifacts/mc_redock_panel`, 0.48–0.61 Å). They differ slightly from this pack's

@@ -139,6 +139,40 @@ def register(reg):
                 "_card": f"{n} frames; final RMSD **{rmsd[-1]:.2f} Å** (max {max(rmsd):.2f}); most flexible "
                          + ", ".join(f"{r['resn']}{r['resi']} {r['rmsf_A']} Å" for r in top[:4]) + "."}
 
+    @reg.tool("trajectory_distance", "Distance between two atoms in every frame of a trajectory object (for example "
+              "a catalytic Ser OG - His NE2 distance along run_md): the series, mean, standard deviation, range "
+              "and the fraction of frames within a cutoff.",
+              {"properties": {"object": {"type": "string"},
+                              "atom_a": {"type": "string", "description": "single-atom selection inside the "
+                                                                          "object, e.g. 'resi 195 and name OG'"},
+                              "atom_b": {"type": "string", "description": "single-atom selection inside the object"},
+                              "cutoff_A": {"type": "number", "minimum": 0.5, "maximum": 20,
+                                           "description": "report the fraction of frames at or below this "
+                                                          "distance (default 3.5 A, an H-bond)"}},
+               "required": ["object", "atom_a", "atom_b"]},
+              permission="compute_light", title="Distance along a trajectory")
+    def trajectory_distance(ctx, object, atom_a, atom_b, cutoff_A=3.5):
+        cmd = _cmd()
+        if object not in cmd.get_names("objects"):
+            raise ToolError(f"no object named {object!r}")
+        sel_a, sel_b = f"({object}) and ({atom_a})", f"({object}) and ({atom_b})"
+        for label, sel in (("atom_a", sel_a), ("atom_b", sel_b)):
+            if cmd.count_atoms(sel) != 1:
+                raise ToolError(f"{label} must select exactly one atom ({cmd.count_atoms(sel)} selected)")
+        n = cmd.count_states(object)
+        series = [float(cmd.get_distance(sel_a, sel_b, state=s)) for s in range(1, n + 1)]
+        mean = sum(series) / len(series)
+        sd = math.sqrt(sum((v - mean) ** 2 for v in series) / len(series))
+        within = sum(1 for v in series if v <= float(cutoff_A)) / len(series)
+        step = max(1, len(series) // 60)
+        ctx.__dict__.setdefault("plots", {})["trajectory_distance"] = {"object": object, "series": series}
+        return {"object": object, "frames": n, "atom_a": atom_a, "atom_b": atom_b,
+                "distance_A": [round(v, 2) for v in series[::step]], "mean_A": round(mean, 3), "sd_A": round(sd, 3),
+                "min_A": round(min(series), 2), "max_A": round(max(series), 2), "cutoff_A": float(cutoff_A),
+                "fraction_within_cutoff": round(within, 3),
+                "_card": f"{n} frames: **{mean:.2f} ± {sd:.2f} Å** (range {min(series):.2f}–{max(series):.2f}); "
+                         f"{within:.0%} of frames ≤ {float(cutoff_A):g} Å."}
+
     @reg.tool("trajectory_interaction_occupancy", "Protein-ligand interactions along a trajectory: how often each "
               "contact (H-bond, salt bridge, hydrophobic, pi...) is present across the frames.",
               {"properties": {"object": {"type": "string"}, "ligand": _LIGAND,

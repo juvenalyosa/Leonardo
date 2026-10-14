@@ -12532,7 +12532,8 @@ def test_redock_runtime_prepare_runtime_systems_context_helper():
     )
     assert payload_ensemble["ok"] is True
     assert int(payload_ensemble["params"]["repeats"]) == 1
-    assert int(payload_ensemble["params"]["seed0"]) == 0
+    # one run per member, but a requested seed is kept (reproducible ensemble redocking)
+    assert int(payload_ensemble["params"]["seed0"]) == 11
     assert payload_ensemble["align_to_ref"] is True
     assert int(payload_ensemble["ensemble_counts"]["WT"]) == 3
     assert payload_ensemble["input_systems"] == [
