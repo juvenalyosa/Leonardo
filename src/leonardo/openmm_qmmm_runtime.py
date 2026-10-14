@@ -2367,10 +2367,18 @@ def _qmmm_embedded_model(xyz_full_ang, atomic_numbers_full, mm_charges_e, atom_r
             one["x"], one["y"], one["z"] = (float(v) for v in xyz[idx])
         rows.append(one)
     reg = resolve_qmmm_regions(atom_rows=rows, n_atoms=int(xyz.shape[0]), config=cfg)
+    keywords = str(cfg.get("mopac_keywords", "") or "")
+    method = _mopac_extract_method_from_keywords(keywords, default="PM7")
+    # The user's other keywords (UHF, MOZYME, CUTOFF=...) apply to every step, as in the single-point probe;
+    # job-type keywords are set by the model and charge/spin by its own arguments.
+    controls = {"1SCF", "GRAD", "AUX", "QMMM", "EF", "TS", "SADDLE", "FORCE", "FORCETS", "THERMO", "IRC",
+                "X-PRIORITY", "XYZ", "CHARGE", "SINGLET", "DOUBLET", "TRIPLET", "QUARTET", "QUINTET"}
+    extra = [tok for tok in keywords.split()
+             if tok.upper() != method and tok.upper().split("=", 1)[0].split("(", 1)[0] not in controls]
     model = EmbeddedQMMMModel(
         xyz, atomic_numbers_full, reg["qm_indices"], reg["mm_indices"], mm_charges_e, workdir,
         mopac_executable=str(cfg.get("mopac_executable", "mopac") or "mopac"),
-        method=_mopac_extract_method_from_keywords(str(cfg.get("mopac_keywords", "") or ""), default="PM7"),
+        method=method, extra_keywords=" ".join(extra),
         qm_total_charge=int(cfg.get("qm_total_charge", 0)), qm_multiplicity=int(max(1, int(cfg.get("qm_multiplicity", 1)))),
         bond_pairs=bond_pairs, lj_sigma_nm=lj_sigma_nm, lj_epsilon_kj=lj_epsilon_kj,
         dielectric=float(cfg.get("dielectric", 1.0)), timeout_s=int(max(1, int(cfg.get("timeout_s", 600)))),

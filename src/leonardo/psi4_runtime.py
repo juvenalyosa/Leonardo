@@ -300,7 +300,8 @@ def psi4_build_driver_options(
         opts["irc_points"] = int(irc["irc_points"])
         opts["irc_step_size"] = float(irc["irc_step"])
     if freeze_cart and op in ("optimize", "stationary", "ts", "irc"):
-        opts["frozen_cartesian"] = list(freeze_cart)
+        # OptKing takes a string of "atom xyz" pairs (1-based); a list makes psi4.set_options fail
+        opts["frozen_cartesian"] = " ".join(f"{int(ai)} xyz" for ai in freeze_atoms)
     ref = str(reference or "").strip().lower()
     if ref:
         opts["reference"] = ref
