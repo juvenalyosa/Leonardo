@@ -28,6 +28,10 @@ def _dialog(*names):
     ("CL1 ", "LIG", "CL"),
     ("1HB ", "ALA", "H"),
     ("CA", "ILE", "C"),        # stripped name in a standard residue
+    (" Cl ", "UNL", "CL"),     # Meeko ligand PDBQT: element-cased chlorine in column 14 (was read as carbon)
+    (" Br ", "UNL", "BR"),
+    (" Cl1", "UNL", "CL"),
+    (" CL ", "LIG", "C"),      # upper case in column 14 stays the one-letter element
 ])
 def test_pdb_atom_element_follows_column_alignment(name, resn, element):
     assert pdb_atom_element(name, resn) == element

@@ -41,6 +41,11 @@ def pdb_atom_element(atom_name, resn=""):
     if str(resn or "").strip().upper() in STANDARD_POLYMER_RESIDUES:
         return letters[0]
     two = letters[:2]
+    # element-cased names (" Cl ", " Br " from Meeko/Open Babel ligand PDBQT) are two-letter elements
+    # whatever their column: PDB atom names are upper case, so "Cl" is never carbon + "l"
+    cased = re.sub(r"[^A-Za-z]", "", raw_name.strip())[:2]
+    if len(cased) == 2 and cased[0].isupper() and cased[1].islower() and two in TWO_LETTER_ELEMENTS:
+        return two
     if two in TWO_LETTER_ELEMENTS:
         if len(raw_name) >= 4:
             if raw_name[0] not in " 0123456789":
