@@ -599,13 +599,14 @@ def parse_mopac_vibrational_aux_text(aux_text):
     raw_ir = _mopac_extract_float_vector_after_key(txt, "VIB._T_DIP:ELECTRONS")
     raw_modes = _mopac_extract_float_vector_after_key(txt, "NORMAL_MODES")
     n_vib_target = int(max(0, 3 * nat - (5 if nat == 2 else 6)))
-    pos_idx = np.where(np.isfinite(raw_freq) & (raw_freq > 5.0))[0]
-    if int(pos_idx.size) > int(n_vib_target) and int(n_vib_target) > 0:
-        order = np.argsort(raw_freq[pos_idx])
-        pos_idx = pos_idx[order[-int(n_vib_target) :]]
-        pos_idx = np.sort(pos_idx)
-    freq_real = np.asarray(raw_freq[pos_idx], dtype=float).reshape(-1) if pos_idx.size else np.zeros((0,), dtype=float)
-    freq_imag = np.zeros_like(freq_real, dtype=float)
+    # MOPAC's AUX lists the 3N-6 vibrations first, then the translations/rotations.  Imaginary modes are
+    # negative numbers there; they are kept (Psi4 convention: real part 0, magnitude in freq_cm_imag) so
+    # that a saddle point is not reported as a minimum with a rotation promoted in its place.
+    n_take = int(min(int(raw_freq.size), int(n_vib_target)))
+    pos_idx = np.asarray([i for i in range(n_take) if np.isfinite(raw_freq[i])], dtype=int)
+    signed = np.asarray(raw_freq[pos_idx], dtype=float).reshape(-1) if pos_idx.size else np.zeros((0,), dtype=float)
+    freq_real = np.where(signed < 0.0, 0.0, signed)
+    freq_imag = np.where(signed < 0.0, -signed, 0.0)
     ir_rel = np.asarray(raw_ir[pos_idx], dtype=float).reshape(-1) if (pos_idx.size and raw_ir.size > int(np.max(pos_idx))) else np.zeros((freq_real.size,), dtype=float)
     mode_cart = np.zeros((0, 0, 0), dtype=float)
     ncart = int(3 * nat)

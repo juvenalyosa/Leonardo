@@ -418,3 +418,39 @@ NORMAL_MODES[081]=
     assert np.allclose(parsed["freq_cm_real"], np.asarray([1406.50, 2807.52, 2863.37]))
     assert parsed["freq_cm_imag"].shape == (3,)
     assert np.allclose(parsed["ir_intensity_rel"], np.asarray([0.522, 1.244, 0.391]))
+
+
+def test_mopac_vibrational_parse_keeps_imaginary_mode_of_a_saddle_point(tmp_path):
+    # Real MOPAC 23 "PM7 FORCE AUX" output at the HCN <-> HNC transition state: one imaginary mode
+    # (-1390.73) among the 3N-6 vibrations, followed by the six translations/rotations.
+    import ligand_vib_refine_runtime as L
+
+    aux = """
+ ATOM_EL[03]=
+   C  N  H
+ ATOM_X_OPT:ANGSTROMS[09]=
+    0.0005    0.0009    0.0000
+    1.2039   -0.0416   -0.0000
+    0.4592    1.2518    0.0000
+ HEAT_OF_FORMATION:KCAL/MOL=+0.115929D+03
+ VIB._FREQ:CM(-1)[09]=
+ -1390.73  2015.04  2322.00     0.02     0.03     0.03    56.42    29.84    20.20
+ VIB._T_DIP:ELECTRONS[09]=
+ 0.300 0.200 0.100 0.000 0.000 0.000 0.010 0.010 0.010
+ NORMAL_MODES[081]=
+""" + " ".join(["0.1"] * 81)
+    parsed = parse_mopac_vibrational_aux_text(aux)
+    assert parsed["ok"] is True
+    assert np.allclose(parsed["freq_cm_real"], [0.0, 2015.04, 2322.00])
+    assert np.allclose(parsed["freq_cm_imag"], [1390.73, 0.0, 0.0])
+    assert np.allclose(parsed["ir_intensity_rel"], [0.300, 0.200, 0.100])
+    assert parsed["mode_cart_ang"].shape == (3, 3, 3)
+
+    opt = {"parsed": parsed, "method": "PM7"}
+    force = {"parsed": parsed, "method": "PM7"}
+    result = L._build_mopac_result_from_payloads(opt, force_payload=force, out_dir=str(tmp_path))
+    vib = L.psi4_load_vib_data(result, str(tmp_path))
+    summary = L.make_summary_payload(result, vib, {}, {}, {}, {})
+    assert summary["stationary_point_ok"] is False
+    assert summary["qm_imaginary_count"] == 1
+    assert summary["qm_vibrational_mode_count"] == 2      # the imaginary mode is not fitted as a vibration
