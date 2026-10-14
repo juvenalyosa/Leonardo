@@ -709,7 +709,105 @@ def normalize_pdb_conect_records(pdb_lines):
     return list(out)
 
 
+_OXT_AA = _AA3 - {"ACE", "NME", "MSE", "PYL", "SEC"}
+
+
+def add_missing_terminal_oxt(pdb_lines):
+    """
+    Add the carboxylate OXT to C-terminal amino acids that lack it (many crystal structures, PyMOL-built
+    peptides, extracted fragments): without it OpenMM finds no template for the last residue ("missing a
+    terminal capping group") and MD/minimization fail. OXT is placed in the CA-C-O plane, 1.25 A from C,
+    opposite the CA/O bisector. A chain end is the last residue before a TER, a chain change or the end;
+    residues followed by a cap (NME/NHE) are not chain ends. Returns (lines, ["A:5 GLY", ...]).
+    """
+    lines = [str(x or "").rstrip("\n") for x in list(pdb_lines or [])]
+    ends = {}            # residue key -> index of its last atom line
+    order = []
+    prev_key = None
+    for i, line in enumerate(lines):
+        rec = line[:6].strip().upper()
+        if rec == "TER":
+            if prev_key is not None:
+                order.append(prev_key)
+            prev_key = None
+            continue
+        if rec not in {"ATOM", "HETATM"}:
+            continue
+        key = (line[21:22], line[22:27], line[17:20].strip().upper())
+        if prev_key is not None and key != prev_key and key[0] != prev_key[0]:
+            order.append(prev_key)
+        prev_key = key
+        ends[key] = i
+    if prev_key is not None:
+        order.append(prev_key)
+    inserts = []
+    for key in dict.fromkeys(order):
+        if key[2] not in _OXT_AA:
+            continue
+        atoms = {}
+        for line in lines:
+            if line[:6].strip().upper() in {"ATOM", "HETATM"} and (line[21:22], line[22:27], line[17:20].strip().upper()) == key:
+                try:
+                    atoms[line[12:16].strip().upper()] = (line, np.array([float(line[30:38]), float(line[38:46]),
+                                                                         float(line[46:54])]))
+                except ValueError:
+                    pass
+        if "OXT" in atoms or not all(n in atoms for n in ("C", "CA", "O")):
+            continue
+        c = atoms["C"][1]
+        u = sum((atoms[n][1] - c) / max(np.linalg.norm(atoms[n][1] - c), 1e-6) for n in ("CA", "O"))
+        if np.linalg.norm(u) < 1e-6:
+            continue
+        p = c - 1.25 * u / np.linalg.norm(u)
+        tmpl = atoms["O"][0].ljust(80)
+        new = f"{tmpl[:12]} OXT{tmpl[16:30]}{p[0]:8.3f}{p[1]:8.3f}{p[2]:8.3f}{tmpl[54:76]} O".rstrip()
+        inserts.append((ends[key], new, f"{key[0].strip()}:{key[1].strip()} {key[2]}"))
+    added = []
+    for idx, new, label in sorted(inserts, reverse=True):
+        lines.insert(idx + 1, new)
+        added.insert(0, label)
+    return lines, added
+
+
+def uniquify_residue_atom_names(pdb_lines):
+    """
+    Give every atom of a residue a unique name (element + counter) when names repeat inside it. PyMOL names
+    SDF/MOL atoms by element only ("C", "C", ...), and OpenMM's PDB reader keeps one atom per name: the
+    ligand then lost its other atoms, matched no template and was dropped from the MD system.
+    Returns (lines, ["PHL A:201", ...]) for the residues renamed.
+    """
+    lines = [str(x or "").rstrip("\n") for x in list(pdb_lines or [])]
+    by_res = OrderedDict()
+    for i, line in enumerate(lines):
+        if line[:6].strip().upper() in {"ATOM", "HETATM"}:
+            by_res.setdefault((line[17:20], line[21:22], line[22:27]), []).append(i)
+    renamed = []
+    for key, idx in by_res.items():
+        names = [lines[i][12:16].strip() for i in idx]
+        if len(set(names)) == len(names):
+            continue
+        counts = {}
+        for i in idx:
+            line = lines[i].ljust(80)
+            elem = line[76:78].strip() or re.sub(r"[^A-Za-z]", "", line[12:16])[:1] or "X"
+            elem = elem[0].upper() + elem[1:].lower()
+            counts[elem] = counts.get(elem, 0) + 1
+            name = f"{elem.upper()}{counts[elem]}"[:4]
+            field = f" {name:<3s}" if len(elem) == 1 and len(name) < 4 else f"{name:<4s}"
+            lines[i] = (line[:12] + field + line[16:]).rstrip()
+        renamed.append(f"{key[0].strip()} {key[1].strip()}:{key[2].strip()}")
+    return lines, renamed
+
+
 def compose_openmm_input_pdb(polymer_lines, component_line_blocks):
+    polymer_lines, added_oxt = add_missing_terminal_oxt(polymer_lines)
+    renamed = []
+    blocks = []
+    for block in list(component_line_blocks or []):
+        block, names = uniquify_residue_atom_names(block)
+        blocks.append(block)
+        renamed.extend(names)
+    component_line_blocks = blocks
     serial_next = 1
     merged_atom_lines = []
     merged_conect_lines = []
@@ -788,6 +886,8 @@ def compose_openmm_input_pdb(polymer_lines, component_line_blocks):
         "lines": list(out),
         "atom_count": int(sum(1 for line in out if str(line[:6]).strip().upper() in {"ATOM", "HETATM"})),
         "conect_count": int(sum(1 for line in out if str(line[:6]).strip().upper() == "CONECT")),
+        "added_oxt": list(added_oxt),
+        "renamed_atoms": list(renamed),
     }
 
 
