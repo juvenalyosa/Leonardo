@@ -67,6 +67,18 @@ def _object_name(name):
     return ("_" + safe) if safe[0] in "+-." else safe
 
 
+def _free_name(name):
+    """``name``, or ``name_2``, ``name_3``... when an object of that name exists: cmd.load into an existing
+    object appends the file as a new state (PDB) or fails (mmCIF), and must never replace the user's object."""
+    existing = set(_cmd().get_names("all"))
+    if name not in existing:
+        return name
+    k = 2
+    while f"{name}_{k}" in existing:
+        k += 1
+    return f"{name}_{k}"
+
+
 def register(reg):
     @reg.tool("list_objects", "List the molecular objects loaded in PyMOL with atom counts and chains.",
               permission="read", title="Session objects")
@@ -115,12 +127,13 @@ def register(reg):
         if not path or not os.path.isfile(path):
             raise ToolError(str(payload.get("error") or "download failed"))
         # PyMOL renames objects with spaces or symbols: use the name it will really have
-        name = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
+        base = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
 
         def load():
             from .. import presentation
 
             cmd = _cmd()
+            name = _free_name(base)          # on the main thread, where the scene is read
             cmd.load(path, name)
             if remove_waters:
                 cmd.remove(f"({name}) and resn {_WATER}")
@@ -158,7 +171,7 @@ def register(reg):
                                                      ".pdbqt", ".xyz"):
             raise ToolError("unsupported file type")
         cmd = _cmd()
-        name = _object_name(object_name or os.path.splitext(os.path.basename(path))[0])
+        name = _free_name(_object_name(object_name or os.path.splitext(os.path.basename(path))[0]))
         cmd.load(path, name)
         presentation.apply_house_style()
         if cmd.count_atoms(f"({name}) and polymer"):

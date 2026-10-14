@@ -16,11 +16,13 @@ def _sequence_from(sequence="", object="", chain=""):
 
         if object not in cmd.get_names("objects"):
             raise ToolError(f"no object named {object!r}")
+        chains = sorted(set(cmd.get_chains(f"({object}) and polymer.protein")))
         if not chain:
             # get_fastastr gives one record per chain; joined they would be analyzed as one fused protein
-            chains = sorted(set(cmd.get_chains(f"({object}) and polymer.protein")))
             if len(chains) > 1:
                 raise ToolError(f"{object} has chains {chains}; say which one")
+        elif chain not in chains:
+            raise ToolError(f"{object} has no protein chain {chain!r} (chains: {chains})")
         # polymer.protein: DNA/RNA letters (ACGTU) would pass as amino acids
         sel = f"({object}) and polymer.protein" + (f" and chain {chain}" if chain else "")
         fasta = cmd.get_fastastr(sel)
