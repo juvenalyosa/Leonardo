@@ -138,3 +138,12 @@ def test_residue_key_from_the_combined_field():
     assert V._residue_key({"prot_res": "LYS B-5"}) == ("B", "-5", "LYS")
     assert V._residue_key({"prot_res": "HOH 301"}) == ("", "301", "HOH")
     assert V._residue_key({"prot_chain": "C", "prot_resi": "12", "prot_resn": "SER"}) == ("C", "12", "SER")
+
+
+def test_2d_map_leaves_rdkit_depiction_settings_alone(tmp_path):
+    from rdkit.Chem import rdDepictor
+
+    before = rdDepictor.GetPreferCoordGen()
+    atoms = _benzamidinium()
+    V.draw_2d_map(str(tmp_path / "m.png"), _interactions(atoms), atoms, fetch_ccd=False)
+    assert rdDepictor.GetPreferCoordGen() == before

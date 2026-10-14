@@ -735,8 +735,12 @@ def draw_2d_map(path, interactions, ligand_atoms, *, resn="", title="", subtitle
     from rdkit.Chem.Draw import rdMolDraw2D
 
     mol, names, info = ligand_molecule(ligand_atoms, resn=resn, fetch_ccd=fetch_ccd, ph=ph)
-    rdDepictor.SetPreferCoordGen(True)
-    AllChem.Compute2DCoords(mol)
+    prefer = rdDepictor.GetPreferCoordGen()
+    try:
+        rdDepictor.SetPreferCoordGen(True)          # process-wide RDKit flag: restore it for other callers
+        AllChem.Compute2DCoords(mol)
+    finally:
+        rdDepictor.SetPreferCoordGen(prefer)
     # orient the depiction like the 3D view is not meaningful; keep RDKit's canonical layout
 
     S = int(scale)
