@@ -193,12 +193,17 @@ def irc(model, ts_xyz, mode, step_amu_ang=0.05, max_steps=200, fmax_kj_mol_ang=2
         e = float(terms["energy_kj_mol"])
         rows.append({"s_amu_ang": s, "energy_kj_mol": e, "qm_xyz": xyz.copy()})
         n = 0
+        f_peak = 0.0
         while n < int(max_steps):
             f = np.asarray(f, dtype=float) / 10.0                   # kJ/mol/Angstrom
             if model.fixed:
                 f[model.fixed] = 0.0
-            if float(np.max(np.linalg.norm(f, axis=1))) < float(fmax_kj_mol_ang):
-                break                                               # reached the valley floor
+            f_max = float(np.max(np.linalg.norm(f, axis=1)))
+            # reached the valley floor: small forces once they have passed their maximum (a broad, flat saddle
+            # also has small forces next to the transition state, where the descent has only just begun)
+            if f_max < float(fmax_kj_mol_ang) and f_max < f_peak:
+                break
+            f_peak = max(f_peak, f_max)
             g_mw = f / sqrt_m                                       # mass-weighted force (descent direction)
             norm = float(np.linalg.norm(g_mw))
             if norm < 1.0e-12:
