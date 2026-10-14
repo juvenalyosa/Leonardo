@@ -93,7 +93,7 @@ if ! command -v conda >/dev/null 2>&1; then
 fi
 
 if [[ ! -f "$MAIN_YAML" ]]; then
-  echo "ERROR: missing $MAIN_YAML in $SCRIPT_DIR" >&2
+  echo "ERROR: missing $MAIN_YAML in $ROOT_DIR" >&2
   exit 1
 fi
 

@@ -124,7 +124,8 @@ if [[ "$OS" == "Linux" ]]; then
   # PyMOL's window needs the usual desktop graphics libraries (present on desktop installs)
   missing_libs=()
   for lib in libGL.so.1 libEGL.so.1 libxkbcommon-x11.so.0 libfontconfig.so.1 libdbus-1.so.3 libXrender.so.1; do
-    ldconfig -p 2>/dev/null | grep -q "$lib" || missing_libs+=("$lib")
+    # no `grep -q`: it stops reading early and, with pipefail, ldconfig's SIGPIPE marks the library missing
+    ldconfig -p 2>/dev/null | grep -F "$lib" >/dev/null || missing_libs+=("$lib")
   done
   if [[ "${#missing_libs[@]}" -gt 0 ]]; then
     warn "graphics libraries PyMOL needs are missing: ${missing_libs[*]}"
@@ -220,7 +221,7 @@ else
     VERSION="$LEONARDO_VERSION_DEFAULT"
     if [[ "$VERSION" == @*@ ]]; then              # not stamped by a release: newest release (pre-releases too)
       VERSION="$(curl -fsSL "https://api.github.com/repos/$LEONARDO_REPO/releases?per_page=1" 2>/dev/null \
-                 | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+                 | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1 || true)"
       VERSION="${VERSION:-main}"
     fi
   fi
