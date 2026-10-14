@@ -38856,14 +38856,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
     def _resolve_docking_ligand_input(self):
         """
         Return (path, source_tag) for the ligand file currently used by docking.
-        Priority: explicit Ligand Source Prep PDBQT > prepared PDBQT > charged MOL2 > raw source.
+        Priority: explicit Ligand Source Prep PDBQT > charged MOL2 > raw source.
+        The PDBQT a docking run prepared (_docking_ligand_pdbqt) is not an input: reusing it kept
+        the first run's pH protonation and charge mode in every later run.
         """
         prep_pdbqt = str(getattr(self, "_ligand_source_prep_pdbqt", "") or "").strip()
         if prep_pdbqt and os.path.isfile(prep_pdbqt):
             return prep_pdbqt, "source_prep_pdbqt"
-        pdbqt = str(getattr(self, "_docking_ligand_pdbqt", "") or "").strip()
-        if pdbqt and os.path.isfile(pdbqt):
-            return pdbqt, "prepared_pdbqt"
         mol2 = str(getattr(self, "_parameterized_ligand_mol2", "") or "").strip()
         if mol2 and os.path.isfile(mol2):
             return mol2, "charged_mol2"
