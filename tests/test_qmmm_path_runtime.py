@@ -99,3 +99,66 @@ def test_irc_follows_the_path_with_many_points_not_a_jump_to_the_minima(result):
     assert len(rows) >= 15
     s = [r["s_amu_ang"] for r in rows]
     assert max(abs(b - a) for a, b in zip(s, s[1:])) <= 0.051     # no step longer than the IRC step
+
+
+class FlatBarrier(ProtonTransfer):
+    """Proton between oxygens 4 A apart on a broad quartic double well, E = H (1 - x^2)^2 + 200 (y^2 + z^2):
+    the saddle is flat (curvature 4H = 32 kJ/mol/A^2, ~300i cm-1 for H), so the forces right next to it are
+    already below the IRC convergence threshold."""
+
+    H = 8.0
+
+    def __init__(self, workdir):
+        super().__init__(workdir)
+        self.xyz_ref = np.array([[-2.0, 0.0, 0.0], [0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+
+    def evaluate(self, qm_xyz, restraint=None, tag="calc"):
+        self.n_calls += 1
+        x = np.asarray(qm_xyz, dtype=float).reshape((-1, 3))
+        u, y, z = x[1] - 0.5 * (x[0] + x[2])
+        e = self.H * (1 - u * u) ** 2 + 200.0 * (y * y + z * z)
+        f = np.zeros_like(x)
+        f[1] = -np.array([-4.0 * self.H * u * (1 - u * u), 400.0 * y, 400.0 * z]) * 10.0
+        return e, f, {"energy_kj_mol": e, "restraint_kj_mol": 0.0}
+
+
+def test_irc_leaves_a_flat_saddle_instead_of_stopping_next_to_it(tmp_path):
+    model = FlatBarrier(tmp_path)
+    out = P.irc(model, model.xyz_ref[model.qm], [[0, 0, 0], [1, 0, 0], [0, 0, 0]])
+    # was: 3 points and both "minima" 0.05 A from the saddle, at the barrier energy
+    assert len(out["path"]) > 20
+    assert abs(out["plus_minimum"]["qm_xyz"][1][0] - 1.0) < 0.05
+    assert abs(out["minus_minimum"]["qm_xyz"][1][0] + 1.0) < 0.05
+    assert out["plus_minimum"]["energy_kj_mol"] < 0.1 and out["minus_minimum"]["energy_kj_mol"] < 0.1
+
+
+class NoProductWell(ProtonTransfer):
+    """Oxygens 2.7 A apart, acceptor well 60 kJ/mol shallower: along O...O the energy rises monotonically from the
+    reactant (r(O-H) 1.06 A) through r = 1.5-1.6 A, where the proton is 'bonded' to the acceptor by distance alone
+    but there is no minimum."""
+
+    def __init__(self, workdir):
+        super().__init__(workdir)
+        self.xyz_ref = np.array([[0.0, 0.0, 0.0], [R0, 0.05, 0.0], [2.7, 0.0, 0.0]])
+
+    def evaluate(self, qm_xyz, restraint=None, tag="calc"):
+        self.n_calls += 1
+        x = np.asarray(qm_xyz, dtype=float).reshape((-1, 3))
+        e, f = 0.0, np.zeros_like(x)
+        for other, depth in ((0, 420.0), (2, 360.0)):
+            v = x[1] - x[other]
+            r = float(np.linalg.norm(v))
+            ex = np.exp(-A_M * (r - R0))
+            e += depth * (1.0 - ex) ** 2 - depth
+            f[1] -= 2.0 * depth * (1.0 - ex) * A_M * ex * v / r * 10.0
+        f[self.fixed] = 0.0
+        return e, f, {"energy_kj_mol": e, "restraint_kj_mol": 0.0}
+
+
+def test_a_product_that_is_not_a_minimum_is_rejected_before_the_path(tmp_path):
+    model = NoProductWell(tmp_path)
+    out = P.reaction_path(model, form_bonds=[(1, 2)], break_bonds=[(0, 1)], n_images=7)
+    # was: accepted (bond distances only), then ~2000 evaluations of NEB + dimer ending in a misleading
+    # "did not give a first-order saddle point"
+    assert not out["ok"] and "no stable product" in out["error"]
+    assert "path" not in out and "ts" not in out

@@ -6,7 +6,7 @@ disulfide geometry, and estimate how much the new cross-link stiffens the protei
    not Gly/Pro, with Calpha–Calpha 4.0–7.5 A and Cbeta–Cbeta 3.2–5.2 A, ranked by closeness to the typical
    5.6 A / 3.8 A of natural disulfides. The window is wider than natural disulfides (4.4–6.8 / 3.45–4.5 A) on
    purpose: a pair slightly outside often forms a good disulfide after the restrained relaxation, and the strict
-   geometry filters of step 3 decide.
+   geometry filters of step 3 decide. Cys already in a disulfide and residues with insertion codes are skipped.
 2. Build: both residues become Cys (PDBFixer), the S–S bond is added to the topology (CYX) and the model is
    minimized with Amber14 in implicit solvent while every backbone heavy atom is restrained to its original
    position (side chains are free). Seeded, hydrogens placed on the Reference platform and minimized on the CPU
@@ -61,13 +61,32 @@ def _residues(pdb_path):
     return out
 
 
+def _unusable(all_res):
+    """Residues a design cannot use: a Cys already in a disulfide (its SG would get a second S–S bond), and residues
+    whose number is shared through an insertion code (PDBFixer addresses residues by chain and number only)."""
+    sg = [(c, i, x["SG"]) for c, i, n, x in all_res if n == "CYS" and "SG" in x]
+    bad = {(c, i) for c, i, p in sg for c2, i2, q in sg if (c, i) != (c2, i2) and np.linalg.norm(p - q) < 2.5}
+    count = {}
+    for c, i, _n, _x in all_res:
+        count[(c, i.rstrip(_ICODES))] = count.get((c, i.rstrip(_ICODES)), 0) + 1
+    bad |= {(c, i) for c, i, _n, _x in all_res if count[(c, i.rstrip(_ICODES))] > 1 or i != i.rstrip(_ICODES)}
+    return bad
+
+
+_ICODES = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
 def find_candidates(pdb_path, chain="", min_separation=3, max_candidates=20):
-    res = [r for r in _residues(pdb_path) if not chain or r[0] == chain]
+    all_res = _residues(pdb_path)
+    bad = _unusable(all_res)
+    res = [r for r in all_res if not chain or r[0] == chain]
     cands = []
     for a in range(len(res)):
         for b in range(a + 1, len(res)):
             (ca_, ia, na, xa), (cb_, ib, nb, xb) = res[a], res[b]
             if na in _SKIP or nb in _SKIP or not all(k in x for x in (xa, xb) for k in ("CA", "CB")):
+                continue
+            if (ca_, ia) in bad or (cb_, ib) in bad:
                 continue
             if na == "CYS" and nb == "CYS":
                 continue                                  # already a (possible) disulfide
@@ -118,9 +137,11 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     # PDBFixer relaxes the new side-chain atoms on its own platform: Reference keeps that step reproducible
     fixer = PDBFixer(filename=pdb_path, platform=mm.Platform.getPlatformByName("Reference"))
     fixer.removeHeterogens(keepWater=False)
+    # a blank chain is '' here and ' ' in OpenMM's topology
+    chain_ids = {c.id.strip(): c.id for c in fixer.topology.chains()}
     by_chain = {}
     for ch, resi, resn in residues:
-        by_chain.setdefault(ch, []).append(f"{resn}-{resi}-CYS")
+        by_chain.setdefault(chain_ids.get(str(ch).strip(), ch), []).append(f"{resn}-{resi}-CYS")
     for ch, muts in by_chain.items():
         fixer.applyMutations(muts, ch)
     fixer.findMissingResidues()
@@ -128,8 +149,8 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     fixer.findMissingAtoms()
     fixer.addMissingAtoms(seed=int(seed))
     top, pos = fixer.topology, fixer.positions
-    want = {(str(ch), str(resi)) for ch, resi, _n in residues}
-    sg = [a for a in top.atoms() if a.name == "SG" and (a.residue.chain.id, str(a.residue.id)) in want]
+    want = {(str(ch).strip(), str(resi)) for ch, resi, _n in residues}
+    sg = [a for a in top.atoms() if a.name == "SG" and (a.residue.chain.id.strip(), str(a.residue.id)) in want]
     if len(sg) != 2:
         raise ValueError(f"expected 2 SG atoms after the mutation, found {len(sg)}")
     top.addBond(sg[0], sg[1])
@@ -175,9 +196,9 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     x0 = np.array([[v.value_in_unit(unit.angstrom) for v in p] for p in start])
     with open(out_pdb, "w") as fh:
         app.PDBFile.writeFile(modeller.topology, state.getPositions(), fh, keepIds=True)
-    atoms = {(a.residue.chain.id, str(a.residue.id), a.name): a.index for a in modeller.topology.atoms()}
+    atoms = {(a.residue.chain.id.strip(), str(a.residue.id), a.name): a.index for a in modeller.topology.atoms()}
     (ch1, r1, _n1), (ch2, r2, _n2) = residues
-    g = {k: xyz[atoms[(c, r, k2)]] for k, (c, r, k2) in {
+    g = {k: xyz[atoms[(str(c).strip(), r, k2)]] for k, (c, r, k2) in {
         "ca1": (ch1, r1, "CA"), "cb1": (ch1, r1, "CB"), "sg1": (ch1, r1, "SG"),
         "ca2": (ch2, r2, "CA"), "cb2": (ch2, r2, "CB"), "sg2": (ch2, r2, "SG")}.items()}
     ca = [a.index for a in modeller.topology.atoms() if a.name == "CA"]
