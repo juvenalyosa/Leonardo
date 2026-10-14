@@ -156,3 +156,30 @@ def test_graphene_sheet_does_not_repel_itself(tmp_path):
     excluded = sum(1 for k in range(nb.getNumExceptions()) if nb.getExceptionParameters(k)[0] >= 0
                    and system.getParticleMass(nb.getExceptionParameters(k)[0]).value_in_unit(unit.dalton) == 0)
     assert excluded == n_c * 12 // 2              # 3 + 6 + 3 neighbours within 0.3 nm per C, each pair once
+
+
+# ------------------------------------------------------------------ short membrane equilibration
+def test_equilibration_shorter_than_one_report_interval_still_writes_a_frame(tmp_path):
+    import openmm as mm
+    from openmm import app, unit
+
+    from leonardo import membrane_runtime as mr
+
+    ff = app.ForceField("amber14-all.xml", "amber14/tip3p.xml")
+    mod = app.Modeller(app.Topology(), [])
+    mod.addSolvent(ff, boxSize=mm.Vec3(1.8, 1.8, 1.8) * unit.nanometer)
+    pdb_path, xml_path = str(tmp_path / "box.pdb"), str(tmp_path / "box.xml")
+    with open(pdb_path, "w") as fh:
+        app.PDBFile.writeFile(mod.topology, mod.positions, fh)
+    system = ff.createSystem(mod.topology, nonbondedMethod=app.PME, nonbondedCutoff=0.8 * unit.nanometer,
+                             constraints=app.HBonds)
+    with open(xml_path, "w") as fh:
+        fh.write(mm.XmlSerializer.serialize(system))
+    # equilibrate_membrane_system(stage_ps=1, stages=1): shorter than the 10 ps report interval; the tool
+    # loads the trajectory into PyMOL, which failed on the empty DCD ("Could not load trajectory")
+    eq = mr.equilibrate_membrane(pdb_path, xml_path, str(tmp_path / "eq"), stages_ps=(0.1,), restraint_k=(1000,))
+    from pymol import cmd
+
+    cmd.load(pdb_path, "box_eq")
+    cmd.load_traj(eq["trajectory"], "box_eq", state=1)
+    assert eq["ok"] and cmd.count_states("box_eq") >= 1 and os.path.getsize(eq["trajectory"]) > 1000
