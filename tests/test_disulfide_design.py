@@ -60,6 +60,17 @@ def test_k10c_e56c_refines_to_a_good_disulfide(tmp_path):
     assert "CYX" in text or "CONECT" in text
 
 
+def test_a_protein_without_chain_ids_can_be_designed(tmp_path):
+    # blank chain: '' in the candidates, ' ' in OpenMM. Was: KeyError "Cannot find chain  residue 10" for every design
+    pytest.importorskip("pdbfixer")
+    blank = tmp_path / "1pga_blank.pdb"
+    blank.write_text("".join(ln[:21] + " " + ln[22:] if ln.startswith(("ATOM", "HETATM")) else ln
+                             for ln in open(PGA)))
+    assert any(c["residues"] == [["", "10", "LYS"], ["", "56", "GLU"]] for c in D.find_candidates(str(blank), max_candidates=50))
+    geom = D.build_design(str(blank), [["", "10", "LYS"], ["", "56", "GLU"]], str(tmp_path / "d.pdb"), max_iterations=300)
+    assert 1.8 <= geom["ss_A"] <= 2.3
+
+
 def test_tools_expose_disulfide_design_and_the_reaction_path_operation():
     from leonardo.agent.registry import ToolRegistry
     from leonardo.agent.tools import design, qmmm

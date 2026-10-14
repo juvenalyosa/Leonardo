@@ -137,9 +137,11 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     # PDBFixer relaxes the new side-chain atoms on its own platform: Reference keeps that step reproducible
     fixer = PDBFixer(filename=pdb_path, platform=mm.Platform.getPlatformByName("Reference"))
     fixer.removeHeterogens(keepWater=False)
+    # a blank chain is '' here and ' ' in OpenMM's topology
+    chain_ids = {c.id.strip(): c.id for c in fixer.topology.chains()}
     by_chain = {}
     for ch, resi, resn in residues:
-        by_chain.setdefault(ch, []).append(f"{resn}-{resi}-CYS")
+        by_chain.setdefault(chain_ids.get(str(ch).strip(), ch), []).append(f"{resn}-{resi}-CYS")
     for ch, muts in by_chain.items():
         fixer.applyMutations(muts, ch)
     fixer.findMissingResidues()
@@ -147,8 +149,8 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     fixer.findMissingAtoms()
     fixer.addMissingAtoms(seed=int(seed))
     top, pos = fixer.topology, fixer.positions
-    want = {(str(ch), str(resi)) for ch, resi, _n in residues}
-    sg = [a for a in top.atoms() if a.name == "SG" and (a.residue.chain.id, str(a.residue.id)) in want]
+    want = {(str(ch).strip(), str(resi)) for ch, resi, _n in residues}
+    sg = [a for a in top.atoms() if a.name == "SG" and (a.residue.chain.id.strip(), str(a.residue.id)) in want]
     if len(sg) != 2:
         raise ValueError(f"expected 2 SG atoms after the mutation, found {len(sg)}")
     top.addBond(sg[0], sg[1])
@@ -194,9 +196,9 @@ def build_design(pdb_path, residues, out_pdb, seed=20260915, k_backbone=1000.0, 
     x0 = np.array([[v.value_in_unit(unit.angstrom) for v in p] for p in start])
     with open(out_pdb, "w") as fh:
         app.PDBFile.writeFile(modeller.topology, state.getPositions(), fh, keepIds=True)
-    atoms = {(a.residue.chain.id, str(a.residue.id), a.name): a.index for a in modeller.topology.atoms()}
+    atoms = {(a.residue.chain.id.strip(), str(a.residue.id), a.name): a.index for a in modeller.topology.atoms()}
     (ch1, r1, _n1), (ch2, r2, _n2) = residues
-    g = {k: xyz[atoms[(c, r, k2)]] for k, (c, r, k2) in {
+    g = {k: xyz[atoms[(str(c).strip(), r, k2)]] for k, (c, r, k2) in {
         "ca1": (ch1, r1, "CA"), "cb1": (ch1, r1, "CB"), "sg1": (ch1, r1, "SG"),
         "ca2": (ch2, r2, "CA"), "cb2": (ch2, r2, "CB"), "sg2": (ch2, r2, "SG")}.items()}
     ca = [a.index for a in modeller.topology.atoms() if a.name == "CA"]
