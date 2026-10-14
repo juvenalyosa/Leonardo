@@ -22,6 +22,10 @@ This plugin is transitioning from a monolithic UI/controller file to a layered s
   - Shared post-docking callback pipeline executor (`run_post_docking_pipeline`).
   - No UI dependencies.
 
+- `macro_interaction_runtime.py`
+  - Protein-protein / protein-DNA / protein-RNA interface interactions, buried SASA, DNA groove readout.
+  - Pure numpy; reuses `interaction_runtime.py` predicates. See `docs/INTERFACE_INTERACTIONS.md`.
+
 - `smina_runtime.py`
   - Pure repeat-engine for smina docking jobs.
   - Deterministic loop, output collection, failure-tail formatting.

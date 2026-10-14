@@ -72,5 +72,6 @@ and `tests/test_agent_macro_interactions.py`.
 - Only the first model and alternate location blank/A are read. No biological assembly is generated (use the deposited chains). The mmCIF reader handles the `_atom_site` loop only.
 - Grooves use B-form edge definitions and are given for DNA only. RNA base contacts are labelled `base`, without Hoogsteen/Watson–Crick/sugar-edge classification.
 - Modified residues are typed only when listed (MSE, SEP, TPO, PTR, Amber/CHARMM protonation names). Ligands and other hetero groups in a selection count for contacts and area but have no donor/acceptor typing.
+- Hydrophobic contacts are one record per residue pair. Barnase–barstar is a polar interface: its only tabled C···C pairs within 4 Å are the two between Phe82(A) and Trp44(D), so there is one record. For nucleic acids, only the thymine methyl and the deoxyribose C2′ count as apolar.
 - Water bridges use one distance cutoff and no angles, and every crystal water in the file is considered.
 - Heavy-atom Bondi radii without implicit hydrogens give somewhat smaller absolute SASA than NACCESS-style united-atom radii. Buried areas agree with literature to within about 5%.

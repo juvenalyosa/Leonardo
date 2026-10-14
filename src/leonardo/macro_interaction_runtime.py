@@ -1188,7 +1188,7 @@ def _buried_sasa(iface, crit, n_points):
     atoms = iface.atoms
     radii = np.array([vdw_radius(e) for e in iface.elem])
     probe = float(crit["sasa_probe"])
-    reach = 2.0 * (float(radii[iface.ia].max() if len(iface.ia) else 2.0) + probe)
+    reach = 2.0 * (float(radii[np.concatenate([iface.ia, iface.ib])].max()) + probe)
     ia, ib = iface.ia, iface.ib
     both = np.concatenate([ia, ib])
     per_res = defaultdict(float)
