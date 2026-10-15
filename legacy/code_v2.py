@@ -47371,7 +47371,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             raise ValueError("no interactions to draw")
         if path is None:
             path = os.path.join(tempfile.mkdtemp(prefix="leonardo_map_"), "interaction_map.png")
+        # bond orders: the ligand file of a docking pose, else bonds PyMOL read with orders (SDF/MOL2)
+        template = None
+        if str(self.loaded_object or "").startswith("dock_complex"):
+            template = iview.load_template(getattr(self, "_docking_ligand_file", ""))
+        if template is None:
+            template = iview.ligand_template_from_pymol(lig_sel)
         out = iview.draw_2d_map(path, interactions, iview.ligand_atoms_from_pymol(lig_sel), resn=lig_resn,
+                                template=template,
                                 title=f"{lig_resn} {lig_chain}{lig_resi}".strip(),
                                 subtitle=f"{self.loaded_object} · {len(interactions)} interactions")
         if not show:

@@ -655,8 +655,8 @@ def _bonds_from_ccd_names(mol, names, resn, fetch_ccd=True):
     if not comp:
         return None
     known = {a["name"] for a in comp["atoms"]}
-    if not names or any(n not in known for n in names):
-        return None
+    if not names or len(set(names)) != len(names) or any(n not in known for n in names):
+        return None          # docking poses repeat names ("C", "C", ...): no name matching then
     index = {n: i for i, n in enumerate(names)}
     order = {"SING": Chem.BondType.SINGLE, "DOUB": Chem.BondType.DOUBLE, "TRIP": Chem.BondType.TRIPLE,
              "AROM": Chem.BondType.AROMATIC}
@@ -680,14 +680,100 @@ def _bonds_from_ccd_names(mol, names, resn, fetch_ccd=True):
     return out
 
 
+def _bonds_from_template(mol, template):
+    """Bond orders of ``template`` on ``mol`` by graph match (atom order and names may differ); None when the
+    heavy-atom graphs do not match."""
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    try:
+        ref = Chem.RemoveHs(template, sanitize=False)
+        ref.UpdatePropertyCache(strict=False)
+        if ref.GetNumAtoms() != mol.GetNumAtoms():
+            return None
+        out = AllChem.AssignBondOrdersFromTemplate(ref, mol)
+        match = out.GetSubstructMatch(ref)
+        if len(match) != ref.GetNumAtoms():
+            return None
+        for i_ref, i_out in enumerate(match):
+            out.GetAtomWithIdx(i_out).SetFormalCharge(ref.GetAtomWithIdx(i_ref).GetFormalCharge())
+            out.GetAtomWithIdx(i_out).SetNoImplicit(False)
+        Chem.SanitizeMol(out)
+        return out
+    except Exception:
+        return None
+
+
+def load_template(path):
+    """RDKit molecule (hydrogens kept) of a ligand file with bond orders: SDF/MOL/MOL2, or PDBQT/PDB through
+    Open Babel. None when it cannot be read."""
+    from rdkit import Chem
+
+    path = str(path or "")
+    if not path or not os.path.isfile(path):
+        return None
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in (".sdf", ".mol", ".sd"):
+            sup = Chem.SDMolSupplier(path, removeHs=False)
+            mol = next((m for m in sup if m is not None), None)
+        elif ext == ".mol2":
+            mol = Chem.MolFromMol2File(path, removeHs=False)
+        else:
+            from openbabel import pybel
+
+            ob = next(pybel.readfile(ext.lstrip("."), path))
+            mol = Chem.MolFromMolBlock(ob.write("sdf"), removeHs=False)
+        return mol
+    except Exception:
+        return None
+
+
+def ligand_template_from_pymol(sel):
+    """RDKit molecule from the bonds PyMOL holds for ``sel`` when they carry bond orders (a structure read
+    from SDF/MOL/MOL2, or a PDB with CONECT orders); None otherwise."""
+    from pymol import cmd
+    from rdkit import Chem
+
+    model = cmd.get_model(sel)
+    # PyMOL marks rings aromatic (order 4) on its own, even for a bare PDB: only explicit double/triple bonds
+    # show that the file carried bond orders
+    if not model.atom or not any(int(b.order) in (2, 3) for b in model.bond):
+        return None
+    rw = Chem.RWMol()
+    for a in model.atom:
+        atom = Chem.Atom(str(a.symbol).capitalize() or "C")
+        atom.SetFormalCharge(int(getattr(a, "formal_charge", 0) or 0))
+        rw.AddAtom(atom)
+    kinds = {1: Chem.BondType.SINGLE, 2: Chem.BondType.DOUBLE, 3: Chem.BondType.TRIPLE, 4: Chem.BondType.AROMATIC}
+    for b in model.bond:
+        i, j = int(b.index[0]), int(b.index[1])
+        if rw.GetBondBetweenAtoms(i, j) is None:
+            rw.AddBond(i, j, kinds.get(int(b.order), Chem.BondType.SINGLE))
+    mol = rw.GetMol()
+    try:
+        Chem.SanitizeMol(mol)
+    except Exception:
+        return None
+    return mol
+
+
 _MAX_HEAVY_BONDS = {"C": 4, "N": 4, "O": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1, "S": 6, "P": 5, "B": 4, "Se": 2}
 
 
-def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4):
+def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4, template=None):
     """
     RDKit molecule (heavy atoms, correct bond orders and formal charges) from the ligand's atoms
-    ``[(name, element, xyz), ...]``. Bond orders come from the PDB chemical component template when it
-    matches, else from the geometry; charges from Leonardo's pKa model at ``ph``.
+    ``[(name, element, xyz), ...]``; the atom order is kept. Bond orders, first that applies:
+
+    1. the PDB chemical component's bond table, matched by atom name (crystal ligands, unique names);
+    2. ``template``: any RDKit molecule of the same compound (the docked ligand file, a file read with bond
+       orders), matched on the graph, so atom order and names do not matter;
+    3. the component's ideal SDF, matched on the graph;
+    4. perceived from the 3D geometry.
+
+    Charges always come from Leonardo's pKa model at ``ph`` (the model used to protonate ligands for docking):
+    a template gives bond orders only, since a saved ligand file can predate the protonation that was docked.
     Returns (mol, {atom name: index}, info).
     """
     from rdkit import Chem
@@ -731,11 +817,15 @@ def ligand_molecule(atoms, resn="", fetch_ccd=True, ph=7.4):
     assigned = _bonds_from_ccd_names(mol, [n for n, _e, _x in heavy], resn, fetch_ccd) if resn else None
     if assigned is not None:
         info["bond_orders"] = f"PDB chemical component {str(resn).upper()} (atom names)"
+    if assigned is None and template is not None:
+        assigned = _bonds_from_template(mol, template)
+        if assigned is not None:
+            info["bond_orders"] = "the ligand file (graph match)"
     try:
         from .component_library_runtime import ccd_reference
 
         if assigned is not None:
-            raise StopIteration          # already assigned from the named bond table
+            raise StopIteration          # already assigned
 
         ref = ccd_reference(resn, fetch=fetch_ccd) if resn else None
         if ref is not None and ref.GetNumAtoms() == mol.GetNumAtoms():
@@ -787,7 +877,7 @@ def _seg_hits_rect(p, q, r):
 
 
 def draw_2d_map(path, interactions, ligand_atoms, *, resn="", title="", subtitle="", scale=2, fetch_ccd=True,
-                ph=7.4, show_contacts=True):
+                ph=7.4, show_contacts=True, template=None):
     """
     Draw the 2D interaction diagram to ``path`` (PNG). ``ligand_atoms`` is ``[(name, element, xyz), ...]``.
     Returns a dict with the image path and what was drawn.
@@ -797,7 +887,8 @@ def draw_2d_map(path, interactions, ligand_atoms, *, resn="", title="", subtitle
     from rdkit.Chem import AllChem, rdDepictor
     from rdkit.Chem.Draw import rdMolDraw2D
 
-    mol, names, info = ligand_molecule(ligand_atoms, resn=resn, fetch_ccd=fetch_ccd, ph=ph)
+    mol, names, info = ligand_molecule(ligand_atoms, resn=resn, fetch_ccd=fetch_ccd, ph=ph, template=template)
+    xyz3d = np.array(mol.GetConformer().GetPositions()) if mol.GetNumConformers() else None
     prefer = rdDepictor.GetPreferCoordGen()
     try:
         rdDepictor.SetPreferCoordGen(True)          # process-wide RDKit flag: restore it for other callers
@@ -838,19 +929,21 @@ def draw_2d_map(path, interactions, ligand_atoms, *, resn="", title="", subtitle
     center = all_xy.mean(axis=0)
 
     def anchor_of(inter):
-        """2D point a dash ends on: the ligand atom, or the centroid of the ligand ring for ring types."""
+        """2D point a dash ends on. Located by the 3D coordinate of the interaction (atom names can repeat in
+        docking poses): the ligand atom at that point, else the centroid of the atoms around it (a ring or a
+        charged group); the atom name only when there is no coordinate."""
+        lc = _coords(inter, "lig_coord")
+        if lc is not None and xyz3d is not None and len(xyz3d):
+            d = np.linalg.norm(xyz3d - lc, axis=1)
+            k = int(np.argmin(d))
+            if d[k] < 0.35:
+                return atom_xy[k], [k]
+            near = [int(i) for i in np.argsort(d)[:6] if d[i] < 2.0] or [k]
+            return np.mean([atom_xy[i] for i in near], axis=0), near
         idx = names.get(str(inter.get("lig_atom") or "").strip())
         if idx is not None:
             return atom_xy[idx], [idx]
-        lc = _coords(inter, "lig_coord")
-        if lc is None:
-            return center, []
-        # ring centroid: average the 2D positions of the ligand atoms nearest to the 3D point
-        d = {n: float(np.linalg.norm(np.asarray(x) - lc)) for n, _e, x in ligand_atoms if n.strip() in names}
-        near = [names[n.strip()] for n, dist in sorted(d.items(), key=lambda kv: kv[1])[:6] if dist < 2.0]
-        if not near:
-            near = [names[min(d, key=d.get).strip()]] if d else []
-        return (np.mean([atom_xy[i] for i in near], axis=0) if near else center), near
+        return center, []
 
     groups = group_by_residue([r for r in interactions if show_contacts or str(r.get("type")) not in CONTACT_TYPES])
     multi_chain = len({k[0] for k in groups if k[0]}) > 1
@@ -972,7 +1065,7 @@ def draw_2d_map(path, interactions, ligand_atoms, *, resn="", title="", subtitle
     d.line((40 * S, y_leg - 10 * S, out_w - 40 * S, y_leg - 10 * S), fill=(229, 231, 235), width=2 * S)
     _draw_legend(d, 40 * S, y_leg, out_w - 80 * S, legend_items(used), scale=S)
     for k, note in enumerate(("Distances in Å between the interacting atoms (ring centroids for π interactions).",
-                              f"Ligand: bond orders from {info['bond_orders']}; charges at {info['charges']}.")):
+                              f"Ligand: bond orders from {info['bond_orders']}; charges: {info['charges']}.")):
         d.text((40 * S, y_leg + leg_h + (14 + 20 * k) * S), note, font=_font(13 * S), fill=MUTED)
     dx, dy = (out_w - body.width) // 2 - cx0, head_h - cy0
     index_of = {id(r): i for i, r in enumerate(interactions)}

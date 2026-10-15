@@ -166,3 +166,69 @@ def test_bond_orders_by_atom_name_ignore_crystal_contacts(monkeypatch):
     mol, _names, info = V.ligand_molecule(squeezed, resn="BEN", fetch_ccd=False)
     assert "atom names" in info["bond_orders"]
     assert mol.GetNumBonds() == 9 and sum(1 for b in mol.GetBonds() if b.GetIsAromatic()) == 6
+
+
+def _pose_like(atoms):
+    """A docking pose: same molecule, atoms shuffled, names reduced to the element (repeated)."""
+    order = [3, 0, 8, 5, 1, 7, 2, 6, 4]
+    return [(atoms[i][1], atoms[i][1], atoms[i][2]) for i in order]
+
+
+def test_template_gives_bond_orders_for_a_pose_with_repeated_names(tmp_path):
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    template = Chem.AddHs(Chem.MolFromSmiles("NC(=N)c1ccccc1"))
+    AllChem.EmbedMolecule(template, randomSeed=3)
+    sdf = tmp_path / "lig.sdf"
+    Chem.MolToMolFile(template, str(sdf))
+    pose = _pose_like(_benzamidinium())
+    mol, _names, info = V.ligand_molecule(pose, fetch_ccd=False, template=V.load_template(str(sdf)))
+    assert info["bond_orders"] == "the ligand file (graph match)"
+    assert sum(1 for b in mol.GetBonds() if b.GetIsAromatic()) == 6
+    assert sum(1 for b in mol.GetBonds() if b.GetBondType() == Chem.BondType.DOUBLE) == 1
+    # atom order of the pose is kept: atom 0 is still the pose's first atom (C1 of the amidine)
+    assert [a.GetSymbol() for a in mol.GetAtoms()] == [e for _n, e, _x in pose]
+
+
+def test_a_template_of_another_compound_is_ignored():
+    from rdkit import Chem
+
+    pose = _pose_like(_benzamidinium())
+    mol, _names, info = V.ligand_molecule(pose, fetch_ccd=False, template=Chem.MolFromSmiles("CCO"))
+    assert info["bond_orders"] != "the ligand file (graph match)" and mol.GetNumAtoms() == 9
+
+
+def test_map_anchors_by_coordinate_when_names_repeat(tmp_path):
+    atoms = _benzamidinium()
+    pose = _pose_like(atoms)
+    inter = _interactions(atoms)
+    for r in inter:                      # the pose reports bare element names, as docked ligands do
+        r["lig_atom"] = r["lig_atom"][0] if r["lig_atom"] != "ring" else "Ring"
+    out = V.draw_2d_map(str(tmp_path / "pose.png"), inter, pose, fetch_ccd=False)
+    assert out["residues"] == 6 and out["not_placed"] == []
+
+
+def test_pymol_bonds_with_orders_become_a_template(tmp_path):
+    pytest.importorskip("pymol")
+    from pymol import cmd
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    m = Chem.AddHs(Chem.MolFromSmiles("NC(=N)c1ccccc1"))
+    AllChem.EmbedMolecule(m, randomSeed=5)
+    path = tmp_path / "lig.mol"
+    Chem.MolToMolFile(m, str(path))
+    cmd.delete("all")
+    try:
+        cmd.load(str(path), "ligmol")
+        tpl = V.ligand_template_from_pymol("ligmol")
+        assert tpl is not None and Chem.MolToSmiles(Chem.RemoveHs(tpl)) == Chem.MolToSmiles(Chem.MolFromSmiles("NC(=N)c1ccccc1"))
+        cmd.save(str(tmp_path / "lig.pdb"), "ligmol")
+        cmd.delete("all")
+        no_conect = [ln for ln in (tmp_path / "lig.pdb").read_text().splitlines() if not ln.startswith("CONECT")]
+        (tmp_path / "bare.pdb").write_text("\n".join(no_conect) + "\n")
+        cmd.load(str(tmp_path / "bare.pdb"), "ligpdb")
+        assert V.ligand_template_from_pymol("ligpdb") is None          # bonds by distance: orders unknown
+    finally:
+        cmd.delete("all")
