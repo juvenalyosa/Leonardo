@@ -281,13 +281,57 @@ class AssistantController(QtCore.QObject):
                 if self._busy():
                     return
                 try:
-                    running = self.context.jobs.poll_unfinished()
+                    running = self._poll_and_report_jobs()
                 except Exception:
                     running = 0
                 if not running:
                     self._job_timer.stop()
             self._job_timer.timeout.connect(tick)
         self._job_timer.start()
+
+    JOB_REPORT_EVERY_S = 1800.0
+
+    def _poll_and_report_jobs(self, now=None):
+        """
+        Poll the jobs left running and post a progress note in the chat every JOB_REPORT_EVERY_S (state, elapsed
+        time, the job's own progress line), and one when a job ends. Returns how many still run.
+        """
+        import time as _time
+
+        now = _time.time() if now is None else float(now)
+        reports = self.__dict__.setdefault("_job_reports", {})
+        running = 0
+        for job in self.context.jobs.list():
+            job_id = job["job_id"]
+            if job_id in reports and reports[job_id] is None:
+                continue                                    # end already reported
+            if job.get("status") != "running" and job_id not in reports:
+                continue                                    # ended before it was ever followed here
+            st = self.context.jobs.status(job_id)
+            state = st.get("status")
+            name = job.get("description") or job.get("kind") or job_id
+            elapsed = float(st.get("elapsed_s", job.get("elapsed_s", 0)) or 0)
+            started = now - elapsed
+            if state in ("running", "cancelling"):
+                running += 1
+                due = reports.setdefault(job_id, started + self.JOB_REPORT_EVERY_S)
+                if now >= due:
+                    hours, minutes = int(elapsed // 3600), int(elapsed % 3600 // 60)
+                    progress = str(st.get("progress") or "").strip()
+                    self.panel.add_notice(f"Background job {job_id} ({name}) is still running after "
+                                          f"{hours} h {minutes:02d} min" + (f": {progress}" if progress else "."))
+                    reports[job_id] = due + self.JOB_REPORT_EVERY_S
+                continue
+            if job_id in reports or elapsed >= self.JOB_REPORT_EVERY_S:
+                if state == "done":
+                    self.panel.add_notice(f"Background job {job_id} ({name}) finished. Ask the assistant for the "
+                                          "results (job_status).")
+                elif state == "failed":
+                    self.panel.add_error(f"Background job {job_id} ({name}) failed: {str(st.get('error', ''))[:300]}")
+                elif state == "cancelled":
+                    self.panel.add_notice(f"Background job {job_id} ({name}) was cancelled.")
+            reports[job_id] = None
+        return running
 
     def _on_finished(self, outcome):
         self._watch_jobs()

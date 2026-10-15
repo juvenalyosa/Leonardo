@@ -19730,24 +19730,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         return f"{int(arr.shape[0])}:{digest}"
     def _redock_mc_sample(self, pdb_in, out_dir, site_residues, n_structures, temperature_k, seed=1,
                           progress_label=None, exclude_hetero=(), ligand_obstacle=False):
-        """Run the Monte Carlo side-chain sampler in a child process (the GUI keeps refreshing)."""
+        """Run the Monte Carlo side-chain sampler in a child process and wait for it (synchronous path: replay
+        packs and scripts; the window and the assistant use the background path, _redock_mc_start_background)."""
         import subprocess
         mod = self._modeler_import_module("mc_ensemble_runtime")
-        hw = self._hardware_profile() or {}
-        platform = str((hw.get("md_platform") or {}).get("name") or "CPU")
-        os.makedirs(out_dir, exist_ok=True)
-        args = {"pdb_in": str(pdb_in), "out_dir": str(out_dir), "n_structures": int(n_structures),
-                "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
-                "steps_per_structure": 15, "seed": int(seed), "platform": platform,
-                "exclude_hetero": [list(x) for x in exclude_hetero or []],
-                "ligand_obstacle": bool(ligand_obstacle),
-                # exactly repeatable chain (CPU, one thread): slower, for replay packs and audits
-                "reproducible": bool(self.cb_redock_mc_reproducible.isChecked()
-                                     if hasattr(self, "cb_redock_mc_reproducible")
-                                     else getattr(self, "_redock_mc_reproducible", False))}
-        args_path = os.path.join(out_dir, "mc_args.json")
-        with open(args_path, "w") as fh:
-            json.dump(args, fh)
+        args_path = self._redock_mc_write_args(pdb_in, out_dir, site_residues, n_structures, temperature_k, seed,
+                                               exclude_hetero, ligand_obstacle)
         py = os.path.join(sys.prefix, "bin", "python")
         py = py if os.path.isfile(py) else sys.executable
         import queue
@@ -19784,6 +19772,199 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if proc.returncode != 0 or not os.path.isfile(res_path):
             return {"ok": False, "error": "\n".join(tail[-6:]) or f"exit {proc.returncode}"}
         return json.load(open(res_path))
+    def _redock_mc_write_args(self, pdb_in, out_dir, site_residues, n_structures, temperature_k, seed,
+                              exclude_hetero=(), ligand_obstacle=False):
+        """Arguments of the Monte Carlo sampler (mc_args.json in out_dir); returns the file path."""
+        hw = self._hardware_profile() or {}
+        platform = str((hw.get("md_platform") or {}).get("name") or "CPU")
+        os.makedirs(out_dir, exist_ok=True)
+        args = {"pdb_in": str(pdb_in), "out_dir": str(out_dir), "n_structures": int(n_structures),
+                "site_residues": [list(r) for r in site_residues], "temperature_k": float(temperature_k),
+                "steps_per_structure": 15, "seed": int(seed), "platform": platform,
+                "exclude_hetero": [list(x) for x in exclude_hetero or []],
+                "ligand_obstacle": bool(ligand_obstacle),
+                # exactly repeatable chain (CPU, one thread): slower, for replay packs and audits
+                "reproducible": bool(self.cb_redock_mc_reproducible.isChecked()
+                                     if hasattr(self, "cb_redock_mc_reproducible")
+                                     else getattr(self, "_redock_mc_reproducible", False))}
+        args_path = os.path.join(out_dir, "mc_args.json")
+        with open(args_path, "w") as fh:
+            json.dump(args, fh)
+        return args_path
+
+    # -- Monte Carlo ensemble in the background ---------------------------------------------------------- #
+    # Sampling can take hours. Run from the window or the assistant it is a background job: the redocking is
+    # deferred (no event loop waits on the main thread; a nested one crashed Qt 5 on macOS 26), a timer
+    # follows the sampler, reports every _redock_mc_report_every_s, and the redocking resumes from the cached
+    # ensemble when it ends.
+    _redock_mc_report_every_s = 1800.0
+
+    def _redock_mc_key(self, label, source_obj, lig_sel, site, n, temp, exclude, keep_space, seed, reproducible):
+        return json.dumps([str(label), str(source_obj), str(lig_sel), [list(r) for r in site], int(n),
+                           round(float(temp), 3), [list(x) for x in exclude], bool(keep_space), int(seed),
+                           bool(reproducible)])
+
+    def _redock_mc_running(self):
+        bg = getattr(self, "_redock_mc_bg", None) or {}
+        return bool(bg) and bg.get("state") == "running"
+
+    def _redock_mc_progress_text(self):
+        bg = getattr(self, "_redock_mc_bg", None) or {}
+        if not bg:
+            return ""
+        el = max(0.0, time.time() - float(bg.get("started", time.time())))
+        done, n = int(bg.get("produced", 0)), int(bg.get("n", 0))
+        text = (f"Monte Carlo ensemble ({bg.get('label', '')}): {done}/{n} structures after "
+                f"{int(el // 3600)} h {int(el % 3600 // 60):02d} min")
+        if 0 < done < n:
+            eta = el / done * (n - done)
+            text += f", about {int(eta // 3600)} h {int(eta % 3600 // 60):02d} min left at this pace"
+        if bg.get("state") in ("done", "failed", "cancelled"):
+            text += f" ({bg['state']})"
+        return text
+
+    def _redock_mc_report(self, text):
+        self._redock_mc_reports = (list(getattr(self, "_redock_mc_reports", []) or []) + [text])[-50:]
+        try:
+            self._append_debug_log(text)
+        except Exception:
+            pass
+        lbl = getattr(self, "lbl_redock_summary", None)
+        if lbl is not None:
+            try:
+                lbl.setText(text)
+            except Exception:
+                pass
+
+    def _redock_mc_start_background(self, key, plan, owner="gui"):
+        """Start the sampler as a child process with its log in the work folder; a timer follows it."""
+        import subprocess
+        mod = self._modeler_import_module("mc_ensemble_runtime")
+        args_path = self._redock_mc_write_args(plan["best_pdb"], plan["work"], plan["site"], plan["n"],
+                                               plan["temp"], plan["seed"], plan["exclude"], plan["keep_space"])
+        py = os.path.join(sys.prefix, "bin", "python")
+        py = py if os.path.isfile(py) else sys.executable
+        log_path = os.path.join(plan["work"], "mc_log.txt")
+        log = open(log_path, "w")
+        kwargs = {"start_new_session": True} if os.name == "posix" else {}
+        proc = subprocess.Popen([py, "-u", os.path.abspath(mod.__file__), args_path], cwd=plan["work"],
+                                stdout=log, stderr=subprocess.STDOUT, text=True, **kwargs)
+        now = time.time()
+        self._redock_mc_bg = {"key": key, "plan": dict(plan), "label": plan["label"], "proc": proc, "log": log,
+                              "log_path": log_path, "n": int(plan["n"]), "produced": 0, "state": "running",
+                              "owner": str(owner), "started": now, "last_report": now, "produced_at_report": 0,
+                              "error": ""}
+        self._redock_mc_report(f"Monte Carlo ensemble ({plan['label']}): started in the background "
+                               f"({plan['n']} structures, {len(plan['site'])} site residues, {plan['temp']:.0f} K); "
+                               "the redocking continues by itself when it ends.")
+        timer = getattr(self, "_redock_mc_timer", None)
+        if timer is None:
+            timer = QtCore.QTimer(self)
+            timer.setInterval(2000)
+            timer.timeout.connect(self._redock_mc_bg_tick)
+            self._redock_mc_timer = timer
+        timer.start()
+        self._redock_mc_sync_buttons()
+        return self._redock_mc_bg
+
+    def _redock_mc_bg_tick(self):
+        """Timer slot (returns at once): progress, periodic report, end of the sampler."""
+        bg = getattr(self, "_redock_mc_bg", None) or {}
+        if not bg or bg.get("state") != "running":
+            if getattr(self, "_redock_mc_timer", None) is not None:
+                self._redock_mc_timer.stop()
+            return
+        try:
+            with open(bg["log_path"]) as fh:
+                lines = [ln for ln in fh if ln.startswith("PROGRESS")]
+            if lines:
+                bg["produced"] = int(lines[-1].split()[1].split("/")[0])
+        except Exception:
+            pass
+        now = time.time()
+        if now - float(bg["last_report"]) >= float(self._redock_mc_report_every_s):
+            gained = int(bg["produced"]) - int(bg["produced_at_report"])
+            text = self._redock_mc_progress_text()
+            if gained <= 0:
+                text += (f"; no new structure in the last {int(self._redock_mc_report_every_s // 60)} min (rigid "
+                         "site at this temperature?): consider cancelling and raising T or lowering the number")
+            self._redock_mc_report(text)
+            bg["last_report"], bg["produced_at_report"] = now, int(bg["produced"])
+        proc = bg["proc"]
+        if proc.poll() is None:
+            return
+        try:
+            bg["log"].close()
+        except Exception:
+            pass
+        res_path = os.path.join(bg["plan"]["work"], "mc_ensemble.json")
+        res = {}
+        if proc.returncode == 0 and os.path.isfile(res_path):
+            try:
+                res = json.load(open(res_path))
+            except Exception:
+                res = {}
+        if res.get("ok"):
+            bg["state"] = "done"
+            cache = dict(getattr(self, "_redock_mc_cache", {}) or {})
+            cache[bg["key"]] = {"result": res, "plan": bg["plan"]}
+            self._redock_mc_cache = cache
+        else:
+            bg["state"] = "failed"
+            try:
+                tail = open(bg["log_path"]).read()[-600:]
+            except Exception:
+                tail = ""
+            bg["error"] = str(res.get("error") or tail or f"exit {proc.returncode}")
+        self._redock_mc_report(self._redock_mc_progress_text()
+                               + (f": {bg['error'][:300]}" if bg["state"] == "failed" else ""))
+        if getattr(self, "_redock_mc_timer", None) is not None:
+            self._redock_mc_timer.stop()
+        self._redock_mc_sync_buttons()
+        if bg.get("owner") == "gui":
+            if bg["state"] == "done":
+                QtCore.QTimer.singleShot(0, self._on_run_redocking_clicked)       # resume: the ensemble is cached
+            else:
+                box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Warning, "Redocking",
+                                            f"Monte Carlo sampling failed: {bg['error'][:400]}", parent=self)
+                box.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+                box.open()                                                          # no nested event loop
+
+    def _redock_mc_cancel_background(self):
+        bg = getattr(self, "_redock_mc_bg", None) or {}
+        if not bg or bg.get("state") != "running":
+            return False
+        try:
+            from leonardo.agent.jobs import stop_process
+        except Exception:
+            stop_process = None
+        if stop_process is not None:
+            stop_process(bg["proc"], bg.get("log"))
+        else:
+            bg["proc"].terminate()
+        bg["state"] = "cancelled"
+        self._redock_mc_report(self._redock_mc_progress_text())
+        if getattr(self, "_redock_mc_timer", None) is not None:
+            self._redock_mc_timer.stop()
+        self._redock_mc_sync_buttons()
+        return True
+
+    def _redock_mc_sync_buttons(self):
+        btn = getattr(self, "btn_redock_cancel_mc", None)
+        if btn is not None:
+            btn.setEnabled(self._redock_mc_running())
+        run = getattr(self, "btn_run_redocking", None)
+        if run is not None:
+            run.setEnabled(not self._redock_mc_running())
+
+    def _on_run_redocking_clicked(self):
+        """The Run Redocking button: Monte Carlo sampling (if any) goes to the background."""
+        self._redock_mc_background_mode = "gui"
+        try:
+            self._on_run_redocking_workflow()
+        finally:
+            self._redock_mc_background_mode = None
+
     def _redock_collect_mc_ensemble_systems(self, system_label, receptor_obj):
         """
         Receptor ensemble for redocking: the best model only (MODELLER best-DOPE model when the object
@@ -19837,11 +20018,39 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         exclude = [(ch, ri, rn)] if (ref_obj == source_obj and rn) else []
         keep_space = bool(getattr(self, "cb_redock_mc_keep_ligand_space", None)
                           and self.cb_redock_mc_keep_ligand_space.isChecked() and exclude)
-        res = self._redock_mc_sample(best_pdb, work, site, n, temp,
-                                     seed=int(self.spin_redock_mc_seed.value() if hasattr(self, "spin_redock_mc_seed")
-                                              else (getattr(self, "_redock_mc_seed", 1) or 1)),
-                                     progress_label=getattr(self, "lbl_redock_summary", None),
-                                     exclude_hetero=exclude, ligand_obstacle=keep_space)
+        seed = int(self.spin_redock_mc_seed.value() if hasattr(self, "spin_redock_mc_seed")
+                   else (getattr(self, "_redock_mc_seed", 1) or 1))
+        reproducible = bool(self.cb_redock_mc_reproducible.isChecked() if hasattr(self, "cb_redock_mc_reproducible")
+                            else getattr(self, "_redock_mc_reproducible", False))
+        try:                                   # the same object name with other coordinates is another receptor
+            xyz = cmd.get_coords(f"({source_obj})")
+            coords_tag = hashlib.sha1(np.round(xyz, 3).tobytes()).hexdigest() if xyz is not None else ""
+        except Exception:
+            coords_tag = ""
+        key = self._redock_mc_key(label, f"{source_obj}@{coords_tag}", lig_sel, site, n, temp, exclude, keep_space,
+                                  seed, reproducible)
+        cached = dict(getattr(self, "_redock_mc_cache", {}) or {}).get(key)
+        mode = getattr(self, "_redock_mc_background_mode", None)
+        if cached is not None:
+            res = dict(cached["result"])
+            best_pdb = cached["plan"]["best_pdb"]
+            self._append_debug_log(f"Redocking MC ensemble ({label}): using the ensemble sampled in the background")
+        elif mode:
+            if self._redock_mc_running():
+                if (self._redock_mc_bg or {}).get("key") != key:
+                    raise RuntimeError("another Monte Carlo ensemble is being sampled in the background; wait for "
+                                       "it or cancel it first")
+            else:
+                self._redock_mc_start_background(key, {"label": label, "best_pdb": best_pdb, "work": work, "site": site,
+                                                       "n": n, "temp": temp, "exclude": exclude,
+                                                       "keep_space": keep_space, "seed": seed}, owner=mode)
+            self._redock_mc_deferred = True
+            raise RuntimeError("Monte Carlo ensemble sampling runs in the background; the redocking resumes when "
+                               "it ends")
+        else:
+            res = self._redock_mc_sample(best_pdb, work, site, n, temp, seed=seed,
+                                         progress_label=getattr(self, "lbl_redock_summary", None),
+                                         exclude_hetero=exclude, ligand_obstacle=keep_space)
         if not bool(res.get("ok", False)):
             out["note"] = f"{label}: Monte Carlo sampling failed ({str(res.get('error', ''))[:200]}); single receptor used."
             self._redock_last_mc_ensemble_note = out["note"]
@@ -20871,6 +21080,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                                "object (binding-site side chains as sticks) and play it")
             self.btn_redock_show_mc.clicked.connect(self._on_show_redock_mc_ensemble)
             row_ensemble2.addWidget(self.btn_redock_show_mc)
+            self.btn_redock_cancel_mc = QtWidgets.QPushButton("Cancel Ensemble")
+            self.btn_redock_cancel_mc.setToolTip("Stop the Monte Carlo sampling running in the background")
+            self.btn_redock_cancel_mc.setEnabled(False)
+            self.btn_redock_cancel_mc.clicked.connect(self._redock_mc_cancel_background)
+            row_ensemble2.addWidget(self.btn_redock_cancel_mc)
             row_ensemble2.addStretch(1)
             qc_layout.addLayout(row_ensemble2)
             mc_controls = (self.spin_redock_mc_n, self.spin_redock_mc_temp, self.spin_redock_mc_radius,
@@ -21018,7 +21232,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_run = QtWidgets.QHBoxLayout()
             self.btn_run_redocking = QtWidgets.QPushButton("Run Redocking")
             self.btn_run_redocking.setMinimumHeight(38)
-            self.btn_run_redocking.clicked.connect(self._on_run_redocking_workflow)
+            self.btn_run_redocking.clicked.connect(self._on_run_redocking_clicked)
             row_run.addWidget(self.btn_run_redocking)
             row_run.addStretch(1)
             params_layout.addLayout(row_run)
@@ -24145,6 +24359,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             site_qc_min_anchor_matches=4,
             site_anchor_cutoff_a=float(self._redock_site_qc_anchor_cutoff_a()),
         )
+        if not bool(payload.get("ok", False)) and getattr(self, "_redock_mc_deferred", False):
+            return {}                          # sampling went to the background: resumed when it ends
         if not bool(payload.get("ok", False)):
             err_txt = str(payload.get("error", "unknown error") or "unknown error")
             hint = ""
@@ -24407,6 +24623,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         QtWidgets.QMessageBox.information(self, "Redocking", summary_text)
         return {}
     def _on_run_redocking_workflow(self):
+        self._redock_mc_deferred = False
         workflow_payload = redock_run_workflow_orchestrator(
             prepare_base_payload_fn=self._redock_prepare_base_payload_checked,
             resolve_ligand_override_fn=self._redock_resolve_ligand_override_checked,

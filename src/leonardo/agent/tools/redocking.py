@@ -330,87 +330,145 @@ def register(reg):
             dlg._redock_last_runs = {}
             dlg._redock_results = []
             dlg._redock_raw_results = []
-            dlg._on_run_redocking_workflow()
-        run = dict((getattr(dlg, "_redock_last_runs", {}) or {}).get("WT", {}) or {})
-        if not run.get("ok"):
-            errors = [m["text"] for m in q.messages if m["kind"] in ("warning", "critical")]
-            raise ToolError("; ".join(errors) or "redocking produced no result")
-        best = dict(run.get("best") or {})
-        reps = [{"repeat": r.get("repeat"), "seed": r.get("seed"), "top1_score_kcal_mol": r.get("best_affinity"),
-                 "top1_rmsd_A": r.get("best_rmsd"), "lowest_rmsd_all_modes_A": r.get("min_rmsd_all_poses")}
-                for r in run.get("repeat_rows", [])]
-        ligand = (dlg.edit_redock_ref_chain.text(), dlg.edit_redock_ref_resi.text(), dlg.edit_redock_ref_resn.text())
-        pose_obj = str(best.get("pose_object", "") or "")
-        if pose_obj and pose_obj in cmd.get_names("objects"):
-            presentation.style_pose(pose_obj, 0)
-            cmd.frame(int(best.get("state", 1) or 1))
-            crystal = _residue_selection(object, ligand[0], ligand[1], ligand[2])
-            if not cmd.count_atoms(crystal):
-                crystal = _residue_selection(object, None, ligand[1], ligand[2])
-            presentation.style_ligand(crystal)
-            presentation.focus(f"({pose_obj}) or ({crystal})")
-        success = dict(run.get("top1_success") or {})
-        rms = [_num(r.get("top1_rmsd_A"), 2) for r in reps if _num(r.get("top1_rmsd_A")) is not None]
-        rms_text = (("RMSD top-1 " + ", ".join(f"{v:.2f}" for v in rms) + " Å") if rms else
-                    "RMSD unavailable (the poses could not be matched atom by atom to the crystal ligand)")
-        card = (f"Redocking of **{ligand[2]}**: top-1 success **{success.get('n_success', 0)}/{success.get('n', 0)}** "
-                f"(RMSD ≤ 2 Å); {rms_text}; score {float(best.get('affinity', 0) or 0):.2f} kcal/mol.")
-        comparison = []
-        if mutant_object:
-            import sys as _sys
-
-            module = _sys.modules[type(dlg).__module__]
+            dlg._redock_mc_background_mode = "agent"      # hours of Monte Carlo sampling: a background job
             try:
-                from ._widgets import jsonable
+                dlg._on_run_redocking_workflow()
+            finally:
+                dlg._redock_mc_background_mode = None
 
-                comparison = jsonable(list(module.redock_build_comparison_rows(dlg._redock_last_runs) or []))[:10]
-            except Exception:
-                comparison = []
-            mut = next((v for k, v in (dlg._redock_last_runs or {}).items() if k != "WT"), {}) or {}
-            mb = dict(mut.get("best") or {})
-            if mb:
-                card += (f" Mutant `{mutant_object}`: score {float(mb.get('affinity', 0) or 0):.2f} kcal/mol "
-                         f"(WT {float(best.get('affinity', 0) or 0):.2f}).")
-        ens = dict(getattr(dlg, "_redock_last_mc_ensemble", {}) or {})
-        ensemble = {}
-        if ens:
-            ensemble = {"structures": len(ens.get("members") or []), "acceptance": ens.get("acceptance"),
-                        "ligand_space_kept": bool(ens.get("ligand_space_kept")),
-                        "temperature_K": ens.get("temperature_k"), "site_residues": ens.get("site_residues"),
-                        "members": [{k: m.get(k) for k in ("relative_energy_kj_mol", "site_rmsd_to_start_A")}
-                                    for m in ens.get("members") or []]}
-            card += (f" Receptor ensemble: best model + {ensemble['structures'] - 1} Monte Carlo conformations "
-                     f"({ens.get('temperature_k'):.0f} K).")
-            if ens.get("warning"):
-                ensemble["warning"] = ens["warning"]
-                card += f" Warning: {ens['warning']}."
-        elif int(ensemble_structures) > 0:
-            why = str(getattr(dlg, "_redock_last_mc_ensemble_note", "") or "the sampler did not run")
-            ensemble = {"used": False, "requested": int(ensemble_structures), "reason": why}
-            card += f" Warning: the receptor ensemble was NOT used ({why}); this is a single-receptor result."
-        ranked = _ranked_poses(dlg)
-        poses = [dict(_pose_summary(it), poses_available=sum(1 for o in ranked if (o["system"], o["member"])
-                                                             == (it["system"], it["member"])))
-                 for it in ranked if it["rank"] == 1]
-        summary_csv = str(getattr(dlg, "_redock_last_summary_csv", "") or "")
-        return {
-            "_card": card,
-            "grid_box": grid_box,
-            "kept_hetero": sorted({str(r).strip().upper() for r in keep_hetero or [] if str(r).strip()}),
-            "poses": poses[:40],
-            "poses_note": "top pose of each system/member; show_redock_pose(system, member, rank) loads rank 1.."
-                          "poses_available; export_redocking_csv writes all of them",
-            "comparison_csv": summary_csv if summary_csv and os.path.isfile(summary_csv) else "",
-            "receptor_ensemble": ensemble,
-            "mutant_comparison": comparison,
-            "object": object, "crystal_ligand": {"chain": ligand[0], "resi": ligand[1], "resn": ligand[2]},
-            "top1_success": f"{success.get('n_success', 0)}/{success.get('n', 0)} repeats with RMSD <= 2 A",
-            "repeats": reps,
-            "shown_pose": {"mode": best.get("mode"), "score_kcal_mol": best.get("affinity"),
-                           "rmsd_A": best.get("rmsd_ref"), "object": pose_obj},
-            "summary_notes": [m["text"][:600] for m in q.messages if m["kind"] == "information"][-1:],
-            "scene": ctx.scene(f"redocking {ligand[2]}: top pose vs crystal"),
-        }
+        def finish(messages):
+            return _redocking_result(ctx, dlg, messages, object, mutant_object, keep_hetero, ensemble_structures,
+                                     grid_box)
+
+        if getattr(dlg, "_redock_mc_deferred", False):
+            return _redocking_job(ctx, dlg, finish, q.messages, keep_hetero, grid_center_A, object)
+        return finish(q.messages)
+
+
+def _redocking_job(ctx, dlg, finish, first_messages, keep_hetero, grid_center_A, object):
+    """
+    The receptor ensemble is sampled in the background (it can take hours): a job reports its progress
+    (structures done, elapsed time, estimate) and, when the sampling ends, resumes the redocking from the cached
+    ensemble and returns the usual result. Cancelling stops the sampler.
+    """
+    first = list(first_messages or [])
+
+    def poll():
+        bg = getattr(dlg, "_redock_mc_bg", None) or {}
+        if bg.get("state") == "running":
+            dlg._redock_mc_bg_tick()                     # cheap; also when no Qt timer runs (scripts)
+            bg = getattr(dlg, "_redock_mc_bg", None) or {}
+        state = bg.get("state")
+        if state == "running":
+            return {"done": False, "progress": dlg._redock_mc_progress_text()}
+        if state in ("failed", "cancelled"):
+            return {"done": True, "error": f"Monte Carlo ensemble {state}: {str(bg.get('error', ''))[:400]}"}
+        _headless.auto_hetatm_selection(dlg)
+        _headless.set_keep_hetero(keep_hetero or [])
+        with _headless.quiet() as q2, _center_override(dlg, grid_center_A):
+            dlg._redock_mc_background_mode = "agent"
+            try:
+                dlg._on_run_redocking_workflow()
+            finally:
+                dlg._redock_mc_background_mode = None
+        if getattr(dlg, "_redock_mc_deferred", False):        # the mutant's ensemble is sampled next
+            return {"done": False, "progress": dlg._redock_mc_progress_text()}
+        try:
+            return {"done": True, "result": finish(first + list(q2.messages))}
+        except ToolError as exc:
+            return {"done": True, "error": str(exc)}
+
+    def cancel():
+        return bool(dlg._redock_mc_cancel_background())
+
+    return ctx.jobs.start("redocking", poll, cancel=cancel,
+                          description=f"redocking of {object} with a Monte Carlo receptor ensemble "
+                                      "(sampled in the background)")
+
+
+def _redocking_result(ctx, dlg, messages, object, mutant_object, keep_hetero, ensemble_structures, grid_box):
+    from pymol import cmd
+
+    run = dict((getattr(dlg, "_redock_last_runs", {}) or {}).get("WT", {}) or {})
+    if not run.get("ok"):
+        errors = [m["text"] for m in messages if m["kind"] in ("warning", "critical")]
+        raise ToolError("; ".join(errors) or "redocking produced no result")
+    best = dict(run.get("best") or {})
+    reps = [{"repeat": r.get("repeat"), "seed": r.get("seed"), "top1_score_kcal_mol": r.get("best_affinity"),
+             "top1_rmsd_A": r.get("best_rmsd"), "lowest_rmsd_all_modes_A": r.get("min_rmsd_all_poses")}
+            for r in run.get("repeat_rows", [])]
+    ligand = (dlg.edit_redock_ref_chain.text(), dlg.edit_redock_ref_resi.text(), dlg.edit_redock_ref_resn.text())
+    pose_obj = str(best.get("pose_object", "") or "")
+    if pose_obj and pose_obj in cmd.get_names("objects"):
+        presentation.style_pose(pose_obj, 0)
+        cmd.frame(int(best.get("state", 1) or 1))
+        crystal = _residue_selection(object, ligand[0], ligand[1], ligand[2])
+        if not cmd.count_atoms(crystal):
+            crystal = _residue_selection(object, None, ligand[1], ligand[2])
+        presentation.style_ligand(crystal)
+        presentation.focus(f"({pose_obj}) or ({crystal})")
+    success = dict(run.get("top1_success") or {})
+    rms = [_num(r.get("top1_rmsd_A"), 2) for r in reps if _num(r.get("top1_rmsd_A")) is not None]
+    rms_text = (("RMSD top-1 " + ", ".join(f"{v:.2f}" for v in rms) + " Å") if rms else
+                "RMSD unavailable (the poses could not be matched atom by atom to the crystal ligand)")
+    card = (f"Redocking of **{ligand[2]}**: top-1 success **{success.get('n_success', 0)}/{success.get('n', 0)}** "
+            f"(RMSD ≤ 2 Å); {rms_text}; score {float(best.get('affinity', 0) or 0):.2f} kcal/mol.")
+    comparison = []
+    if mutant_object:
+        import sys as _sys
+
+        module = _sys.modules[type(dlg).__module__]
+        try:
+            from ._widgets import jsonable
+
+            comparison = jsonable(list(module.redock_build_comparison_rows(dlg._redock_last_runs) or []))[:10]
+        except Exception:
+            comparison = []
+        mut = next((v for k, v in (dlg._redock_last_runs or {}).items() if k != "WT"), {}) or {}
+        mb = dict(mut.get("best") or {})
+        if mb:
+            card += (f" Mutant `{mutant_object}`: score {float(mb.get('affinity', 0) or 0):.2f} kcal/mol "
+                     f"(WT {float(best.get('affinity', 0) or 0):.2f}).")
+    ens = dict(getattr(dlg, "_redock_last_mc_ensemble", {}) or {})
+    ensemble = {}
+    if ens:
+        ensemble = {"structures": len(ens.get("members") or []), "acceptance": ens.get("acceptance"),
+                    "ligand_space_kept": bool(ens.get("ligand_space_kept")),
+                    "temperature_K": ens.get("temperature_k"), "site_residues": ens.get("site_residues"),
+                    "members": [{k: m.get(k) for k in ("relative_energy_kj_mol", "site_rmsd_to_start_A")}
+                                for m in ens.get("members") or []]}
+        card += (f" Receptor ensemble: best model + {ensemble['structures'] - 1} Monte Carlo conformations "
+                 f"({ens.get('temperature_k'):.0f} K).")
+        if ens.get("warning"):
+            ensemble["warning"] = ens["warning"]
+            card += f" Warning: {ens['warning']}."
+    elif int(ensemble_structures) > 0:
+        why = str(getattr(dlg, "_redock_last_mc_ensemble_note", "") or "the sampler did not run")
+        ensemble = {"used": False, "requested": int(ensemble_structures), "reason": why}
+        card += f" Warning: the receptor ensemble was NOT used ({why}); this is a single-receptor result."
+    ranked = _ranked_poses(dlg)
+    poses = [dict(_pose_summary(it), poses_available=sum(1 for o in ranked if (o["system"], o["member"])
+                                                         == (it["system"], it["member"])))
+             for it in ranked if it["rank"] == 1]
+    summary_csv = str(getattr(dlg, "_redock_last_summary_csv", "") or "")
+    return {
+        "_card": card,
+        "grid_box": grid_box,
+        "kept_hetero": sorted({str(r).strip().upper() for r in keep_hetero or [] if str(r).strip()}),
+        "poses": poses[:40],
+        "poses_note": "top pose of each system/member; show_redock_pose(system, member, rank) loads rank 1.."
+                      "poses_available; export_redocking_csv writes all of them",
+        "comparison_csv": summary_csv if summary_csv and os.path.isfile(summary_csv) else "",
+        "receptor_ensemble": ensemble,
+        "mutant_comparison": comparison,
+        "object": object, "crystal_ligand": {"chain": ligand[0], "resi": ligand[1], "resn": ligand[2]},
+        "top1_success": f"{success.get('n_success', 0)}/{success.get('n', 0)} repeats with RMSD <= 2 A",
+        "repeats": reps,
+        "shown_pose": {"mode": best.get("mode"), "score_kcal_mol": best.get("affinity"),
+                       "rmsd_A": best.get("rmsd_ref"), "object": pose_obj},
+        "summary_notes": [m["text"][:600] for m in messages if m["kind"] == "information"][-1:],
+        "scene": ctx.scene(f"redocking {ligand[2]}: top pose vs crystal"),
+    }
 
 
 def register_mc(reg):
