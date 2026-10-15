@@ -3050,6 +3050,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "spin_redock_mc_n",
             "spin_redock_mc_temp",
             "spin_redock_mc_radius",
+            "cb_redock_mc_keep_ligand_space",
+            "spin_redock_mc_seed",
+            "cb_redock_mc_reproducible",
             "cb_redock_flexible",
             "cb_redock_show_wt_traj",
             "cb_redock_show_mut_traj",
@@ -19739,7 +19742,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "exclude_hetero": [list(x) for x in exclude_hetero or []],
                 "ligand_obstacle": bool(ligand_obstacle),
                 # exactly repeatable chain (CPU, one thread): slower, for replay packs and audits
-                "reproducible": bool(getattr(self, "_redock_mc_reproducible", False))}
+                "reproducible": bool(self.cb_redock_mc_reproducible.isChecked()
+                                     if hasattr(self, "cb_redock_mc_reproducible")
+                                     else getattr(self, "_redock_mc_reproducible", False))}
         args_path = os.path.join(out_dir, "mc_args.json")
         with open(args_path, "w") as fh:
             json.dump(args, fh)
@@ -19833,7 +19838,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         keep_space = bool(getattr(self, "cb_redock_mc_keep_ligand_space", None)
                           and self.cb_redock_mc_keep_ligand_space.isChecked() and exclude)
         res = self._redock_mc_sample(best_pdb, work, site, n, temp,
-                                     seed=int(getattr(self, "_redock_mc_seed", 1) or 1),
+                                     seed=int(self.spin_redock_mc_seed.value() if hasattr(self, "spin_redock_mc_seed")
+                                              else (getattr(self, "_redock_mc_seed", 1) or 1)),
                                      progress_label=getattr(self, "lbl_redock_summary", None),
                                      exclude_hetero=exclude, ligand_obstacle=keep_space)
         if not bool(res.get("ok", False)):
@@ -19855,7 +19861,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._append_debug_log(f"MC ensemble load warning ({m.get('path')}): {e}")
         if not systems:
             return out
-        self._redock_last_mc_ensemble = dict(res, label=label, members=members, objects=created)
+        self._redock_last_mc_ensemble = dict(res, label=label, members=members, objects=created,
+                                             site_residues=[list(r) for r in site])
         out.update({"used": True, "systems": systems, "created_objects": created, "model_count": len(systems),
                     "run_id": os.path.basename(work),
                     "note": (f"{label}: Monte Carlo ensemble active ({len(systems)} structures: best model + "
@@ -19863,6 +19870,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                              f"site RMSD up to {max([m.get('site_rmsd_to_start_A', 0) for m in members]):.2f} A)."
                              + (f" Warning: {res['warning']}." if res.get("warning") else ""))})
         return out
+    def _on_show_redock_mc_ensemble(self):
+        """The last Monte Carlo receptor ensemble as one multi-state object, binding-site side chains as sticks."""
+        ens = dict(getattr(self, "_redock_last_mc_ensemble", {}) or {})
+        objs = [o for o in list(ens.get("objects") or []) if o in cmd.get_names("objects")]
+        if not objs:
+            QtWidgets.QMessageBox.information(
+                self, "Monte Carlo ensemble",
+                "No ensemble yet: tick 'Receptor ensemble by Monte Carlo sampling' and run the redocking.")
+            return None
+        name = self._dock_safe_obj_name(f"mc_ensemble_{ens.get('label', 'receptor')}".lower())
+        cmd.delete(name)
+        for k, obj in enumerate(objs, start=1):
+            cmd.create(name, obj, 1, k)
+        cmd.hide("everything", name)
+        cmd.show("cartoon", f"({name}) and polymer")
+        site = list(ens.get("site_residues") or [])
+        if site:
+            parts = " or ".join(f"(chain {c} and resi {r})" if c else f"(resi {r})" for c, r in site[:60])
+            cmd.show("sticks", f"({name}) and ({parts}) and not name N+C+O and not hydro")
+            cmd.zoom(f"({name}) and ({parts})", 6)
+        for obj in objs:
+            cmd.disable(obj)
+        cmd.enable(name)
+        cmd.mplay()
+        self._append_debug_log(f"Monte Carlo ensemble shown as {name} ({len(objs)} states)")
+        return name
     def _redock_collect_modeler_ensemble_systems(self, system_label, receptor_obj):
         """Deprecated: MODELLER multi-model ensembles (use _redock_collect_mc_ensemble_systems)."""
         label = str(system_label or "System").strip() or "System"
@@ -20817,6 +20850,39 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_ensemble.addWidget(self.cb_redock_mc_keep_ligand_space)
             row_ensemble.addStretch(1)
             qc_layout.addLayout(row_ensemble)
+            row_ensemble2 = QtWidgets.QHBoxLayout()
+            row_ensemble2.addSpacing(24)
+            row_ensemble2.addWidget(QtWidgets.QLabel("MC seed"))
+            self.spin_redock_mc_seed = QtWidgets.QSpinBox()
+            self.spin_redock_mc_seed.setRange(1, 999999999)
+            self.spin_redock_mc_seed.setValue(1)
+            self.spin_redock_mc_seed.setToolTip("Random seed of the Monte Carlo chain (a different seed gives a "
+                                                "different ensemble)")
+            row_ensemble2.addWidget(self.spin_redock_mc_seed)
+            self.cb_redock_mc_reproducible = QtWidgets.QCheckBox("Reproducible (CPU, 1 thread)")
+            self.cb_redock_mc_reproducible.setChecked(False)
+            self.cb_redock_mc_reproducible.setToolTip(
+                "Sample on one CPU thread so the same seed gives the identical ensemble on any run (slower; "
+                "use it for audits and replay packs)."
+            )
+            row_ensemble2.addWidget(self.cb_redock_mc_reproducible)
+            self.btn_redock_show_mc = QtWidgets.QPushButton("Show Last Ensemble")
+            self.btn_redock_show_mc.setToolTip("Load the last Monte Carlo receptor ensemble as one multi-state "
+                                               "object (binding-site side chains as sticks) and play it")
+            self.btn_redock_show_mc.clicked.connect(self._on_show_redock_mc_ensemble)
+            row_ensemble2.addWidget(self.btn_redock_show_mc)
+            row_ensemble2.addStretch(1)
+            qc_layout.addLayout(row_ensemble2)
+            mc_controls = (self.spin_redock_mc_n, self.spin_redock_mc_temp, self.spin_redock_mc_radius,
+                           self.cb_redock_mc_keep_ligand_space, self.spin_redock_mc_seed,
+                           self.cb_redock_mc_reproducible)
+
+            def _sync_mc_controls(on, controls=mc_controls):
+                for w in controls:
+                    w.setEnabled(bool(on))
+
+            self.cb_redock_use_mc_ensemble.toggled.connect(_sync_mc_controls)
+            _sync_mc_controls(self.cb_redock_use_mc_ensemble.isChecked())
             row_site_qc = QtWidgets.QHBoxLayout()
             self.cb_redock_site_qc = QtWidgets.QCheckBox(
                 "Require local binding-site QC after alignment"

@@ -6,8 +6,14 @@ Re-run this calculation without the AI assistant and check that you get the same
 python -m leonardo.replay verify examples/films/08_ensemble_redocking
 ```
 
-It takes about 7 minutes on a laptop. Reproducible Monte Carlo sampling runs on one CPU thread, so it is slower
-than the default. It needs no API key.
+It takes about 30 minutes on a laptop. Reproducible Monte Carlo sampling runs on one CPU thread, so it is slower
+than the default; the camphor site of P450cam is rigid at 300 K, so the chain needs many moves to find three
+distinct conformations. It needs no API key.
+
+The reference was re-recorded on 2026-10-15 after a fix in the sampler. Amber gives hydroxyl hydrogens no
+Lennard-Jones radius, and a large torsion move could let the minimizer pull one onto an atom of opposite charge.
+The Coulomb energy then diverges, and Metropolis accepted the collapse. The earlier reference (acceptance 0.314,
+site shifts up to 0.59 Å) included such states. The docking results stayed within tolerance.
 
 ## What is in the pack
 

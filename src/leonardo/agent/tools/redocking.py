@@ -319,6 +319,10 @@ def register(reg):
                         dlg.cb_redock_mc_keep_ligand_space.setChecked(bool(ensemble_keep_ligand_space))
             dlg._redock_mc_seed = int(ensemble_seed)
             dlg._redock_mc_reproducible = bool(ensemble_reproducible)
+            if hasattr(dlg, "spin_redock_mc_seed"):          # the window shows (and uses) the same values
+                dlg.spin_redock_mc_seed.setValue(int(ensemble_seed))
+            if hasattr(dlg, "cb_redock_mc_reproducible"):
+                dlg.cb_redock_mc_reproducible.setChecked(bool(ensemble_reproducible))
             _apply_grid_box(dlg, object, grid_padding_A, grid_size_A)
             grid_box = _grid_box_info(dlg, object, grid_center_A)
             dlg._redock_last_mc_ensemble = {}

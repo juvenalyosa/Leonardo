@@ -118,3 +118,36 @@ def test_holo_option_keeps_the_ligand_space_as_a_soft_obstacle(ubiquitin_variant
     for member in res["structures"]:
         lines = [ln for ln in open(member["path"]) if ln.startswith("HETATM") and ln[17:20] == "LIG"]
         assert len(lines) == 2 and np.allclose(_xyz(lines[0]), lig[0], atol=1e-3)
+
+
+def test_zero_radius_polar_hydrogens_get_a_radius_also_in_1_4_pairs():
+    """Amber hydroxyl H have no LJ radius: the minimizer could drag one onto an opposite charge (Coulomb
+    singularity, -9900 kJ/mol at 0.01 A seen in streptavidin) and Monte Carlo accepted the collapse."""
+    mm = pytest.importorskip("openmm")
+    from leonardo import mc_ensemble_runtime as mc
+
+    system = mm.System()
+    nb = mm.NonbondedForce()
+    for q, s, e in ((0.41, 0.0, 0.0), (-0.65, 0.3066, 0.8803), (0.0, 0.0, 0.0), (0.06, 0.2649, 0.0657)):
+        system.addParticle(1.0)
+        nb.addParticle(q, s, e)
+    nb.addException(0, 1, 0.0, 1.0, 0.0)                         # bonded: no interaction
+    nb.addException(0, 3, 0.41 * 0.06 / 1.2, 1.0, 0.0)           # 1-4 pair with charge but no LJ
+    system.addForce(nb)
+    assert mc._give_polar_h_a_radius(system) == 1                # only the charged zero-radius particle
+    q, s, e = nb.getParticleParameters(0)
+    assert abs(s._value - mc.POLAR_H_SIGMA_NM) < 1e-9 and abs(e._value - mc.POLAR_H_EPSILON_KJ) < 1e-9
+    assert nb.getParticleParameters(2)[2]._value == 0.0          # an uncharged dummy stays as it is
+    _i, _j, _qq, _s, e01 = nb.getExceptionParameters(0)
+    assert e01._value == 0.0                                     # excluded pair stays excluded
+    _i, _j, _qq, s03, e03 = nb.getExceptionParameters(1)
+    assert e03._value > 0.0 and s03._value > 0.1                 # the 1-4 pair now repels at short range
+
+
+def test_collapse_check_ignores_bonded_neighbours():
+    from leonardo import mc_ensemble_runtime as mc
+
+    x = np.array([[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.5, 0.0, 0.0], [0.003, 0.0, 0.0]])
+    bonded = {0: {1}, 1: {0}}
+    assert mc._min_nonbonded_distance_nm(x, [0], {0: {1, 3}}) > 0.3
+    assert mc._min_nonbonded_distance_nm(x, [0], bonded) < 0.01      # atom 3 sits on atom 0

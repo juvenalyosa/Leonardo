@@ -165,6 +165,53 @@ def _residue_atoms(pdb_path, residues):
     return atoms
 
 
+POLAR_H_SIGMA_NM = 0.1069      # Amber "H" (amide/amine hydrogen) Lennard-Jones parameters
+POLAR_H_EPSILON_KJ = 0.0657
+
+
+def _give_polar_h_a_radius(system):
+    """
+    Amber gives hydroxyl hydrogens (Ser/Thr/Tyr HO, also in their 1-4 pairs) no Lennard-Jones radius. After a
+    large torsion move the minimizer can drag such a hydrogen onto an atom of opposite charge: nothing repels it,
+    the Coulomb term diverges (one pair reached -9900 kJ/mol at 0.01 A in streptavidin) and Metropolis accepts the
+    "lower" energy, so the chain runs into broken structures. A small radius (that of the amide H) on charged
+    zero-radius particles, also in their exceptions, removes the singularity without changing normal contacts.
+    Returns the number of particles changed.
+    """
+    import openmm as mm
+    from openmm import unit
+
+    nb = next((f for f in system.getForces() if isinstance(f, mm.NonbondedForce)), None)
+    if nb is None:
+        return 0
+    changed = set()
+    for i in range(nb.getNumParticles()):
+        q, sig, eps = nb.getParticleParameters(i)
+        if eps.value_in_unit(unit.kilojoule_per_mole) == 0.0 and q.value_in_unit(unit.elementary_charge) != 0.0:
+            nb.setParticleParameters(i, q, POLAR_H_SIGMA_NM, POLAR_H_EPSILON_KJ)
+            changed.add(i)
+    if changed:
+        for k in range(nb.getNumExceptions()):
+            i, j, qq, sig, eps = nb.getExceptionParameters(k)
+            if (i in changed or j in changed) and qq.value_in_unit(unit.elementary_charge ** 2) != 0.0 \
+                    and eps.value_in_unit(unit.kilojoule_per_mole) == 0.0:
+                _qi, si, ei = nb.getParticleParameters(i)
+                _qj, sj, ej = nb.getParticleParameters(j)
+                e14 = 0.5 * math.sqrt(ei.value_in_unit(unit.kilojoule_per_mole) * ej.value_in_unit(unit.kilojoule_per_mole))
+                s14 = 0.5 * (si.value_in_unit(unit.nanometer) + sj.value_in_unit(unit.nanometer))
+                nb.setExceptionParameters(k, i, j, qq, s14, e14)      # Amber 1-4 LJ scale 1/2
+    return len(changed)
+
+
+def _min_nonbonded_distance_nm(x_nm, idx, bonded):
+    """Shortest distance between ``idx`` atoms and any atom that is not bonded/1-3 to them (collapse check)."""
+    sub = x_nm[idx]
+    d = np.linalg.norm(sub[:, None, :] - x_nm[None, :, :], axis=2)
+    for a, i in enumerate(idx):
+        d[a, list(bonded.get(i, ())) + [i]] = 9.0
+    return float(d.min()) if d.size else 9.0
+
+
 def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temperature_k=300.0,
                     steps_per_structure=20, step_deg=40.0, rotamer_jump_prob=0.3, seed=1, platform="",
                     burn_in=None, max_steps=None, progress=print, exclude_hetero=(), keep_hetero_records=True,
@@ -258,6 +305,7 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
     templates = {r: r.name for r in top.residues() if r.name.startswith(("OBS_", "LIG_"))}
     system = ff.createSystem(top, nonbondedMethod=app.CutoffNonPeriodic, nonbondedCutoff=1.2 * unit.nanometer,
                              constraints=None, residueTemplates=templates)
+    _give_polar_h_a_radius(system)
     # PyMOL gives a blank chain as '' and OpenMM as ' ': compare stripped
     wanted = {(str(c).strip(), str(r).strip()) for c, r in (site_residues or [])}
     bonds = [(b.atom1.index, b.atom2.index) for b in top.bonds()]
@@ -326,8 +374,18 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
             fh.write("END\n")
     kt = KB_KJ * float(temperature_k)
     burn_in = int(burn_in if burn_in is not None else steps_per_structure)
-    max_steps = int(max_steps or (burn_in + int(n_structures) * int(steps_per_structure) * 10))
-    saved, accepted, step = [], 0, 0
+    # rigid sites need many moves per distinct state (and collapsed trials are rejected): 20 x per structure
+    max_steps = int(max_steps or (burn_in + int(n_structures) * int(steps_per_structure) * 20))
+    saved, accepted, step, rejected_collapse = [], 0, 0, 0
+    movable_list = sorted(movable)
+    near12_13 = {}
+    adj = {}
+    for a, b in bonds:
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    for i in movable_list:
+        first = adj.get(i, set())
+        near12_13[i] = first | {k for j in first for k in adj.get(j, set())}
     last_save = burn_in
     frames_x = []
 
@@ -346,6 +404,11 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
         mm.LocalEnergyMinimizer.minimize(ctx, 10.0, 100)
         e_new, x_new = state()
         de = e_new - e_cur
+        # a collapsed state (atoms on top of each other) is a force-field singularity, not a low energy
+        if not math.isfinite(e_new) or _min_nonbonded_distance_nm(x_new, movable_list, near12_13) < 0.05:
+            rejected_collapse += 1
+            ctx.setPositions(x_cur * unit.nanometer)
+            continue
         if de <= 0 or rng.random() < math.exp(-de / kt):
             e_cur, x_cur = e_new, x_new
             accepted += 1
@@ -368,6 +431,7 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
               "requested": int(n_structures), "produced": len(saved), "max_steps": max_steps,
               "start_energy_kj_mol": round(e_start, 2), "steps": step, "acceptance": round(accepted / max(1, step), 3),
               "moves": len(moves), "site_residues": sorted({m["residue"] for m in moves}),
+              "rejected_collapsed_states": rejected_collapse,
               "fixed_hetero_atoms": len(obstacles), "replaced_nonstandard": replaced,
               "ligand_space_kept": bool(ligand_atoms), "ligand_obstacle_atoms": len(ligand_atoms),
               "movable_atoms": len(movable), "temperature_k": float(temperature_k), "platform": plat.getName(),
