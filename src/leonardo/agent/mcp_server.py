@@ -161,24 +161,50 @@ class ExternalMcpServer:
             async with manager.run():
                 yield
 
+        if not port_is_free(self.port):
+            raise RuntimeError(f"port {self.port} on 127.0.0.1 is in use by another program (another Leonardo "
+                               "window?); close it or choose another port in Settings")
         app = Starlette(routes=[Mount("/mcp", app=handle)], lifespan=lifespan)
-        config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning")
+        # log_config=None: uvicorn's default logging needs a terminal-like sys.stdout (isatty); inside PyMOL the
+        # redirected stdout has none and the server failed with "Unable to configure formatter 'default'"
+        config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning", log_config=None)
         self._uvicorn = uvicorn.Server(config)
         server = self._uvicorn
-        self._thread = threading.Thread(target=server.run, name="leonardo-mcp-http", daemon=True)
+        failure = {}
+
+        def run():
+            try:
+                server.run()
+            except BaseException as exc:        # uvicorn calls sys.exit when it cannot bind
+                failure["error"] = exc
+
+        self._thread = threading.Thread(target=run, name="leonardo-mcp-http", daemon=True)
         self._thread.start()
-        # uvicorn ends the thread (sys.exit) when the port is taken: report that instead of "running"
         deadline = time.time() + 10
         while not server.started and self._thread.is_alive() and time.time() < deadline:
             time.sleep(0.05)
         if not server.started:
             server.should_exit = True
             self._uvicorn = None
-            raise RuntimeError(f"could not start the MCP server on 127.0.0.1:{self.port} "
-                               "(port in use? choose another in Settings)")
+            why = failure.get("error")
+            detail = f"{type(why).__name__}: {why}" if why is not None and str(why) else "it did not start in 10 s"
+            raise RuntimeError(f"could not start the MCP server on 127.0.0.1:{self.port} ({detail})")
         return self.url
 
-    def stop(self):
+    def stop(self, wait=5.0):
+        """Stop the server and wait for it to release the port (a restart on the same port would fail)."""
         if self._uvicorn is not None:
             self._uvicorn.should_exit = True
         self._uvicorn = None
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=float(wait))
+        self._thread = None
+
+
+def port_is_free(port, host="127.0.0.1"):
+    """True when nothing listens on host:port."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex((host, int(port))) != 0

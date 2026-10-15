@@ -171,6 +171,42 @@ def test_external_mcp_http_endpoint():
     assert denied.isError and "declined" in denied.content[0].text
 
 
+def test_external_mcp_server_starts_inside_pymol_and_reports_a_busy_port(monkeypatch):
+    """PyMOL redirects sys.stdout to an object without isatty(): uvicorn's default logging config failed
+    ("Unable to configure formatter 'default'") and Leonardo reported it as "port in use"."""
+    pytest.importorskip("uvicorn")
+    import sys
+
+    from leonardo.agent.mcp_server import ExternalMcpServer, build_server
+    from leonardo.agent.registry import ToolRegistry
+
+    class PymolStdout:
+        def write(self, text):
+            return len(text)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(sys, "stdout", PymolStdout())
+    monkeypatch.setattr(sys, "stderr", PymolStdout())
+    reg = ToolRegistry()
+    port = _free_port()
+    first = ExternalMcpServer(build_server(reg, run_on_main=lambda fn: fn()), port=port)
+    assert first.start().endswith(f":{port}/mcp")
+    try:
+        second = ExternalMcpServer(build_server(reg, run_on_main=lambda fn: fn()), port=port)
+        with pytest.raises(RuntimeError, match="in use by another program"):
+            second.start()
+    finally:
+        first.stop()
+    # stop() waits for the port: a restart on the same port works right away (changing Settings)
+    again = ExternalMcpServer(build_server(reg, run_on_main=lambda fn: fn()), port=port)
+    try:
+        assert again.start().endswith(f":{port}/mcp")
+    finally:
+        again.stop()
+
+
 def test_unanswered_tool_calls_are_closed_before_the_next_message():
     from types import SimpleNamespace
 
