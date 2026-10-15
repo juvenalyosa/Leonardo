@@ -186,6 +186,31 @@ prepare_main_yaml() {
   MAIN_YAML_USING_LOCK="$using_lock"
 }
 
+SMINA_YAML="${SMINA_YAML:-environments/environment-smina.yml}"
+SMINA_ENV="leonardo-smina"
+
+install_smina_env() {
+  # smina in its own environment (Boost/ICU conflict with Qt 6) and a launcher in the main one, where
+  # Leonardo looks for it
+  local env_name="$1"
+  if conda env list | awk '{print $1}' | grep -qx "$SMINA_ENV"; then
+    echo "[INFO] Updating env: $SMINA_ENV"
+    conda env update -n "$SMINA_ENV" -f "$SMINA_YAML" --prune
+  else
+    echo "[INFO] Creating env: $SMINA_ENV"
+    conda env create -f "$SMINA_YAML"
+  fi
+  local base main_prefix
+  base="$(conda info --base)"
+  main_prefix="$(conda run -n "$env_name" python -c 'import sys; print(sys.prefix)')"
+  local smina_bin="$base/envs/$SMINA_ENV/bin/smina"
+  [[ -x "$smina_bin" ]] || { echo "ERROR: smina not found in $SMINA_ENV" >&2; exit 1; }
+  printf '#!/bin/sh\n# smina lives in its own environment (%s): its Boost build conflicts with Qt 6\nexec "%s" "$@"\n' \
+    "$SMINA_ENV" "$smina_bin" > "$main_prefix/bin/smina"
+  chmod +x "$main_prefix/bin/smina"
+  echo "[INFO] smina: $smina_bin (linked into $env_name)"
+}
+
 enforce_psi4_stack() {
   local env_name="$1"
   echo "[INFO] Enforcing Psi4-compatible stack in $env_name"
@@ -248,6 +273,7 @@ else
 fi
 enforce_psi4_stack "$main_env"
 enforce_rdkit_numpy_compat "$main_env"
+install_smina_env "$main_env"
 validate_main_env "$main_env"
 
 if [[ "$WITH_OPTIONAL" -eq 1 ]]; then

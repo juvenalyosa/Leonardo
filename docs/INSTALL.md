@@ -12,6 +12,10 @@ HMMER, Clustal Omega, MAFFT and the Python packages of the AI assistant. You do 
 install any of them yourself, and nothing is installed system-wide: everything lives in your
 user folder.
 
+Leonardo runs on Qt 6 (PyMOL 3.1 with PySide6). smina gets a small environment of its own
+(`leonardo-smina`), because its build needs older system libraries than Qt 6; Leonardo calls it
+from there, and the docking results are the same.
+
 **You need:** macOS (Apple Silicon or Intel) or Linux x86_64 (Ubuntu, Fedora, ...),
 about **10 GB** of free disk, an internet connection, and **20–60 minutes**.
 

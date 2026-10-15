@@ -1,0 +1,8 @@
+# smina docking engine in its own environment: the conda-forge build needs Boost 1.82 / ICU 73, which conflict
+# with the Qt 6 stack of the main environment. scripts/install_envs.sh adds a small "smina" launcher to the
+# main environment that runs this one (same binary as before: docking results do not change).
+name: leonardo-smina
+channels:
+  - conda-forge
+dependencies:
+  - smina=2020.12.10

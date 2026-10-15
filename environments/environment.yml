@@ -39,7 +39,8 @@ dependencies:
 
   # Docking / structure prep / pocket tools
   - openbabel
-  - smina
+  # smina lives in its own small environment (environments/environment-smina.yml): its Boost build
+  # conflicts with the Qt 6 libraries; scripts/install_envs.sh links it into this environment
   - fpocket
   - meeko
 
@@ -53,8 +54,8 @@ dependencies:
   - qcelemental>=0.28,<1.0
   - qcengine>=0.30,<1.0
   - ase                 # QM/MM geometry drivers: L-BFGS, dimer TS search, vibrations
-  - pymol-open-source
-  - pyqtwebengine
+  - pymol-open-source>=3.1     # Qt 6 support (PySide6)
+  - pyside6>=6.9,<6.10          # Qt 6.9: fixes Qt 5 crashes on macOS 26; Leonardo starts with QT_API=pyside6
 
   # Homology modeling
   - modeller            # needs a free academic license key (installer asks for it)
