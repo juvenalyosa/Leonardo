@@ -177,15 +177,45 @@ class AssistantController(QtCore.QObject):
                 self.external = None
                 self.panel.add_error(f"Could not start the MCP server: {exc}")
 
-    def _confirm_external(self, spec, args):
-        def ask():
+    EXTERNAL_CONFIRM_TIMEOUT_S = 900.0
+
+    def _confirm_external(self, spec, args, timeout=None):
+        """
+        Ask the user to allow a tool call from an external MCP client. Called on the MCP server's thread: the
+        question is shown non-blocking (open() + a signal) and this thread waits for the answer. A blocking
+        exec_() here ran a nested event loop inside a queued call on the main thread; Qt 5 on macOS 26 crashed
+        in that loop (SIGBUS in -[BSSimpleAssertion dealloc]). Unanswered requests are declined after
+        ``timeout`` seconds or when the assistant shuts down.
+        """
+        import threading
+
+        done = threading.Event()
+        verdict = {"ok": False}
+
+        def show():
             box = QtWidgets.QMessageBox(self.panel)
             box.setWindowTitle("Leonardo AI: external request")
             box.setText(f"An external MCP client wants to run «{spec.title}».")
             box.setInformativeText(", ".join(f"{k}={v}" for k, v in args.items()) or "(no arguments)")
             box.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-            return box.exec_() == QtWidgets.QMessageBox.Yes
-        return bool(self.runner.run(ask))
+            box.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+
+            def finished(_code):
+                verdict["ok"] = box.clickedButton() is box.button(QtWidgets.QMessageBox.Yes)
+                done.set()
+                self._external_boxes.discard(box)
+
+            box.finished.connect(finished)
+            self._external_boxes.add(box)
+            self._external_waits.add(done)
+            box.open()                      # returns at once: no nested event loop
+
+        if not hasattr(self, "_external_boxes"):
+            self._external_boxes, self._external_waits = set(), set()
+        self.runner.run(show)
+        answered = done.wait(self.EXTERNAL_CONFIRM_TIMEOUT_S if timeout is None else float(timeout))
+        self._external_waits.discard(done)
+        return bool(answered and verdict["ok"])
 
     # -- conversation ------------------------------------------------------------ #
     def _new_session(self):
@@ -323,6 +353,8 @@ class AssistantController(QtCore.QObject):
         if self.worker is not None and self.worker.isRunning():
             self.worker.wait(5000)          # never destroy a running QThread
         _headless.reset()
+        for waiting in list(getattr(self, "_external_waits", ())):
+            waiting.set()                   # pending external requests: declined
         if self.external is not None:
             self.external.stop()
         self.mcp_client.close()
