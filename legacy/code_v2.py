@@ -917,18 +917,28 @@ except Exception:
 
 QTWEBENGINE_WIDGETS = None
 HAS_QT_WEBENGINE = False
-try:
-    from PyQt5 import QtWebEngineWidgets as _QtWebEngineWidgets
-    QTWEBENGINE_WIDGETS = _QtWebEngineWidgets
-    HAS_QT_WEBENGINE = True
-except Exception:
+
+
+def _qt_binding_name():
+    """The Qt binding PyMOL loaded (PyQt5, PySide6, ...). Only that binding may be imported: loading a second
+    one (e.g. PyQt5's WebEngine inside a Qt 6 PyMOL) puts two Qt versions in one process and crashes."""
     try:
-        from PyQt6 import QtWebEngineWidgets as _QtWebEngineWidgets
-        QTWEBENGINE_WIDGETS = _QtWebEngineWidgets
-        HAS_QT_WEBENGINE = True
+        from pymol.Qt import PYQT_NAME
+        return str(PYQT_NAME or "")
     except Exception:
-        QTWEBENGINE_WIDGETS = None
-        HAS_QT_WEBENGINE = False
+        try:
+            return str(QtCore.__name__.split(".")[0] or "")
+        except Exception:
+            return ""
+
+
+try:
+    _QtWebEngineWidgets = importlib.import_module(f"{_qt_binding_name() or 'PyQt5'}.QtWebEngineWidgets")
+    QTWEBENGINE_WIDGETS = _QtWebEngineWidgets
+    HAS_QT_WEBENGINE = hasattr(_QtWebEngineWidgets, "QWebEngineView")
+except Exception:
+    QTWEBENGINE_WIDGETS = None
+    HAS_QT_WEBENGINE = False
 # Shared package configuration. Keep this import compatible with both the
 # installed package and the legacy root-level PyMOL loader.
 try:
@@ -955,6 +965,10 @@ try:
     from .ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
 except ImportError:
     from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
+try:
+    from . import ui_theme
+except ImportError:
+    from leonardo import ui_theme
 # Literal aliases are retained for legacy packaging/version inspections.
 PLUGIN_VERSION = "0.2.0a9"
 PLUGIN_BUILD = "2026-10-13-r1"
@@ -1265,12 +1279,49 @@ OPENMM_PEPTIDE_CAPS = frozenset({"ACE", "NME", "NMA", "NH2", "NHE"})
 OPENMM_PEPTIDE_CAPS_SEL = "+".join(sorted(OPENMM_PEPTIDE_CAPS))
 
 
+def _qt_int(value):
+    """Integer value of a Qt enum/flag in every binding (PySide6 enums do not convert with int())."""
+    try:
+        return int(value)
+    except TypeError:
+        return int(getattr(value, "value", 0))
+
+
+def _load_ui_into(uifile, widget):
+    """
+    Build a Qt Designer form inside ``widget`` with one attribute per named child (``widget.file_btn``...), as
+    PyQt's uic.loadUi does. PyMOL's loadUi under PySide6 returns a separate widget and sets no attributes: there
+    the form is embedded in ``widget`` and its named children are attached by hand.
+    """
+    if _qt_binding_name() != "PySide6":
+        return loadUi(uifile, widget)
+    from PySide6.QtUiTools import QUiLoader
+
+    form = QUiLoader().load(uifile, widget)
+    form.setWindowFlags(QtCore.Qt.Widget)              # a QDialog form is otherwise a window of its own
+    # the form is part of ``widget``, not a dialog: no header, scroll body or resize of its own
+    form._leonardo_embedded_form = True
+    form._leonardo_header_added = True
+    form._leonardo_scroll_checked = True
+    lay = widget.layout() or QtWidgets.QVBoxLayout(widget)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(form)
+    if form.windowTitle():
+        widget.setWindowTitle(form.windowTitle())
+    widget.resize(form.size())
+    for child in form.findChildren(QtCore.QObject):
+        name = child.objectName()
+        if name and not name.startswith("qt_") and not hasattr(widget, name):
+            setattr(widget, name, child)
+    return form
+
+
 class ProtLigInteractDialog(QtWidgets.QDialog):
     """Main dialog for the Protein-Ligand Interaction Visualizer plugin."""
     def __init__(self, parent=None):
         super().__init__(parent)
         uifile = resource_string("protliginteract.ui")
-        loadUi(uifile, self)
+        _load_ui_into(uifile, self)
         self._apply_leonardo_branding()
         self.pdb_path = None
         self.structure = None
@@ -1688,7 +1739,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         )
 
     def _append_neutral_dialog_stylesheet(self, root):
-        """Append the neutral override once to a dialog or top-level widget."""
+        """The Leonardo theme on a window (leonardo.ui_theme); panels inherit it from their window."""
+        if root is None or not hasattr(root, "styleSheet"):
+            return
+        try:
+            if root.isWindow() and "LEONARDO_THEME_V3" not in str(root.styleSheet() or ""):
+                root.setStyleSheet(ui_theme.theme_qss())
+        except Exception:
+            pass
+        return
+    def _append_neutral_dialog_stylesheet_legacy(self, root):
         if root is None or not hasattr(root, "styleSheet"):
             return
         try:
@@ -1745,23 +1805,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                     QtCore.QTimer.singleShot(
                                         0, lambda target=obj: self._stabilize_message_box_layout(target)
                                     )
-                            else:
+                            elif not bool(getattr(obj, "_leonardo_embedded_form", False)):
                                 if etype == QtCore.QEvent.Show and obj is not self:
                                     self._ensure_dialog_header(obj)
-                                    self._ensure_dialog_scroll_area(obj)
-                                self._apply_widget_layout_polish(obj)
-                                if etype == QtCore.QEvent.Show and obj is not self:
-                                    self._fit_dialog_to_screen(obj)
-                                    QtCore.QTimer.singleShot(
-                                        0, lambda target=obj: self._stabilize_dialog_text_layout(target)
-                                    )
+                                if etype == QtCore.QEvent.Show:
+                                    # one theme and layout rules for every Leonardo window (leonardo.ui_theme)
+                                    ui_theme.polish_window(obj, fit=obj is not self)
                         finally:
                             self._ui_polish_event_filter_busy = False
             elif etype == QtCore.QEvent.Resize:
                 if obj is self:
                     QtCore.QTimer.singleShot(0, self._reflow_launcher_grid)
                 elif isinstance(obj, QtWidgets.QDialog) and self._is_leonardo_qt_widget(obj):
-                    QtCore.QTimer.singleShot(0, lambda target=obj: self._stabilize_dialog_text_layout(target))
+                    QtCore.QTimer.singleShot(0, lambda target=obj: ui_theme.relax_text(target))
         except Exception:
             pass
         try:
@@ -1856,7 +1912,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             pass
 
     def _stabilize_dialog_text_layout(self, root):
-        """Give wrapped labels enough height and elide only controls that cannot wrap."""
+        """Full texts, widths that fit them (leonardo.ui_theme.relax_text); nothing is elided."""
+        if root is None:
+            return
+        try:
+            ui_theme.relax_text(root)
+        except Exception:
+            pass
+        return
+    def _stabilize_dialog_text_layout_legacy(self, root):
+        """Former eliding pass (kept for reference; buttons are no longer elided)."""
         if root is None:
             return
         try:
@@ -1953,8 +2018,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             identity = dialog_identity(dlg.windowTitle())
             header = QtWidgets.QFrame(dlg)
             header.setObjectName("pliDialogHeader")
-            header.setMinimumHeight(72)
-            header.setMaximumHeight(86)
+            header.setMinimumHeight(58)
+            header.setMaximumHeight(70)
             header.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             row = QtWidgets.QHBoxLayout(header)
             row.setContentsMargins(16, 10, 14, 10)
@@ -2205,7 +2270,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if child_layout is not None:
                 self._polish_layout_tree(child_layout, top_level=False)
     def _apply_widget_layout_polish(self, root):
-        """Apply conservative sizing/wrapping defaults to a dialog or panel."""
+        """Theme and layout rules (leonardo.ui_theme) for a dialog or panel."""
+        if root is None:
+            return
+        try:
+            if root.isWindow():
+                ui_theme.polish_window(root, fit=False, scroll=False)   # scroll body: when it is shown
+            else:
+                ui_theme.polish_layouts(root)
+                ui_theme.relax_text(root)
+        except Exception:
+            pass
+        return
+    def _apply_widget_layout_polish_legacy(self, root):
+        """Former polish (kept for reference; replaced by leonardo.ui_theme)."""
         if root is None:
             return
         self._append_neutral_dialog_stylesheet(root)
@@ -4502,7 +4580,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         cmd.group(gname, lbl_prot)
         cmd.group(gname, lbl_lig)
     def _apply_global_stylesheet(self):
-        """Apply the Leonardo professional suite stylesheet to this dialog."""
+        """The Leonardo theme on the main window (leonardo.ui_theme)."""
+        self.setStyleSheet(ui_theme.theme_qss())
+        return
+    def _apply_global_stylesheet_legacy(self):
+        """Former stylesheet (kept for reference)."""
         qss = (
             # ═══════════════════════════════════════════════════════════
             #  LEONARDO  ·  Professional Molecular Modeling Suite Theme
@@ -34356,7 +34438,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         mode = self._liged_current_mouse_mode()
         shift_on = False
         try:
-            shift_on = bool(int(modifiers) & int(QtCore.Qt.ShiftModifier))
+            shift_on = bool(_qt_int(modifiers) & _qt_int(QtCore.Qt.ShiftModifier))
         except Exception:
             shift_on = False
         if mode == "attach_atom" and self._liged_selected_element_label().upper() == "H":
@@ -34393,7 +34475,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         mode = self._liged_current_mouse_mode()
         shift_on = False
         try:
-            shift_on = bool(int(modifiers) & int(QtCore.Qt.ShiftModifier))
+            shift_on = bool(_qt_int(modifiers) & _qt_int(QtCore.Qt.ShiftModifier))
         except Exception:
             shift_on = False
         if mode == "select":
@@ -34871,25 +34953,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         global QTWEBENGINE_WIDGETS, HAS_QT_WEBENGINE
         if HAS_QT_WEBENGINE and QTWEBENGINE_WIDGETS is not None:
             return True, ""
-        backend = ""
-        try:
-            backend = str(QtCore.__name__.split(".")[0] or "")
-        except Exception:
-            backend = ""
-        tries = []
-        if backend == "PyQt5":
-            tries.extend([
-                "PyQt5.QtWebEngineWidgets",
-                "PyQt5.QtWebEngine",
-            ])
-        elif backend == "PyQt6":
-            tries.extend([
-                "PyQt6.QtWebEngineWidgets",
-            ])
-        tries.extend([
-            "PyQt5.QtWebEngineWidgets",
-            "PyQt6.QtWebEngineWidgets",
-        ])
+        backend = _qt_binding_name() or "PyQt5"
+        # only the binding PyMOL runs on: another one would load a second Qt into the process
+        tries = [f"{backend}.QtWebEngineWidgets"]
         errs = []
         for modname in tries:
             try:

@@ -9,6 +9,14 @@ except Exception:  # pragma: no cover - fallback for non-PyMOL contexts
         from PyQt6 import QtCore, QtGui, QtWidgets  # type: ignore
 
 
+def qt_int(value):
+    """Integer value of a Qt enum/flag in every binding (PySide6 enums do not convert with int())."""
+    try:
+        return int(value)
+    except TypeError:
+        return int(getattr(value, "value", 0))
+
+
 ATOM_COLORS = {
     "C": "#2D3748",
     "N": "#2563EB",
@@ -518,11 +526,11 @@ class Ligand2DInteractiveCanvas(QtWidgets.QWidget):
         x, y = self._event_xy(event)
         hit = find_atom_at_canvas_point(self._layout.get("points", {}), x, y)
         try:
-            button = int(event.button())
+            button = qt_int(event.button())
         except Exception:
             button = 0
         try:
-            modifiers = int(event.modifiers())
+            modifiers = qt_int(event.modifiers())
         except Exception:
             modifiers = 0
         if self._dragging:

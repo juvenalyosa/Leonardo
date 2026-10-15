@@ -120,7 +120,7 @@ def test_canvas_select_shift_click_sets_atom_b():
     dlg._ligand_editor_get_current_mol = lambda: _Mol(5)
     dlg._ligand_editor_set_status = lambda txt: setattr(dlg, "_status", str(txt))
 
-    dlg._on_liged_canvas_atom_click(3, modifiers=int(code_v2.QtCore.Qt.ShiftModifier))
+    dlg._on_liged_canvas_atom_click(3, modifiers=code_v2._qt_int(code_v2.QtCore.Qt.ShiftModifier))
 
     assert dlg.spin_liged_atom_b.value() == 3
     assert "Shift-click sets Atom B" in dlg._status
