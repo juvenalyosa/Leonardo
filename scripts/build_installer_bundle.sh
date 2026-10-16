@@ -94,6 +94,13 @@ Licencia de MODELLER (modelado por homología)
 
 Después de instalar puede borrar esta carpeta. Para actualizar, ejecute el instalador de la
 nueva versión.
+
+------------------------------------------------------------------------------------------
+Leonardo is built using PyMOL(TM)*: it installs Open-Source PyMOL (Copyright (C) Schrodinger,
+LLC) unmodified from conda-forge and runs as a plugin in it. Leonardo is an independent project,
+not a PyMOL product distributed by Schrodinger, LLC. PyMOL's copyright and trademark notices:
+leonardo/THIRD_PARTY_LICENSES.md.
+* PyMOL is a trademark of Schrodinger, LLC.
 EOF
 
 chmod +x "$bundle/Install Leonardo (macOS).command" "$bundle/install-leonardo-linux.sh"

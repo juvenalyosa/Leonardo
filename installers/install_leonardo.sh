@@ -402,6 +402,7 @@ if [[ "$SHORTCUTS" -eq 1 ]]; then
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>NSHumanReadableCopyright</key><string>Leonardo (MIT license). Built using PyMOL(TM). PyMOL is a trademark of Schrodinger, LLC.</string>
 </dict></plist>
 PLIST
       if [[ -f "$APP_LINK/assets/logo.png" ]] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
@@ -432,7 +433,7 @@ PLIST
 [Desktop Entry]
 Type=Application
 Name=Leonardo
-Comment=Molecular modeling suite for PyMOL
+Comment=Molecular modeling suite. Built using PyMOL(TM); PyMOL is a trademark of Schrodinger, LLC.
 Exec="$BIN_DIR/leonardo"
 Icon=$APP_LINK/assets/logo.png
 Terminal=false

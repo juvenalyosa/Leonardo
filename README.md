@@ -385,4 +385,12 @@ academic license). See [Third-party licenses](THIRD_PARTY_LICENSES.md).
 Citation metadata is in [CITATION.cff](CITATION.cff). Leonardo is distributed under the
 [MIT License](LICENSE).
 
+Leonardo is built using PyMOL™\*: it is a plugin that runs on Open-Source PyMOL (Copyright (C)
+Schrodinger, LLC), installed unmodified from conda-forge. Leonardo is an independent project, not a
+PyMOL product distributed by Schrodinger, LLC. The Open-Source PyMOL copyright and trademark notices
+are reproduced in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and in Leonardo's
+**About & licenses** window.
+
 Author: Juvenal Yosa, PhD · Support and bug reports: `thinkai.col@gmail.com`
+
+<sub>\* PyMOL is a trademark of Schrodinger, LLC.</sub>

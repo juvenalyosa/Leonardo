@@ -146,3 +146,9 @@ Se abre PyMOL. Elija **Plugins → Leonardo**.
   pida ayuda.
 - Si PyMOL no abre en Linux, instale los paquetes OpenGL/EGL de su distribución (el instalador
   muestra el comando exacto).
+
+---
+
+Leonardo is built using PyMOL™ (Open-Source PyMOL, Copyright (C) Schrodinger, LLC); it is an independent project, not a PyMOL product distributed by Schrodinger, LLC. / Leonardo está construido con PyMOL™ (PyMOL de código abierto, Copyright (C) Schrodinger, LLC); es un proyecto independiente, no un producto PyMOL distribuido por Schrodinger, LLC.
+
+<sub>PyMOL is a trademark of Schrodinger, LLC.</sub>

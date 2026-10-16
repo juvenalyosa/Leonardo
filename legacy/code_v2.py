@@ -5159,8 +5159,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             header = QtWidgets.QFrame(self)
             header.setObjectName("leonardo_brand_header")
-            header.setMinimumHeight(92)
-            header.setMaximumHeight(108)
+            header.setMinimumHeight(100)
+            header.setMaximumHeight(116)
             row = QtWidgets.QHBoxLayout(header)
             row.setContentsMargins(18, 12, 20, 12)
             row.setSpacing(16)
@@ -5203,14 +5203,35 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             lbl_contact.setOpenExternalLinks(True)
             lbl_contact.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             lbl_contact.setToolTip("Write to report a bug or send a comment")
+            # Open-Source PyMOL: the slogan its trademark notice allows, and its copyright notice one click away
+            lbl_credit = QtWidgets.QLabel(
+                'Built using PyMOL\u2122 &middot; <a href="about" style="color:#FFFFFF; text-decoration:none;">'
+                "About &amp; licenses</a>",
+                header,
+            )
+            lbl_credit.setObjectName("leonardo_brand_contact")
+            lbl_credit.setTextFormat(QtCore.Qt.RichText)
+            lbl_credit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            lbl_credit.setToolTip("Open-Source PyMOL is Copyright (C) Schrodinger, LLC. "
+                                  "PyMOL is a trademark of Schrodinger, LLC.")
+            lbl_credit.linkActivated.connect(lambda _link: self._show_about_dialog())
             side_col.addStretch(1)
             side_col.addWidget(lbl_ver)
+            side_col.addWidget(lbl_credit)
             side_col.addWidget(lbl_contact)
             side_col.addStretch(1)
             row.addLayout(side_col, 0)
             self.verticalLayout.insertWidget(0, header)
         except Exception as e:
             print(f"{SUITE_NAME}: branding header warning: {e}")
+    def _show_about_dialog(self):
+        """About & licenses: Leonardo's license and the Open-Source PyMOL copyright and trademark notices."""
+        try:
+            from .about import show_about
+        except ImportError:
+            from leonardo.about import show_about
+        self._about_dialog = show_about(self)
+        return self._about_dialog
     def _connect_signals(self):
         self.file_btn.clicked.connect(self._on_load_pdb)
         if hasattr(self, "fetch_structure_btn"):

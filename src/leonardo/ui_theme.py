@@ -437,6 +437,10 @@ def fit_to_screen(dlg, fill=0.92, allow_shrink=True):
             content_h = max(content_h, dlg.height() + hidden + 8)
     # tall default sizes left empty space below the content: fit the content height (never under 360 px)
     want_h = min(max_h, max(360, content_h))
+    if dlg.property("leonardoKeepSize"):
+        # text viewers report a tiny natural height: the window's own minimum size stands
+        allow_shrink = False
+        want_h = min(max_h, max(want_h, dlg.minimumHeight()))
     if not allow_shrink:
         want_w, want_h = max(want_w, dlg.width()), max(want_h, dlg.height())
     if dlg.minimumHeight() > want_h:
