@@ -124,7 +124,10 @@ class PkaDialog(QtWidgets.QDialog):
         root.addWidget(grp_in)
 
         grp_opt = QtWidgets.QGroupBox("Calculation")
-        lay_opt = QtWidgets.QHBoxLayout(grp_opt)
+        lay_calc = QtWidgets.QVBoxLayout(grp_opt)
+        lay_calc.setSpacing(10)
+        lay_opt = QtWidgets.QHBoxLayout()
+        lay_calc.addLayout(lay_opt)
         lay_opt.addWidget(QtWidgets.QLabel("Method"))
         self.cmb_method = QtWidgets.QComboBox()
         for label, key in METHODS:
@@ -145,16 +148,16 @@ class PkaDialog(QtWidgets.QDialog):
         self.btn_cancel.clicked.connect(self._on_cancel)
         lay_opt.addWidget(self.btn_run)
         lay_opt.addWidget(self.btn_cancel)
-        root.addWidget(grp_opt)
-        root.addWidget(self._build_level_group())
-        self.cb_default_method = QtWidgets.QCheckBox(
-            "Use this method for automatic protonation in all modules (docking, parametrization, MD ligands, "
-            "virtual screening, lead optimization; virtual screening libraries use PM7 instead of Psi4)"
-        )
+        self._build_level_controls(lay_calc)
+        self.cb_default_method = QtWidgets.QCheckBox("Use this method and level for automatic protonation in all modules")
+        self.cb_default_method.setToolTip(
+            "Docking, parametrization, MD ligands, virtual screening and lead optimization protonate with it "
+            "(virtual screening libraries use PM7 instead of Psi4)")
         self.cb_default_method.setEnabled(callable(self._set_default_method))
         self.cb_default_method.toggled.connect(self._on_default_method_toggled)
         self.cmb_method.currentIndexChanged.connect(self._on_default_method_toggled)
-        root.addWidget(self.cb_default_method)
+        lay_calc.addWidget(self.cb_default_method)
+        root.addWidget(grp_opt)
         self.lbl_status = QtWidgets.QLabel("")
         self.lbl_status.setWordWrap(True)
         root.addWidget(self.lbl_status)
@@ -199,6 +202,7 @@ class PkaDialog(QtWidgets.QDialog):
         self.tbl_states.horizontalHeader().setStretchLastSection(True)
         lay_right.addWidget(self.tbl_states, 1)
         split.addWidget(right)
+        split.setMinimumHeight(440)      # results first: the window scrolls before the tables get squeezed
         root.addWidget(split, 1)
 
         self.txt_warnings = QtWidgets.QPlainTextEdit()
@@ -223,17 +227,16 @@ class PkaDialog(QtWidgets.QDialog):
         row.addWidget(btn_close)
         root.addLayout(row)
 
-    def _build_level_group(self):
-        """Level of theory: MOPAC Hamiltonian, or Psi4 method + basis set + PCM solver (editable)."""
-        grp = QtWidgets.QGroupBox("Level of Theory")
-        outer = QtWidgets.QVBoxLayout(grp)
-        lay = QtWidgets.QHBoxLayout()
+    def _build_level_controls(self, outer):
+        """Level of theory under the method row: MOPAC Hamiltonian, or Psi4 method + basis set + PCM solver
+        (editable)."""
         self.lbl_hamiltonian = QtWidgets.QLabel("Hamiltonian")
         self.cmb_hamiltonian = QtWidgets.QComboBox()
         for ham in P.MOPAC_HAMILTONIANS:
-            self.cmb_hamiltonian.addItem(ham + ("  (calibrated)" if ham == "PM7" else ""), ham)
+            self.cmb_hamiltonian.addItem(ham + ("  (calibrated)" if P.find_calibration("pm7", hamiltonian=ham) else ""),
+                                         ham)
         self.cmb_hamiltonian.setToolTip("MOPAC Hamiltonian; geometry optimizations with COSMO water (eps 78.4)")
-        self.lbl_theory = QtWidgets.QLabel("Method")
+        self.lbl_theory = QtWidgets.QLabel("QM method")
         self.cmb_theory = QtWidgets.QComboBox()
         self.cmb_theory.setEditable(True)
         for key, label in P.PSI4_THEORY_PRESETS:
@@ -250,15 +253,42 @@ class PkaDialog(QtWidgets.QDialog):
         self.cmb_solvent = QtWidgets.QComboBox()
         for solver in P.PSI4_PCM_SOLVERS:
             self.cmb_solvent.addItem(f"{solver} (water)", solver)
-        # one row; hidden controls (the other backend's) take no room
-        for label, cmb in ((self.lbl_hamiltonian, self.cmb_hamiltonian), (self.lbl_theory, self.cmb_theory),
-                           (self.lbl_basis, self.cmb_basis), (self.lbl_solvent, self.cmb_solvent)):
-            lay.addWidget(label)
-            lay.addWidget(cmb, 1)
-        outer.addLayout(lay)
+        # one page per method in a stack: switching method never changes the window's layout
+        self.stk_level = QtWidgets.QStackedWidget()
+        self._level_pages = {}
+
+        def page(key, pairs, text=None):
+            w = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(w)
+            row.setContentsMargins(0, 0, 0, 0)
+            if text:
+                lbl = QtWidgets.QLabel(text)
+                lbl.setProperty("leonardoRole", "note")
+                row.addWidget(lbl, 1)
+            else:
+                head = QtWidgets.QLabel("<b>Level of theory</b>")
+                row.addWidget(head)
+                row.addSpacing(8)
+            for label, cmb in pairs:
+                row.addWidget(label)
+                row.addWidget(cmb, 1)
+            self._level_pages[key] = self.stk_level.addWidget(w)
+
+        page("empirical", (), "<b>Level of theory</b>  &nbsp; not used by the empirical method")
+        page("pm7", ((self.lbl_hamiltonian, self.cmb_hamiltonian),))
+        page("psi4", ((self.lbl_theory, self.cmb_theory), (self.lbl_basis, self.cmb_basis),
+                      (self.lbl_solvent, self.cmb_solvent)))
+        self.stk_level.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        self.stk_level.setFixedHeight(44)       # themed fields are 34-35 px; the stack sized itself before the theme
+        outer.addWidget(self.stk_level)
         self.lbl_level_status = QtWidgets.QLabel("")
         self.lbl_level_status.setWordWrap(True)
         self.lbl_level_status.setProperty("leonardoRole", "note")
+        self.lbl_level_status.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        # always two lines high, whatever the text: switching method never needs a new layout pass
+        self.lbl_level_status.setFixedHeight(2 * self.lbl_level_status.fontMetrics().lineSpacing() + 6)
+        self.lbl_level_status.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        self.lbl_level_status.setProperty("leonardoKeepHeight", True)
         outer.addWidget(self.lbl_level_status)
         self.cmb_method.currentIndexChanged.connect(self._sync_level_widgets)
         for cmb in (self.cmb_hamiltonian, self.cmb_solvent):
@@ -266,8 +296,6 @@ class PkaDialog(QtWidgets.QDialog):
         for cmb in (self.cmb_theory, self.cmb_basis):
             cmb.currentIndexChanged.connect(self._sync_level_widgets)
             cmb.lineEdit().editingFinished.connect(self._sync_level_widgets)
-        self.grp_level = grp
-        return grp
 
     @staticmethod
     def _combo_value(cmb):
@@ -310,15 +338,18 @@ class PkaDialog(QtWidgets.QDialog):
 
     def _sync_level_widgets(self, *_args):
         method = str(self.cmb_method.currentData())
-        for w in (self.lbl_hamiltonian, self.cmb_hamiltonian):
-            w.setVisible(method == "pm7")
-        for w in (self.lbl_theory, self.cmb_theory, self.lbl_basis, self.cmb_basis, self.lbl_solvent, self.cmb_solvent):
-            w.setVisible(method == "psi4")
+        self.stk_level.setCurrentIndex(self._level_pages.get(method, self._level_pages["empirical"]))
         try:
             calibrated, text = P.level_status(method, **self.level_options(method))
         except P.PkaError as exc:
             calibrated, text = False, f"Invalid level: {exc}"
         self.lbl_level_status.setText(("" if calibrated else "\u26a0 ") + text)
+        try:
+            from .ui_theme import relayout
+        except ImportError:        # standalone use without the Leonardo theme
+            relayout = None
+        if relayout is not None:
+            relayout(self.lbl_level_status)
         self._on_default_method_toggled()
 
     def _on_default_method_toggled(self, *_args):

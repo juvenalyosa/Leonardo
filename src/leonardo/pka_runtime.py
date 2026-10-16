@@ -1083,7 +1083,7 @@ def level_status(method, theory=None, basis=None, hamiltonian=None, pcm_solver=N
     """(calibrated, text) for a pKa method and level: what the window shows next to the level."""
     method = str(method or "empirical").lower()
     if method == "empirical":
-        return True, "No QM level: class-typical pKa values with site coupling."
+        return True, "Class-typical pKa values with site coupling; instant, no quantum chemistry."
     if method == "pm7":
         ham = str(hamiltonian or "PM7").upper()
         cal = find_calibration("pm7", hamiltonian=ham)

@@ -233,6 +233,8 @@ def polish_layouts(root):
     for label in root.findChildren(QtWidgets.QLabel):
         if label.pixmap() is not None and not label.pixmap().isNull():
             continue
+        if label.property("leonardoKeepHeight"):
+            continue                        # the window reserved this note's height on purpose
         text = str(label.text() or "")
         if "<" in text:
             text = re.sub(r"<[^>]*>", "", text)    # rich text: judge the visible text, not the markup
@@ -300,6 +302,24 @@ def _is_button_row(item):
     return buttons > 0
 
 
+def relayout(widget):
+    """Recompute the layouts from ``widget`` up to its window. Call it after changing what a window shows
+    (page switches, notes whose length changes): Qt keeps cached size hints in the layouts above, which
+    otherwise go on squeezing the changed part into its neighbours."""
+    QtCore, QtGui, QtWidgets = _qt()
+    w = widget
+    while w is not None:
+        w.updateGeometry()
+        lay = w.layout()
+        if lay is not None:
+            lay.invalidate()
+        if w.isWindow():
+            if lay is not None:
+                lay.activate()
+            break
+        w = w.parentWidget()
+
+
 def ensure_scroll_body(dlg):
     """Put the dialog body (between its header and its bottom button row) in a scroll area that keeps every
     child at least at its minimum size: rows scroll instead of being compressed into each other."""
@@ -339,6 +359,9 @@ def ensure_scroll_body(dlg):
     inner = QtWidgets.QVBoxLayout(content)
     inner.setContentsMargins(2, 2, 6, 2)
     inner.setSpacing(max(8, layout.spacing()))
+    # the body keeps its minimum size up to date: controls shown, or notes that grow, after the window opened
+    # make it taller (and the area scrolls) instead of being squeezed into the rows below them
+    inner.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
     for it in body:
         if it.widget() is not None:
             inner.addWidget(it.widget())
