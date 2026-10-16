@@ -13,7 +13,7 @@
   <img src="docs/gallery/hero.jpg" alt="Leonardo gallery" width="100%">
 </p>
 
-Current version: **0.2.0a10** (`2026-10-16-r1`) · macOS (Apple Silicon and Intel) and Linux ·
+Current version: **0.2.0a11** (`2026-10-16-r2`) · macOS (Apple Silicon and Intel) and Linux ·
 MIT license<br>
 Status: **pre-release for testing and manuscript verification**
 
