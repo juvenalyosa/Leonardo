@@ -242,6 +242,19 @@ else
 fi
 ln -sfn "$INSTALL_DIR" "$APP_LINK"
 
+# MODELLER key already saved in the existing environment (empty if none or the XXXX placeholder); never printed
+saved_modeller_key() {
+  # conda run does not pass stdin, and activation scripts print to stdout: the script goes in -c and the
+  # key comes back on a marked line
+  local code='import glob, re, sys
+for path in glob.glob(sys.prefix + "/lib/modeller-*/modlib/modeller/config.py"):
+    m = re.search(r"^license\s*=\s*r?[\x27\x22]([^\x27\x22]+)[\x27\x22]", open(path).read(), re.M)
+    if m and m.group(1).strip() and m.group(1).strip() != "XXXX":
+        print("LEONARDO_SAVED_KEY=" + m.group(1).strip())
+        break'
+  "$CONDA" run -n "$ENV_NAME" python -c "$code" 2>/dev/null | sed -n 's/^LEONARDO_SAVED_KEY=//p' | head -n 1 || true
+}
+
 # ------------------------------------------------------------------ 4. MODELLER key
 step "4/7 MODELLER license key"
 cat <<'EOF'
@@ -250,6 +263,10 @@ Get one at https://salilab.org/modeller/registration.html (it arrives by e-mail)
 You can paste it now, or press Return to skip and add it later with
 "Leonardo MODELLER License" (everything else works without it).
 EOF
+if [[ -z "$MODELLER_KEY" ]]; then
+  MODELLER_KEY="$(saved_modeller_key)"           # an update keeps the key of the existing environment
+  [[ -n "$MODELLER_KEY" ]] && echo "Using the MODELLER key saved in your Leonardo environment."
+fi
 if [[ -z "$MODELLER_KEY" ]]; then
   MODELLER_KEY="$(ask_text "MODELLER license key (Return to skip):")"
 fi

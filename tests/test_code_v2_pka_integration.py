@@ -111,3 +111,70 @@ def test_locked_state_note_warns_when_ph_changed(tmp_path):
     assert note == "protonation_locked:pka_window(pm7, pH 7.40)" and warn is None
     _note, warn = dlg._pka_locked_state_note(path, 5.0)
     assert warn and "pH 7.40" in warn
+
+
+def _load_sdf(tmp_path, smiles, name):
+    from pymol import cmd
+
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    AllChem.EmbedMolecule(mol, randomSeed=1)
+    path = tmp_path / f"{name}.sdf"
+    w = Chem.SDWriter(str(path))
+    w.write(mol)
+    w.close()
+    cmd.load(str(path), name)
+    return mol
+
+
+def test_selection_of_an_editor_molecule_keeps_its_bond_orders_without_open_babel(tmp_path):
+    # a molecule drawn in the ligand editor and built in 3D reaches PyMOL as SDF: its bond orders are used
+    # directly (before, they were dropped and Open Babel had to guess them again, and could fail)
+    from pymol import cmd
+
+    cmd.delete("all")
+    _load_sdf(tmp_path, "NC(=N)c1ccccc1", "ligand_edited")
+    cmd.select("sele", "ligand_edited")
+    dlg = _dialog("_pka_selection_molecule")
+    dlg._dock_tool_path = lambda name: None                  # no Open Babel at all
+    dlg._openmm_component_smiles_hint = lambda info: ""
+    mol, label = dlg._pka_selection_molecule("sele")
+    assert Chem.MolToSmiles(Chem.RemoveHs(mol, sanitize=True)).replace("[H]/", "").replace("/", "") in (
+        "N=C(N)c1ccccc1", "NC(=N)c1ccccc1")
+    assert mol.GetNumConformers() == 1 and "bond orders from PyMOL" in label
+    cmd.delete("all")
+
+
+def test_selection_over_two_objects_is_refused_with_their_names(tmp_path):
+    from pymol import cmd
+
+    cmd.delete("all")
+    _load_sdf(tmp_path, "CCO", "lig_one")
+    _load_sdf(tmp_path, "CCN", "lig_two")
+    cmd.select("sele", "lig_one or lig_two")
+    dlg = _dialog("_pka_selection_molecule")
+    dlg._dock_tool_path = lambda name: None
+    dlg._openmm_component_smiles_hint = lambda info: ""
+    with pytest.raises(RuntimeError, match=r"several objects \(lig_one, lig_two\)"):
+        dlg._pka_selection_molecule("sele")
+    cmd.delete("all")
+
+
+def test_pymol_guessed_aromatic_amidine_is_not_trusted(tmp_path):
+    # from a PDB with hydrogens PyMOL marks the amidine bonds aromatic: the selection falls back to a real
+    # perception instead of returning N:C(:N)
+    from pymol import cmd
+
+    cmd.delete("all")
+    mol = Chem.AddHs(Chem.MolFromSmiles("NC(=N)c1ccccc1"))
+    AllChem.EmbedMolecule(mol, randomSeed=1)
+    pdb = tmp_path / "amidine.pdb"
+    Chem.MolToPDBFile(mol, str(pdb), flavor=2 | 8)
+    cmd.load(str(pdb), "amidine")
+    cmd.select("sele", "amidine")
+    dlg = _dialog("_pka_selection_molecule")
+    dlg._dock_tool_path = lambda name: None
+    dlg._openmm_component_smiles_hint = lambda info: ""
+    out, _label = dlg._pka_selection_molecule("sele")
+    assert not any(b.GetIsAromatic() and not b.IsInRing() for b in out.GetBonds())
+    assert Chem.MolToSmiles(Chem.RemoveHs(out)).count("=") == 1
+    cmd.delete("all")

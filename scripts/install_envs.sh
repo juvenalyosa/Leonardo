@@ -126,6 +126,13 @@ create_or_update_env() {
     echo "[INFO] Removing existing env: $env_name"
     conda env remove -n "$env_name" -y >/dev/null
   fi
+  # Leonardo <= 0.2.0a9 environments are Qt 5 (PyQt5, PyMOL 3.0, smina inside). Updating one in place to
+  # the Qt 6 stack makes conda solve against the old pins and fail; a fresh environment is reliable.
+  if grep -qi "pyside6" "$yaml_file" && env_exists "$env_name" \
+      && ! conda run -n "$env_name" python -c "import PySide6" >/dev/null 2>&1; then
+    echo "[INFO] $env_name is a Qt 5 environment from an older Leonardo: creating it again for Qt 6"
+    conda env remove -n "$env_name" -y >/dev/null
+  fi
   if env_exists "$env_name"; then
     echo "[INFO] Updating env: $env_name from $yaml_file"
     conda env update -n "$env_name" -f "$yaml_file" --prune

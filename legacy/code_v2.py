@@ -963,8 +963,8 @@ try:
 except ImportError:
     from leonardo import ui_theme
 # Literal aliases are retained for legacy packaging/version inspections.
-PLUGIN_VERSION = "0.2.0a9"
-PLUGIN_BUILD = "2026-10-13-r1"
+PLUGIN_VERSION = "0.2.0a10"
+PLUGIN_BUILD = "2026-10-16-r1"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
@@ -53165,7 +53165,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._append_debug_log(f"Automatic protonation method set to: {self._pka_default_method}"
                                + (f" ({shown})" if shown else ""))
     def _pka_selection_molecule(self, selection="sele"):
-        """Small molecule from a PyMOL selection ('sele' by default) with bond orders (CCD template, else obabel)."""
+        """Small molecule from a PyMOL selection ('sele' by default) with bond orders. In order: the bond
+        orders PyMOL already holds (a molecule built in the ligand editor or read from SDF/MOL/MOL2), the PDB
+        chemical component of the residue, Open Babel, RDKit's bond perception from the 3D geometry."""
         if not HAS_RDKIT:
             raise RuntimeError("RDKit is required.")
         sel = str(selection or "sele")
@@ -53175,38 +53177,79 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             n_atoms = 0
         if n_atoms <= 0:
             raise RuntimeError("Select the ligand/cofactor in PyMOL first (it must be in the selection 'sele').")
+        try:
+            objects = [o for o in cmd.get_object_list(f"({sel})") if int(cmd.count_atoms(f"({sel}) and %{o}")) > 0]
+        except Exception:
+            objects = []
+        if len(objects) > 1:
+            raise RuntimeError("The selection covers several objects (" + ", ".join(objects[:4])
+                               + "); select the atoms of one molecule.")
         if n_atoms > 200:
             raise RuntimeError(f"The selection has {n_atoms} heavy atoms; select a single small molecule.")
         resns = set()
         cmd.iterate(f"({sel}) and not hydro", "resns.add(resn)", space={"resns": resns})
-        pdb_block = cmd.get_pdbstr(f"({sel}) and not hydro")
-        crystal = Chem.MolFromPDBBlock(pdb_block, removeHs=True, sanitize=False)
-        if crystal is None:
-            raise RuntimeError("RDKit could not read the selection.")
-        mol = None
         resn = sorted(resns)[0] if len(resns) == 1 else ""
-        template_smiles = self._openmm_component_smiles_hint({"resn": resn}) if resn else ""
-        if template_smiles:
-            try:
-                template = Chem.RemoveHs(Chem.MolFromSmiles(template_smiles))
-                mol = AllChem.AssignBondOrdersFromTemplate(template, crystal)
-            except Exception:
-                mol = None
+        mol, how, problems = None, "", []
+
+        # 1. bond orders PyMOL already holds from the file (SDF/MOL/MOL2: explicit double/triple bonds). For a
+        #    PDB PyMOL guesses orders itself: it marks rings, and sometimes amidines, aromatic (order 4); an
+        #    aromatic bond outside a ring is such a guess, and those bonds are not used
+        try:
+            model = cmd.get_model(f"({sel})")
+            if any(int(b.order) in (2, 3) for b in model.bond):
+                cand = Chem.MolFromMolBlock(cmd.get_str("mol", f"({sel})"), removeHs=False, sanitize=True)
+                guessed = cand is None or any(b.GetIsAromatic() and not b.IsInRing() for b in cand.GetBonds())
+                if not guessed and not any(a.GetNumRadicalElectrons() for a in cand.GetAtoms()):
+                    mol, how = Chem.RemoveHs(cand), "bond orders from PyMOL"
+        except Exception as exc:
+            problems.append(f"PyMOL bonds: {exc}")
+        pdb_heavy = cmd.get_pdbstr(f"({sel}) and not hydro")
+        # 2. the PDB chemical component of the residue (crystal ligands; generic names have none)
+        if mol is None and resn and resn.upper() not in ("UNK", "UNL", "LIG", "MOL", "DRG", "INH", "LG1", "UNX"):
+            template_smiles = self._openmm_component_smiles_hint({"resn": resn})
+            if template_smiles:
+                try:
+                    crystal = Chem.MolFromPDBBlock(pdb_heavy, removeHs=True, sanitize=False)
+                    template = Chem.RemoveHs(Chem.MolFromSmiles(template_smiles))
+                    mol = AllChem.AssignBondOrdersFromTemplate(template, crystal)
+                    how = f"PDB component {resn}"
+                except Exception as exc:
+                    problems.append(f"template {resn}: {exc}")
+        # 3. Open Babel on the full selection (hydrogens help the perception)
         if mol is None:
-            # no template: bond orders perceived by Open Babel from the coordinates
             obabel = self._dock_tool_path("obabel")
             if obabel:
                 import tempfile
                 with tempfile.TemporaryDirectory() as td:
                     pin, pout = os.path.join(td, "sel.pdb"), os.path.join(td, "sel.sdf")
                     with open(pin, "w", encoding="utf-8") as fh:
-                        fh.write(pdb_block)
-                    subprocess.run([obabel, pin, "-O", pout], capture_output=True, timeout=120, check=False)
+                        fh.write(cmd.get_pdbstr(f"({sel})"))
+                    run = subprocess.run([obabel, pin, "-O", pout], capture_output=True, text=True, timeout=120,
+                                         check=False)
                     if os.path.isfile(pout):
                         mol = next((m for m in Chem.SDMolSupplier(pout, removeHs=True) if m is not None), None)
+                    if mol is None:
+                        problems.append("Open Babel: " + (str(run.stderr or "").strip().splitlines() or ["no output"])[-1])
+                    else:
+                        how = "bond orders perceived by Open Babel"
+            else:
+                problems.append("Open Babel: not found")
+        # 4. RDKit bond perception from the coordinates (needs the hydrogens)
         if mol is None:
-            raise RuntimeError("Could not assign bond orders to the selection (no CCD template, Open Babel failed).")
-        label = f"PyMOL selection ({resn or 'mixed residues'}, {n_atoms} heavy atoms)"
+            try:
+                from rdkit.Chem import rdDetermineBonds
+                xyz = Chem.MolFromPDBBlock(cmd.get_pdbstr(f"({sel})"), removeHs=False, sanitize=False,
+                                           proximityBonding=False)
+                rw = Chem.RWMol(xyz)
+                rdDetermineBonds.DetermineBonds(rw, charge=0)
+                mol, how = Chem.RemoveHs(rw.GetMol()), "bond orders perceived by RDKit"
+            except Exception as exc:
+                problems.append(f"RDKit: {exc}")
+        if mol is None:
+            raise RuntimeError("Could not assign bond orders to the selection ("
+                               + "; ".join(problems[-3:] or ["no method applied"])
+                               + "). Load the molecule from an SDF/MOL2 file, or type its SMILES.")
+        label = f"PyMOL selection ({resn or 'mixed residues'}, {n_atoms} heavy atoms; {how})"
         return mol, label
     def _pka_use_state(self, mol, info, target="docking"):
         """Hand a protonation state from the pKa window to docking or parametrization. The state is

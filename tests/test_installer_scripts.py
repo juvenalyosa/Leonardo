@@ -56,3 +56,46 @@ def test_install_envs_reports_a_missing_environment_file(tmp_path):
     assert out.returncode == 1
     assert "ERROR: missing environments/no_such_environment.yml" in out.stderr
     assert "unbound variable" not in out.stderr
+
+
+def _function(path, name):
+    lines = open(path, encoding="utf-8").read().splitlines()
+    i = next(k for k, line in enumerate(lines) if line.startswith(f"{name}() {{"))
+    j = next(k for k in range(i, len(lines)) if lines[k] == "}")
+    return "\n".join(lines[i:j + 1])
+
+
+def test_qt5_environment_is_created_again_instead_of_updated(tmp_path):
+    # Leonardo <= 0.2.0a9 environments are Qt 5; updating them in place to the Qt 6 stack fails in conda
+    envs = os.path.join(REPO, "scripts", "install_envs.sh")
+    yaml_qt6 = tmp_path / "env.yml"
+    yaml_qt6.write_text("name: protliginteract-full\ndependencies:\n  - pyside6>=6.9\n")
+    stub = ('conda() { echo "conda $*" >> "$LOG"\n'
+            '  if [[ "$*" == "env remove"* ]]; then touch "$LOG.removed"; return 0; fi\n'
+            '  if [[ "$*" == *"import sys"* && -f "$LOG.removed" ]]; then return 1; fi\n'
+            '  if [[ "$*" == *"import PySide6"* ]]; then return "$HAS_QT6"; fi\n  return 0; }\n')
+    script = stub + _function(envs, "env_exists") + "\n" + _function(envs, "create_or_update_env") + \
+        f'\ncreate_or_update_env protliginteract-full "{yaml_qt6}" 0\n'
+    log = tmp_path / "log"
+    out = _bash(script, LOG=str(log), HAS_QT6="1")
+    assert out.returncode == 0, out.stderr
+    calls = log.read_text()
+    assert "env remove -n protliginteract-full" in calls and "env create" in calls and "env update" not in calls
+    assert "Qt 5 environment" in out.stdout
+    log.unlink()
+    (tmp_path / "log.removed").unlink()
+    out = _bash(script, LOG=str(log), HAS_QT6="0")                 # already Qt 6: update in place
+    assert out.returncode == 0, out.stderr
+    calls = log.read_text()
+    assert "env remove" not in calls and "env update -n protliginteract-full" in calls
+
+
+def test_saved_modeller_key_is_read_past_conda_activation_noise():
+    fn = _function(INSTALLER, "saved_modeller_key")
+    stub = ('conda() { echo "LIBCIFPP_DATA_DIR has been set"; '
+            'if [[ "$KEYED" == 1 ]]; then echo "LEONARDO_SAVED_KEY=ABC123"; fi; }\nCONDA=conda\nENV_NAME=x\n')
+    out = _bash(stub + fn + '\nk="$(saved_modeller_key)"\necho "key=[$k]"', KEYED="1")
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "key=[ABC123]"
+    out = _bash(stub + fn + '\nk="$(saved_modeller_key)"\necho "key=[$k]"', KEYED="0")
+    assert out.stdout.strip() == "key=[]"
