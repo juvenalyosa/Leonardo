@@ -15,10 +15,13 @@ every third one (by InChIKey) held out as the test set.
 
 Usage:
     python benchmarks/pka/run_pka_benchmark.py [--per-class 30] [--iupac-csv PATH]
-    python benchmarks/pka/run_pka_benchmark.py --method psi4 [--theory hf --basis 3-21g]
+    python benchmarks/pka/run_pka_benchmark.py --method psi4 [--theory hf --basis 3-21g --pcm-solver CPCM]
         [--compare-details ~/.cache/leonardo/iupac_pka/pm7_benchmark_details.json]
+    python benchmarks/pka/run_pka_benchmark.py --method pm7 --hamiltonian AM1
 
-Each method has its own entry in src/leonardo/pka_calibration.json; the other entries are kept.
+Each level has its own entry in src/leonardo/pka_calibration.json ("pm7", "psi4" for HF/3-21G CPCM,
+"psi4@b3lyp-d3bj/6-31+g*/CPCM", "pm7@AM1", ...); the other entries are kept. Psi4 outputs are
+cached on disk (<cache>/psi4_outputs), so an interrupted run resumes where it stopped.
 """
 
 import argparse
@@ -115,6 +118,28 @@ def select_molecules(rows, per_class):
     return out
 
 
+def cached_psi4_runner(cache_dir):
+    """Psi4 runner that keeps each output on disk (keyed by the input text): resumable runs."""
+    from leonardo import pka_runtime as P
+
+    os.makedirs(cache_dir, exist_ok=True)
+
+    def run(text, timeout=3600, threads=2, exe=None):
+        path = os.path.join(cache_dir, hashlib.sha1(text.encode("utf-8")).hexdigest() + ".out")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8", errors="ignore") as fh:
+                out = fh.read()
+            if P.parse_psi4_pka_energy(out) is not None:
+                return out
+        out = P._default_psi4_runner(text, timeout=timeout, threads=threads, exe=exe)
+        if P.parse_psi4_pka_energy(out) is not None:
+            with open(path + ".tmp", "w", encoding="utf-8") as fh:
+                fh.write(out)
+            os.replace(path + ".tmp", path)
+        return out
+    return run
+
+
 def run_qm(mols, args):
     from rdkit import Chem
 
@@ -122,11 +147,14 @@ def run_qm(mols, args):
 
     identity = {"global": {"slope": 1.0, "rmse": float("nan")}, "classes": {}, "version": "identity"}
     if args.method == "psi4":
-        identity.update(theory=args.theory, basis=args.basis)
+        identity.update(theory=args.theory, basis=args.basis, pcm_solver=args.pcm_solver)
         backend = P.Psi4Backend(calibration=identity, theory=args.theory, basis=args.basis,
-                                n_conformers=args.n_conformers, workers=args.workers, threads=args.threads)
+                                pcm_solver=args.pcm_solver, n_conformers=args.n_conformers, workers=args.workers,
+                                threads=args.threads, memory_gb=args.memory_gb,
+                                psi4_runner=cached_psi4_runner(os.path.join(DEFAULT_CACHE, "psi4_outputs")))
     else:
-        backend = P.MopacBackend(calibration=identity, n_conformers=args.n_conformers, workers=args.workers)
+        backend = P.MopacBackend(calibration=identity, n_conformers=args.n_conformers, workers=args.workers,
+                                 hamiltonian=args.hamiltonian)
     states, meta = [], []
     for m in mols:
         parent = P.neutral_parent(Chem.MolFromSmiles(m["smiles"]))
@@ -177,6 +205,9 @@ def main():
     ap.add_argument("--method", choices=("pm7", "psi4"), default="pm7")
     ap.add_argument("--theory", default="hf", help="Psi4 level of theory (single points on PM7 geometries)")
     ap.add_argument("--basis", default="3-21g", help="Psi4 basis set")
+    ap.add_argument("--pcm-solver", default="CPCM", choices=("CPCM", "IEFPCM"), help="Psi4 PCM solver")
+    ap.add_argument("--hamiltonian", default="PM7", help="MOPAC Hamiltonian (method pm7)")
+    ap.add_argument("--memory-gb", type=int, default=2, help="memory per Psi4 process")
     ap.add_argument("--threads", type=int, default=2, help="threads per Psi4 process")
     ap.add_argument("--n-conformers", type=int, default=10)
     ap.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 2))
@@ -191,9 +222,18 @@ def main():
                     help="details file of another method (e.g. PM7) to compare on the same test molecules")
     args = ap.parse_args()
     args.theory, args.basis = args.theory.lower(), args.basis.lower()
-    qm = "PM7" if args.method == "pm7" else f"Psi4 {args.theory.upper()}/{args.basis}"
-    args.report_out = args.report_out or os.path.join(HERE, f"{args.method.upper()}_BENCHMARK.md")
-    args.details_out = args.details_out or os.path.join(DEFAULT_CACHE, f"{args.method}_benchmark_details.json")
+    args.pcm_solver, args.hamiltonian = args.pcm_solver.upper(), args.hamiltonian.upper()
+    from leonardo.pka_runtime import calibration_key
+
+    key = calibration_key(args.method, hamiltonian=args.hamiltonian, theory=args.theory, basis=args.basis,
+                          pcm_solver=args.pcm_solver)
+    slug = "".join(c if c.isalnum() else "_" for c in key.split("@", 1)[1]).strip("_") if "@" in key else ""
+    qm = (args.hamiltonian if args.method == "pm7"
+          else f"Psi4 {args.theory.upper()}/{args.basis} {args.pcm_solver}")
+    args.report_out = args.report_out or os.path.join(
+        HERE, f"{args.method.upper()}{'_' + slug.upper() if slug else ''}_BENCHMARK.md")
+    args.details_out = args.details_out or os.path.join(
+        DEFAULT_CACHE, f"{args.method}{'_' + slug if slug else ''}_benchmark_details.json")
     rec_key = "pm7_recommended" if args.method == "pm7" else "qm_recommended"
 
     from leonardo import pka_runtime as P
@@ -294,13 +334,13 @@ def main():
     for flag in sorted({f for m in test for f in m["flags"]}):
         per_flag[flag] = _stats(err([m for m in test if flag in m["flags"]], "pred"))
 
-    version = time.strftime(f"{args.method}-%Y.%m.%d")
+    version = time.strftime(f"{key}-%Y.%m.%d")
     if args.method == "psi4":
-        energy_model = (f"Psi4 {args.theory}/{args.basis} single point, {P.PSI4_PCM_SOLVER} water "
+        energy_model = (f"Psi4 {args.theory}/{args.basis} single point, {args.pcm_solver} water "
                         f"(GePol UFF, area {P.PSI4_PCM_AREA:g}), at the lowest PM7/COSMO conformer "
                         "of ETKDG/MMFF conformers")
     else:
-        energy_model = "PM7/COSMO(EPS=78.4) lowest heat of formation over ETKDG/MMFF conformers"
+        energy_model = f"{args.hamiltonian}/COSMO(EPS=78.4) lowest heat of formation over ETKDG/MMFF conformers"
     entry = {
             "model": "pKa = pKa_ref + slope_class * (dG_deprot - dG_deprot_ref)/(RT ln10); " + energy_model,
             "version": version,
@@ -318,15 +358,17 @@ def main():
             "data_sha256": IUPAC_SHA256,
     }
     if args.method == "psi4":
-        entry.update(theory=args.theory, basis=args.basis, pcm_solver=P.PSI4_PCM_SOLVER, pcm_area=P.PSI4_PCM_AREA)
+        entry.update(theory=args.theory, basis=args.basis, pcm_solver=args.pcm_solver, pcm_area=P.PSI4_PCM_AREA)
+    elif args.hamiltonian != "PM7":
+        entry.update(hamiltonian=args.hamiltonian)
     # one entry per method: keep the others (a PM7 run must not erase the Psi4 calibration and vice versa)
     try:
         with open(args.calibration_out, encoding="utf-8") as fh:
             calibration = json.load(fh)
     except (OSError, ValueError):
         calibration = {}
-    calibration.setdefault("methods", {})[args.method] = entry
-    calibration["version"] = version if args.method == "pm7" else calibration.get("version", version)
+    calibration.setdefault("methods", {})[key] = entry
+    calibration["version"] = version if key == "pm7" else calibration.get("version", version)
     with open(args.calibration_out, "w", encoding="utf-8") as fh:
         json.dump(calibration, fh, indent=1, sort_keys=True)
         fh.write("\n")
@@ -340,7 +382,7 @@ def main():
         return f"n={st['n']} | {st['mae']:.2f} | {st['rmse']:.2f} | {100 * st['within_1']:.0f}%"
 
     lines = [
-        "# PM7/COSMO pKa benchmark" if args.method == "pm7" else f"# {qm} (PCM water, PM7/COSMO geometries) pKa benchmark",
+        f"# {qm}/COSMO pKa benchmark" if args.method == "pm7" else f"# {qm} (water, PM7/COSMO geometries) pKa benchmark",
         "",
         f"Calibration `{version}`, written by `benchmarks/pka/run_pka_benchmark.py`.",
         "",

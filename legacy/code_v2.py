@@ -53113,14 +53113,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 local.active -= 1
         return _mode()
     def _pka_backend_options(self, method):
-        """Backend options for pka_runtime: the Psi4 executable Leonardo is configured with."""
-        if str(method) != "psi4":
-            return None
-        try:
-            exe = self._psi4_tool_path()
-        except Exception:
-            exe = None
-        return {"psi4_exe": exe} if exe else None
+        """Backend options for pka_runtime: the level of theory chosen in the pKa window (when it was made the
+        default) and the Psi4 executable Leonardo is configured with."""
+        opts = {}
+        level = dict(getattr(self, "_pka_default_level", None) or {})
+        if str(method) == str(getattr(self, "_pka_default_method", "") or "") and level:
+            opts.update(level)
+        if str(method) == "psi4":
+            try:
+                exe = self._psi4_tool_path()
+            except Exception:
+                exe = None
+            if exe:
+                opts["psi4_exe"] = exe
+        return opts or None
     def _show_pka_dialog(self):
         """pKa & Protonation window (protonation is decided before charges/parameters)."""
         try:
@@ -53143,6 +53149,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     default_method=self._pka_method(),
                     set_default_method=self._pka_set_default_method,
                     backend_options=self._pka_backend_options,
+                    default_level=dict(getattr(self, "_pka_default_level", None) or {}),
                 )
                 self._pka_dialog = dlg
             self._fit_dialog_to_screen(dlg, preferred_w=1060, preferred_h=860, min_w=900, min_h=700)
@@ -53151,9 +53158,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             dlg.activateWindow()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "pKa & Protonation", f"Failed to open the pKa window: {e}")
-    def _pka_set_default_method(self, method):
+    def _pka_set_default_method(self, method, level=None):
         self._pka_default_method = str(method or "empirical")
-        self._append_debug_log(f"Automatic protonation method set to: {self._pka_default_method}")
+        self._pka_default_level = dict(level or {})
+        shown = ", ".join(f"{k}={v}" for k, v in self._pka_default_level.items())
+        self._append_debug_log(f"Automatic protonation method set to: {self._pka_default_method}"
+                               + (f" ({shown})" if shown else ""))
     def _pka_selection_molecule(self, selection="sele"):
         """Small molecule from a PyMOL selection ('sele' by default) with bond orders (CCD template, else obabel)."""
         if not HAS_RDKIT:

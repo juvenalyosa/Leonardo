@@ -28,6 +28,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from itertools import product
 
 RT_LN10 = 1.3642  # kcal/mol at 298.15 K
@@ -734,6 +735,9 @@ PM7_KEYWORDS = "PM7 EPS=78.4 GNORM=1.0 CYCLES=2000"
 # failure (e.g. SF5-aniline gave -64), not chemistry: the site falls back to empirical.
 QM_OUTLIER_LIMIT = 15.0
 PM7_RETRY_KEYWORDS = "PM7 EPS=78.4 GNORM=5.0 CYCLES=4000"
+# MOPAC Hamiltonians offered for the semiempirical backend. Levels without a shipped calibration
+# give relative (isodesmic) pKa values with slope 1 and say so in the warnings.
+MOPAC_HAMILTONIANS = ("PM7", "PM6-D3H4", "PM6", "RM1", "AM1", "PM3")
 CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pka_calibration.json")
 
 
@@ -749,6 +753,52 @@ def load_calibration(method="pm7", path=None):
     if not entry:
         return None
     return dict(entry, version=str(entry.get("version") or data.get("version", "unknown")))
+
+
+def calibration_key(method, hamiltonian=None, theory=None, basis=None, pcm_solver=None):
+    """Entry name of a level in pka_calibration.json: "pm7" / "psi4" for the original levels
+    (PM7; HF/3-21G CPCM), "pm7@AM1" or "psi4@b3lyp-d3bj/6-31+g*/CPCM" for the others."""
+    method = str(method)
+    if method == "pm7":
+        ham = str(hamiltonian or "PM7").upper()
+        return "pm7" if ham == "PM7" else f"pm7@{ham}"
+    level = (str(theory or PSI4_DEFAULT_THEORY).lower(), str(basis or PSI4_DEFAULT_BASIS).lower(),
+             str(pcm_solver or PSI4_PCM_SOLVER).upper())
+    if level == (PSI4_DEFAULT_THEORY, PSI4_DEFAULT_BASIS, PSI4_PCM_SOLVER):
+        return method
+    return f"{method}@{level[0]}/{level[1]}/{level[2]}"
+
+
+def find_calibration(method, path=None, **level):
+    """Calibration of a method at a given level (Hamiltonian, or Psi4 method/basis/solver), or None."""
+    cal = load_calibration(calibration_key(method, **level), path=path)
+    if not cal or str(method) != "psi4":
+        return cal
+    want = (str(level.get("theory") or PSI4_DEFAULT_THEORY).lower(), str(level.get("basis") or PSI4_DEFAULT_BASIS).lower(),
+            str(level.get("pcm_solver") or PSI4_PCM_SOLVER).upper())
+    have = (str(cal.get("theory", "")).lower(), str(cal.get("basis", "")).lower(),
+            str(cal.get("pcm_solver") or PSI4_PCM_SOLVER).upper())
+    return cal if have == want else None
+
+
+def calibrated_levels(path=None):
+    """Every calibrated level: [{"method", "key", "hamiltonian" | "theory"/"basis"/"pcm_solver", "test"}]."""
+    try:
+        with open(path or CALIBRATION_FILE, encoding="utf-8") as fh:
+            methods = json.load(fh).get("methods") or {}
+    except (OSError, ValueError):
+        return []
+    out = []
+    for key, entry in sorted(methods.items()):
+        base = key.split("@")[0]
+        row = {"method": base, "key": key, "test": dict(entry.get("test") or {})}
+        if base == "pm7":
+            row["hamiltonian"] = str(entry.get("hamiltonian") or "PM7").upper()
+        else:
+            row.update(theory=str(entry.get("theory", "")).lower(), basis=str(entry.get("basis", "")).lower(),
+                       pcm_solver=str(entry.get("pcm_solver") or PSI4_PCM_SOLVER).upper())
+        out.append(row)
+    return out
 
 
 def parse_mopac_heat_of_formation(out_text):
@@ -812,9 +862,24 @@ class MopacBackend:
     coupling_key = "pm7"
 
     def __init__(self, calibration=None, n_conformers=10, workers=None, runner=None, seed=20260927,
-                 timeout=600):
-        self.calibration = calibration if calibration is not None else load_calibration(self.name)
-        self.calibration_version = str((self.calibration or {}).get("version", "uncalibrated"))
+                 timeout=600, hamiltonian="PM7"):
+        ham = str(hamiltonian or "PM7").strip().upper()
+        if ham not in MOPAC_HAMILTONIANS:
+            raise PkaError(f"unknown MOPAC Hamiltonian '{hamiltonian}' (available: {', '.join(MOPAC_HAMILTONIANS)})")
+        self.hamiltonian = ham
+        self.keywords = PM7_KEYWORDS.replace("PM7", ham, 1)
+        self.retry_keywords = PM7_RETRY_KEYWORDS.replace("PM7", ham, 1)
+        if ham != "PM7" and type(self) is MopacBackend:
+            # another Hamiltonian: its own calibration if one ships, else uncalibrated values
+            self.calibration = calibration if calibration is not None else find_calibration("pm7", hamiltonian=ham)
+            self.calibration_version = (f"{self.calibration['version']}|{ham.lower()}" if self.calibration
+                                        else f"uncalibrated|{ham.lower()}")
+            self.label = f"{ham}/COSMO"
+            self.short_label = ham
+            self.source_tag = f"{ham.lower().replace('-', '_')}_cosmo"
+        else:
+            self.calibration = calibration if calibration is not None else load_calibration(self.name)
+            self.calibration_version = str((self.calibration or {}).get("version", "uncalibrated"))
         self.n_conformers = int(max(1, n_conformers))
         self.workers = int(workers or min(8, os.cpu_count() or 2))
         self.runner = runner or _default_mopac_runner
@@ -863,7 +928,7 @@ class MopacBackend:
         keys = [Chem.MolToSmiles(m) for m in mols_h]
         todo = [(k, m) for k, m in zip(keys, mols_h) if k not in self._energy_cache]
         todo = list(dict(todo).items())
-        for attempt, keywords in enumerate((PM7_KEYWORDS, PM7_RETRY_KEYWORDS)):
+        for attempt, keywords in enumerate((self.keywords, self.retry_keywords)):
             if not todo:
                 break
             jobs = []
@@ -886,17 +951,17 @@ class MopacBackend:
                         best[k] = hof
                         self._best_output[k] = out_text
                     if callable(progress) and done % 10 == 0:
-                        progress(f"PM7 conformers: {done}/{len(jobs)}")
+                        progress(f"{self.hamiltonian} conformers: {done}/{len(jobs)}")
             self._energy_cache.update(best)
             todo = [(k, m) for k, m in todo if k not in best]
         if todo:
-            raise PkaBackendError(f"PM7 did not converge for {len(todo)} protonation state(s): "
+            raise PkaBackendError(f"{self.hamiltonian} did not converge for {len(todo)} protonation state(s): "
                                   + ", ".join(k for k, _m in todo[:3]))
         return [self._energy_cache[k] for k in keys]
 
     def _energy_level_key(self):
         """Everything that changes a state energy; part of the reference-energy cache key."""
-        return (PM7_KEYWORDS, self.seed, self.n_conformers)
+        return (self.keywords, self.seed, self.n_conformers)
 
     def _uses_default_runners(self):
         return self.runner is _default_mopac_runner
@@ -970,7 +1035,9 @@ class MopacBackend:
             else:
                 sd, source = float(site["empirical_sd"]), "class_typical"
             site_pkas.append({"pka": float(pka), "sd": sd, "source": source})
-        warnings = [] if self.calibration else [f"{self.short_label} pKa values are uncalibrated (no calibration file)"]
+        warnings = [] if self.calibration else [
+            f"{self.short_label} pKa values are uncalibrated: relative to the class reference compound with slope 1 "
+            "(calibrations ship for PM7/COSMO and Psi4 HF/3-21G CPCM only); expect larger errors"]
         for s_idx, site in enumerate(enumerated):
             if site.get("qm_supported") and not self._qm_recommended(site["class"]):
                 warnings.append(f"site {site['atom']} ({site['class']}): {self.short_label} was less accurate than the "
@@ -990,6 +1057,56 @@ PSI4_DEFAULT_BASIS = "3-21g"
 # "S matrix is not positive-definite" warnings on drug-sized anions; 1.0 gave none.
 PSI4_PCM_SOLVER = "CPCM"
 PSI4_PCM_AREA = 1.0
+# Presets shown in the pKa window; any other Psi4 method / basis name can be typed in.
+PSI4_THEORY_PRESETS = (
+    ("hf", "HF"), ("b3lyp", "B3LYP"), ("b3lyp-d3bj", "B3LYP-D3(BJ)"), ("pbe0", "PBE0"),
+    ("pbe0-d3bj", "PBE0-D3(BJ)"), ("wb97x-d", "\u03c9B97X-D"), ("m06-2x", "M06-2X"), ("tpss", "TPSS"),
+    ("mp2", "MP2"),
+)
+PSI4_BASIS_PRESETS = (
+    "3-21g", "6-31g*", "6-31+g*", "6-31+g**", "6-311+g**", "def2-svp", "def2-svpd", "def2-tzvp", "def2-tzvpd",
+    "cc-pvdz", "aug-cc-pvdz", "cc-pvtz", "aug-cc-pvtz",
+)
+PSI4_PCM_SOLVERS = ("CPCM", "IEFPCM")
+_LEVEL_TOKEN = re.compile(r"^[a-z0-9][a-z0-9+*()\-,_]{0,39}$")
+
+
+def normalize_level_token(value, what="level"):
+    """Lower-case Psi4 method/basis name, refused if it could break the input file."""
+    text = str(value or "").strip().lower().replace(" ", "")
+    if not _LEVEL_TOKEN.match(text):
+        raise PkaError(f"invalid {what} name: {value!r}")
+    return text
+
+
+def level_status(method, theory=None, basis=None, hamiltonian=None, pcm_solver=None):
+    """(calibrated, text) for a pKa method and level: what the window shows next to the level."""
+    method = str(method or "empirical").lower()
+    if method == "empirical":
+        return True, "No QM level: class-typical pKa values with site coupling."
+    if method == "pm7":
+        ham = str(hamiltonian or "PM7").upper()
+        cal = find_calibration("pm7", hamiltonian=ham)
+        if cal:
+            test = cal.get("test") or {}
+            return True, (f"Calibrated level (test set: RMSE {float(test.get('rmse', float('nan'))):.2f}, "
+                          f"MAE {float(test.get('mae', float('nan'))):.2f} pKa units, n={test.get('n', '?')}).")
+        return False, (f"{ham}/COSMO is not calibrated: pKa relative to the class reference compound with slope 1, "
+                       "which usually exaggerates substituent effects; expect larger errors than calibrated PM7.")
+    th = str(theory or PSI4_DEFAULT_THEORY).lower()
+    bs = str(basis or PSI4_DEFAULT_BASIS).lower()
+    sv = str(pcm_solver or PSI4_PCM_SOLVER).upper()
+    cal = find_calibration("psi4", theory=th, basis=bs, pcm_solver=sv)
+    if cal:
+        test = cal.get("test") or {}
+        pm7_test = (load_calibration("pm7") or {}).get("test") or {}
+        return True, (f"Calibrated level (test set: RMSE {float(test.get('rmse', float('nan'))):.2f}, "
+                      f"MAE {float(test.get('mae', float('nan'))):.2f} pKa units, n={test.get('n', '?')}; "
+                      f"PM7: RMSE {float(pm7_test.get('rmse', float('nan'))):.2f}). Classes where this level was "
+                      "less accurate than PM7 in the benchmark use PM7.")
+    return False, (f"{th.upper()}/{bs} {sv} is not calibrated: pKa relative to the class reference compound with "
+                   "slope 1, which usually exaggerates substituent effects. Single points on PM7/COSMO geometries; "
+                   "diffuse functions (+, aug-, def2-...D) help anions.")
 
 
 def parse_mopac_final_geometry(out_text):
@@ -1129,31 +1246,41 @@ class Psi4Backend(MopacBackend):
 
     def __init__(self, calibration=None, theory=None, basis=None, n_conformers=10, workers=None, runner=None,
                  psi4_runner=None, threads=2, psi4_exe=None, seed=20260927, timeout=600, psi4_timeout=3600,
-                 memory_gb=2):
-        cal = calibration if calibration is not None else load_calibration("psi4")
+                 memory_gb=2, pcm_solver=None):
+        self.qm_method = normalize_level_token(theory or PSI4_DEFAULT_THEORY, "method")
+        self.qm_basis = normalize_level_token(basis or PSI4_DEFAULT_BASIS, "basis set")
+        self.pcm_solver = str(pcm_solver or PSI4_PCM_SOLVER).upper()
+        if self.pcm_solver not in PSI4_PCM_SOLVERS:
+            raise PkaError(f"unknown PCM solver '{pcm_solver}' (available: {', '.join(PSI4_PCM_SOLVERS)})")
+        if calibration is None:
+            cal = find_calibration("psi4", theory=self.qm_method, basis=self.qm_basis, pcm_solver=self.pcm_solver)
+        else:
+            cal = calibration
         level = (str((cal or {}).get("theory") or PSI4_DEFAULT_THEORY).lower(),
-                 str((cal or {}).get("basis") or PSI4_DEFAULT_BASIS).lower())
-        self.qm_method = str(theory or level[0]).lower()
-        self.qm_basis = str(basis or level[1]).lower()
-        if not cal or (self.qm_method, self.qm_basis) != level:
+                 str((cal or {}).get("basis") or PSI4_DEFAULT_BASIS).lower(),
+                 str((cal or {}).get("pcm_solver") or PSI4_PCM_SOLVER).upper())
+        if not cal or (self.qm_method, self.qm_basis, self.pcm_solver) != level:
             cal = {}        # none shipped, or it is for another level: report uncalibrated values
         super().__init__(calibration=cal, n_conformers=n_conformers, workers=workers, runner=runner,
                          seed=seed, timeout=timeout)
         if not self.calibration:
             self.calibration = None
             self.calibration_version = "uncalibrated"
-        self.calibration_version = f"{self.calibration_version}|{self.qm_method}/{self.qm_basis}"
+        # CPCM (the default) keeps the tags results were cached and calibrated under
+        solver_tag = "" if self.pcm_solver == PSI4_PCM_SOLVER else f"|{self.pcm_solver}"
+        self.calibration_version = f"{self.calibration_version}|{self.qm_method}/{self.qm_basis}{solver_tag}"
         self.threads = int(max(1, threads))
         self.psi4_runner = psi4_runner or _default_psi4_runner
         self.psi4_exe = psi4_exe
         self.psi4_timeout = float(psi4_timeout)
         self.memory_gb = int(max(1, memory_gb))
-        self.label = f"Psi4 {self.qm_method.upper()}/{self.qm_basis} PCM on PM7 geometries"
-        self.source_tag = f"psi4_{self.qm_method}_{self.qm_basis}_pcm"
+        self.label = f"Psi4 {self.qm_method.upper()}/{self.qm_basis} {self.pcm_solver} on PM7 geometries"
+        self.source_tag = f"psi4_{self.qm_method}_{self.qm_basis}_" + (
+            "pcm" if self.pcm_solver == PSI4_PCM_SOLVER else self.pcm_solver.lower())
         self._psi4_cache = {}
 
     def _energy_level_key(self):
-        return super()._energy_level_key() + (self.qm_method, self.qm_basis, PSI4_PCM_SOLVER, PSI4_PCM_AREA)
+        return super()._energy_level_key() + (self.qm_method, self.qm_basis, self.pcm_solver, PSI4_PCM_AREA)
 
     def _uses_default_runners(self):
         return super()._uses_default_runners() and self.psi4_runner is _default_psi4_runner
@@ -1173,7 +1300,8 @@ class Psi4Backend(MopacBackend):
             if not atoms or len(atoms) != m.GetNumAtoms():
                 raise PkaBackendError(f"no PM7 geometry for {k}")
             jobs[k] = build_psi4_pka_input(atoms, Chem.GetFormalCharge(m), theory=self.qm_method,
-                                           basis=self.qm_basis, memory_gb=self.memory_gb)
+                                           basis=self.qm_basis, pcm_solver=self.pcm_solver,
+                                           memory_gb=self.memory_gb)
         if jobs:
             if callable(progress):
                 progress(f"{self.label}: {len(jobs)} single point(s)")
@@ -1249,10 +1377,19 @@ def _backend(method, **kwargs):
     if key not in _BACKENDS:
         raise PkaError(f"unknown pKa method '{method}' (available: {', '.join(sorted(_BACKENDS))})")
     factory = _BACKENDS[key]
-    try:
-        return factory(**kwargs) if kwargs else factory()
-    except TypeError:
+    if not kwargs:
         return factory()
+    # options meant for another backend (e.g. Psi4 threads for MOPAC) are dropped one by one; the
+    # rest must reach the backend: silently falling back to defaults would run another level of theory
+    import inspect
+
+    try:
+        params = inspect.signature(factory).parameters
+    except (TypeError, ValueError):
+        return factory(**kwargs)
+    if not any(p.kind == p.VAR_KEYWORD for p in params.values()):
+        kwargs = {k: v for k, v in kwargs.items() if k in params}
+    return factory(**kwargs)
 
 
 # --------------------------------------------------------------------------- #
@@ -1387,6 +1524,7 @@ def compute_pka(mol, method="empirical", focus_ph=7.4, ph_range=(0.0, 14.0), cac
         "macro_pkas": macroscopic_pkas(energies) if enumerated else [],
         "warnings": warnings,
         "provenance": {"method": method_used, "calibration_version": calibration_version,
+                       "level": str(getattr(backend, "label", method_used)) if method_used == backend.name else "empirical",
                        "runtime_version": PKA_RUNTIME_VERSION, "cache": "miss"},
     }
     if method_used == backend.name:       # an empirical fallback must not answer later QM requests

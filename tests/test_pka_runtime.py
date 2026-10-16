@@ -473,3 +473,101 @@ def test_cache_respects_atom_order_ph_and_fallbacks(tmp_path, monkeypatch):
     P.compute_pka(Chem.MolFromSmiles("CCN"), method="failqm", cache_dir=str(tmp_path))
     again = P.compute_pka(Chem.MolFromSmiles("CCN"), method="failqm", cache_dir=str(tmp_path))
     assert again["provenance"]["cache"] == "miss"
+
+
+# --------------------------------------------------------------------------- #
+# Levels of theory
+# --------------------------------------------------------------------------- #
+def test_mopac_hamiltonian_is_used_and_reported_uncalibrated():
+    from pka_runtime import MopacBackend, PkaError
+
+    seen = []
+    fake = _fake_mopac_with_geometry({0: -111.0, -1: -206.0})
+
+    def runner(text, timeout=0):
+        seen.append(text.splitlines()[0])
+        return fake(text, timeout)
+
+    res = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="pm7", backend_options={
+        "runner": runner, "n_conformers": 1, "workers": 1, "hamiltonian": "pm6-d3h4"})
+    assert seen and all(line.startswith("PM6-D3H4 EPS=78.4") for line in seen)
+    assert res["provenance"]["calibration_version"] == "uncalibrated|pm6-d3h4"
+    assert res["provenance"]["level"] == "PM6-D3H4/COSMO"
+    assert res["sites"][0]["pka_source"] == "pm6_d3h4_cosmo_uncalibrated"
+    assert any("PM6-D3H4 pKa values are uncalibrated" in w for w in res["warnings"])
+    assert MopacBackend().calibration_version != "uncalibrated|pm7"        # PM7 keeps its calibration
+    with pytest.raises(PkaError):
+        MopacBackend(hamiltonian="XYZ")
+
+
+def test_psi4_level_and_solver_reach_the_input():
+    psi4 = _fake_psi4({0: -227.0, -1: -226.5})
+    res = compute_pka(Chem.MolFromSmiles("CC(=O)O"), method="psi4", backend_options={
+        "runner": _fake_mopac_with_geometry({0: -111.0, -1: -206.0}), "psi4_runner": psi4, "n_conformers": 1,
+        "workers": 1, "threads": 1, "theory": "B3LYP-D3BJ", "basis": "6-31+G*", "pcm_solver": "iefpcm"})
+    text = psi4.calls[0]
+    assert 'energy("b3lyp-d3bj")' in text and "basis 6-31+g*" in text and "SolverType = IEFPCM" in text
+    assert res["provenance"]["calibration_version"] == "uncalibrated|b3lyp-d3bj/6-31+g*|IEFPCM"
+    assert res["sites"][0]["pka_source"] == "psi4_b3lyp-d3bj_6-31+g*_iefpcm_uncalibrated"
+    assert "B3LYP-D3BJ/6-31+g* IEFPCM" in res["provenance"]["level"]
+
+
+def test_level_names_are_validated():
+    from pka_runtime import PkaError, Psi4Backend, normalize_level_token
+
+    assert normalize_level_token(" Def2-SVPD ") == "def2-svpd"
+    assert normalize_level_token("6-311++G(2d,p)") == "6-311++g(2d,p)"
+    for bad in ("hf\nset x 1", 'b3lyp")', "a;b", ""):
+        with pytest.raises(PkaError):
+            normalize_level_token(bad)
+    with pytest.raises(PkaError):
+        Psi4Backend(pcm_solver="smd")
+
+
+def test_level_status_marks_calibrated_levels_only():
+    from pka_runtime import level_status
+
+    assert level_status("pm7")[0] and level_status("pm7", hamiltonian="PM7")[0]
+    assert not level_status("pm7", hamiltonian="PM6")[0]
+    assert level_status("psi4", theory="hf", basis="3-21g", pcm_solver="CPCM")[0]
+    assert not level_status("psi4", theory="b3lyp", basis="def2-svpd")[0]
+    assert not level_status("psi4", theory="hf", basis="3-21g", pcm_solver="IEFPCM")[0]
+    assert level_status("empirical")[0]
+
+
+def test_backend_options_for_another_backend_do_not_reset_the_level():
+    from pka_runtime import _backend
+
+    b = _backend("pm7", hamiltonian="AM1", threads=4, psi4_exe="/x")        # Psi4-only options are ignored
+    assert b.hamiltonian == "AM1" and b.keywords.startswith("AM1 ")
+
+
+def test_each_level_finds_its_own_calibration(tmp_path, monkeypatch):
+    import json
+
+    import pka_runtime as PR
+
+    assert PR.calibration_key("pm7") == "pm7" and PR.calibration_key("pm7", hamiltonian="am1") == "pm7@AM1"
+    assert PR.calibration_key("psi4", theory="HF", basis="3-21G") == "psi4"
+    assert PR.calibration_key("psi4", theory="B3LYP-D3BJ", basis="6-31+G*") == "psi4@b3lyp-d3bj/6-31+g*/CPCM"
+    entry = {"global": {"slope": 0.4, "rmse": 1.1}, "classes": {}, "test": {"rmse": 1.2, "mae": 0.9, "n": 100}}
+    data = {"methods": {
+        "pm7": dict(entry, version="pm7-v"),
+        "pm7@AM1": dict(entry, version="am1-v", hamiltonian="AM1"),
+        "psi4@b3lyp-d3bj/6-31+g*/CPCM": dict(entry, version="b3-v", theory="b3lyp-d3bj", basis="6-31+g*",
+                                              pcm_solver="CPCM"),
+    }}
+    path = tmp_path / "cal.json"
+    path.write_text(json.dumps(data))
+    monkeypatch.setattr(PR, "CALIBRATION_FILE", str(path))
+    b = PR.Psi4Backend(theory="b3lyp-d3bj", basis="6-31+g*")
+    assert b.calibration is not None and b.calibration_version == "b3-v|b3lyp-d3bj/6-31+g*"
+    assert PR.Psi4Backend(theory="b3lyp-d3bj", basis="6-31+g*", pcm_solver="IEFPCM").calibration is None
+    assert PR.Psi4Backend(theory="b3lyp", basis="6-31+g*").calibration is None
+    am1 = PR.MopacBackend(hamiltonian="AM1")
+    assert am1.calibration["version"] == "am1-v" and am1.calibration_version == "am1-v|am1"
+    assert PR.MopacBackend(hamiltonian="PM3").calibration is None
+    assert PR.level_status("psi4", theory="b3lyp-d3bj", basis="6-31+g*")[0]
+    assert PR.level_status("pm7", hamiltonian="AM1")[0] and not PR.level_status("pm7", hamiltonian="RM1")[0]
+    keys = {row["key"] for row in PR.calibrated_levels()}
+    assert keys == {"pm7", "pm7@AM1", "psi4@b3lyp-d3bj/6-31+g*/CPCM"}

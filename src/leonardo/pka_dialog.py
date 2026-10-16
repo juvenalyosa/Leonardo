@@ -17,8 +17,8 @@ from . import pka_runtime as P
 
 METHODS = [
     ("Empirical (fast, class-typical pKa)", "empirical"),
-    ("PM7 / COSMO (semiempirical QM, calibrated)", "pm7"),
-    ("Psi4 HF/3-21G + PCM (experimental: slower and less accurate than PM7)", "psi4"),
+    ("Semiempirical QM: MOPAC + COSMO (PM7 calibrated)", "pm7"),
+    ("Ab initio / DFT: Psi4 + PCM (experimental, slower)", "psi4"),
 ]
 SITE_COLUMNS = ["Atom", "Class", "Type", "pKa", "±", "Source", "Warnings"]
 STATE_COLUMNS = ["Population", "Charge", "SMILES"]
@@ -66,7 +66,7 @@ class PkaDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None, submit_task=None, load_selection=None, current_docking_ligand=None,
                  use_for_docking=None, use_for_parametrization=None, cache_dir=None, default_ph=7.4,
-                 default_method="empirical", set_default_method=None, backend_options=None):
+                 default_method="empirical", set_default_method=None, backend_options=None, default_level=None):
         super().__init__(parent)
         self.setWindowTitle("pKa & Protonation States")
         self.resize(1020, 820)
@@ -84,9 +84,11 @@ class PkaDialog(QtWidgets.QDialog):
         self._cancel = False
         self._busy = False
         self._build_ui(default_ph)
+        self.set_level(default_level or {})
         idx = self.cmb_method.findData(str(default_method))
         if idx >= 0:
             self.cmb_method.setCurrentIndex(idx)
+        self._sync_level_widgets()
 
     # ------------------------------------------------------------------ UI --
     def _build_ui(self, default_ph):
@@ -144,6 +146,7 @@ class PkaDialog(QtWidgets.QDialog):
         lay_opt.addWidget(self.btn_run)
         lay_opt.addWidget(self.btn_cancel)
         root.addWidget(grp_opt)
+        root.addWidget(self._build_level_group())
         self.cb_default_method = QtWidgets.QCheckBox(
             "Use this method for automatic protonation in all modules (docking, parametrization, MD ligands, "
             "virtual screening, lead optimization; virtual screening libraries use PM7 instead of Psi4)"
@@ -220,9 +223,115 @@ class PkaDialog(QtWidgets.QDialog):
         row.addWidget(btn_close)
         root.addLayout(row)
 
+    def _build_level_group(self):
+        """Level of theory: MOPAC Hamiltonian, or Psi4 method + basis set + PCM solver (editable)."""
+        grp = QtWidgets.QGroupBox("Level of Theory")
+        outer = QtWidgets.QVBoxLayout(grp)
+        lay = QtWidgets.QHBoxLayout()
+        self.lbl_hamiltonian = QtWidgets.QLabel("Hamiltonian")
+        self.cmb_hamiltonian = QtWidgets.QComboBox()
+        for ham in P.MOPAC_HAMILTONIANS:
+            self.cmb_hamiltonian.addItem(ham + ("  (calibrated)" if ham == "PM7" else ""), ham)
+        self.cmb_hamiltonian.setToolTip("MOPAC Hamiltonian; geometry optimizations with COSMO water (eps 78.4)")
+        self.lbl_theory = QtWidgets.QLabel("Method")
+        self.cmb_theory = QtWidgets.QComboBox()
+        self.cmb_theory.setEditable(True)
+        for key, label in P.PSI4_THEORY_PRESETS:
+            self.cmb_theory.addItem(label, key)
+        self.cmb_theory.setToolTip("Psi4 method: pick a preset or type any Psi4 method name (e.g. b97-3c, r2scan)")
+        self.lbl_basis = QtWidgets.QLabel("Basis set")
+        self.cmb_basis = QtWidgets.QComboBox()
+        self.cmb_basis.setEditable(True)
+        for basis in P.PSI4_BASIS_PRESETS:
+            self.cmb_basis.addItem(basis, basis)
+        self.cmb_basis.setToolTip("Psi4 basis set: pick a preset or type any basis Psi4 knows. Diffuse functions "
+                                  "(+, aug-, def2-...D) describe anions better.")
+        self.lbl_solvent = QtWidgets.QLabel("Solvent model")
+        self.cmb_solvent = QtWidgets.QComboBox()
+        for solver in P.PSI4_PCM_SOLVERS:
+            self.cmb_solvent.addItem(f"{solver} (water)", solver)
+        # one row; hidden controls (the other backend's) take no room
+        for label, cmb in ((self.lbl_hamiltonian, self.cmb_hamiltonian), (self.lbl_theory, self.cmb_theory),
+                           (self.lbl_basis, self.cmb_basis), (self.lbl_solvent, self.cmb_solvent)):
+            lay.addWidget(label)
+            lay.addWidget(cmb, 1)
+        outer.addLayout(lay)
+        self.lbl_level_status = QtWidgets.QLabel("")
+        self.lbl_level_status.setWordWrap(True)
+        self.lbl_level_status.setProperty("leonardoRole", "note")
+        outer.addWidget(self.lbl_level_status)
+        self.cmb_method.currentIndexChanged.connect(self._sync_level_widgets)
+        for cmb in (self.cmb_hamiltonian, self.cmb_solvent):
+            cmb.currentIndexChanged.connect(self._sync_level_widgets)
+        for cmb in (self.cmb_theory, self.cmb_basis):
+            cmb.currentIndexChanged.connect(self._sync_level_widgets)
+            cmb.lineEdit().editingFinished.connect(self._sync_level_widgets)
+        self.grp_level = grp
+        return grp
+
+    @staticmethod
+    def _combo_value(cmb):
+        """Preset key of an editable combo, or the typed text."""
+        text = str(cmb.currentText() or "").strip()
+        idx = cmb.findText(text)
+        if idx >= 0 and cmb.itemData(idx) is not None:
+            return str(cmb.itemData(idx))
+        return text
+
+    @staticmethod
+    def _set_combo_value(cmb, value):
+        if not value:
+            return
+        idx = cmb.findData(value)
+        if idx < 0:
+            idx = cmb.findText(str(value))
+        if idx >= 0:
+            cmb.setCurrentIndex(idx)
+        elif cmb.isEditable():
+            cmb.setEditText(str(value))
+
+    def level_options(self, method=None):
+        """Backend options for the chosen level (empty for the empirical method)."""
+        method = str(method or self.cmb_method.currentData())
+        if method == "pm7":
+            return {"hamiltonian": str(self.cmb_hamiltonian.currentData())}
+        if method == "psi4":
+            return {"theory": P.normalize_level_token(self._combo_value(self.cmb_theory), "method"),
+                    "basis": P.normalize_level_token(self._combo_value(self.cmb_basis), "basis set"),
+                    "pcm_solver": str(self.cmb_solvent.currentData())}
+        return {}
+
+    def set_level(self, level):
+        level = dict(level or {})
+        self._set_combo_value(self.cmb_hamiltonian, str(level.get("hamiltonian", "PM7")).upper())
+        self._set_combo_value(self.cmb_theory, str(level.get("theory", P.PSI4_DEFAULT_THEORY)).lower())
+        self._set_combo_value(self.cmb_basis, str(level.get("basis", P.PSI4_DEFAULT_BASIS)).lower())
+        self._set_combo_value(self.cmb_solvent, str(level.get("pcm_solver", P.PSI4_PCM_SOLVER)).upper())
+
+    def _sync_level_widgets(self, *_args):
+        method = str(self.cmb_method.currentData())
+        for w in (self.lbl_hamiltonian, self.cmb_hamiltonian):
+            w.setVisible(method == "pm7")
+        for w in (self.lbl_theory, self.cmb_theory, self.lbl_basis, self.cmb_basis, self.lbl_solvent, self.cmb_solvent):
+            w.setVisible(method == "psi4")
+        try:
+            calibrated, text = P.level_status(method, **self.level_options(method))
+        except P.PkaError as exc:
+            calibrated, text = False, f"Invalid level: {exc}"
+        self.lbl_level_status.setText(("" if calibrated else "\u26a0 ") + text)
+        self._on_default_method_toggled()
+
     def _on_default_method_toggled(self, *_args):
         if callable(self._set_default_method) and self.cb_default_method.isChecked():
-            self._set_default_method(str(self.cmb_method.currentData()))
+            method = str(self.cmb_method.currentData())
+            try:
+                level = self.level_options(method)
+            except P.PkaError:
+                return
+            try:
+                self._set_default_method(method, level)
+            except TypeError:       # hosts with the one-argument hook
+                self._set_default_method(method)
 
     # -------------------------------------------------------------- input --
     def set_molecule(self, mol, label=""):
@@ -289,11 +398,18 @@ class PkaDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "pKa & Protonation", str(exc))
             return
         method = str(self.cmb_method.currentData())
+        try:
+            level = self.level_options(method)
+        except P.PkaError as exc:
+            QtWidgets.QMessageBox.warning(self, "pKa & Protonation", str(exc))
+            return
         ph = float(self.spin_ph.value())
         self._cancel = False
-        self._set_busy(True, f"Computing pKa with {method}...")
-
-        options = self._backend_options(method) if callable(self._backend_options) else None
+        options = dict((self._backend_options(method) if callable(self._backend_options) else None) or {})
+        options.update(level)
+        level_text = {"pm7": level.get("hamiltonian", ""),
+                      "psi4": f"{level.get('theory', '').upper()}/{level.get('basis', '')} {level.get('pcm_solver', '')}"}
+        self._set_busy(True, f"Computing pKa with {method} {level_text.get(method, '')}...".replace("  ", " "))
 
         def job():
             return P.compute_pka(mol, method=method, focus_ph=ph, cache_dir=self._cache_dir,
@@ -334,7 +450,8 @@ class PkaDialog(QtWidgets.QDialog):
         self._result = dict(result)
         prov = self._result.get("provenance", {})
         self.lbl_status.setText(
-            f"Method: {self._result.get('method')} | calibration: {prov.get('calibration_version', 'none')} | "
+            f"Level: {prov.get('level', self._result.get('method'))} | calibration: "
+            f"{prov.get('calibration_version', 'none')} | "
             f"cache: {prov.get('cache', '-')} | macroscopic pKa: "
             + (", ".join(f"{v:.2f}" for v in self._result.get("macro_pkas", [])) or "none in 0-14")
         )
@@ -466,6 +583,7 @@ class PkaDialog(QtWidgets.QDialog):
             "sites": self._result.get("sites", []),
             "warnings": self._result.get("warnings", []),
             "calibration_version": self._result.get("provenance", {}).get("calibration_version", "none"),
+            "level": self._result.get("provenance", {}).get("level", self._result.get("method")),
             "source": self._mol_label,
         }
         return mol, info

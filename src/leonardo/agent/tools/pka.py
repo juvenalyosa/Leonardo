@@ -13,6 +13,24 @@ LIGAND_SOURCE = {
 METHOD = {"type": "string", "enum": ["empirical", "pm7", "psi4"],
           "description": "empirical: instant, class-typical pKa with site coupling; pm7: PM7/COSMO, seconds to "
                          "minutes; psi4: experimental, slow."}
+LEVEL = {
+    "hamiltonian": {"type": "string", "enum": ["PM7", "PM6-D3H4", "PM6", "RM1", "AM1", "PM3"],
+                    "description": "method pm7 only: MOPAC Hamiltonian (only PM7 is calibrated)."},
+    "theory": {"type": "string", "description": "method psi4 only: Psi4 method, e.g. hf, b3lyp, b3lyp-d3bj, pbe0, "
+                                               "wb97x-d, m06-2x, mp2 (only hf/3-21g CPCM is calibrated)."},
+    "basis": {"type": "string", "description": "method psi4 only: basis set, e.g. 3-21g, 6-31+g*, def2-svpd, "
+                                              "def2-tzvp, aug-cc-pvdz."},
+    "pcm_solver": {"type": "string", "enum": ["CPCM", "IEFPCM"], "description": "method psi4 only: PCM solver."},
+}
+
+
+def _level_options(method, hamiltonian="", theory="", basis="", pcm_solver=""):
+    """Level-of-theory backend options given to the tool (only those that apply to the method)."""
+    if method == "pm7" and hamiltonian:
+        return {"hamiltonian": hamiltonian}
+    if method == "psi4":
+        return {k: v for k, v in (("theory", theory), ("basis", basis), ("pcm_solver", pcm_solver)) if v}
+    return {}
 
 
 def _molecule(ctx, smiles="", selection="", file=""):
@@ -66,18 +84,23 @@ def _site_rows(result):
 def register(reg):
     @reg.tool("compute_pka", "pKa of each ionizable site of a small molecule, macroscopic pKa values and the "
               "dominant protonation state/charge at a pH. Does not change the scene or the docking ligand.",
-              {"properties": dict(LIGAND_SOURCE, method=METHOD, ph={"type": "number", "minimum": 0, "maximum": 14}),
+              {"properties": dict(LIGAND_SOURCE, method=METHOD, ph={"type": "number", "minimum": 0, "maximum": 14},
+                                  **LEVEL),
                "required": []},
               permission="compute_light", title="Compute pKa", main_thread=False)
-    def compute_pka(ctx, smiles="", selection="", file="", method="empirical", ph=7.4):
+    def compute_pka(ctx, smiles="", selection="", file="", method="empirical", ph=7.4, hamiltonian="", theory="",
+                    basis="", pcm_solver=""):
         from ... import pka_runtime as P
 
         mol, label = _molecule(ctx, smiles, selection, file)
         options = ctx.run_on_main(lambda: ctx.dlg._pka_backend_options(method)) if ctx.dlg is not None else None
+        options = dict(options or {})
+        options.update(_level_options(method, hamiltonian, theory, basis, pcm_solver))
         res = P.compute_pka(mol, method=method, focus_ph=float(ph), backend_options=options)
         states = P.states_at_ph(res, float(ph), min_population=0.05)
         return {
-            "molecule": label, "smiles": res.get("smiles"), "method": res.get("method"), "ph": float(ph),
+            "molecule": label, "smiles": res.get("smiles"), "method": res.get("method"),
+            "level": res.get("provenance", {}).get("level"), "ph": float(ph),
             "sites": _site_rows(res), "macroscopic_pkas": res.get("macro_pkas", []),
             "dominant_charge": states[0]["charge"] if states else None,
             "dominant_charge_population": round(float(states[0].get("charge_population", 1.0)), 3) if states else None,
