@@ -391,6 +391,6 @@ PyMOL product distributed by Schrodinger, LLC. The Open-Source PyMOL copyright a
 are reproduced in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and in Leonardo's
 **About & licenses** window.
 
-Author: Juvenal Yosa, PhD · Support and bug reports: `thinkai.col@gmail.com`
+Author: Juvenal Yosa, PhD · Support and bug reports: `juvenal.yosa@gmail.com`
 
 <sub>\* PyMOL is a trademark of Schrodinger, LLC.</sub>
