@@ -1,0 +1,132 @@
+{
+ "name": "Film 09 - materials: building materials, a protein on three surfaces, orbitals at the contact",
+ "slug": "materials_film",
+ "description": "Build an Au309 icosahedral nanoparticle, Pt(111), graphene, hydroxylated silica (001) and rutile TiO2 (110); place hen egg-white lysozyme (PDB 1AKI) on Au(111), graphene and silica in water, minimize and analyse the contacts and adsorption energy. The QM steps start from the minimized lysozyme-gold structure recorded for the film (lyso_on_Au_minimized_site.pdb): cut a hydrogen-capped cluster at Arg68, MOPAC PM7 single point in COSMO water, HOMO/LUMO.",
+ "format": 1,
+ "parameters": {
+  "pack": {
+   "default": ".",
+   "description": "this pack's folder (filled in by leonardo.replay)"
+  }
+ },
+ "steps": [
+  {
+   "tool": "build_material",
+   "args": {
+    "material": "Au",
+    "kind": "nanoparticle",
+    "shells": 5,
+    "name": "Au309"
+   }
+  },
+  {
+   "tool": "build_material",
+   "args": {
+    "material": "Pt",
+    "kind": "slab",
+    "facet": "111",
+    "size_nm": 4.0,
+    "layers": 4,
+    "name": "Pt111"
+   }
+  },
+  {
+   "tool": "build_material",
+   "args": {
+    "material": "graphene",
+    "kind": "slab",
+    "size_nm": 4.0,
+    "layers": 1,
+    "name": "graphene"
+   }
+  },
+  {
+   "tool": "build_material",
+   "args": {
+    "material": "SiO2",
+    "kind": "slab",
+    "size_nm": 4.0,
+    "layers": 2,
+    "name": "silica"
+   }
+  },
+  {
+   "tool": "build_material",
+   "args": {
+    "material": "TiO2",
+    "kind": "slab",
+    "size_nm": 4.0,
+    "layers": 2,
+    "name": "rutile"
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/1AKI.pdb",
+    "object_name": "lysozyme_1AKI"
+   }
+  },
+  {
+   "tool": "build_protein_surface_system",
+   "args": {
+    "object": "{{step:6.object}}",
+    "material": "Au",
+    "facet": "111",
+    "layers": 4
+   }
+  },
+  {
+   "tool": "build_protein_surface_system",
+   "args": {
+    "object": "{{step:6.object}}",
+    "material": "graphene",
+    "layers": 1
+   }
+  },
+  {
+   "tool": "build_protein_surface_system",
+   "args": {
+    "object": "{{step:6.object}}",
+    "material": "SiO2",
+    "layers": 2
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/lyso_on_Au_minimized_site.pdb",
+    "object_name": "lysozyme_on_Au_recorded"
+   }
+  },
+  {
+   "tool": "cut_qm_cluster",
+   "args": {
+    "object": "{{step:10.object}}",
+    "center": "A:68",
+    "radius_A": 4.0
+   }
+  },
+  {
+   "tool": "run_mopac",
+   "args": {
+    "selection": "{{step:11.object}}",
+    "charge": 1,
+    "method": "PM7",
+    "solvent_eps": 78.4,
+    "frequencies": false,
+    "optimize": false,
+    "uv": false
+   }
+  },
+  {
+   "tool": "show_orbitals",
+   "args": {
+    "orbitals": [
+     "homo",
+     "lumo"
+    ]
+   }
+  }
+ ]
+}

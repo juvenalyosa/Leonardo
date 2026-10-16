@@ -83,9 +83,11 @@ def unit(v):
     return v / (np.linalg.norm(v) or 1.0)
 
 
-def set_camera(target, direction, distance, up=(0.0, 1.0, 0.0), roll_deg=0.0, depth=80.0, front=None, left=0.0):
+def set_camera(target, direction, distance, up=(0.0, 1.0, 0.0), roll_deg=0.0, depth=80.0, front=None, left=0.0,
+               raise_=0.0):
     """Camera on target + direction*distance, looking at target; PyMOL view (column-major rotation).
-    left: put the target this fraction of the half-width left of the screen centre (room for a data panel)."""
+    left: put the target this fraction of the half-width left of the screen centre (room for a data panel);
+    raise_: the same upward, as a fraction of the half-height (vertical formats keep the panels below)."""
     z = unit(direction)
     up = np.asarray(up, float)
     if abs(float(np.dot(unit(up), z))) > 0.98:
@@ -96,7 +98,8 @@ def set_camera(target, direction, distance, up=(0.0, 1.0, 0.0), roll_deg=0.0, de
         r = math.radians(roll_deg)
         x, y = x * math.cos(r) + y * math.sin(r), -x * math.sin(r) + y * math.cos(r)
     half_w = distance * math.tan(math.radians(float(cmd.get("field_of_view")) / 2)) * W / H
-    target = np.asarray(target, float) + x * left * half_w
+    half_h = distance * math.tan(math.radians(float(cmd.get("field_of_view")) / 2))
+    target = np.asarray(target, float) + x * left * half_w - y * raise_ * half_h
     view = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2],
             0.0, 0.0, -float(distance), float(target[0]), float(target[1]), float(target[2]),
             max(1.0, distance - depth) if front is None else max(1.0, front), distance + depth, 0.0]
