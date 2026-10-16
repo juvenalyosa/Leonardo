@@ -232,10 +232,27 @@ def run_mopac_job(exe, workdir, symbols, coords, method, charge, multiplicity, s
         n_orb = len(res["eigenvalues_ev"])
         m_occ = min(n_occ, max(2, int(uv_states)))
         n_act = min(n_orb, m_occ + min(n_orb - n_occ, max(2, int(uv_states))))
-        _aux, out = _run(exe, workdir, "cis", f"{base} 1SCF CIS C.I.=({n_act},{m_occ}) MECI AUX", symbols, geom, ctl=progress)
-        res["uv_states"] = parse_cis(out)
-        res["uv_active_space"] = f"C.I.=({n_act},{m_occ}) singles"
+        keys = f"{base} 1SCF CIS C.I.=({n_act},{m_occ}) MECI AUX"
+        try:
+            try:
+                _aux, out = _run(exe, workdir, "cis", keys, symbols, geom, ctl=progress)
+            except RuntimeError as exc:
+                if "GEO-OK" not in str(exc):
+                    raise
+                # the SCF above already accepted this geometry (e.g. a cluster cut from a larger system, with
+                # close contacts MOPAC's CIS check refuses): repeat the CIS step past that check
+                _aux, out = _run(exe, workdir, "cis", keys + " GEO-OK", symbols, geom, ctl=progress)
+            res["uv_states"] = parse_cis(out)
+            res["uv_active_space"] = f"C.I.=({n_act},{m_occ}) singles"
+        except RuntimeError as exc:
+            if str(exc) == "cancelled":
+                raise
+            # the excited states are an extra: a failed CIS step keeps the ground-state results
+            res["uv_note"] = f"UV-vis (CIS) not available: {exc}"
     return res
+
+
+WATER_SEL = "(solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)"
 
 
 def _molecule_from_selection(selection, add_hydrogens=True):
@@ -244,7 +261,9 @@ def _molecule_from_selection(selection, add_hydrogens=True):
     tmp = "_ai_mopac_tmp"
     if tmp in cmd.get_names("all"):
         cmd.delete(tmp)
-    cmd.create(tmp, f"({selection}) and not solvent", 1, 1)
+    # real water only: PyMOL's "solvent" flag also marks every oxygen of an XYZ file (one-atom UNK residues),
+    # which dropped all O atoms of QM clusters and XYZ molecules from the calculation
+    cmd.create(tmp, f"({selection}) and not {WATER_SEL}", 1, 1)
     if cmd.count_atoms(tmp) == 0:
         cmd.delete(tmp)
         raise ToolError(f"no atoms in {selection!r}")

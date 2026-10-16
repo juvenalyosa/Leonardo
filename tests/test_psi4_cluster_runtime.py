@@ -44,7 +44,7 @@ def test_build_pymol_cluster_selection_around_indices():
     assert sel["final_sel"].startswith("byres")
     assert "within 6.500" in sel["final_sel"]
     assert "index 12+45" in sel["final_sel"]
-    assert "not solvent" in sel["final_sel"]
+    assert "not (solvent and resn HOH" in sel["final_sel"]       # real water only (not lone XYZ oxygens)
 
 
 def test_adjust_atoms_for_form_and_break_changes():

@@ -595,7 +595,8 @@ def build_pymol_cluster_selection(
     else:
         idxs = [int(x) for x in list(seed_indices or []) if int(x) > 0]
     obj_scope = f"({obj})" if obj else "all"
-    water_filter = "" if bool(include_waters) else " and not solvent"
+    # real water only: PyMOL's "solvent" flag also marks lone O atoms of XYZ-loaded molecules
+    water_filter = "" if bool(include_waters) else " and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)"
     if mode_key == "manual":
         expr = seed_expr or "polymer.protein"
         low = expr.lower()

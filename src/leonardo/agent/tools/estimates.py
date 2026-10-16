@@ -38,7 +38,7 @@ def _count(selection):
 
 
 def _md_atoms(obj, solvent):
-    n = _count(f"({obj}) and not solvent")
+    n = _count(f"({obj}) and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)")
     if n and _count(f"({obj}) and elem H") == 0:
         n *= 2                                   # hydrogens are added before MD
     return n * (8 if solvent == "explicit" else 1)
@@ -66,7 +66,7 @@ def estimate(ctx, tool, args):
         sel = a.get("selection") or a.get("object") or a.get("reactant") or ""
         region = a.get("region", "ligand")
         if tool == "run_psi4" and sel and region == "ligand":
-            sel = f"({sel}) and not polymer and not solvent"
+            sel = f"({sel}) and not polymer and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)"
         if not sel:
             return None
         syms = _symbols(sel)

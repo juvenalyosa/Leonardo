@@ -5490,7 +5490,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         obj = str(obj_name or "").strip()
         try:
             if obj and cmd.count_atoms(obj) > 0:
-                model = cmd.get_model(f"({obj}) and not polymer and not solvent")
+                model = cmd.get_model(f"({obj}) and not polymer and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)")
                 by_res = defaultdict(int)
                 for a in model.atom:
                     try:
@@ -48253,7 +48253,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             hw = self._hardware_mod()
             obj = str(payload.get("object_name", "") or "")
-            n_atoms = int(cmd.count_atoms(f"({obj}) and not solvent")) if obj else 0
+            n_atoms = int(cmd.count_atoms(f"({obj}) and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)")) if obj else 0
             mode = str(payload.get("mode", "implicit") or "implicit")
             if mode == "explicit":
                 n_atoms = int(n_atoms * 8)            # rough solvated box

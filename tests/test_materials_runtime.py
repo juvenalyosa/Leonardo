@@ -64,6 +64,20 @@ def test_protein_on_gold_with_site_facing_solution(tmp_path):
     assert all(system.getParticleMass(i).value_in_unit(unit.dalton) == 0 for i in au[:50])  # frozen substrate
     cluster = mat.cut_qm_cluster(rep["pdb"], "A:32", radius_nm=0.45)
     assert cluster["composition"].get("Au", 0) > 0 and os.path.isfile(cluster["xyz"])
+    # the peptide bonds cut at the cluster edge are capped: no C or N is left with a free valence (before, the
+    # frontier orbitals of a cut cluster sat on those radical atoms)
+    assert cluster["n_link_atoms"] >= 2
+    lines = open(cluster["xyz"]).read().split("\n")
+    rows = [ln.split() for ln in lines[2:2 + int(lines[0])]]
+    sym = [r[0] for r in rows]
+    xyz = np.array([r[1:4] for r in rows], float)
+    dist = np.linalg.norm(xyz[:, None] - xyz[None], axis=-1)
+    cov = {"C": 0.76, "N": 0.71, "O": 0.66, "H": 0.31, "S": 1.05, "Au": 1.36}
+    for i, el in enumerate(sym):
+        if el in ("C", "N"):
+            n = sum(1 for j in range(len(sym)) if j != i and sym[j] != "Au"
+                    and dist[i, j] < 1.2 * (cov[el] + cov.get(sym[j], 0.8)))
+            assert n >= 3, f"{el}{i} has {n} neighbours in the cluster"
 
 
 def test_thiol_anchor_keeps_cys_sulfur_on_gold(tmp_path):

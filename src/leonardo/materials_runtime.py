@@ -682,23 +682,45 @@ def cut_qm_cluster(pdb_path, center_spec, radius_nm=0.6, material_resnames=None,
         elif res.name not in skip:
             keep.update(a.index for a in atoms)
     atoms = [a for a in pdb.topology.atoms() if a.index in keep]
+    # hydrogen link atoms on every covalent bond the cut leaves open (peptide bonds to residues outside the
+    # cluster, disulfides, ...): without them the cut atoms are radicals and the frontier orbitals sit on them
+    xh_nm = {"C": 0.109, "N": 0.101, "O": 0.096, "S": 0.134}
+    links = []
+    for bond in pdb.topology.bonds():
+        a, b = bond[0], bond[1]
+        if (a.index in keep) == (b.index in keep):
+            continue
+        inside, outside = (a, b) if a.index in keep else (b, a)
+        if inside.residue.name in mat_names or outside.residue.name in skip:
+            continue
+        v = X[outside.index] - X[inside.index]
+        v = v / (np.linalg.norm(v) or 1.0)
+        links.append(X[inside.index] + v * xh_nm.get(inside.element.symbol, 0.105))
     comp = {}
     for a in atoms:
         comp[a.element.symbol] = comp.get(a.element.symbol, 0) + 1
+    if links:
+        comp["H"] = comp.get("H", 0) + len(links)
     out_xyz = out_xyz or os.path.splitext(pdb_path)[0] + "_qm_cluster.xyz"
     with open(out_xyz, "w") as fh:
-        fh.write(f"{len(atoms)}\nQM cluster around {center_spec}\n")
+        fh.write(f"{len(atoms) + len(links)}\nQM cluster around {center_spec}\n")
         for a in atoms:
             x, y, z = X[a.index] * 10
             fh.write(f"{a.element.symbol:2s} {x:12.5f} {y:12.5f} {z:12.5f}\n")
-    notes = ["cut protein residues are whole residues (no link atoms): check the electron count and charge"]
+        for pos in links:
+            x, y, z = pos * 10
+            fh.write(f"H  {x:12.5f} {y:12.5f} {z:12.5f}\n")
+    notes = [f"whole residues; {len(links)} cut bond(s) capped with hydrogen link atoms" if links else
+             "whole residues; no covalent bond was cut",
+             "check the net charge (ionized side chains) before the QM run"]
     if any(r.name in {"QSI", "QOB", "QOH", "MTI", "MO"} for r in {a.residue for a in atoms}):
         notes.append("oxide cluster: cut Si-O / Ti-O bonds leave dangling bonds; saturate them with H (Si-OH) or "
                      "use a stoichiometric, charge-balanced cluster before MOPAC")
     if any(e in METAL_LJ for e in comp):
         notes.append("metal cluster: MOPAC PM7 has parameters for these metals; Psi4 needs basis sets with ECPs "
                      "(def2-SVP/TZVP) — use small clusters (tens of atoms)")
-    return {"xyz": out_xyz, "n_atoms": len(atoms), "composition": comp, "notes": notes}
+    return {"xyz": out_xyz, "n_atoms": len(atoms) + len(links), "n_link_atoms": len(links), "composition": comp,
+            "notes": notes}
 
 
 def main(argv=None):

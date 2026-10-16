@@ -247,3 +247,52 @@ def test_equilibration_shorter_than_one_report_interval_still_writes_a_frame(tmp
     cmd.load(pdb_path, "box_eq")
     cmd.load_traj(eq["trajectory"], "box_eq", state=1)
     assert eq["ok"] and cmd.count_states("box_eq") >= 1 and os.path.getsize(eq["trajectory"]) > 1000
+
+
+@pytest.mark.skipif(not mopac.mopac_executable(), reason="MOPAC not installed")
+def test_mopac_cis_geometry_check_is_retried_and_a_failed_cis_keeps_the_ground_state(tmp_path, monkeypatch):
+    coords = [[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.63, -0.63, 0.63], [-0.63, 0.63, -0.63], [0.63, -0.63, -0.63]]
+    real_run = mopac._run
+    seen = []
+
+    def geo_ok_once(exe, workdir, stem, keys, *a, **k):
+        seen.append((stem, keys))
+        if stem == "cis" and "GEO-OK" not in keys:
+            raise RuntimeError('MOPAC 1SCF failed: JOB STOPPED. TO CONTINUE, SPECIFY "GEO-OK".')
+        return real_run(exe, workdir, stem, keys, *a, **k)
+
+    monkeypatch.setattr(mopac, "_run", geo_ok_once)
+    res = mopac.run_mopac_job(mopac.mopac_executable(), str(tmp_path), ["C", "H", "H", "H", "H"], coords, "PM7", 0,
+                              1, None, False, False, True, 4, {})
+    # before: the CIS geometry check (a cluster cut from a larger system) failed the whole MOPAC job
+    assert [s for s, k in seen if s == "cis"] == ["cis", "cis"] and "GEO-OK" in seen[-1][1]
+    assert res["uv_states"] and res["eigenvalues_ev"]
+
+    def cis_fails(exe, workdir, stem, keys, *a, **k):
+        if stem == "cis":
+            raise RuntimeError("MOPAC 1SCF failed: something else")
+        return real_run(exe, workdir, stem, keys, *a, **k)
+
+    monkeypatch.setattr(mopac, "_run", cis_fails)
+    (tmp_path / "b").mkdir()
+    res = mopac.run_mopac_job(mopac.mopac_executable(), str(tmp_path / "b"), ["C", "H", "H", "H", "H"], coords,
+                              "PM7", 0, 1, None, False, False, True, 4, {})
+    assert "uv_states" not in res and "not available" in res["uv_note"] and res["eigenvalues_ev"]
+
+
+def test_mopac_keeps_the_oxygens_of_an_xyz_molecule_and_drops_real_water(tmp_path):
+    from pymol import cmd
+
+    # acetic acid from an XYZ file: PyMOL flags each lone-O "UNK" residue as solvent, and the old
+    # "not solvent" filter sent MOPAC the molecule without its oxygens (QM clusters lost all their O)
+    xyz = tmp_path / "acoh.xyz"
+    xyz.write_text("8\nacetic acid\nC 0.000 0.000 0.000\nC 1.500 0.000 0.000\nO 2.100 1.050 0.000\n"
+                   "O 2.150 -1.150 0.000\nH 3.100 -1.050 0.000\nH -0.380 1.020 0.000\nH -0.380 -0.520 0.880\n"
+                   "H -0.380 -0.520 -0.880\n")
+    cmd.delete("all")
+    cmd.load(str(xyz), "acoh")
+    cmd.pseudoatom("wat", pos=[10.0, 0.0, 0.0], resn="HOH", elem="O", name="O")
+    assert cmd.count_atoms("wat and solvent") == 1 and cmd.count_atoms("acoh and solvent") == 2   # the trap
+    symbols, _coords, _q = mopac._molecule_from_selection("acoh or wat", add_hydrogens=False)
+    assert symbols.count("O") == 2 and len(symbols) == 8
+    cmd.delete("all")
