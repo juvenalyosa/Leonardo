@@ -63,7 +63,6 @@ def _build_dummy_dialog():
         pass
 
     for name in (
-        "_liged_current_drawer_tool",
         "_liged_prepare_edit_mol",
         "_liged_current_mouse_mode",
         "_liged_mouse_mode_hint",
@@ -230,20 +229,6 @@ def test_safe_atom_count_uses_heavy_atom_editor_graph_when_internal_mol_has_expl
     dlg.edit_liged_smiles = None
 
     assert dlg._liged_safe_atom_count() == 3
-
-
-def test_current_drawer_tool_defaults_to_web_drawer_not_bkchem():
-    dlg = _build_dummy_dialog()
-
-    assert dlg._liged_current_drawer_tool() == "ketcher"
-
-
-def test_current_drawer_tool_accepts_web_drawer_keys_only():
-    dlg = _build_dummy_dialog()
-    dlg.cmb_liged_drawer_tool = _Combo("local_jsme")
-    assert dlg._liged_current_drawer_tool() == "local_jsme"
-    dlg.cmb_liged_drawer_tool = _Combo("jsme")
-    assert dlg._liged_current_drawer_tool() == "jsme"
 
 
 def test_normalize_index_state_clamps_stale_spin_values_and_clears_pending():

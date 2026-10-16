@@ -5,7 +5,6 @@ This repository is the curated Leonardo/ProtLigInteract source tree.
 Kept:
 - PyMOL plugin entrypoint, Qt controller, UI file, logo, and runtime modules.
 - Installation docs, architecture docs, environment files, packaging script, tests, and small benchmark fixtures.
-- Local JSME payload for the optional local 2D drawer fallback.
 - Small default examples used by helper scripts: `examples/3ptb_ben/3PTB.pdb` and `examples/3ptb_ben/BEN.sdf`.
 - Small ABFE benchmark helper scripts under `benchmarks/abfe/ptb3_ben/`.
 

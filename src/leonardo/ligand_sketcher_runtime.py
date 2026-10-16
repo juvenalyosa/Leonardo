@@ -1850,7 +1850,6 @@ class LigandSketcherWidget(QtWidgets.QWidget):
         self.on_import_active = None
         self.on_import_file = None
         self.on_paste_clipboard = None
-        self.on_open_web_drawer = None
         self.on_protonate = None
         self._build_ui()
         self.setStyleSheet(STYLE)
@@ -1915,10 +1914,6 @@ class LigandSketcherWidget(QtWidgets.QWidget):
             ("active", "Active ligand"),
             ("file", "From file (SDF, MOL, MOL2, PDB, SMILES)..."),
             ("clipboard", "Paste SMILES from clipboard"),
-            (None, None),
-            ("ketcher", "Draw in Ketcher (web)..."),
-            ("local_jsme", "Draw in JSME (local)..."),
-            ("jsme", "Draw in JSME (web)..."),
         ):
             if key is None:
                 menu.addSeparator()
@@ -2702,8 +2697,6 @@ class LigandSketcherWidget(QtWidgets.QWidget):
             "clipboard": self.on_paste_clipboard,
         }
         fn = handlers.get(key)
-        if key in ("ketcher", "local_jsme", "jsme"):
-            fn = (lambda k=key: self.on_open_web_drawer(k)) if callable(self.on_open_web_drawer) else None
         if key == "clipboard" and not callable(fn):
             fn = self._paste_clipboard_default
         if callable(fn):

@@ -13,9 +13,9 @@ modules that call them.
 
 | Component | Validated version | Used by | Requirement | License from local package metadata or upstream | Notes |
 | --- | ---: | --- | --- | --- | --- |
-| PyMOL open source | 3.0.0 | Viewer and plugin host | Core | `LicenseRef-PyMOL` | Commercial PyMOL distributions may have separate license terms. |
-| PyQt | 5.15.9 | Qt UI | Core UI | GPL-3.0-only | Leonardo uses the user's local Qt/PyQt environment; no PyQt binaries are bundled in the plugin ZIP. |
-| Qt | 5.15.8 | Qt UI | Core UI | LGPL-3.0-only | QtWebEngine and platform plugins are supplied by the environment. |
+| PyMOL open source | 3.1.0 | Viewer and plugin host | Core | `LicenseRef-PyMOL` | Commercial PyMOL distributions may have separate license terms. |
+| PySide6 | 6.9.2 | Qt UI | Core UI | LGPL-3.0-only | Leonardo uses the user's local Qt environment; no Qt binaries are bundled in the plugin ZIP. |
+| Qt | 6.9.2 | Qt UI | Core UI | LGPL-3.0-only | Platform plugins are supplied by the environment. |
 | NumPy | 1.26.4 | Numerical runtime | Core | BSD-3-Clause | Required by most analysis modules. |
 | SciPy | Environment resolved | Numerical runtime | Core | BSD-3-Clause | Pulled from conda environment specification. |
 | pandas | Environment resolved | Tables and reports | Core | BSD-3-Clause | Pulled from conda environment specification. |
@@ -51,7 +51,6 @@ modules that call them.
 | OpenCV Python | 4.13.0.92 | Image/vision helper paths | Optional | Apache-2.0 | Installed by environment for workflows that need image helpers. |
 | OpenCV contrib Python | 4.11.0.86 | Image/vision helper paths | Optional | Apache-2.0 | Installed by environment for workflows that need contrib image helpers. |
 | MediaPipe | 0.10.9 | Optional UI/vision experiments | Optional | Apache-2.0 | Kept below 0.10.10 in the validated environment to avoid NumPy 2 conflicts. |
-| JSME Molecule Editor | Local static asset from upstream distribution | Ligand 2D drawer | Bundled optional UI asset | BSD-3-Clause with bundled third-party notices | The plugin ZIP includes `assets/JSME_minimal.html`, `assets/jsme/jsme.nocache.js` and `assets/jsme/license.txt` so the "JSME Local" drawer path can run without a web fallback. |
 | ColabFold | Optional environment | AlphaFold/ColabFold workflows | Optional | MIT for ColabFold package; AlphaFold components have separate terms | Installed only in `protliginteract-optional` or Google Colab workflows. |
 | AlphaFold/alphafold-colabfold | Optional environment | Structure prediction workflows | Optional | Upstream AlphaFold/ColabFold terms | Users must check model/data and code licenses for their chosen AlphaFold/ColabFold route. |
 | Google Colab | External service | Cloud notebook execution | Optional service | Google service terms | Leonardo prepares notebooks/FASTA/parameters; execution occurs in the user's Colab session. |

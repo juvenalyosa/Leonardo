@@ -66,21 +66,6 @@ def _required_release_files() -> set[str]:
     }
 
 
-def _required_local_jsme_assets() -> set[str]:
-    return {
-        "assets/JSME_minimal.html",
-        "assets/jsme",
-    }
-
-
-def _required_local_jsme_zip_entries() -> set[str]:
-    return {
-        "Leonardo/assets/JSME_minimal.html",
-        "Leonardo/assets/jsme/jsme.nocache.js",
-        "Leonardo/assets/jsme/license.txt",
-    }
-
-
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -120,12 +105,6 @@ def test_build_script_packages_required_release_files():
         assert f'copy_if_exists "{path}"' in text
 
 
-def test_build_script_packages_local_jsme_bundle():
-    """The offline JSME drawer must ship with its payload and license notice."""
-    assert all((ROOT / path).exists() for path in _required_local_jsme_assets())
-    assert 'cp -R "$ROOT_DIR/assets" "$PKG_DIR/assets"' in BUILD_SCRIPT.read_text(encoding="utf-8")
-
-
 def test_runtime_version_identity_matches_project_metadata():
     """Keep release identity coherent across source-tree and PyMOL entrypoints."""
     version = _project_version()
@@ -153,16 +132,6 @@ def test_dist_zip_contains_required_release_files():
     with zipfile.ZipFile(zip_path) as zf:
         names = set(zf.namelist())
     missing = sorted(f"Leonardo/{path}" for path in _required_release_files() if f"Leonardo/{path}" not in names)
-    assert missing == []
-
-
-def test_dist_zip_contains_local_jsme_bundle():
-    """Catch release ZIPs where the local JSME option silently falls back to web."""
-    zip_path = _dist_zip_path()
-
-    with zipfile.ZipFile(zip_path) as zf:
-        names = set(zf.namelist())
-    missing = sorted(_required_local_jsme_zip_entries() - names)
     assert missing == []
 
 
@@ -220,8 +189,6 @@ def test_wheel_contains_ui_resources(tmp_path):
     for suffix in (
         "/data/share/leonardo/logo.png",
         "/data/share/leonardo/protliginteract.ui",
-        "/data/share/leonardo/JSME_minimal.html",
-        "/data/share/leonardo/jsme/license.txt",
     ):
         assert any(name.endswith(suffix) for name in names), suffix
 
@@ -235,8 +202,8 @@ def test_dist_zip_checksum_matches_recorded_sha256_file():
     assert recorded == _sha256(zip_path)
 
 
-def test_release_manifest_writer_records_commit_and_local_jsme_assets(tmp_path):
-    """The release manifest used by CI must identify commit and bundled JSME."""
+def test_release_manifest_writer_records_commit(tmp_path):
+    """The release manifest used by CI must identify the source commit."""
     out_csv = tmp_path / "release_manifest.csv"
     expected_commit = "0123456789abcdef0123456789abcdef01234567"
     subprocess.run(
@@ -256,11 +223,7 @@ def test_release_manifest_writer_records_commit_and_local_jsme_assets(tmp_path):
     assert rows
     assert {row["source_commit"] for row in rows} == {expected_commit}
     roles = {row["role"] for row in rows}
-    assert {"local_jsme_entrypoint", "local_jsme_runtime", "local_jsme_license"} <= roles
-    for row in rows:
-        if row["role"].startswith("local_jsme_"):
-            assert row["present"] == "true"
-            assert row["sha256"]
+    assert not any(role.startswith("local_jsme_") for role in roles)
 
 
 def test_build_script_reproduces_tracked_zip_byte_for_byte():

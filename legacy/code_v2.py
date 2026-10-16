@@ -915,10 +915,6 @@ except Exception:
         vs_status_text,
     )
 
-QTWEBENGINE_WIDGETS = None
-HAS_QT_WEBENGINE = False
-
-
 def _qt_binding_name():
     """The Qt binding PyMOL loaded (PyQt5, PySide6, ...). Only that binding may be imported: loading a second
     one (e.g. PyQt5's WebEngine inside a Qt 6 PyMOL) puts two Qt versions in one process and crashes."""
@@ -932,13 +928,6 @@ def _qt_binding_name():
             return ""
 
 
-try:
-    _QtWebEngineWidgets = importlib.import_module(f"{_qt_binding_name() or 'PyQt5'}.QtWebEngineWidgets")
-    QTWEBENGINE_WIDGETS = _QtWebEngineWidgets
-    HAS_QT_WEBENGINE = hasattr(_QtWebEngineWidgets, "QWebEngineView")
-except Exception:
-    QTWEBENGINE_WIDGETS = None
-    HAS_QT_WEBENGINE = False
 # Shared package configuration. Keep this import compatible with both the
 # installed package and the legacy root-level PyMOL loader.
 try:
@@ -1375,11 +1364,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._ligand_editor_last_png = None
         self._ligand_editor_history = []
         self._ligand_editor_fragments = []
-        self._liged_drawer_hint_shown = False
         self._liged_bkchem_hint_shown = False
         self._liged_mouse_pending_atom = None
-        self._liged_embedded_drawer_dialog = None
-        self._liged_embedded_drawer_view = None
         self._docking_pose_object = None
         self._docking_receptor_object = None
         self._docking_scores = []
@@ -33575,13 +33561,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             sketcher.on_import_active = self._on_ligand_editor_load_active
             sketcher.on_import_file = self._on_liged_import_drawing_file
             sketcher.on_paste_clipboard = self._on_liged_import_smiles_clipboard
-            sketcher.on_open_web_drawer = self._on_liged_open_web_drawer_tool
             sketcher.on_protonate = self._on_ligand_editor_add_hydrogens
             vbox.addWidget(sketcher, 1)
             # The 3D build and protonation handlers read these option widgets.
             self.cb_liged_addh_3d = sketcher.cb_include_h
             self.cb_liged_mmff = sketcher.cb_relax
-            # Hidden SMILES field kept for the clipboard/web-drawer import path.
+            # Hidden SMILES field kept for the clipboard import path.
             self.edit_liged_smiles = QtWidgets.QLineEdit(dlg)
             self.edit_liged_smiles.setVisible(False)
             self.lbl_liged_2d = None
@@ -33598,9 +33583,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print(f"Ligand Editor UI Setup Error: {e}")
     def _on_liged_sketcher_changed(self, mol):
         self._ligand_editor_mol = None if mol is None else Chem.Mol(mol)
-    def _on_liged_open_web_drawer_tool(self, tool_key):
-        self._liged_drawer_tool_choice = str(tool_key or "ketcher")
-        self._on_liged_open_drawer()
     def _show_ligand_editor_dialog(self):
         if not HAS_RDKIT:
             QtWidgets.QMessageBox.warning(self, "Ligand Editor", "RDKit is required for ligand editing.")
@@ -34630,7 +34612,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(
                     self,
                     "Ligand Editor",
-                    "Clipboard does not contain a valid SMILES. Copy SMILES from the drawer and try again.",
+                    "Clipboard does not contain a valid SMILES. Copy a SMILES string and try again.",
                 )
             return False
         if hasattr(self, "edit_liged_smiles"):
@@ -34644,102 +34626,6 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._on_ligand_editor_generate_3d_apply()
     def _on_liged_import_smiles_clipboard(self):
         self._liged_apply_smiles_from_clipboard(show_warning=True)
-    def _liged_build_jsme_html(self):
-        return """<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8"/>
-    <title>JSME Embedded</title>
-    <style>
-      html, body, #jsme_container { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
-      body { font-family: Arial, sans-serif; }
-    </style>
-    <script type="text/javascript" src="https://jsme-editor.github.io/dist/jsme.nocache.js"></script>
-    <script>
-      let jsmeApplet = null;
-      function jsmeOnLoad() {
-        try {
-          jsmeApplet = new JSApplet.JSME("jsme_container", "100%", "100%", {
-            options: "oldlook,star"
-          });
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      function getSmiles() {
-        try {
-          if (jsmeApplet) return jsmeApplet.smiles();
-        } catch (e) {}
-        return "";
-      }
-      function setSmiles(smi) {
-        try {
-          if (jsmeApplet && smi) jsmeApplet.readGenericMolecularInput(String(smi));
-        } catch (e) {}
-      }
-    </script>
-  </head>
-  <body>
-    <div id="jsme_container"></div>
-  </body>
-</html>
-"""
-    def _liged_find_local_jsme_index(self):
-        candidates = []
-        try:
-            candidates.append(resource_string("JSME_minimal.html"))
-        except Exception:
-            pass
-        try:
-            cwd = os.path.abspath(os.getcwd())
-        except Exception:
-            cwd = ""
-        try:
-            dock_ws = os.path.abspath(self._dock_workspace_dir())
-        except Exception:
-            dock_ws = ""
-        try:
-            mod_dir = os.path.abspath(os.path.dirname(__file__))
-        except Exception:
-            mod_dir = ""
-        home = os.path.expanduser("~")
-        def _add(base):
-            if not base:
-                return
-            candidates.extend([
-                os.path.join(base, "JSME_2024-04-29", "JSME_minimal.html"),
-                os.path.join(base, "JSME_2024-04-29", "index.html"),
-                os.path.join(base, "JSME_minimal.html"),
-                os.path.join(base, "index.html"),
-            ])
-        _add(dock_ws)
-        _add(cwd)
-        _add(mod_dir)
-        _add(os.path.join(home, "Downloads"))
-        seen = set()
-        for p in candidates:
-            q = os.path.abspath(str(p))
-            if q in seen:
-                continue
-            seen.add(q)
-            if os.path.isfile(q):
-                # Require local jsme payload to avoid loading unrelated index.html
-                d = os.path.dirname(q)
-                if os.path.isfile(os.path.join(d, "jsme", "jsme.nocache.js")):
-                    return q
-        return ""
-    def _liged_current_drawer_tool(self):
-        choice = str(getattr(self, "_liged_drawer_tool_choice", "") or "").strip().lower()
-        if choice in ("local_jsme", "ketcher", "jsme"):
-            return choice
-        try:
-            if hasattr(self, "cmb_liged_drawer_tool"):
-                key = str(self.cmb_liged_drawer_tool.currentData() or "").strip().lower()
-                if key in ("local_jsme", "ketcher", "jsme"):
-                    return key
-        except Exception:
-            pass
-        return "ketcher"
     def _liged_bkchem_launch_plan(self):
         repo_url = "https://github.com/vijaymasand/BKChem_python_3"
         explicit_pythons = [
@@ -34892,7 +34778,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 f"Reference: {repo_url}"
             )
             QtWidgets.QMessageBox.information(self, "Ligand Editor", msg)
-            self._ligand_editor_set_status("Status: BKChem not found; choose JSME/Ketcher or install BKChem locally.")
+            self._ligand_editor_set_status("Status: BKChem not found; install BKChem locally or use the built-in sketcher.")
             return
         draft_payload = {}
         try:
@@ -34934,165 +34820,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Ligand Editor", f"Could not launch BKChem: {e}")
             self._ligand_editor_set_status(f"Status: BKChem launch failed ({e}).")
-    def _liged_drawer_url(self, tool_key):
-        key = str(tool_key or "").strip().lower()
-        if key == "local_jsme":
-            local_idx = self._liged_find_local_jsme_index()
-            if local_idx and os.path.isfile(local_idx):
-                try:
-                    return QtCore.QUrl.fromLocalFile(local_idx).toString()
-                except Exception:
-                    return "file://" + local_idx
-            # fallback when local package was not found
-            return "https://jsme-editor.github.io/"
-        if key == "jsme":
-            return "https://jsme-editor.github.io/"
-        # default modern editor
-        return "https://lifescience.opensource.epam.com/ketcher/"
-    def _liged_ensure_qt_webengine(self):
-        global QTWEBENGINE_WIDGETS, HAS_QT_WEBENGINE
-        if HAS_QT_WEBENGINE and QTWEBENGINE_WIDGETS is not None:
-            return True, ""
-        backend = _qt_binding_name() or "PyQt5"
-        # only the binding PyMOL runs on: another one would load a second Qt into the process
-        tries = [f"{backend}.QtWebEngineWidgets"]
-        errs = []
-        for modname in tries:
-            try:
-                mod = importlib.import_module(modname)
-                if modname.endswith("QtWebEngineWidgets") and hasattr(mod, "QWebEngineView"):
-                    QTWEBENGINE_WIDGETS = mod
-                    HAS_QT_WEBENGINE = True
-                    try:
-                        if modname.startswith("PyQt5"):
-                            m_init = importlib.import_module("PyQt5.QtWebEngine")
-                            if hasattr(m_init, "QtWebEngine") and hasattr(m_init.QtWebEngine, "initialize"):
-                                m_init.QtWebEngine.initialize()
-                    except Exception:
-                        pass
-                    return True, ""
-            except Exception as e:
-                errs.append(f"{modname}: {e}")
-        QTWEBENGINE_WIDGETS = None
-        HAS_QT_WEBENGINE = False
-        return False, " | ".join(errs[-3:])
-    def _liged_create_embedded_drawer_dialog(self, tool_key="ketcher"):
-        ok, err = self._liged_ensure_qt_webengine()
-        if (not ok) or (QTWEBENGINE_WIDGETS is None):
-            if err:
-                self._ligand_editor_set_status(f"Status: embedded drawer unavailable ({err[:220]}).")
-            return None
-        try:
-            key = str(tool_key or "ketcher").strip().lower()
-            url = self._liged_drawer_url(key)
-            dlg = QtWidgets.QDialog(self)
-            if key == "ketcher":
-                title = "2D Molecule Drawer (Embedded Ketcher)"
-            elif key == "local_jsme":
-                title = "2D Molecule Drawer (Embedded JSME Local)"
-            else:
-                title = "2D Molecule Drawer (Embedded JSME)"
-            dlg.setWindowTitle(title)
-            dlg.resize(1080, 760)
-            dlg.setMinimumSize(760, 520)
-            self._fit_dialog_to_screen(dlg, preferred_w=1080, preferred_h=760, min_w=720, min_h=480)
-            vbox = QtWidgets.QVBoxLayout(dlg)
-            info = QtWidgets.QLabel(
-                "Draw/edit molecule here, copy SMILES in the drawer, then click '2) Use Drawing (Auto 3D)' in Ligand Editor."
-            )
-            if key == "local_jsme":
-                try:
-                    local_idx = self._liged_find_local_jsme_index()
-                except Exception:
-                    local_idx = ""
-                if local_idx:
-                    info.setText(info.text() + f"\nLocal source: {local_idx}")
-            info.setWordWrap(True)
-            vbox.addWidget(info)
-            top = QtWidgets.QHBoxLayout()
-            top.addStretch(1)
-            btn_use = QtWidgets.QPushButton("Use Drawing (Clipboard -> Auto 3D)")
-            btn_close = QtWidgets.QPushButton("Close")
-            top.addWidget(btn_use)
-            top.addWidget(btn_close)
-            vbox.addLayout(top)
-            view = QTWEBENGINE_WIDGETS.QWebEngineView(dlg)
-            vbox.addWidget(view, 1)
-            try:
-                view.load(QtCore.QUrl(url))
-            except Exception:
-                try:
-                    view.setHtml(f'<html><body><a href="{url}">{url}</a></body></html>')
-                except Exception:
-                    pass
-            btn_use.clicked.connect(self._on_liged_use_drawing_quick)
-            btn_close.clicked.connect(dlg.close)
-            # Keep latest refs for cleanup/debug
-            self._liged_embedded_drawer_dialog = dlg
-            self._liged_embedded_drawer_view = view
-            return dlg
-        except Exception as e:
-            self._ligand_editor_set_status(f"Status: embedded drawer init failed ({e}).")
-            return None
-    def _on_liged_open_drawer(self):
-        tool = self._liged_current_drawer_tool()
-        ok, err = self._liged_ensure_qt_webengine()
-        if ok and QTWEBENGINE_WIDGETS is not None:
-            dlg = self._liged_create_embedded_drawer_dialog(tool)
-            if dlg is not None:
-                try:
-                    dlg.show()
-                    dlg.raise_()
-                    dlg.activateWindow()
-                    self._ligand_editor_set_status("Status: embedded click-draw editor opened.")
-                    return
-                except Exception as e:
-                    err = str(e)
-        url = self._liged_drawer_url(tool)
-        if tool == "local_jsme":
-            local_idx = self._liged_find_local_jsme_index()
-            if not local_idx:
-                try:
-                    self._ligand_editor_set_status("Status: local JSME not found; using web fallback.")
-                except Exception:
-                    pass
-        opened = False
-        try:
-            opened = bool(webbrowser.open(url, new=2))
-        except Exception:
-            opened = False
-        if not opened:
-            try:
-                QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
-                opened = True
-            except Exception:
-                opened = False
-        if opened:
-            self._ligand_editor_set_status("Status: drawer opened in browser (embedded WebEngine unavailable).")
-            if not bool(getattr(self, "_liged_drawer_hint_shown", False)):
-                msg = (
-                    "Embedded drawer is not available in this environment.\n\n"
-                    "Fallback workflow:\n"
-                    "1) Draw/edit molecule in browser drawer\n"
-                    "2) Copy SMILES in the drawer\n"
-                    "3) Back in the Ligand Editor choose Import > Paste SMILES from clipboard"
-                )
-                if err:
-                    msg += "\n\nTechnical details: " + str(err)[:300]
-                QtWidgets.QMessageBox.information(self, "Ligand Editor", msg)
-                self._liged_drawer_hint_shown = True
-        else:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Ligand Editor",
-                f"Could not open drawer URL. Open manually:\n{url}",
-            )
     def _on_liged_refresh_depiction(self):
         mol = self._ligand_editor_get_current_mol()
         if mol is not None:
             self._ligand_editor_render_2d(mol)
     def _liged_atom_palette_symbols(self):
-        # Follows the same high-frequency element strip BKChem exposes in its lightweight web editor.
+        # The high-frequency element strip of common 2D editors.
         return ["C", "H", "O", "N", "P", "S", "F", "Cl", "Br", "I", "B", "Si"]
     def _liged_periodic_table_rows(self):
         return [

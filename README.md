@@ -342,7 +342,7 @@ Leonardo/
 ├── src/leonardo/        Canonical runtime package (and the AI assistant in agent/)
 ├── legacy/              PyMOL UI and historical import compatibility
 ├── packaging/pymol/     PyMOL plugin entry point
-├── assets/              UI, images and bundled JSME files
+├── assets/              UI, images and icons
 ├── tests/               Automated test suite
 ├── benchmarks/          Scientific fixtures and validation workflows
 ├── examples/            Small input files and runnable examples

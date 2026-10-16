@@ -11,7 +11,7 @@ third-party scripts can still import compatibility aliases installed from
 | `src/leonardo/` | Runtime implementations and package configuration | Canonical production package; internal imports must be relative |
 | `legacy/` | PyMOL UI controller and historical top-level aliases | Compatibility only; reusable implementation belongs under `src/leonardo/` |
 | `packaging/pymol/` | PyMOL plugin entry point | Packaged into the root of the plugin ZIP |
-| `assets/` | Qt UI, images, and bundled JSME files | Runtime resources; keep third-party notices synchronized |
+| `assets/` | Qt UI, images, and icons | Runtime resources |
 | `tests/` | Unit, integration, and packaging tests | Every runtime change should add or update a test |
 | `benchmarks/` | Scientific fixtures, QM checks, ABFE and redocking validation | Inputs and metadata only; generated outputs go under `draft/` or a user-selected output directory |
 | `examples/` | Small example inputs and logs | Keep examples minimal and documented |

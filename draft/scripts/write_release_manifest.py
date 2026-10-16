@@ -79,9 +79,6 @@ def default_release_entries(root: Path = ROOT) -> list[tuple[str, Path]]:
         ("citation_metadata", root / "CITATION.cff"),
         ("conda_environment", root / "environments/environment.yml"),
         ("macos_lock_environment", root / "environments/environment-protliginteract-full.lock.yml"),
-        ("local_jsme_entrypoint", root / "assets" / "JSME_minimal.html"),
-        ("local_jsme_runtime", root / "assets" / "jsme" / "jsme.nocache.js"),
-        ("local_jsme_license", root / "assets" / "jsme" / "license.txt"),
         ("abfe_fixture_prmtop", root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex.prmtop"),
         ("abfe_fixture_mol2", root / "benchmarks/abfe/ptb3_ben" / "BEN_from_complex_gaff2.mol2"),
     ]
