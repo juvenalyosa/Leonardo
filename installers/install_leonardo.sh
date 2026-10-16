@@ -291,8 +291,10 @@ if [[ "$SKIP_ENV" -eq 0 ]]; then
 else
   step "5/7 Skipping the environment (--skip-env)"
 fi
-ENV_PREFIX="$("$CONDA" run -n "$ENV_NAME" python -c 'import sys; print(sys.prefix)' 2>/dev/null)" \
-  || die "the $ENV_NAME environment is not installed."
+# activation scripts can print to stdout under conda run: the prefix comes on a marked line
+ENV_PREFIX="$("$CONDA" run -n "$ENV_NAME" python -c 'import sys; print("LEONARDO_PREFIX=" + sys.prefix)' 2>/dev/null \
+  | sed -n 's/^LEONARDO_PREFIX=//p' | head -n 1 || true)"
+[[ -n "$ENV_PREFIX" ]] || die "the $ENV_NAME environment is not installed."
 
 # ------------------------------------------------------------------ helper scripts
 # Qt 6 (PySide6) when the environment has it (decided once here, not at every start); PyQt5 otherwise
@@ -348,7 +350,7 @@ if [[ -z "$key" ]]; then
 fi
 key="$(printf '%s' "$key" | tr -d '[:space:]')"
 [[ -n "$key" ]] || { message "No key entered: nothing was changed."; exit 1; }
-config="$("$CONDA" run -n "$ENV_NAME" python -c "import glob,sys; c=sorted(glob.glob(sys.prefix+'/lib/modeller-*/modlib/modeller/config.py')); print(c[-1] if c else '')" 2>/dev/null)"
+config="$("$CONDA" run -n "$ENV_NAME" python -c "import glob,sys; c=sorted(glob.glob(sys.prefix+'/lib/modeller-*/modlib/modeller/config.py')); print('LEONARDO_CONFIG=' + (c[-1] if c else ''))" 2>/dev/null | sed -n 's/^LEONARDO_CONFIG=//p' | head -n 1)"
 [[ -n "$config" && -f "$config" ]] || { message "MODELLER is not installed in the Leonardo environment. Run the Leonardo installer again."; exit 1; }
 install_dir="$(dirname "$(dirname "$(dirname "$config")")")"
 printf "install_dir = r'%s'\nlicense = r'%s'\n" "$install_dir" "$key" > "$config"

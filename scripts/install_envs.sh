@@ -209,7 +209,10 @@ install_smina_env() {
   fi
   local base main_prefix
   base="$(conda info --base)"
-  main_prefix="$(conda run -n "$env_name" python -c 'import sys; print(sys.prefix)')"
+  # activation scripts can print to stdout under conda run: read the prefix from a marked line
+  main_prefix="$(conda run -n "$env_name" python -c 'import sys; print("LEONARDO_PREFIX=" + sys.prefix)' \
+    | sed -n 's/^LEONARDO_PREFIX=//p' | head -n 1)"
+  [[ -n "$main_prefix" && -d "$main_prefix/bin" ]] || { echo "ERROR: could not locate the $env_name environment" >&2; return 1; }
   local smina_bin="$base/envs/$SMINA_ENV/bin/smina"
   [[ -x "$smina_bin" ]] || { echo "ERROR: smina not found in $SMINA_ENV" >&2; exit 1; }
   printf '#!/bin/sh\n# smina lives in its own environment (%s): its Boost build conflicts with Qt 6\nexec "%s" "$@"\n' \

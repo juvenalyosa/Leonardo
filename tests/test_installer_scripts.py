@@ -99,3 +99,25 @@ def test_saved_modeller_key_is_read_past_conda_activation_noise():
     assert out.stdout.strip() == "key=[ABC123]"
     out = _bash(stub + fn + '\nk="$(saved_modeller_key)"\necho "key=[$k]"', KEYED="0")
     assert out.stdout.strip() == "key=[]"
+
+
+def test_smina_launcher_lands_in_the_environment_despite_activation_noise(tmp_path):
+    # conda run printed "LIBCIFPP_DATA_DIR has been set..." before sys.prefix: the launcher path was broken
+    envs = os.path.join(REPO, "scripts", "install_envs.sh")
+    base, prefix = tmp_path / "base", tmp_path / "base" / "envs" / "main"
+    (prefix / "bin").mkdir(parents=True)
+    smina = base / "envs" / "leonardo-smina" / "bin" / "smina"
+    smina.parent.mkdir(parents=True)
+    smina.write_text("#!/bin/sh\n")
+    smina.chmod(0o755)
+    stub = ('conda() { case "$1" in\n'
+            '  env) [[ "$2" == list ]] && echo "leonardo-smina /x"; return 0 ;;\n'
+            '  info) echo "$BASE"; return 0 ;;\n'
+            '  run) echo "LIBCIFPP_DATA_DIR has been unset"; echo "LIBCIFPP_DATA_DIR has been set to: /x";\n'
+            '       echo "LEONARDO_PREFIX=$PREFIX"; echo "LIBCIFPP_DATA_DIR has been unset"; return 0 ;;\n'
+            '  esac; }\nSMINA_ENV=leonardo-smina\nSMINA_YAML=x.yml\n')
+    out = _bash(stub + _function(envs, "install_smina_env") + "\ninstall_smina_env main\n",
+                BASE=str(base), PREFIX=str(prefix))
+    assert out.returncode == 0, out.stderr
+    launcher = (prefix / "bin" / "smina").read_text()
+    assert f'exec "{smina}"' in launcher
