@@ -936,7 +936,9 @@ try:
         PLUGIN_VERSION,
         PROJECT_MASTER_FILE_NAME,
         PROJECT_STATE_FILE_NAME,
+        SUITE_CONTACT_EMAIL,
         SUITE_NAME,
+        SUITE_SUBTITLE,
         SUITE_TAGLINE,
         resource_string,
     )
@@ -946,7 +948,9 @@ except ImportError:
         PLUGIN_VERSION,
         PROJECT_MASTER_FILE_NAME,
         PROJECT_STATE_FILE_NAME,
+        SUITE_CONTACT_EMAIL,
         SUITE_NAME,
+        SUITE_SUBTITLE,
         SUITE_TAGLINE,
         resource_string,
     )
@@ -5155,11 +5159,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             header = QtWidgets.QFrame(self)
             header.setObjectName("leonardo_brand_header")
-            header.setMinimumHeight(78)
-            header.setMaximumHeight(92)
+            header.setMinimumHeight(92)
+            header.setMaximumHeight(108)
             row = QtWidgets.QHBoxLayout(header)
-            row.setContentsMargins(16, 10, 16, 10)
-            row.setSpacing(14)
+            row.setContentsMargins(18, 12, 20, 12)
+            row.setSpacing(16)
             if os.path.isfile(logo_path):
                 pix = QtGui.QPixmap(logo_path)
                 if not pix.isNull():
@@ -5167,26 +5171,43 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     lbl_logo.setObjectName("leonardo_brand_logo")
                     lbl_logo.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
                     lbl_logo.setPixmap(
-                        pix.scaled(54, 54, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                        pix.scaled(68, 68, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                     )
                     row.addWidget(lbl_logo, 0)
             title_col = QtWidgets.QVBoxLayout()
-            title_col.setSpacing(3)
+            title_col.setSpacing(0)
             title_col.setContentsMargins(0, 0, 0, 0)
-            lbl_name = QtWidgets.QLabel(SUITE_NAME.upper(), header)
+            lbl_name = QtWidgets.QLabel(SUITE_NAME, header)
             lbl_name.setObjectName("leonardo_brand_name")
-            lbl_tag = QtWidgets.QLabel(SUITE_TAGLINE, header)
+            lbl_tag = QtWidgets.QLabel(SUITE_SUBTITLE.upper(), header)
             lbl_tag.setObjectName("leonardo_brand_tagline")
-            lbl_tag.setWordWrap(True)
+            lbl_tag.setToolTip(SUITE_TAGLINE)
             title_col.addStretch(1)
             title_col.addWidget(lbl_name)
             title_col.addWidget(lbl_tag)
             title_col.addStretch(1)
             row.addLayout(title_col, 1)
-            lbl_ver = QtWidgets.QLabel(f"Build  {PLUGIN_BUILD}", header)
+            side_col = QtWidgets.QVBoxLayout()
+            side_col.setSpacing(4)
+            side_col.setContentsMargins(0, 0, 0, 0)
+            lbl_ver = QtWidgets.QLabel(f"Version {PLUGIN_VERSION}  ·  Build {PLUGIN_BUILD}", header)
             lbl_ver.setObjectName("leonardo_brand_version")
-            lbl_ver.setAlignment(QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight)
-            row.addWidget(lbl_ver, 0)
+            lbl_ver.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            lbl_contact = QtWidgets.QLabel(
+                f'Bugs &amp; feedback: <a href="mailto:{SUITE_CONTACT_EMAIL}?subject=Leonardo%20{PLUGIN_VERSION}" style="color:#FFFFFF; text-decoration:none;">'
+                f"{SUITE_CONTACT_EMAIL}</a>",
+                header,
+            )
+            lbl_contact.setObjectName("leonardo_brand_contact")
+            lbl_contact.setTextFormat(QtCore.Qt.RichText)
+            lbl_contact.setOpenExternalLinks(True)
+            lbl_contact.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            lbl_contact.setToolTip("Write to report a bug or send a comment")
+            side_col.addStretch(1)
+            side_col.addWidget(lbl_ver)
+            side_col.addWidget(lbl_contact)
+            side_col.addStretch(1)
+            row.addLayout(side_col, 0)
             self.verticalLayout.insertWidget(0, header)
         except Exception as e:
             print(f"{SUITE_NAME}: branding header warning: {e}")

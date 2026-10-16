@@ -158,9 +158,12 @@ def theme_qss():
         "  border-radius: 8px; }"
         f"QLabel#pliDialogKicker {{ color: {p['header_muted']}; font-size: 11px; font-weight: 600;"
         "  letter-spacing: 1px; background: transparent; }"
-        f"QLabel#pliDialogTitle, QLabel#leonardo_brand_name {{ color: {p['header_text']}; font-size: 17px;"
-        "  font-weight: 600; background: transparent; }"
-        f"QLabel#leonardo_brand_tagline, QLabel#leonardo_brand_version {{ color: {p['header_muted']}; font-size: 12px;"
+        f"QLabel#pliDialogTitle {{ color: {p['header_text']}; font-size: 17px; font-weight: 600; background: transparent; }}"
+        f"QLabel#leonardo_brand_name {{ color: {p['header_text']}; font-size: 30px; font-weight: 700;"
+        "  letter-spacing: 0.5px; background: transparent; }"
+        f"QLabel#leonardo_brand_tagline {{ color: {p['header_muted']}; font-size: 12px; font-weight: 600;"
+        "  letter-spacing: 2px; background: transparent; }"
+        f"QLabel#leonardo_brand_version, QLabel#leonardo_brand_contact {{ color: {p['header_muted']}; font-size: 12px;"
         "  background: transparent; }"
         f"QLabel#pliDialogMark {{ color: {p['header_text']}; background: {p['accent']}; border-radius: 6px;"
         "  font-weight: 700; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }"
@@ -231,6 +234,8 @@ def polish_layouts(root):
         if label.pixmap() is not None and not label.pixmap().isNull():
             continue
         text = str(label.text() or "")
+        if "<" in text:
+            text = re.sub(r"<[^>]*>", "", text)    # rich text: judge the visible text, not the markup
         pol = label.sizePolicy()
         if label.wordWrap() or len(text) > 60 or "\n" in text:
             label.setWordWrap(True)

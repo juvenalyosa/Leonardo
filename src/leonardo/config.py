@@ -16,7 +16,9 @@ SUITE_TAGLINE = (
     "Leonardo is an open-source initiative dedicated to empowering education "
     "and accelerating research."
 )
-SUITE_AUTHOR_LINE = "Writen by Juvenal Yosa PhD. juvenal.yosa@gmail.com"
+SUITE_SUBTITLE = "Molecular Modeling Suite"
+SUITE_CONTACT_EMAIL = "juvenal.yosa@gmail.com"
+SUITE_AUTHOR_LINE = f"Written by Juvenal Yosa PhD. {SUITE_CONTACT_EMAIL}"
 
 
 def resource_path(name: str) -> Path:
