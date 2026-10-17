@@ -62,6 +62,8 @@ def estimate(ctx, tool, args):
         est = hw.estimate_md(_md_atoms(a.get("object", ""), "implicit"), ns, "implicit", prof=prof)
         est["text"] = f"{est['text']} for {a.get('replicas', 3)} replica(s) of {a.get('sim_ns', 3.0)} ns"
         return est
+    if tool == "run_enhanced_sampling":
+        return _enhanced_sampling_estimate(hw, prof, a)
     if tool in ("run_psi4", "run_uv_spectrum"):
         sel = a.get("selection") or a.get("object") or a.get("reactant") or ""
         region = a.get("region", "ligand")
@@ -158,6 +160,45 @@ def estimate(ctx, tool, args):
     return None
 
 
+def _enhanced_sampling_estimate(hw, prof, a):
+    """action='run' only. Costs measured on an Apple M4 (OpenCL): metadynamics ~plain MD, aMD/GaMD ~2x (custom
+    integrator with group energies every step), ANI ~150/n_ML_atoms ns/day on the CPU (~10x on a CUDA GPU)."""
+    if a.get("action") != "run":
+        return None
+    mode = a.get("mode", "umbrella")
+    solvent = a.get("solvent", "implicit")
+    n = _md_atoms(a.get("object", ""), solvent)
+    if mode == "umbrella":
+        windows = int(a.get("windows") or 24)
+        per = float(a.get("production_ns_per_window") or 0.4) + float(a.get("equilibration_ps_per_window") or 100) / 1000
+        est = hw.estimate_md(n, windows * per, solvent, prof=prof)
+        est["text"] = f"{est['text']} for {windows} windows of {per:g} ns"
+        return est
+    if mode == "metadynamics":
+        ns = float(a.get("production_ns") or 1.0)
+        est = hw.estimate_md(n, ns * 1.1, solvent, prof=prof)
+        est["text"] = f"{est['text']} for {ns:g} ns of metadynamics"
+        return est
+    if mode in ("amd", "gamd"):
+        ns = float(a.get("production_ns") or 1.0) * 1.1 + float(a.get("cmd_ns") or 0.05)
+        est = hw.estimate_md(n, ns * 2.0, solvent, prof=prof)
+        est["text"] = f"{est['text']} for {ns:g} ns of {mode.upper()} (boosted steps cost ~2x)"
+        return est
+    if mode == "openmm_ml":
+        ns = float(a.get("production_ns") or 0.1)
+        sel = a.get("ml_region_selection") or "organic"
+        n_ml = n if a.get("ml_mode", "ml_only") == "ml_only" else max(1, _count(f"({a.get('object', '')}) and ({sel})") * 2)
+        cuda = (prof.get("md_platform") or {}).get("name") == "CUDA"
+        ns_day = (1500.0 if cuda else 150.0) / max(n_ml, 1)
+        minutes = ns / ns_day * 1440.0 + 0.5
+        if a.get("ml_mode") == "mixed" and not cuda:
+            minutes += hw.estimate_md(n, ns, solvent, platform_name="CPU", prof=prof).get("minutes", 0)
+        return {"minutes": round(minutes, 1),
+                "text": f"~{hw._fmt(minutes)} ({n_ml} ML atoms on the {'GPU' if cuda else 'CPU'}, {ns:g} ns)",
+                "advice": "" if cuda else "ANI runs on the CPU here (openmm-torch has no OpenCL kernels); keep runs short"}
+    return None
+
+
 def _mc_minutes(prof, n_structures):
     """Monte Carlo side-chain sampling: ~22 moves per saved structure, one 100-step minimization each."""
     per_move = 0.04 if (prof.get("md_platform") or {}).get("is_gpu") else 0.3
@@ -167,7 +208,7 @@ def _mc_minutes(prof, n_structures):
 ESTIMATED_TOOLS = ("run_md", "minimize_structure", "run_abfe", "run_psi4", "run_uv_spectrum", "run_mopac",
                    "run_qmmm", "run_docking", "run_redocking", "run_virtual_screening", "run_lead_optimization",
                    "build_homology_model", "model_mutant", "repair_structure_gaps", "predict_structure_alphafold",
-                   "animate_reaction", "generate_mc_ensemble", "run_cluster_reaction")
+                   "animate_reaction", "generate_mc_ensemble", "run_cluster_reaction", "run_enhanced_sampling")
 
 
 def register(reg):

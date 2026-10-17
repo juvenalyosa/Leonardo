@@ -338,3 +338,15 @@ def test_boosted_template_and_run_spec_from_the_tool(dialog, mode):
     assert spec["method"] == mode and spec["system"]["solvent"] == "explicit" and spec[mode]["stride"] == 50
     assert cv["type"] == "distance" and len(cv["atoms"]) == 2 and all(cv["atoms"])
     assert all(len(k) == 4 for g in cv["atoms"] for k in g)        # (chain, resi, icode, name)
+
+
+def test_gui_result_window_shows_every_plot_in_a_tab(dialog, tmp_path):
+    from leonardo import enhanced_sampling_runtime as es
+
+    pngs = [es.plot_profile(str(tmp_path / f"p{i}.png"), [0, 1, 2], [("x", [0, 1, 0], None)], "cv", "t")
+            for i in range(3)]
+    dialog._openmm_show_enhanced_sampling_result("gamd — x", "card", pngs + ["missing.png"], str(tmp_path))
+    win = [w for w in QtWidgets.QApplication.topLevelWidgets() if w.windowTitle() == "gamd — x"][-1]
+    tabs = win.findChild(QtWidgets.QTabWidget)
+    assert tabs is not None and tabs.count() == 3
+    win.close()

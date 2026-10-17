@@ -13794,7 +13794,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         """Run an umbrella / metadynamics / aMD / GaMD template on the real system in a background process
         (leonardo.enhanced_sampling_runtime), report progress in the Advanced panel and show the result."""
         try:
-            from leonardo.agent.tools.md_advanced import build_run_spec, _run_card, _main_image
+            from leonardo.agent.tools.md_advanced import build_run_spec, _run_card, _main_image, _all_files
             from leonardo.agent.tools.diagnostics import _python_executable
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"Enhanced-sampling runner unavailable:\n{e}")
@@ -13864,25 +13864,45 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if hasattr(self, "lbl_openmm_advanced"):
                 self.lbl_openmm_advanced.setText(f"{mode} on {obj} done | output={out_dir}")
             self._append_debug_log(card)
-            self._openmm_show_enhanced_sampling_result(f"{mode} — {obj}", card, _main_image(mode, res), out_dir)
+            main = _main_image(mode, res)
+            pngs = [main] + [f for f in _all_files(res) if str(f).endswith(".png") and f != main]
+            self._openmm_show_enhanced_sampling_result(f"{mode} — {obj}", card, pngs, out_dir)
 
         timer.timeout.connect(poll)
         timer.start()
         self._enhanced_sampling_jobs = list(getattr(self, "_enhanced_sampling_jobs", [])) + [(proc, timer)]
         if hasattr(self, "lbl_openmm_advanced"):
             self.lbl_openmm_advanced.setText(f"{mode} on {obj}: starting (output {out_dir})")
-    def _openmm_show_enhanced_sampling_result(self, title, text, image_path, out_dir):
+    def _openmm_show_enhanced_sampling_result(self, title, text, images, out_dir):
+        """The result card and every plot of the run, one tab each (profile, histograms, traces, boost...)."""
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle(title)
+        try:
+            self._fit_dialog_to_screen(dlg, preferred_w=920, preferred_h=820, min_w=760, min_h=640)
+        except Exception:
+            dlg.resize(920, 820)
         v = QtWidgets.QVBoxLayout(dlg)
         lbl = QtWidgets.QLabel(text)
         lbl.setWordWrap(True)
         v.addWidget(lbl)
-        if image_path and os.path.isfile(image_path):
-            img = QtWidgets.QLabel()
-            pix = QtGui.QPixmap(image_path)
-            img.setPixmap(pix.scaledToWidth(min(820, pix.width()), QtCore.Qt.SmoothTransformation))
-            v.addWidget(img)
+        paths = [p for p in ([images] if isinstance(images, str) else list(images or [])) if p and os.path.isfile(p)]
+        if paths:
+            tabs = QtWidgets.QTabWidget()
+            for path in paths:
+                img = QtWidgets.QLabel()
+                img.setAlignment(QtCore.Qt.AlignCenter)
+                pix = QtGui.QPixmap(path)
+                # the whole plot visible in the tab (no scrolling to find the axis)
+                img.setPixmap(pix.scaled(QtCore.QSize(min(840, pix.width()), min(540, pix.height())),
+                                         QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+                scroll = QtWidgets.QScrollArea()
+                scroll.setWidget(img)
+                scroll.setWidgetResizable(True)
+                name = os.path.splitext(os.path.basename(path))[0].replace("_", " ")
+                tabs.addTab(scroll, name)
+            tabs.setMinimumHeight(600)              # a whole plot per tab, axis labels included
+            tabs.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+            v.addWidget(tabs, 1)
         row = QtWidgets.QHBoxLayout()
         btn_open = QtWidgets.QPushButton("Open results folder")
         btn_open.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(out_dir)))

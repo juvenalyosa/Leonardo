@@ -24,6 +24,7 @@
 #   --modeller-key KEY     MODELLER license key (or set KEY_MODELLER)
 #   --skip-env             do not create/update the conda environment (repair shortcuts only)
 #   --no-shortcuts         do not create the app / menu entries
+#   --no-ml                skip the leonardo-ml environment (OpenMM-ML / ANI potentials, ~150 MB)
 #   -h, --help             this help
 #
 # Environment variables: KEY_MODELLER, LEONARDO_HOME (default ~/.leonardo),
@@ -42,6 +43,7 @@ SOURCE_DIR=""
 COPY_SOURCE=0
 SKIP_ENV=0
 SHORTCUTS=1
+WITH_ML=1
 MODELLER_KEY="${KEY_MODELLER:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -53,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --modeller-key) MODELLER_KEY="${2:-}"; shift 2 ;;
     --skip-env) SKIP_ENV=1; shift ;;
     --no-shortcuts) SHORTCUTS=0; shift ;;
+    --no-ml) WITH_ML=0; shift ;;
     -h|--help)
       if [[ -f "${BASH_SOURCE[0]:-}" ]]; then sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       else echo "See https://github.com/juvenalyosa/Leonardo/blob/main/docs/INSTALL.md"; fi
@@ -283,7 +286,7 @@ if [[ "$SKIP_ENV" -eq 0 ]]; then
   step "5/7 Installing the scientific software (20-60 minutes, about 8 GB; keep the computer awake)"
   echo "Environment: $ENV_NAME (PyMOL, OpenMM, AmberTools, Psi4, MOPAC, MODELLER, RDKit, ...)"
   echo "Note: this sets conda's channel_priority to 'strict', which the Leonardo environment needs."
-  ( cd "$INSTALL_DIR" && PATH="$CONDA_BASE/bin:$PATH" bash scripts/install_envs.sh --flexible ) \
+  ( cd "$INSTALL_DIR" && PATH="$CONDA_BASE/bin:$PATH" LEONARDO_WITH_ML="$WITH_ML" bash scripts/install_envs.sh --flexible ) \
     || die "installing the scientific software failed (see the messages above)."
   step "Installing Leonardo into the environment"
   "$CONDA" run -n "$ENV_NAME" python -m pip install --no-deps --no-build-isolation -e "$INSTALL_DIR" \

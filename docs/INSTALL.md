@@ -14,7 +14,9 @@ user folder.
 
 Leonardo runs on Qt 6 (PyMOL 3.1 with PySide6). smina gets a small environment of its own
 (`leonardo-smina`), because its build needs older system libraries than Qt 6; Leonardo calls it
-from there, and the docking results are the same.
+from there, and the docking results are the same. Machine-learned potentials (OpenMM-ML with ANI-2x)
+also get their own environment (`leonardo-ml`, about 150 MB, plus the ANI-2x weights downloaded
+from TorchANI's repository), because PyTorch conflicts with the main one; skip it with `--no-ml`.
 
 **You need:** macOS (Apple Silicon or Intel) or Linux x86_64 (Ubuntu, Fedora, ...),
 about **10 GB** of free disk, an internet connection, and **20–60 minutes**.
@@ -61,7 +63,8 @@ PyMOL opens. Choose **Plugins → Leonardo**.
 
 - **Update:** run the installer of the new version. Your settings and your API keys are kept.
 - **Uninstall:** delete the folder `~/.leonardo` and the environment
-  (`~/miniforge3/bin/conda env remove -n protliginteract-full`). On macOS, also delete
+  (`~/miniforge3/bin/conda env remove -n protliginteract-full`, and the same for `leonardo-smina`
+  and `leonardo-ml`). On macOS, also delete
   `~/Applications/Leonardo.app` and `~/Applications/Leonardo MODELLER License.app`.
 
 ### If something goes wrong
@@ -77,7 +80,9 @@ PyMOL opens. Choose **Plugins → Leonardo**.
 From a clone of the repository: `bash installers/install_leonardo.sh` installs the environment
 and points Leonardo at your working copy. When the repository is public, users can also run
 `curl -fsSL https://github.com/juvenalyosa/Leonardo/releases/download/<tag>/install_leonardo.sh | bash`.
-Options: `--yes` (unattended), `--modeller-key KEY`, `--skip-env`, `--no-shortcuts`, `--help`.
+Options: `--yes` (unattended), `--modeller-key KEY`, `--skip-env`, `--no-shortcuts`, `--no-ml`
+(no OpenMM-ML environment), `--help`. To check a GPU install: `bash scripts/gpu_validation.sh`
+(docs/GPU_VALIDATION.md).
 
 ---
 
@@ -87,6 +92,9 @@ Leonardo instala todo lo que necesita en un solo paso: PyMOL de código abierto,
 AmberTools (con PACKMOL-Memgen), Psi4, MOPAC, MODELLER, RDKit, Open Babel, smina, fpocket,
 BLAST, HMMER, Clustal Omega, MAFFT y los paquetes de Python del asistente de IA. No tiene que
 instalar ninguno a mano, y nada se instala en el sistema: todo queda en su carpeta de usuario.
+Los potenciales de aprendizaje automático (OpenMM-ML con ANI-2x) van en un entorno propio
+(`leonardo-ml`, unos 150 MB más los pesos de ANI-2x, que se descargan del repositorio de
+TorchANI), porque PyTorch choca con el entorno principal; se omite con `--no-ml`.
 
 **Necesita:** macOS (Apple Silicon o Intel) o Linux x86_64 (Ubuntu, Fedora, ...),
 unos **10 GB** libres, conexión a internet y **20–60 minutos**.
@@ -136,7 +144,8 @@ Se abre PyMOL. Elija **Plugins → Leonardo**.
 - **Actualizar:** ejecute el instalador de la nueva versión. Se conservan su configuración y
   sus claves de API.
 - **Desinstalar:** borre la carpeta `~/.leonardo` y el entorno
-  (`~/miniforge3/bin/conda env remove -n protliginteract-full`). En macOS borre también
+  (`~/miniforge3/bin/conda env remove -n protliginteract-full`, y lo mismo con `leonardo-smina`
+  y `leonardo-ml`). En macOS borre también
   `~/Applications/Leonardo.app` y `~/Applications/Leonardo MODELLER License.app`.
 
 ### Si algo falla
