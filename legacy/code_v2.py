@@ -48860,7 +48860,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return None
             self.ligand_info = lig
             state_idx = int(cmd.get_state())
-            if state_idx <= 0:
+            # the viewer's frame belongs to whatever was shown last (e.g. frame 500 of an MD trajectory): a
+            # single-state complex has no atoms there, and ABFE stopped with "no atoms"
+            try:
+                n_states = int(cmd.count_states(self.loaded_object))
+            except Exception:
+                n_states = 1
+            if state_idx <= 0 or state_idx > max(1, n_states):
                 state_idx = 1
             model = cmd.get_model(self.loaded_object, state=state_idx)
             atoms = list(getattr(model, "atom", []))

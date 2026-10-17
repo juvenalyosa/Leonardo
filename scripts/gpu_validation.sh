@@ -22,7 +22,10 @@ for c in "$CONDA" "$HOME/miniforge3/bin/conda" "$HOME/miniconda3/bin/conda" "$HO
   if [ -n "$c" ] && [ -x "$c" ]; then CONDA="$c"; break; fi
 done
 [ -x "$CONDA" ] || { echo "conda not found: set CONDA_EXE"; exit 1; }
-PY="$("$CONDA" run -n "$ENV_NAME" python -c 'import sys; print(sys.executable)' | tail -1)"
+# activation scripts of some packages print to stdout: read a marked line, not the last one
+PY="$("$CONDA" run -n "$ENV_NAME" python -c 'import sys; print("LEONARDO_PY=" + sys.executable)' \
+      | sed -n 's/^LEONARDO_PY=//p' | tail -1)"
+[ -x "$PY" ] || { echo "python of the '$ENV_NAME' environment not found (set LEONARDO_ENV)"; exit 1; }
 echo "== Leonardo GPU validation  $(date '+%F %T')"
 echo "app: $APP   env: $ENV_NAME   python: $PY"
 
