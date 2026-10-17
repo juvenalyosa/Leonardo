@@ -134,9 +134,54 @@
     "action": "run",
     "ml_model": "ani2x",
     "ml_mode": "ml_only",
-    "production_ns": 0.005,
+    "production_ns": 0.01,
     "timestep_fs": 1.0,
     "sample_stride_steps": 50
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "metadynamics",
+    "action": "run",
+    "solvent": "explicit",
+    "production_ns": 0.05,
+    "bias_factor": 8,
+    "hill_height_kj_mol": 1.0,
+    "bias_width": 0.3,
+    "deposit_frequency_steps": 250,
+    "cv_start": -3.1416,
+    "cv_end": 3.1416,
+    "cv_type": "dihedral",
+    "cv_name": "phi",
+    "selection_a": "resi 1 and name C",
+    "selection_b": "resi 2 and name N",
+    "selection_c": "resi 2 and name CA",
+    "selection_d": "resi 2 and name C",
+    "periodic": true
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "gamd",
+    "action": "run",
+    "solvent": "explicit",
+    "production_ns": 0.05,
+    "cmd_ns": 0.02,
+    "sample_stride_steps": 50,
+    "bias_width": 0.3,
+    "cv_start": -3.1416,
+    "cv_end": 3.1416,
+    "cv_type": "dihedral",
+    "cv_name": "phi",
+    "selection_a": "resi 1 and name C",
+    "selection_b": "resi 2 and name N",
+    "selection_c": "resi 2 and name CA",
+    "selection_d": "resi 2 and name C",
+    "periodic": true
    }
   }
  ]

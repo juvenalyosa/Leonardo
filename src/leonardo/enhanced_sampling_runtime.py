@@ -63,16 +63,13 @@ def build_system(pdb_path, solvent="implicit", family="amber14", ph=7.0, keep_wa
     modeller, ff = prep["modeller"], prep["forcefield"]
     solvent = str(solvent or "implicit").lower()
     if solvent == "explicit":
-        # PME needs every box edge >= 2 x cutoff: a small solute (a dipeptide, a ligand) with the usual padding
-        # gives a box OpenMM rejects, so such boxes are enlarged to 2.4 nm
+        # a cube of (largest solute extent + 2 x padding), never under 2.6 nm: PME needs every edge >= 2 x the
+        # 1.0 nm cutoff, and the barostat compresses a fresh box by a few per cent (OpenMM's own padding gave a
+        # 2.0 nm box for alanine dipeptide, which the barostat shrank below the limit)
         xyz = np.asarray(modeller.positions.value_in_unit(unit.nanometer), float)
-        edge = float(np.max(xyz.max(0) - xyz.min(0))) + 2.0 * float(padding_nm)
-        if edge < 2.4:
-            modeller.addSolvent(ff, boxSize=mm.Vec3(2.4, 2.4, 2.4) * unit.nanometer,
-                                ionicStrength=float(ionic_strength_molar) * unit.molar)
-        else:
-            modeller.addSolvent(ff, padding=float(padding_nm) * unit.nanometer,
-                                ionicStrength=float(ionic_strength_molar) * unit.molar)
+        edge = max(float(np.max(xyz.max(0) - xyz.min(0))) + 2.0 * float(padding_nm), 2.6)
+        modeller.addSolvent(ff, boxSize=mm.Vec3(edge, edge, edge) * unit.nanometer,
+                            ionicStrength=float(ionic_strength_molar) * unit.molar)
         system = ff.createSystem(modeller.topology, nonbondedMethod=app.PME, nonbondedCutoff=1.0 * unit.nanometer,
                                  constraints=app.HBonds)
         system.addForce(mm.MonteCarloBarostat(float(pressure_bar) * unit.bar, float(temperature_k) * unit.kelvin))
@@ -549,7 +546,7 @@ def run_umbrella(spec):
     periodic = cv["periodic"]
     restraint = mm.CustomCVForce("0.5*k_umb*d^2; d=" + ("min(abs(s - c0), 2*pi - abs(s - c0)); pi=3.141592653589793"
                                                        if periodic else "s - c0"))
-    restraint.addGlobalParameter("k_umb", k)
+    restraint.addGlobalParameter("k_umb", 0.0)          # off while the start is minimized and its CV read
     restraint.addGlobalParameter("c0", float(centers[0]))
     restraint.addCollectiveVariable("s", job.cv_force(cv))
     restraint.setForceGroup(BIAS_GROUP)
@@ -558,6 +555,11 @@ def run_umbrella(spec):
                                 job.positions, job.T, job.seed)
     ctx = sim.context
     x0 = float(restraint.getCollectiveVariableValues(ctx)[0])
+    start_warnings = []
+    if not periodic and not (min(centers) <= x0 <= max(centers)):
+        # e.g. a bound ligand at 0.18 nm with windows from 0.3 nm: the first window drags it before sampling
+        start_warnings.append(f"the starting structure has {cv.get('name', 'the CV')} = {x0:.3f}, outside the windows "
+                              f"({min(centers):.3f}-{max(centers):.3f}): extend the range to include the start")
     start = int(np.argmin(np.abs(_periodic_delta(np.asarray(centers), x0, periodic))))
     order = list(range(start, len(centers))) + list(range(start - 1, -1, -1))
     samples = [None] * len(centers)
@@ -583,7 +585,8 @@ def run_umbrella(spec):
     emit("analysis")
     res = job.base_result("umbrella", plat, steps, seconds)
     res.update(analyze_umbrella(samples, centers, k, job.T, periodic, cv, job.out))
-    res.update(windows=len(centers), force_constant=k, samples_per_window=prod_steps // stride)
+    res["warnings"] = start_warnings + list(res.get("warnings") or [])
+    res.update(windows=len(centers), force_constant=k, samples_per_window=prod_steps // stride, cv_start_value=round(x0, 4))
     return res
 
 

@@ -259,3 +259,40 @@ def test_pymol_ter_before_the_nme_cap_does_not_strip_it():
     nb = [f for f in system.getForces() if isinstance(f, mm.NonbondedForce)][0]
     charge = sum(nb.getParticleParameters(i)[0].value_in_unit(unit.elementary_charge) for i in range(nb.getNumParticles()))
     assert abs(charge) < 1e-6
+
+
+def test_umbrella_warns_when_the_start_lies_outside_the_windows(tmp_path, cpu_platform):
+    spec = _spec(tmp_path, "umbrella", {"start": 0.15, "end": 0.25, "windows": 3, "k": 2000.0,
+                                        "equil_steps": 100, "prod_steps": 200, "stride": 20},
+                 [{"name": "d", "type": "distance", "atoms": [[["", "1", "", "CH3"]], [["", "3", "", "C"]]]}])
+    res = es.run_job(spec)
+    assert res["ok"] and res["cv_start_value"] > 0.3
+    assert any("outside the windows" in w for w in res["warnings"])
+
+
+needs_ml = pytest.mark.skipif(not es.ml_python(), reason="the leonardo-ml environment is not installed")
+
+
+@needs_ml
+def test_openmm_ml_ani_forces_match_torchani_and_the_molecule_holds(tmp_path):
+    # openmm-ml 1.7 returns ANI forces in kJ/mol/A where OpenMM reads kJ/mol/nm (10x too weak): Leonardo's
+    # callback fixes the units, and every run checks its forces against TorchANI before the dynamics
+    res = es.run_job({"method": "openmm_ml", "pdb": ALA2, "out_dir": str(tmp_path / "ml"), "seed": 2,
+                      "system": {"solvent": "implicit"},
+                      "openmm_ml": {"mode": "ml_only", "steps": 2000, "stride": 50}})
+    assert res["ok"] and res["force_check"]["ratio_to_torchani"] == pytest.approx(1.0, abs=0.01)
+    assert res["force_check"]["cosine"] > 0.999 and res["ml_region_rmsd_max_A"] < 2.0
+
+
+@needs_ml
+def test_openmm_ml_refuses_charged_regions_and_unsupported_elements(tmp_path):
+    trypsin = os.path.join(os.path.dirname(__file__), "..", "examples", "films", "03_molecular_dynamics", "3PTB.pdb")
+    ben = [["A", "1", "", n] for n in ("C1", "C2", "C3", "C4", "C5", "C6", "C", "N1", "N2")]
+    with pytest.raises(RuntimeError, match="net charge of \\+1"):          # benzamidinium
+        es.run_job({"method": "openmm_ml", "pdb": trypsin, "out_dir": str(tmp_path / "q"),
+                    "system": {"solvent": "implicit"}, "openmm_ml": {"mode": "mixed", "atoms": ben, "steps": 100}})
+    cys = [["A", "22", "", n] for n in ("N", "CA", "C", "O", "CB", "SG")]
+    with pytest.raises(RuntimeError, match="no parameters for S"):           # ANI-1ccx: H, C, N, O only
+        es.run_job({"method": "openmm_ml", "pdb": trypsin, "out_dir": str(tmp_path / "e"),
+                    "system": {"solvent": "implicit"},
+                    "openmm_ml": {"mode": "mixed", "model": "ani1ccx", "atoms": cys, "steps": 100}})

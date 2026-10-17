@@ -354,8 +354,17 @@ def _run_card(mode, object, res):
         body = (f"boost ΔV {res.get('boost_mean_kj_mol')} ± {res.get('boost_sd_kj_mol')} kJ/mol, anharmonicity "
                 f"{res.get('boost_anharmonicity')}" + (f"; reweighted PMF: {mins}" if mins else "") + ".")
     warn = res.get("warnings") or []
+    n_png = sum(1 for v in _all_files(res) if str(v).endswith(".png"))
     return head + body + (" WARNING: " + "; ".join(warn) + "." if warn else "") + \
-        " Short run: qualitative, not a converged free energy."
+        " Short run: qualitative, not a converged free energy." + \
+        (f" {n_png} plots and the CSV data are in `{res.get('out_dir')}`." if res.get("out_dir") else "")
+
+
+def _all_files(res):
+    files = list((res.get("files") or {}).values())
+    for p in res.get("pmfs") or []:
+        files += [p.get("png"), p.get("csv")]
+    return [f for f in files if f]
 
 
 def _main_image(mode, res):

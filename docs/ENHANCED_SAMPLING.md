@@ -13,7 +13,7 @@ in the run's folder.
 | Metadynamics | Well-tempered metadynamics on 1-3 CVs (OpenMM `Metadynamics`, bias grid on the GPU) | Free-energy profile or surface, CV traces, surfaces at 50/75/100 % of the run |
 | aMD | Dual-boost accelerated MD (Hamelberg 2004); thresholds from a short conventional MD with the Pierce et al. 2012 rules | PMF along the CVs reweighted (2nd-order cumulant and exponential), boost distribution |
 | GaMD | Dual-boost Gaussian accelerated MD (Miao et al. 2015), lower-bound threshold, σ0 = 6 kcal/mol by default | Same as aMD, with the anharmonicity of the boost |
-| OpenMM-ML | MD with ANI-2x (or ANI-1ccx) for a whole small molecule, or for a ligand inside the classical system (mixed ML/MM) | Energy, temperature and ML-region RMSD over time |
+| OpenMM-ML | MD with ANI-2x (or ANI-1ccx) for a whole small molecule, or for a ligand inside the classical system (mixed ML/MM) | Force check against TorchANI; energy, temperature and ML-region RMSD over time |
 
 Collective variables: distance, angle and dihedral between atom-group centroids, and RMSD from the start, from
 Leonardo's presets (protein-ligand distance, ligand unbinding, backbone RMSD, loop gate, reaction bond or angle,
@@ -35,6 +35,12 @@ conflicts with the main one; the installer creates it and downloads the ANI-2x w
 repository (`~/.local/share/Torchani`). The network runs through openmm-torch on CUDA GPUs, or on the CPU
 (openmm-torch has no OpenCL/Metal kernels). ANI covers H, C, N, O, F, S and Cl and was trained on neutral
 molecules: Leonardo refuses a charged ML region (a benzamidinium test came apart).
+
+**openmm-ml 1.7 ANI forces are 10x too weak.** Its ANI callback differentiates the energy with respect to
+positions in ångström and returns that gradient (kJ/mol/Å) to OpenMM, which reads kJ/mol/nm. With it, alanine
+dipeptide fell apart within 10 ps at 300 K and NVE did not conserve energy. Leonardo replaces that callback with
+a correct one, and before every ML run it compares the forces with TorchANI in double precision
+(`force_check` in the result: ratio 1.000, cosine 1.000); a run whose forces disagree does not start.
 
 ## Validation
 

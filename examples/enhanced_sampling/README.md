@@ -7,7 +7,8 @@ Runs every method of `run_enhanced_sampling` (`action: run`) on real systems, as
    at φ ≈ -1.25 rad.
 2. Trypsin-benzamidine (PDB 3PTB): a short umbrella sampling of the protein-ligand distance (benzamidine
    parameterized with GAFF2, calcium site restrained). This checks the set-up on a complex, not a PMF.
-3. Alanine dipeptide with ANI-2x (OpenMM-ML, separate leonardo-ml environment), 5 ps: temperature and stability.
+3. Alanine dipeptide with ANI-2x (OpenMM-ML, separate leonardo-ml environment), 10 ps: forces equal to TorchANI,
+   temperature and stability.
 
 ```
 python -m leonardo.replay verify examples/enhanced_sampling

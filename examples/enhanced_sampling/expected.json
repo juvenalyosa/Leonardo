@@ -40,6 +40,37 @@
    "path": "8.n_ml_atoms",
    "kind": "exact",
    "value": 22
+  },
+  "explicit_metadynamics_hills": {
+   "path": "9.hills",
+   "kind": "exact",
+   "value": 100
+  },
+  "explicit_metadynamics_solvent": {
+   "path": "9.solvent",
+   "kind": "exact",
+   "value": "explicit"
+  },
+  "explicit_gamd_frames": {
+   "path": "10.frames",
+   "kind": "exact",
+   "value": 500
+  },
+  "explicit_gamd_solvent": {
+   "path": "10.solvent",
+   "kind": "exact",
+   "value": "explicit"
+  },
+  "openmm_ml_force_ratio": {
+   "path": "8.force_check.ratio_to_torchani",
+   "kind": "abs",
+   "value": 1.0,
+   "tol": 0.01
+  },
+  "openmm_ml_rmsd_max_A": {
+   "path": "8.ml_region_rmsd_max_A",
+   "kind": "max",
+   "value": 2.5
   }
  }
 }

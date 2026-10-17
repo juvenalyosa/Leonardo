@@ -14258,10 +14258,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "launch_abfe_lite_now": bool(cb_run_now.isChecked()),
         }
     def _openmm_prompt_openmm_ml_params(self):
+        # openmm-ml/TorchANI live in the separate leonardo-ml environment (PyTorch conflicts with this one)
         has_ml = False
         try:
-            import openmmml  # noqa: F401
-            has_ml = True
+            from leonardo.enhanced_sampling_runtime import ml_python
+            has_ml = bool(ml_python())
         except Exception:
             has_ml = False
         dlg, form = self._openmm_build_advanced_dialog(
@@ -14486,7 +14487,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._on_openmm_abfe_lite()
             except Exception as e:
                 self._append_debug_log(f"ABFE-lite launch warning after template save: {e}")
-        if mode in ("umbrella", "metadynamics", "amd", "gamd") and not getattr(self, "_openmm_advanced_headless", False):
+        if mode in ("umbrella", "metadynamics", "amd", "gamd", "openmm_ml") and \
+                not getattr(self, "_openmm_advanced_headless", False):
             answer = QtWidgets.QMessageBox.question(
                 self, "OpenMM Advanced",
                 f"Template saved:\n{out_json}\n\nRun {mode} on {obj} now? It runs in the background on the GPU "
