@@ -491,9 +491,10 @@ def build_protein_surface_system(pdb_path, material="Au", facet="111", layers=4,
     report["anchors"] = anchors
     emit("minimizing")
     integ = mm.LangevinMiddleIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picoseconds)
-    from .membrane_runtime import _simulation
+    from .membrane_runtime import _simulation, simulation_platform
 
     sim = _simulation(app, mm, modeller.topology, system, integ)
+    report.update(simulation_platform(sim))
     sim.context.setPositions(modeller.positions)
     e0 = sim.context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
     sim.minimizeEnergy(maxIterations=int(minimize_steps))

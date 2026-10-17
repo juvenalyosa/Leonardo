@@ -869,6 +869,15 @@ def test_openmm_platform_selection_plan_honors_explicit_platform_override():
     assert "explicit_platform_override:Metal" in plan["notes"]
 
 
+def test_openmm_platform_selection_plan_reads_the_leonardo_env_name(monkeypatch):
+    # LEONARDO_OPENMM_PLATFORM made code_v2 skip the hardware pick, but this plan ignored it: macOS got the CPU
+    monkeypatch.delenv("PROTLIGINTERACT_OPENMM_PLATFORM", raising=False)
+    monkeypatch.setenv("LEONARDO_OPENMM_PLATFORM", "OpenCL")
+    plan = build_openmm_platform_selection_plan(["OpenCL", "CPU", "Reference"], os_name="darwin")
+    assert plan["picked_platform_name"] == "OpenCL"
+    assert "explicit_platform_override:OpenCL" in plan["notes"]
+
+
 def test_abfe_runtime_md_sample_payload():
     xyz = np.array(
         [

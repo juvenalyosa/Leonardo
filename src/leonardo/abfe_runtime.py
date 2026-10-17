@@ -100,6 +100,18 @@ ABFE_RUNTIME_DEPLOY_CANDIDATES = [
 _ABFE_RUNTIME_DEPLOY_CACHE = None
 _ABFE_RUNTIME_DEPLOY_SOURCE = ""
 OPENMM_PLATFORM_OVERRIDE_ENV = "PROTLIGINTERACT_OPENMM_PLATFORM"
+# the documented Leonardo name; code_v2 already honoured it, but this plan did not, so on macOS a request for
+# a GPU through it ended on the CPU
+OPENMM_PLATFORM_OVERRIDE_ENVS = (OPENMM_PLATFORM_OVERRIDE_ENV, "LEONARDO_OPENMM_PLATFORM")
+
+
+def openmm_platform_override():
+    """The platform the user asked for through the environment ('' if none)."""
+    for name in OPENMM_PLATFORM_OVERRIDE_ENVS:
+        value = str(os.environ.get(name, "") or "").strip()
+        if value:
+            return value
+    return ""
 OPENMM_GPU_PLATFORM_NAMES = {"CUDA", "Metal", "HIP", "OpenCL"}
 ABFE_STEERING_POLICY_MODEL_ENV = "PROTLIGINTERACT_ABFE_STEERING_POLICY_JSON"
 ABFE_STEERING_ACTION_NAMES = (
@@ -261,17 +273,62 @@ def _sanitize_md_duration_ns(value, default=1.0):
     return float(out), note
 
 
+_PRECISION_SUPPORT = {}
+
+
+def openmm_precision_supported(platform_name, precision="mixed"):
+    """Whether this machine's `platform_name` accepts `precision` (one tiny context, cached per process).
+    Apple GPUs have no 64-bit floats: their OpenCL rejects 'mixed' ("No compatible OpenCL platform is available")
+    and only runs 'single'. A platform that is not installed, or fails for any precision, counts as supported:
+    only a definite "single works, this precision does not" downgrades."""
+    key = (str(platform_name), str(precision))
+    if key in _PRECISION_SUPPORT:
+        return _PRECISION_SUPPORT[key]
+    ok = True
+    try:
+        import openmm as mm
+
+        names = [mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())]
+        if str(platform_name) in names:
+            plat = mm.Platform.getPlatformByName(str(platform_name))
+
+            def _try(prec):
+                system = mm.System()
+                system.addParticle(1.0)
+                try:
+                    ctx = mm.Context(system, mm.VerletIntegrator(0.001), plat, {"Precision": prec})
+                    del ctx
+                    return True
+                except Exception:
+                    return False
+
+            ok = _try(str(precision)) or not _try("single")
+    except Exception:
+        ok = True
+    _PRECISION_SUPPORT[key] = ok
+    return ok
+
+
+def openmm_gpu_properties(platform_name):
+    """Context properties for a GPU platform: mixed precision where the device supports it, else single."""
+    if str(platform_name or "").upper() not in {"CUDA", "OPENCL", "HIP", "METAL"}:
+        return {}, []
+    if openmm_precision_supported(platform_name, "mixed"):
+        return {"Precision": "mixed"}, ["added_mixed_precision_for_gpu_platform"]
+    return {"Precision": "single"}, ["gpu_has_no_mixed_precision_using_single"]
+
+
 def _normalize_platform_properties(platform_name, platform_properties):
     props = dict(platform_properties or {})
     picked = str(platform_name or "").strip()
     notes = []
     if not picked:
         return props, notes
-    picked_upper = picked.upper()
     existing_keys = {str(k).strip().lower(): k for k in props.keys()}
-    if picked_upper in {"CUDA", "OPENCL", "HIP", "METAL"} and "precision" not in existing_keys:
-        props["Precision"] = "mixed"
-        notes.append("added_mixed_precision_for_gpu_platform")
+    if "precision" not in existing_keys:
+        gpu_props, gpu_notes = openmm_gpu_properties(picked)
+        props.update(gpu_props)
+        notes.extend(gpu_notes)
     return props, notes
 
 
@@ -306,7 +363,7 @@ def build_openmm_platform_selection_plan(
         if canonical and canonical not in available:
             available[canonical] = str(name)
 
-    override_raw = str(platform_override or os.environ.get(OPENMM_PLATFORM_OVERRIDE_ENV, "") or "").strip()
+    override_raw = str(platform_override or openmm_platform_override() or "").strip()
     override = _canonical_openmm_platform_name(override_raw)
     notes = []
     order = []

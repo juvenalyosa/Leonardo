@@ -1,0 +1,103 @@
+{
+ "name": "GPU validation: every OpenMM path Leonardo runs on a GPU",
+ "slug": "gpu_validation",
+ "description": "Runs each OpenMM workflow that uses the GPU and checks that it really ran on one (CUDA, HIP, OpenCL or Metal), with sane results: implicit-solvent MD, explicit-solvent NPT MD with a parameterized ligand and a calcium site, minimization, ABFE-lite (3 replicas) and a protein on a gold surface. Not a film pack: it fails on a machine without a GPU.",
+ "format": 1,
+ "parameters": {
+  "pack": {
+   "default": ".",
+   "description": "this pack's folder (filled in by leonardo.replay)"
+  }
+ },
+ "steps": [
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/3PTB.pdb",
+    "object_name": "trypsin_3PTB"
+   }
+  },
+  {
+   "tool": "run_md",
+   "args": {
+    "object": "{{step:1.object}}",
+    "production_ns": 0.1,
+    "solvent": "implicit",
+    "temperature_K": 300.0,
+    "force_field": "amber14",
+    "timestep_fs": 2.0,
+    "keep_crystal_waters": false,
+    "keep_ions": false,
+    "keep_cofactors": false
+   }
+  },
+  {
+   "tool": "run_md",
+   "args": {
+    "object": "{{step:1.object}}",
+    "production_ns": 0.02,
+    "solvent": "explicit",
+    "ensemble": "npt",
+    "water_model": "tip3p",
+    "temperature_K": 300.0,
+    "force_field": "amber14",
+    "timestep_fs": 2.0,
+    "keep_cofactors": true,
+    "keep_ions": true,
+    "keep_crystal_waters": false
+   }
+  },
+  {
+   "tool": "minimize_structure",
+   "args": {
+    "object": "{{step:1.object}}",
+    "solvent": "implicit",
+    "max_iterations": 500
+   }
+  },
+  {
+   "tool": "prepare_docking_ligand",
+   "args": {
+    "selection": "trypsin_3PTB and resn BEN",
+    "ph": 7.4
+   }
+  },
+  {
+   "tool": "parametrize_ligand",
+   "args": {
+    "charge_method": "bcc",
+    "atom_types": "gaff2"
+   }
+  },
+  {
+   "tool": "run_abfe",
+   "args": {
+    "object": "{{step:1.object}}",
+    "ligand": {
+     "chain": "A",
+     "resi": "1",
+     "resn": "BEN"
+    },
+    "sim_ns": 1.0,
+    "replicas": 3,
+    "steering": "pull_hold_return"
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/1AKI.pdb",
+    "object_name": "lysozyme_1AKI"
+   }
+  },
+  {
+   "tool": "build_protein_surface_system",
+   "args": {
+    "object": "{{step:8.object}}",
+    "material": "Au",
+    "facet": "111",
+    "layers": 4
+   }
+  }
+ ]
+}

@@ -272,26 +272,25 @@ The plugin can still run with `obabel` + `smina` paths (no AutoDockTools scripts
 
 If you must use them, install from a compatible x86_64 environment (often via Rosetta) and point the plugin to those script paths manually.
 
-### F) ABFE/OpenMM restarts or hard-crashes on macOS
+### F) Choosing the OpenMM platform (GPU or CPU)
 
-The ABFE launcher now prefers `CPU` automatically on macOS because some
-`Metal` OpenMM stacks can panic the OS during context creation.
+Leonardo benchmarks the OpenMM platforms once (in a child process, so a crashing driver cannot take
+PyMOL down) and runs MD, ABFE-lite, membranes and surfaces on the fastest one: CUDA on NVIDIA, HIP on
+AMD, OpenCL on Apple Silicon and other GPUs. Every result reports the platform it ran on.
 
-If you want to force the safe path explicitly before launching PyMOL:
-
-```bash
-conda activate protliginteract-full
-export PROTLIGINTERACT_OPENMM_PLATFORM=CPU
-pymol
-```
-
-If you want to test `Metal` again on a machine where it is stable:
+- NVIDIA and AMD GPUs run in **mixed precision**. Apple GPUs have no 64-bit arithmetic, so their
+  OpenCL rejects mixed precision; Leonardo detects this and runs them in **single precision**.
+- To force a platform, set `LEONARDO_OPENMM_PLATFORM` (or the older `PROTLIGINTERACT_OPENMM_PLATFORM`)
+  to `CUDA`, `HIP`, `OpenCL`, `Metal` or `CPU` before starting PyMOL. A platform that is not installed
+  is reported in Leonardo's debug log and the next one is used.
 
 ```bash
 conda activate protliginteract-full
-export PROTLIGINTERACT_OPENMM_PLATFORM=Metal
+export LEONARDO_OPENMM_PLATFORM=CPU      # e.g. if a GPU driver misbehaves
 pymol
 ```
+
+To check a GPU install end to end, run `bash scripts/gpu_validation.sh` (see the script header).
 
 ## 10) Files
 

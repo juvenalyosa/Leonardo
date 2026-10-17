@@ -689,10 +689,25 @@ def leadopt_run_openmm_refinement_sampling(
             1.0 / omm_unit.picosecond,
             0.0015 * omm_unit.picoseconds,
         )
+        context = None
         if platform is not None:
-            context = omm_mod.Context(system, integrator, platform, properties)
-            out["platform"] = str(picked)
-        else:
+            # a GPU that rejects the requested properties (or fails to start) used to fail the whole refinement:
+            # retry it without properties, then the CPU, and say so
+            for props_try in ([dict(properties or {})] if properties else []) + [{}]:
+                try:
+                    context = omm_mod.Context(system, integrator, platform, props_try)
+                    out["platform"] = str(picked)
+                    break
+                except Exception as exc:
+                    out.setdefault("platform_notes", []).append(f"{picked} {props_try or 'default'}: {exc}")
+        if context is None and platform is not None and str(picked) != "CPU":
+            try:
+                context = omm_mod.Context(system, integrator, omm_mod.Platform.getPlatformByName("CPU"))
+                out["platform"] = "CPU"
+                out.setdefault("platform_notes", []).append(f"{picked} failed; refinement ran on the CPU")
+            except Exception:
+                context = None
+        if context is None:
             context = omm_mod.Context(system, integrator)
             out["platform"] = "default"
         xyz0 = np.asarray(coords_nm, dtype=float)

@@ -342,6 +342,11 @@ def register(reg):
             report = reports[-1]["result"] if isinstance(reports[-1]["result"], dict) else {}
             if report.get("message_text"):
                 out["report"] = str(report["message_text"])[:3000]
+            # the OpenMM platform each replica ran on ("openmm (OpenCL)" -> "OpenCL")
+            plats = sorted({str(r.get("energy_mode", "")).partition("(")[2].rstrip(")") for r in replicas_out
+                            if "(" in str(r.get("energy_mode", ""))})
+            if plats:
+                out["platform"] = plats[0] if len(plats) == 1 else ", ".join(plats)
             out.update({"energy_units": "kJ/mol", "object": object, "sim_ns": sim_ns, "replicas": len(replicas_out) or replicas,
                         "steering_policy": _abfe_policy_used(dlg, replicas_out),
                         "per_replica": [jsonable({k: r.get(k) for k in ("dg_pop_kj", "p_bound", "kd_app_m",

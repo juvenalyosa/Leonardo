@@ -81,6 +81,7 @@ try:
     from .abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
     from .abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
     from .abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
+    from .abfe_runtime import openmm_gpu_properties as abfe_openmm_gpu_properties
     from .abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
     from .abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
     from .abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
@@ -524,6 +525,7 @@ except Exception:
     from abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
     from abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
     from abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
+    from abfe_runtime import openmm_gpu_properties as abfe_openmm_gpu_properties
     from abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
     from abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
     from abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
@@ -48375,12 +48377,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if (hw_pick in available and bool(hw_md.get("is_gpu")) and hw_bench.get("steps_per_s")
                 and not user_override):
             # measured in a child process on this machine (a crashing GPU driver never reached PyMOL)
-            threads = int(((hw or {}).get("threads") or {}).get("openmm_cpu") or 0)
-            props = {"Precision": "mixed"} if hw_pick in ("CUDA", "OpenCL", "HIP", "Metal") else (
-                {"Threads": str(threads)} if hw_pick == "CPU" and threads else {})
+            # mixed precision, or single on GPUs without 64-bit floats (Apple's OpenCL rejects mixed)
+            props = abfe_openmm_gpu_properties(hw_pick)[0]
             return available[hw_pick], props, hw_pick
         pick_plan = abfe_build_openmm_platform_selection_plan(list(available.keys()))
         picked = str(pick_plan.get("picked_platform_name", "") or "").strip()
+        bad = [n for n in pick_plan.get("notes", []) if str(n).startswith(("requested_platform_unavailable",
+                                                                           "ignored_unknown_platform_override"))]
+        if bad and not getattr(self, "_openmm_override_warned", False):
+            # LEONARDO_OPENMM_PLATFORM=CUDA on a Mac, or a typo, used to be ignored without a word
+            self._openmm_override_warned = True
+            try:
+                self._append_debug_log(f"OpenMM platform request not honoured ({', '.join(bad)}); using {picked}. "
+                                       f"Available: {', '.join(available)}")
+            except Exception:
+                pass
         if picked and picked in available:
             props = dict(pick_plan.get("platform_properties", {}) or {})
             return available[picked], props, picked
@@ -50716,6 +50727,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception as traj_e:
                 final_view_obj = None
                 self._append_debug_log(f"ABFE final trajectory build warning: {traj_e}")
+            try:
+                # which platform ran and whether its interaction energies were usable (a GPU that returns non-finite
+                # group energies leaves no valid frame, and the free-energy step only says "not enough frames")
+                _n = len(total_e)
+                self._append_debug_log(
+                    f"ABFE sampling energies on {platform_name}: finite LJ {int(np.sum(np.isfinite(lj_e)))}/{_n}, "
+                    f"Coulomb {int(np.sum(np.isfinite(coul_e)))}/{_n}, total {int(np.sum(np.isfinite(total_e)))}/{_n}; "
+                    f"first total {total_e[:3]}"
+                )
+            except Exception:
+                pass
             post_payload = abfe_build_post_sampling_metrics(
                 frames=list(frames),
                 times_ps=list(times_ps),
@@ -51645,7 +51667,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         replica_results = []
         data = None
         replica_aggregate = {}
+        # each replica leaves its trajectory as the topology object; the next replica must start from the same
+        # complex, not from that trajectory (whose renumbered chains failed the gap check: only replica 1 ran)
+        source_topology = getattr(self, "_traj_topology_object", None)
+        source_loaded = getattr(self, "loaded_object", None)
         for rep_idx in range(int(max(1, replica_count_req))):
+            if rep_idx:
+                self._traj_topology_object = source_topology
+                self.loaded_object = source_loaded
             rep_seed = int(replica_seed0 + rep_idx) if replica_seed0 > 0 else 0
             rep_data = self._run_abfe_lite_local_md(
                 sim_ns=float(sim_ns_req),
@@ -51765,10 +51794,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             binding_estimate_status = str(data.get("binding_estimate_status", "") or "")
             binding_estimate_note = str(data.get("binding_estimate_note", "") or "")
             if total_valid.size < 3:
+                # frames count only in a clean bound or unbound state: a ligand that stalls against the protein
+                # surface after the pull is neither, and the run ends with no estimate (say why, not just "frames")
                 QtWidgets.QMessageBox.warning(
                     self,
                     "Result",
-                    "Not enough valid energy frames for free-energy estimation.",
+                    "No free-energy estimate: fewer than 3 frames were in a clean bound or unbound state "
+                    f"(bound {n_bound}, unbound {n_unbound}, sampled {len(np.atleast_1d(data.get('frames', [])))}). "
+                    "The ligand most likely stalled against the protein surface during the exit and never reached "
+                    "a stable unbound state. Run more replicas or a longer simulation.",
                 )
                 return
             run_exp_sem = np.asarray([], dtype=float)

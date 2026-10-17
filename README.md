@@ -76,13 +76,22 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 | **Ligands** | Draw molecules in the 2D editor, import SMILES, files or PubChem, predict pKa and protonation, build 3D, parameterize for MD | RDKit, Open Babel, Meeko, AmberTools (GAFF2/AM1-BCC) |
 | **Pockets & docking** | Find pockets, dock, analyze interactions, redock to validate, run virtual screening and lead optimization | fpocket, smina/Vina, ProLIF |
 | **Interactions** | Protein–ligand contacts (H-bonds, salt bridges, π-stacking, cation–π, halogen bonds, metals) checked on a golden set of crystal complexes; protein–protein and protein–DNA/RNA interfaces with buried area and groove readout; publication figures in 3D and 2D | RDKit, PyMOL, PDB Chemical Component Dictionary |
-| **Molecular dynamics** | Solvate, minimize and simulate; analyze RMSD, RMSF, interaction occupancy and energies; set up umbrella sampling and metadynamics; estimate binding with ABFE-lite | OpenMM, MDAnalysis, MDTraj, pymbar |
+| **Molecular dynamics** | Solvate, minimize and simulate (implicit or explicit water, NVT/NPT) on the GPU; analyze RMSD, RMSF, interaction occupancy and energies; set up and check umbrella sampling and metadynamics; estimate binding with ABFE-lite (steered guided exit, an apparent ΔG, not an alchemical free energy) | OpenMM, MDAnalysis, MDTraj, pymbar |
 | **Complex systems** | Automatic parameters for cofactors (heme, NAD, ATP), metal sites, modified and phosphorylated residues, and ligands bound to Cys, Lys or Ser; validated builds with charge and stability checks | CHARMM36, Amber ff14SB/phosaa/lipid17/GLYCAM, GAFF2, PDB Chemical Component Dictionary |
 | **Membranes** | Orient membrane proteins (OPM or predicted helices), embed them in single lipids or mixtures (POPC:cholesterol, POPE:POPG, asymmetric leaflets), equilibrate with a membrane barostat | OpenMM, PACKMOL-Memgen |
 | **Materials** | Metal surfaces and nanoparticles (Au, Ag, Pt, Pd, Cu, Ni, Al, Pb), graphene, hydroxylated silica; proteins placed on them with a chosen site facing the solution; QM clusters cut from the interface | ASE, INTERFACE-FF, ClayFF |
 | **Quantum chemistry** | Optimizations, frequencies, IR and UV-vis spectra, orbitals, electrostatic surfaces, transition states (QST2/QST3) and IRC reaction paths, animated with their orbitals | Psi4 (DFT/HF), MOPAC (PM7) |
 | **QM/MM** | Reactions inside enzymes: QM regions around active sites and metal centers, single points, optimizations, relaxed scans, transition states | MOPAC PM7 + OpenMM |
 | **Workflow** | Projects, publication figures, readiness checks for each module, reusable pipelines that rerun a protocol on new molecules | — |
+
+**Not in this version yet:** alchemical binding free energies (FEP, thermodynamic integration),
+production umbrella-sampling or metadynamics runs with PMFs on real complexes (Leonardo prepares and
+checks them, but does not run them yet), and OpenMM-ML (ANI) simulations (template only).
+
+**GPUs.** OpenMM runs on NVIDIA (CUDA), AMD (HIP) and Apple or other OpenCL GPUs, and Leonardo picks
+the fastest one it finds; set `LEONARDO_OPENMM_PLATFORM=CUDA|HIP|OpenCL|CPU` to choose. NVIDIA and
+AMD GPUs run in mixed precision; Apple GPUs have no 64-bit arithmetic and run in single precision.
+Every MD result reports the platform it ran on.
 
 ---
 
