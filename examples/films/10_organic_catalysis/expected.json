@@ -1,0 +1,89 @@
+{
+ "description": "Reference values from a recorded run (organic chemistry and catalysis film). Barriers: E(TS) - E(keto); 627.5095 kcal/mol per hartree.",
+ "metrics": {
+  "aspirin_imaginary": {
+   "path": "2.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 0
+  },
+  "keto_imaginary": {
+   "path": "4.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 0
+  },
+  "keto_energy_hartree": {
+   "path": "4.energy_freq_hartree",
+   "kind": "abs",
+   "tol": 0.0002,
+   "value": -153.722
+  },
+  "ts_uncat_imaginary": {
+   "path": "6.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 1
+  },
+  "ts_uncat_energy_hartree": {
+   "path": "6.energy_freq_hartree",
+   "kind": "abs",
+   "tol": 0.0002,
+   "value": -153.6112
+  },
+  "enol_imaginary": {
+   "path": "8.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 0
+  },
+  "enol_energy_hartree": {
+   "path": "8.energy_freq_hartree",
+   "kind": "abs",
+   "tol": 0.0002,
+   "value": -153.70432
+  },
+  "keto_water_imaginary": {
+   "path": "10.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 0
+  },
+  "keto_water_energy_hartree": {
+   "path": "10.energy_freq_hartree",
+   "kind": "abs",
+   "tol": 0.0002,
+   "value": -230.09792
+  },
+  "ts_water_imaginary": {
+   "path": "12.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 1
+  },
+  "ts_water_energy_hartree": {
+   "path": "12.energy_freq_hartree",
+   "kind": "abs",
+   "tol": 0.0002,
+   "value": -230.03775
+  },
+  "enol_water_imaginary": {
+   "path": "14.freq_cm_imag|count",
+   "kind": "exact",
+   "value": 0
+  },
+  "enol_water_energy_hartree": {
+   "path": "14.energy_freq_hartree",
+   "kind": "abs",
+   "tol": 0.0002,
+   "value": -230.08346
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a11 (2026-10-16-r2)",
+  "python": "3.11.15",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-17T02:33:05",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- May  8 2020 -- 15:48:11",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ }
+}

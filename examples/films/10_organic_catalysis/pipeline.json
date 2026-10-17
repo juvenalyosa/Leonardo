@@ -1,0 +1,154 @@
+{
+ "name": "Film 10 - organic chemistry and catalysis: aspirin IR, keto-enol tautomerism with and without a water catalyst",
+ "slug": "film10_organic_catalysis",
+ "description": "B3LYP-D3(BJ)/def2-SVP (gas phase) with Psi4 through Leonardo: aspirin optimized + frequencies (IR); the acetaldehyde -> vinyl alcohol tautomerization through its uncatalysed four-membered transition state and relayed by one water molecule (six-membered ring, concerted double proton transfer). Every structure is optimized and characterized by its frequencies: minima with no imaginary mode, transition states with exactly one. TS guesses from MOPAC PM7 TS searches; the minima start from the structures reached by displacing each B3LYP TS along its imaginary mode (files in the pack).",
+ "format": 1,
+ "parameters": {
+  "pack": {
+   "default": ".",
+   "description": "this pack's folder (filled in by leonardo.replay)"
+  }
+ },
+ "steps": [
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/aspirin.mol",
+    "object_name": "aspirin"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "stationary",
+    "object": "aspirin",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/acetaldehyde.xyz",
+    "object_name": "keto"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "stationary",
+    "object": "keto",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/keto_enol_ts_guess.xyz",
+    "object_name": "ts_uncat_guess"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "ts",
+    "object": "ts_uncat_guess",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/vinyl_alcohol.xyz",
+    "object_name": "enol"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "stationary",
+    "object": "enol",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/acetaldehyde_water.xyz",
+    "object_name": "keto_w"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "stationary",
+    "object": "keto_w",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/keto_enol_water_ts_guess.xyz",
+    "object_name": "ts_water_guess"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "ts",
+    "object": "ts_water_guess",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/vinyl_alcohol_water.xyz",
+    "object_name": "enol_w"
+   }
+  },
+  {
+   "tool": "run_psi4",
+   "args": {
+    "operation": "stationary",
+    "object": "enol_w",
+    "region": "whole",
+    "method": "b3lyp-d3bj",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "threads": 4,
+    "memory_gb": 4
+   }
+  }
+ ]
+}
