@@ -742,10 +742,7 @@ def _platform_order():
     were missing: AMD GPUs without OpenCL ran on the CPU."""
     import openmm as mm
 
-    try:
-        from .abfe_runtime import _canonical_openmm_platform_name, openmm_platform_override
-    except ImportError:
-        from abfe_runtime import _canonical_openmm_platform_name, openmm_platform_override
+    from .abfe_runtime import _canonical_openmm_platform_name, openmm_platform_override
     names = [mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())]
     wanted = _canonical_openmm_platform_name(openmm_platform_override())
     order = ([wanted] if wanted in names else []) + [p for p in ("CUDA", "HIP", "Metal", "OpenCL", "CPU")
@@ -754,10 +751,7 @@ def _platform_order():
 
 
 def _gpu_properties(plat):
-    try:
-        from .abfe_runtime import openmm_gpu_properties
-    except ImportError:
-        from abfe_runtime import openmm_gpu_properties
+    from .abfe_runtime import openmm_gpu_properties
     return openmm_gpu_properties(plat)[0]
 
 
