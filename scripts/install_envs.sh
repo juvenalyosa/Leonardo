@@ -6,6 +6,7 @@ set -euo pipefail
 # - Enforces a Psi4-compatible stack (avoids libint ABI segfaults)
 # - Validates Psi4 with a real SCF calculation
 # - Optionally installs/updates optional env from environments/environment-optional.yml
+# - Installs the leonardo-ml environment (OpenMM-ML/ANI) unless --no-ml; a failure there does not stop the install
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -14,6 +15,7 @@ MAIN_YAML="${MAIN_YAML:-environments/environment.yml}"
 MAIN_LOCK_YAML="${MAIN_LOCK_YAML:-environments/environment-protliginteract-full.lock.yml}"
 OPTIONAL_YAML="${OPTIONAL_YAML:-environments/environment-optional.yml}"
 WITH_OPTIONAL=0
+WITH_ML="${LEONARDO_WITH_ML:-1}"
 RECREATE=0
 RUN_PSI4_SMOKE=0
 ENV_SPEC_MODE="${ENV_SPEC_MODE:-auto}"
@@ -57,6 +59,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-optional)
       WITH_OPTIONAL=1
+      shift
+      ;;
+    --no-ml)
+      WITH_ML=0
       shift
       ;;
     --recreate)
@@ -221,6 +227,24 @@ install_smina_env() {
   echo "[INFO] smina: $smina_bin (linked into $env_name)"
 }
 
+ML_YAML="${ML_YAML:-environments/environment-ml.yml}"
+ML_ENV="leonardo-ml"
+
+install_ml_env() {
+  # openmm-ml + TorchANI in their own environment (PyTorch conflicts with the main one); Leonardo finds it as
+  # the sibling environment "leonardo-ml". Optional: a failed solve leaves Leonardo without OpenMM-ML only.
+  if conda env list | awk '{print $1}' | grep -qx "$ML_ENV"; then
+    echo "[INFO] Updating env: $ML_ENV"
+    conda env update -n "$ML_ENV" -f "$ML_YAML" --prune || { echo "[WARN] $ML_ENV update failed; OpenMM-ML unavailable"; return 0; }
+  else
+    echo "[INFO] Creating env: $ML_ENV"
+    conda env create -f "$ML_YAML" || { echo "[WARN] $ML_ENV could not be created; OpenMM-ML unavailable"; return 0; }
+  fi
+  # the ANI-2x weights are downloaded on first use: fetch them now, so ML runs also work offline
+  conda run -n "$ML_ENV" python -c "import torchani; torchani.models.ANI2x(); print('ANI-2x weights ready')" \
+    || echo "[WARN] ANI-2x weights not downloaded yet (they will be on the first OpenMM-ML run)"
+}
+
 enforce_psi4_stack() {
   local env_name="$1"
   echo "[INFO] Enforcing Psi4-compatible stack in $env_name"
@@ -285,6 +309,9 @@ enforce_psi4_stack "$main_env"
 enforce_rdkit_numpy_compat "$main_env"
 install_smina_env "$main_env"
 validate_main_env "$main_env"
+if [[ "$WITH_ML" -eq 1 ]]; then
+  install_ml_env
+fi
 
 if [[ "$WITH_OPTIONAL" -eq 1 ]]; then
   if [[ ! -f "$OPTIONAL_YAML" ]]; then

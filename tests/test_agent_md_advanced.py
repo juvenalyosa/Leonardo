@@ -172,7 +172,7 @@ def test_umbrella_template_written_through_gui_workflow(dialog):
     cv = tpl["parameters"]["cv"]
     assert (cv["selection_a"], cv["selection_b"], cv["range_nm"]) == ("resn BEN", "resi 2 and name CA", [0.4, 1.4])
     assert tpl["parameters"]["windowing"]["n_windows"] == 21
-    assert res["executed_production"] is False and "No production run" in res["_card"]
+    assert res["executed_production"] is False and "Template only" in res["_card"]
     assert "template" in dialog.lbl_openmm_advanced.text().lower()
 
 
@@ -292,3 +292,49 @@ def test_run_md_keep_switches_replace_component_choice(dialog, monkeypatch):
     reg.call("run_md", {"object": "cplx", "keep_ions": True, "keep_cofactors": False}, ctx)
     assert "cplx" not in dialog._openmm_hetatm_selection_cache
     assert [c["resn"] for c in dialog._openmm_selected_components("cplx")] == ["ZN"]
+
+
+# ------------------------------------------------------------------ aMD / GaMD and running on the real system
+def test_gui_boosted_dialog_returns_a_runnable_payload(dialog, monkeypatch):
+    monkeypatch.setattr(QtWidgets.QDialog, "exec", lambda self: QtWidgets.QDialog.Accepted)
+    payload = dialog._openmm_prompt_gamd_params()
+    assert payload["method"] == "gamd" and payload["solvent"] == "implicit"
+    b = payload["boost"]
+    assert b["boost"] == "dual" and b["sigma0_kcal"] == 6.0 and b["prod_steps"] == 500000 and b["stride"] == 100
+    assert len(payload["collective_variables"]) == 1
+    assert dialog._openmm_prompt_amd_params()["boost"]["level"] == 1.0
+
+
+def test_gui_asks_to_run_but_never_when_the_assistant_drives_the_dialog(dialog, monkeypatch):
+    runs = []
+    base = apply_openmm_cv_preset("protein_ligand_distance", {"ligand": "(resn BEN)"}, workflow="umbrella")
+    payload, _ = md_advanced.build_umbrella_payload(base, "cplx", {"windows": 4, "production_ns_per_window": 0.001})
+    monkeypatch.setattr(dialog, "_openmm_prompt_umbrella_params", lambda: dict(payload), raising=False)
+    monkeypatch.setattr(dialog, "_openmm_run_enhanced_sampling_job", lambda *a, **k: runs.append(a), raising=False)
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: QtWidgets.QMessageBox.Yes)
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
+    dialog._on_openmm_run_advanced_workflow(mode_override="umbrella")
+    assert len(runs) == 1 and runs[0][0] == "umbrella" and runs[0][1] == "cplx"
+    dialog._openmm_advanced_headless = True
+    try:
+        dialog._on_openmm_run_advanced_workflow(mode_override="umbrella")
+    finally:
+        dialog._openmm_advanced_headless = False
+    assert len(runs) == 1
+
+
+@pytest.mark.parametrize("mode", ["amd", "gamd"])
+def test_boosted_template_and_run_spec_from_the_tool(dialog, mode):
+    ctx = AgentContext(dialog)
+    res = _reg().call("run_enhanced_sampling", {"object": "cplx", "mode": mode, "production_ns": 0.01,
+                                                "cmd_ns": 0.002, "sample_stride_steps": 50, "bias_width": 0.05}, ctx)
+    assert os.path.isfile(res["template"]) and "Template only" in res["_card"]
+    tpl = json.load(open(res["template"]))
+    params = tpl["parameters"]
+    assert tpl["workflow"] == mode and params["method"] == mode and params["boost"]["prod_steps"] == 5000
+    spec = md_advanced.build_run_spec("cplx", mode, params, params["collective_variables"], {"solvent": "explicit"},
+                                      "x.pdb", "out")
+    cv = spec["cvs"][0]
+    assert spec["method"] == mode and spec["system"]["solvent"] == "explicit" and spec[mode]["stride"] == 50
+    assert cv["type"] == "distance" and len(cv["atoms"]) == 2 and all(cv["atoms"])
+    assert all(len(k) == 4 for g in cv["atoms"] for k in g)        # (chain, resi, icode, name)

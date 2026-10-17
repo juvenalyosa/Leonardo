@@ -7,9 +7,10 @@ workflow are QDialogs that cannot be answered headlessly, so the tool builds the
 the pop-up returns (through the same CV preset / normalize / validate functions) and hands it
 to ``_on_openmm_run_advanced_workflow``, which writes the template exactly as the GUI does.
 
-Leonardo's advanced workflow prepares and validates templates; it has no production executor
-for umbrella sampling or metadynamics on the real system yet (the "simple test" runs the OpenMM
-machinery on a two-particle toy CV). The tool results say so, and never report a PMF.
+action="run" executes the method on the real system in a background job
+(leonardo.enhanced_sampling_runtime: umbrella sampling with an MBAR PMF, well-tempered metadynamics,
+aMD and GaMD with reweighted PMFs) on the GPU OpenMM picks; "template" and "smoke_test" only prepare
+and check. Short runs are qualitative and every result carries its sampling diagnostics.
 """
 
 import glob
@@ -30,7 +31,9 @@ _REQUIRED = {"distance": ("selection_a", "selection_b"), "angle": ("selection_a"
 _SEL_PROPS = {k: {"type": "string", "description": "PyMOL selection (evaluated within the object)"}
               for k in ("selection_a", "selection_b", "selection_c", "selection_d")}
 _PROMPTS = {"umbrella": "_openmm_prompt_umbrella_params", "metadynamics": "_openmm_prompt_metadynamics_params",
+            "amd": "_openmm_prompt_amd_params", "gamd": "_openmm_prompt_gamd_params",
             "openmm_ml": "_openmm_prompt_openmm_ml_params"}
+BOOSTED = ("amd", "gamd")
 
 
 def _runtime():
@@ -247,10 +250,132 @@ def build_metadynamics_payload(base_cv, object, args, workspace_dir):
     return payload, summary
 
 
+def build_boosted_payload(mode, object, args, cvs):
+    """aMD/GaMD settings (the dict the GUI pop-up returns). `cvs` are the CVs the PMF is reweighted along."""
+    dt = float(args.get("timestep_fs") or 2.0)
+    prod = max(1000, _steps(args.get("production_ns") or 1.0, dt))
+    cmd = max(500, _steps(args.get("cmd_ns") or 0.05, dt))
+    equil = max(200, _steps(float(args.get("equilibration_ps_per_window") or 0.0) / 1000.0, dt)) \
+        if args.get("equilibration_ps_per_window") else max(200, prod // 10)
+    stride = int(args.get("sample_stride_steps") or 100)
+    if stride >= prod:
+        raise ToolError(f"sample_stride_steps {stride} must be shorter than the production run ({prod} steps)")
+    boost = {"cmd_steps": int(cmd), "equil_steps": int(equil), "prod_steps": int(prod), "stride": stride,
+             "boost": str(args.get("boost") or "dual")}
+    if mode == "gamd":
+        boost["sigma0_kcal"] = float(args.get("sigma0_kcal") or 6.0)
+    else:
+        boost["level"] = float(args.get("boost_level") or 1.0)
+    payload = {"docs": "Langevin CustomIntegrator with the boost in the force term (Hamelberg 2004 / Pierce 2012 "
+                       "for aMD, Miao 2015 for GaMD)",
+               "object": object, "method": mode, "temperature_k": float(args.get("temperature_K") or 300.0),
+               "timestep_fs": dt, "boost": boost, "collective_variables": list(cvs)}
+    total = cmd + equil + prod
+    summary = {"n_cvs": len(cvs), "frames": prod // stride, "total_md_steps": int(total),
+               "total_simulated_ns": round(total * dt / 1.0e6, 4), "boost": boost["boost"]}
+    return payload, summary
+
+
+def _selection_atom_keys(obj, sel):
+    """Heavy atoms of a PyMOL selection as (chain, resi, insertion code, name): hydrogens are rebuilt and
+    residues renamed (HIS->HIE) on the way to OpenMM, these keys survive both."""
+    from pymol import cmd
+
+    model = cmd.get_model(f"({obj}) and ({sel}) and not hydro", state=1)
+    keys = []
+    for a in model.atom:
+        m = re.match(r"^(-?\d+)(.*)$", str(a.resi))
+        keys.append([str(a.chain), m.group(1) if m else str(a.resi), m.group(2) if m else "", str(a.name)])
+    if not keys:
+        raise ToolError(f"selection {sel!r} has no heavy atoms in {obj}")
+    return keys
+
+
+def build_run_spec(object, mode, payload, cvs, args, pdb_path, out_dir):
+    """The job file of leonardo.enhanced_sampling_runtime for this template."""
+    job_cvs = []
+    for c in cvs:
+        meta = dict(c.get("metadynamics") or {})
+        rng = list(c.get("range_nm") or [meta.get("min_value"), meta.get("max_value")])
+        job_cvs.append({"name": c.get("name"), "type": c["type"],
+                        "atoms": [_selection_atom_keys(object, c[k]) for k in _REQUIRED[c["type"]]],
+                        "periodic": bool(c.get("periodic")),
+                        "range": [meta.get("min_value", rng[0]), meta.get("max_value", rng[1])],
+                        "bias_width": meta.get("bias_width"), "grid_width": meta.get("grid_width")})
+    spec = {"method": mode, "pdb": pdb_path, "out_dir": out_dir, "seed": int(args.get("seed") or 2026),
+            "system": {"solvent": str(args.get("solvent") or "implicit"),
+                       "family": str(args.get("force_field") or "amber14"), "ph": float(args.get("ph") or 7.0)},
+            "temperature_k": float(args.get("temperature_K") or payload.get("temperature_k")
+                                   or (payload.get("thermostat") or {}).get("temperature_k") or 300.0),
+            "timestep_fs": float(args.get("timestep_fs") or payload.get("timestep_fs")
+                                 or (payload.get("thermostat") or {}).get("timestep_fs") or 2.0),
+            "cvs": job_cvs}
+    if mode == "openmm_ml":
+        ml_mode = str(payload.get("mode") or "ml_only")
+        spec["openmm_ml"] = {"mode": ml_mode, "model": payload.get("ml_model", "ani2x"),
+                             "steps": int(payload["steps"]), "stride": int(args.get("sample_stride_steps") or 50),
+                             "minimize_steps": min(int(payload.get("minimize_iters", 200)), 2000),
+                             "allow_charged": False}
+        if ml_mode == "mixed":
+            spec["openmm_ml"]["atoms"] = _selection_atom_keys(object, payload["ml_region_selection"])
+        spec["ml_timestep_fs"] = float(payload.get("timestep_fs") or 1.0)
+        spec["temperature_k"] = float(payload.get("temperature_k") or 300.0)
+    elif mode == "umbrella":
+        w = payload["windowing"]
+        lo, hi = cvs[0]["range_nm"]
+        spec["umbrella"] = {"start": float(lo), "end": float(hi), "windows": int(w["n_windows"]),
+                            "k": float(w["spring_k_kj_mol_nm2"]), "equil_steps": int(w["equil_steps"]),
+                            "prod_steps": int(w["prod_steps"]), "stride": int(w["sample_stride"])}
+    elif mode == "metadynamics":
+        spec["metadynamics"] = {"bias_factor": payload["bias_factor"], "height_kj_mol": payload["hill_height_kj_mol"],
+                                "frequency": payload["frequency_steps"], "total_steps": payload["total_steps"],
+                                "stride": payload["frequency_steps"]}
+    else:
+        spec[mode] = dict(payload["boost"])
+    return spec
+
+
+def _run_card(mode, object, res):
+    plat = f"{res.get('platform')}" + (f" ({res.get('precision')})" if res.get("precision") else "")
+    head = f"**{mode}** on **{object}** — {res.get('simulated_ns')} ns on {plat}, {res.get('ns_per_day')} ns/day. "
+    if mode == "umbrella":
+        body = (f"PMF range {res.get('pmf_range_kj_mol')} kJ/mol, minimum at {res.get('pmf_minimum_at')}; "
+                f"{res.get('windows')} windows, min neighbour overlap {res.get('min_neighbour_overlap')}.")
+    elif mode == "metadynamics":
+        body = (f"Free-energy minimum at {res.get('fes_minimum_at')}; {res.get('hills')} hills"
+                + (f"; change over the last quarter {res.get('fes_change_last_quarter_kj_mol')} kJ/mol"
+                   if res.get("fes_change_last_quarter_kj_mol") is not None else "") + ".")
+    elif mode == "openmm_ml":
+        body = (f"{res.get('model')} ({res.get('mode')}) on {res.get('n_ml_atoms')} of {res.get('n_atoms')} atoms: "
+                f"{res.get('temperature_mean_k')} ± {res.get('temperature_sd_k')} K, ML-region RMSD up to "
+                f"{res.get('ml_region_rmsd_max_A')} Å.")
+    else:
+        mins = "; ".join(f"{p['cv']} minimum at {p['minimum_at']}" for p in res.get("pmfs") or [])
+        body = (f"boost ΔV {res.get('boost_mean_kj_mol')} ± {res.get('boost_sd_kj_mol')} kJ/mol, anharmonicity "
+                f"{res.get('boost_anharmonicity')}" + (f"; reweighted PMF: {mins}" if mins else "") + ".")
+    warn = res.get("warnings") or []
+    return head + body + (" WARNING: " + "; ".join(warn) + "." if warn else "") + \
+        " Short run: qualitative, not a converged free energy."
+
+
+def _main_image(mode, res):
+    files = res.get("files") or {}
+    if mode == "umbrella":
+        return files.get("pmf_png")
+    if mode == "metadynamics":
+        return files.get("fes_png")
+    if mode == "openmm_ml":
+        return files.get("timeseries_png")
+    pmfs = res.get("pmfs") or []
+    return pmfs[0]["png"] if pmfs else files.get("boost_png")
+
+
 def build_openmm_ml_payload(object, args):
+    # openmm-ml/torchani live in the separate leonardo-ml environment (PyTorch conflicts with the main one)
     try:
-        import openmmml  # noqa: F401
-        has_ml = True
+        from ... import enhanced_sampling_runtime as esr
+
+        has_ml = bool(esr.ml_python())
     except Exception:
         has_ml = False
     dt = float(args.get("timestep_fs") or 1.0)
@@ -274,7 +399,8 @@ def build_openmm_ml_payload(object, args):
     summary = {"openmm_ml_installed": has_ml, "total_md_steps": payload["steps"],
                "total_simulated_ns": round(payload["steps"] * dt / 1.0e6, 4)}
     if not has_ml:
-        summary["warning"] = "openmm-ml is not installed (conda install -c conda-forge openmm-ml)"
+        summary["warning"] = ("Leonardo's 'leonardo-ml' environment (openmm-ml + torchani) is not installed: rerun "
+                              "the installer with the ML option")
     return payload, summary
 
 
@@ -330,10 +456,12 @@ def _write_template(dlg, mode, method_payload):
     had_instance_attr = attr in vars(dlg)
     original = vars(dlg).get(attr)
     setattr(dlg, attr, lambda: dict(method_payload))
+    dlg._openmm_advanced_headless = True              # no "run now?" question: the tool decides
     try:
         with _headless.quiet() as q:
             dlg._on_openmm_run_advanced_workflow(mode_override=mode)
     finally:
+        dlg._openmm_advanced_headless = False
         if had_instance_attr:
             setattr(dlg, attr, original)
         else:
@@ -570,16 +698,35 @@ def register(reg):
         "(distance/angle/dihedral/RMSD between PyMOL selections, or a preset such as protein_ligand_distance or "
         "ligand_unbinding_distance) and all parameters are validated (selections must match atoms, umbrella "
         "window overlap is checked) and saved as Leonardo's advanced template JSON, exactly as the GUI does. "
-        "action='smoke_test' also runs Leonardo's quick OpenMM backend test (a two-particle toy system with "
-        "these settings, seconds). IMPORTANT: Leonardo does not yet execute production umbrella/metadynamics on "
-        "the real complex, so no PMF or free energy is produced: report the template and its checks only. For a "
-        "ligand unbinding estimate use run_abfe (guided exit); for plain MD use run_md.",
+        "action='smoke_test' also runs Leonardo's quick OpenMM backend test (a two-particle toy system, seconds). "
+        "action='run' executes the method on the real object in a background job on the GPU: umbrella sampling "
+        "(windows, MBAR PMF, overlap), well-tempered metadynamics (free-energy surface, CV traces, convergence), "
+        "accelerated MD (mode 'amd', Pierce dual boost) or Gaussian accelerated MD (mode 'gamd', Miao dual boost) "
+        "with PMFs reweighted along the CVs (cumulant 2nd order and exponential), or OpenMM-ML (mode 'openmm_ml': "
+        "short MD with an ANI potential for a whole small neutral molecule, ml_only, or a neutral ligand region "
+        "inside the classical system, mixed; runs in Leonardo's leonardo-ml environment, on CUDA GPUs or the CPU; "
+        "ANI covers H C N O F S Cl and neutral molecules only). The system is prepared like the "
+        "component library does (ligands/cofactors parameterized), in implicit (amber14 GBn2) or explicit water. "
+        "Short runs give qualitative profiles: report the diagnostics (window overlap, hills, boost anharmonicity, "
+        "warnings) with every number. For plain MD use run_md; for a ligand unbinding estimate run_abfe.",
         {"properties": {
             "object": {"type": "string"},
-            "mode": {"type": "string", "enum": ["umbrella", "metadynamics", "openmm_ml"]},
-            "action": {"type": "string", "enum": ["template", "smoke_test"],
+            "mode": {"type": "string", "enum": ["umbrella", "metadynamics", "amd", "gamd", "openmm_ml"]},
+            "action": {"type": "string", "enum": ["template", "smoke_test", "run"],
                        "description": "template (default): validate and save; smoke_test: also run the backend "
-                                      "check (umbrella/metadynamics only)"},
+                                      "check (umbrella/metadynamics only); run: execute on the real system "
+                                      "(umbrella, metadynamics, amd, gamd), background job"},
+            "solvent": {"type": "string", "enum": ["implicit", "explicit"],
+                        "description": "run: implicit (amber14 GBn2, default) or explicit TIP3P water"},
+            "force_field": {"type": "string", "enum": ["amber14", "charmm36"]},
+            "cmd_ns": {"type": "number", "minimum": 0.001, "maximum": 50,
+                       "description": "amd/gamd: conventional MD that gives the potential statistics (default 0.05)"},
+            "boost": {"type": "string", "enum": ["dual", "total", "dihedral"],
+                      "description": "amd/gamd: boost the total and dihedral potentials (dual, default) or one"},
+            "sigma0_kcal": {"type": "number", "minimum": 0.5, "maximum": 20,
+                            "description": "gamd: upper limit of the boost SD (kcal/mol, default 6)"},
+            "boost_level": {"type": "number", "minimum": 0.1, "maximum": 5,
+                            "description": "amd: scales the Pierce et al. thresholds (default 1)"},
             **cv_props,
             "windows": {"type": "integer", "minimum": 2, "maximum": 200, "description": "umbrella windows"},
             "force_constant_kj_mol_nm2": {"type": "number", "minimum": 1, "maximum": 200000,
@@ -624,16 +771,47 @@ def register(reg):
                 _check_selections_have_atoms(object, [], extra=[("ml_region_selection", payload["ml_region_selection"])])
             cvs = []
         else:
-            base = dlg._openmm_cv_from_selected_preset(workflow=mode, obj_name=object,
+            base = dlg._openmm_cv_from_selected_preset(workflow="metadynamics" if mode in BOOSTED else mode,
+                                                       obj_name=object,
                                                        preset_id=cv_preset or "protein_ligand_distance")
             if mode == "umbrella":
                 payload, summary = build_umbrella_payload(base, object, args)
                 cvs = [payload["cv"]]
-            else:
+            elif mode == "metadynamics":
                 payload, summary = build_metadynamics_payload(base, object, args, workspace)
+                cvs = list(payload["collective_variables"])
+            else:
+                # aMD/GaMD need no CV to run; the CVs are the coordinates their PMF is reweighted along
+                meta_payload, _ = build_metadynamics_payload(base, object, args, workspace)
+                payload, summary = build_boosted_payload(mode, object, args, meta_payload["collective_variables"])
                 cvs = list(payload["collective_variables"])
             _check_selections_have_atoms(object, cvs)
         template, problems = _write_template(dlg, mode, payload)
+        if action == "run":
+            if mode == "openmm_ml" and not summary.get("openmm_ml_installed"):
+                raise ToolError(summary.get("warning") or "OpenMM-ML is not installed")
+            import datetime
+
+            from .components import _save_object
+            from .membrane import _launch
+
+            out_dir = os.path.join(workspace, f"{mode}_{object}_{datetime.datetime.now():%Y%m%d_%H%M%S}")
+            pdb = _save_object(ctx, object, sub="enhanced_sampling")
+            spec = build_run_spec(object, mode, payload, cvs, args, pdb, out_dir)
+
+            def done(res):
+                res = dict(res)
+                res["template"] = template
+                res["_card"] = _run_card(mode, object, res)
+                img = _main_image(mode, res)
+                if img and os.path.isfile(img):
+                    res["_image"] = img
+                ctx.__dict__.setdefault("plots", {})["enhanced_sampling"] = {"mode": mode, "object": object,
+                                                                             "result": res}
+                return res
+
+            return _launch(ctx, mode, spec, out_dir, done, f"{mode} of {object}",
+                           module="leonardo.enhanced_sampling_runtime")
         info = {"workflow": mode, "object": object, "template": template, "output_dir": workspace,
                 "executed_production": False,
                 "cvs": [{"name": c.get("name"), "type": c.get("type"), "expression": c.get("expression"),
@@ -641,8 +819,8 @@ def register(reg):
                          [c["metadynamics"]["min_value"], c["metadynamics"]["max_value"]],
                          "periodic": c.get("periodic")} for c in cvs],
                 "summary": summary,
-                "note": "Template only: Leonardo has no production umbrella/metadynamics executor for the real "
-                        "system yet; no PMF/free energy was computed."}
+                "note": "Template only (action='run' executes it on the real system); no PMF/free energy was "
+                        "computed."}
         try:
             info["ligand_xml_paths"] = list(dlg._resolve_openmm_ligand_xml_paths(object) or [])
         except Exception:
@@ -684,6 +862,9 @@ def register(reg):
             detail = (f"{s['windows']} windows over {s['cv_range'][0]:.3g}-{s['cv_range'][1]:.3g} {ov['unit']}, "
                       f"k={s['force_constant']:g}, {s['total_simulated_ns']} ns in total"
                       + (f"; WARNING: {ov['warning']}" if ov.get("warning") else "; windows overlap"))
+        elif mode in BOOSTED:
+            detail = (f"{s['boost']} boost, {s['frames']} frames to reweight along {s['n_cvs']} CV(s), "
+                      f"{s['total_simulated_ns']} ns")
         elif mode == "metadynamics":
             detail = (f"{s['n_cvs']} CV(s), {payload['bias_factor']:g} bias factor, "
                       f"{payload['hill_height_kj_mol']:g} kJ/mol hills every {payload['frequency_steps']} steps, "
@@ -696,7 +877,7 @@ def register(reg):
                          + (f" CV {cv_txt}." if cv_txt else "")
                          + f" Saved: `{os.path.basename(template)}`."
                          + (" Backend smoke test OK (toy two-particle CV, not a PMF)." if smoke else "")
-                         + " No production run/PMF: Leonardo only prepares this workflow.")
+                         + " Template only: action='run' executes it.")
         return info
 
     @reg.tool(

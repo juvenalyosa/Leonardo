@@ -1,0 +1,45 @@
+{
+ "description": "Every method must find the C7eq/\u03b1R basin of alanine dipeptide (\u03c6 \u2248 -1.25 rad); stochastic short runs, so the checks are basins and stability, not exact values.",
+ "metrics": {
+  "umbrella_phi_minimum_rad": {
+   "path": "2.pmf_minimum_at",
+   "kind": "abs",
+   "value": -1.25,
+   "tol": 0.45
+  },
+  "metadynamics_phi_minimum_rad": {
+   "path": "3.fes_minimum_at",
+   "kind": "abs",
+   "value": -1.25,
+   "tol": 0.45
+  },
+  "gamd_phi_minimum_rad": {
+   "path": "4.pmfs.0.minimum_at",
+   "kind": "abs",
+   "value": -1.25,
+   "tol": 0.45
+  },
+  "amd_phi_minimum_rad": {
+   "path": "5.pmfs.0.minimum_at",
+   "kind": "abs",
+   "value": -1.25,
+   "tol": 0.45
+  },
+  "trypsin_umbrella_windows": {
+   "path": "7.windows",
+   "kind": "exact",
+   "value": 7
+  },
+  "openmm_ml_temperature_k": {
+   "path": "8.temperature_mean_k",
+   "kind": "abs",
+   "value": 300.0,
+   "tol": 60.0
+  },
+  "openmm_ml_atoms": {
+   "path": "8.n_ml_atoms",
+   "kind": "exact",
+   "value": 22
+  }
+ }
+}

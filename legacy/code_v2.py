@@ -7235,6 +7235,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_openmm_advanced = QtWidgets.QComboBox()
             self.cmb_openmm_advanced.addItem("Umbrella sampling", "umbrella")
             self.cmb_openmm_advanced.addItem("Metadynamics", "metadynamics")
+            self.cmb_openmm_advanced.addItem("Accelerated MD (aMD)", "amd")
+            self.cmb_openmm_advanced.addItem("Gaussian accelerated MD (GaMD)", "gamd")
             self.cmb_openmm_advanced.addItem("Guided-exit binding diagnostic", "abfe")
             self.cmb_openmm_advanced.addItem("OpenMM-ML potential wrapper", "openmm_ml")
             row_adv.addWidget(self.cmb_openmm_advanced, 0, 1)
@@ -7274,6 +7276,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             quick_methods = [
                 ("Umbrella...", "umbrella"),
                 ("Metadynamics...", "metadynamics"),
+                ("aMD...", "amd"),
+                ("GaMD...", "gamd"),
                 ("ABFE...", "abfe"),
                 ("OpenMM-ML...", "openmm_ml"),
             ]
@@ -13710,6 +13714,184 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "timestep_fs": float(spin_dt.value()),
             },
         }
+    def _openmm_prompt_amd_params(self):
+        return self._openmm_prompt_boosted_params("amd")
+    def _openmm_prompt_gamd_params(self):
+        return self._openmm_prompt_boosted_params("gamd")
+    def _openmm_prompt_boosted_params(self, kind):
+        """aMD / GaMD settings: a short conventional MD gives the potential statistics, then the boosted run;
+        the CV preset is the coordinate the PMF is reweighted along."""
+        title = "Accelerated MD (aMD)" if kind == "amd" else "Gaussian accelerated MD (GaMD)"
+        intro = ("Dual-boost aMD (Hamelberg 2004; thresholds from Pierce et al. 2012)" if kind == "amd" else
+                 "Dual-boost GaMD (Miao et al. 2015, lower-bound threshold)") + \
+            (". A Langevin integrator with the boost in its force term runs on the GPU; the PMF along the chosen "
+             "CV is reweighted (cumulant 2nd order and exponential). Short runs are qualitative.")
+        dlg, form = self._openmm_build_advanced_dialog(f"{title} Parameters", intro)
+        cmb_obj = self._openmm_add_advanced_object_picker(form, label="Structure object")
+        cmb_preset = QtWidgets.QComboBox()
+        for preset in openmm_cv_presets():
+            cmb_preset.addItem(str(preset.get("label", preset.get("id", "CV"))), str(preset.get("id", "")))
+        try:
+            idx = int(cmb_preset.findData(self._openmm_selected_cv_preset_id()))
+            if idx >= 0:
+                cmb_preset.setCurrentIndex(idx)
+        except Exception:
+            pass
+        form.addRow("Reweighting CV", cmb_preset)
+        cmb_solvent = QtWidgets.QComboBox()
+        cmb_solvent.addItem("Implicit water (amber14 GBn2)", "implicit")
+        cmb_solvent.addItem("Explicit water (TIP3P, PME)", "explicit")
+        form.addRow("Solvent", cmb_solvent)
+        cmb_boost = QtWidgets.QComboBox()
+        cmb_boost.addItem("Dual (total + dihedral)", "dual")
+        cmb_boost.addItem("Total potential", "total")
+        cmb_boost.addItem("Dihedral only", "dihedral")
+        form.addRow("Boost", cmb_boost)
+        spin_cmd = QtWidgets.QDoubleSpinBox()
+        spin_cmd.setRange(0.001, 50.0)
+        spin_cmd.setDecimals(3)
+        spin_cmd.setValue(0.05)
+        spin_cmd.setSuffix(" ns")
+        form.addRow("Conventional MD (statistics)", spin_cmd)
+        spin_prod = QtWidgets.QDoubleSpinBox()
+        spin_prod.setRange(0.002, 500.0)
+        spin_prod.setDecimals(3)
+        spin_prod.setValue(1.0)
+        spin_prod.setSuffix(" ns")
+        form.addRow("Boosted production", spin_prod)
+        spin_strength = QtWidgets.QDoubleSpinBox()
+        if kind == "gamd":
+            spin_strength.setRange(0.5, 20.0)
+            spin_strength.setValue(6.0)
+            spin_strength.setSuffix(" kcal/mol")
+            form.addRow("σ0 (boost SD limit)", spin_strength)
+        else:
+            spin_strength.setRange(0.1, 5.0)
+            spin_strength.setValue(1.0)
+            form.addRow("Boost level (x Pierce)", spin_strength)
+        spin_temp = QtWidgets.QDoubleSpinBox()
+        spin_temp.setRange(200.0, 500.0)
+        spin_temp.setValue(300.0)
+        spin_temp.setSuffix(" K")
+        form.addRow("Temperature", spin_temp)
+        spin_stride = QtWidgets.QSpinBox()
+        spin_stride.setRange(10, 100000)
+        spin_stride.setValue(100)
+        form.addRow("Frame every (steps)", spin_stride)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        obj = str(cmb_obj.currentText() or "").strip()
+        cv = self._openmm_cv_from_selected_preset(workflow="metadynamics", preset_id=cmb_preset.currentData(),
+                                                  obj_name=obj)
+        dt = 2.0
+        prod = max(1000, int(round(spin_prod.value() * 1e6 / dt)))
+        boost = {"cmd_steps": max(500, int(round(spin_cmd.value() * 1e6 / dt))), "equil_steps": max(200, prod // 10),
+                 "prod_steps": prod, "stride": int(spin_stride.value()), "boost": str(cmb_boost.currentData())}
+        boost["sigma0_kcal" if kind == "gamd" else "level"] = float(spin_strength.value())
+        return {"object": obj, "method": kind, "temperature_k": float(spin_temp.value()), "timestep_fs": dt,
+                "solvent": str(cmb_solvent.currentData()), "boost": boost, "collective_variables": [cv]}
+    def _openmm_run_enhanced_sampling_job(self, mode, obj, method_payload, template_path=""):
+        """Run an umbrella / metadynamics / aMD / GaMD template on the real system in a background process
+        (leonardo.enhanced_sampling_runtime), report progress in the Advanced panel and show the result."""
+        try:
+            from leonardo.agent.tools.md_advanced import build_run_spec, _run_card, _main_image
+            from leonardo.agent.tools.diagnostics import _python_executable
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"Enhanced-sampling runner unavailable:\n{e}")
+            return
+        payload = dict(method_payload or {})
+        cvs = [payload["cv"]] if isinstance(payload.get("cv"), dict) else list(payload.get("collective_variables") or [])
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = os.path.join(self._openmm_workspace_dir(), f"{mode}_{obj}_{ts}")
+        os.makedirs(out_dir, exist_ok=True)
+        pdb_path = os.path.join(out_dir, f"{obj}.pdb")
+        try:
+            previous = cmd.get("pdb_conect_all")
+            cmd.set("pdb_conect_all", 1)
+            try:
+                cmd.save(pdb_path, f"({obj}) and not alt B+C+D", state=1)
+            finally:
+                cmd.set("pdb_conect_all", previous)
+            spec = build_run_spec(obj, mode, payload, cvs, {"solvent": payload.get("solvent")}, pdb_path, out_dir)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"Cannot set up the {mode} run:\n{e}")
+            return
+        spec["result_json"] = os.path.join(out_dir, "result.json")
+        job_path = os.path.join(out_dir, "job.json")
+        with open(job_path, "w", encoding="utf-8") as fh:
+            json.dump(spec, fh, indent=1)
+        env = dict(os.environ)
+        pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__import__("leonardo").__file__)))
+        env["PYTHONPATH"] = pkg_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        log_path = os.path.join(out_dir, "log.txt")
+        log = open(log_path, "w")
+        proc = subprocess.Popen([_python_executable(), "-m", "leonardo.enhanced_sampling_runtime", job_path],
+                                cwd=out_dir, stdout=log, stderr=subprocess.STDOUT, env=env)
+        self._append_debug_log(f"{mode} job started for {obj}: {out_dir}")
+        timer = QtCore.QTimer(self)
+        timer.setInterval(2000)
+
+        def poll():
+            if proc.poll() is None:
+                try:
+                    with open(log_path) as fh:
+                        rows = [ln[9:].strip() for ln in fh if ln.startswith("PROGRESS")]
+                    if rows and hasattr(self, "lbl_openmm_advanced"):
+                        self.lbl_openmm_advanced.setText(f"{mode} on {obj}: {rows[-1]}")
+                except OSError:
+                    pass
+                return
+            timer.stop()
+            log.close()
+            res = {}
+            try:
+                with open(spec["result_json"]) as fh:
+                    res = json.load(fh)
+            except Exception:
+                pass
+            if not res.get("ok"):
+                msg = str(res.get("error") or "")
+                if not msg:
+                    try:
+                        msg = open(log_path).read()[-800:]
+                    except OSError:
+                        msg = "no result"
+                if hasattr(self, "lbl_openmm_advanced"):
+                    self.lbl_openmm_advanced.setText(f"{mode} on {obj} failed")
+                QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"{mode} on {obj} failed:\n{msg[:2000]}")
+                return
+            card = _run_card(mode, obj, res).replace("**", "")
+            if hasattr(self, "lbl_openmm_advanced"):
+                self.lbl_openmm_advanced.setText(f"{mode} on {obj} done | output={out_dir}")
+            self._append_debug_log(card)
+            self._openmm_show_enhanced_sampling_result(f"{mode} — {obj}", card, _main_image(mode, res), out_dir)
+
+        timer.timeout.connect(poll)
+        timer.start()
+        self._enhanced_sampling_jobs = list(getattr(self, "_enhanced_sampling_jobs", [])) + [(proc, timer)]
+        if hasattr(self, "lbl_openmm_advanced"):
+            self.lbl_openmm_advanced.setText(f"{mode} on {obj}: starting (output {out_dir})")
+    def _openmm_show_enhanced_sampling_result(self, title, text, image_path, out_dir):
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(title)
+        v = QtWidgets.QVBoxLayout(dlg)
+        lbl = QtWidgets.QLabel(text)
+        lbl.setWordWrap(True)
+        v.addWidget(lbl)
+        if image_path and os.path.isfile(image_path):
+            img = QtWidgets.QLabel()
+            pix = QtGui.QPixmap(image_path)
+            img.setPixmap(pix.scaledToWidth(min(820, pix.width()), QtCore.Qt.SmoothTransformation))
+            v.addWidget(img)
+        row = QtWidgets.QHBoxLayout()
+        btn_open = QtWidgets.QPushButton("Open results folder")
+        btn_open.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(out_dir)))
+        row.addWidget(btn_open)
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        row.addWidget(btn_close)
+        v.addLayout(row)
+        dlg.show()
     def _openmm_prompt_metadynamics_params(self):
         dlg, form = self._openmm_build_advanced_dialog(
             "Metadynamics Parameters",
@@ -14263,6 +14445,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         builder_map = {
             "umbrella": self._openmm_prompt_umbrella_params,
             "metadynamics": self._openmm_prompt_metadynamics_params,
+            "amd": self._openmm_prompt_amd_params,
+            "gamd": self._openmm_prompt_gamd_params,
             "abfe": self._openmm_prompt_abfe_params,
             "openmm_ml": self._openmm_prompt_openmm_ml_params,
         }
@@ -14302,6 +14486,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._on_openmm_abfe_lite()
             except Exception as e:
                 self._append_debug_log(f"ABFE-lite launch warning after template save: {e}")
+        if mode in ("umbrella", "metadynamics", "amd", "gamd") and not getattr(self, "_openmm_advanced_headless", False):
+            answer = QtWidgets.QMessageBox.question(
+                self, "OpenMM Advanced",
+                f"Template saved:\n{out_json}\n\nRun {mode} on {obj} now? It runs in the background on the GPU "
+                "(if available); results open when it finishes.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes)
+            if answer == QtWidgets.QMessageBox.Yes:
+                self._openmm_run_enhanced_sampling_job(mode, obj, method_payload, out_json)
+                return
         try:
             cv_rows = []
             params = dict(method_payload or {})

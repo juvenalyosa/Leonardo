@@ -76,7 +76,7 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 | **Ligands** | Draw molecules in the 2D editor, import SMILES, files or PubChem, predict pKa and protonation, build 3D, parameterize for MD | RDKit, Open Babel, Meeko, AmberTools (GAFF2/AM1-BCC) |
 | **Pockets & docking** | Find pockets, dock, analyze interactions, redock to validate, run virtual screening and lead optimization | fpocket, smina/Vina, ProLIF |
 | **Interactions** | Protein–ligand contacts (H-bonds, salt bridges, π-stacking, cation–π, halogen bonds, metals) checked on a golden set of crystal complexes; protein–protein and protein–DNA/RNA interfaces with buried area and groove readout; publication figures in 3D and 2D | RDKit, PyMOL, PDB Chemical Component Dictionary |
-| **Molecular dynamics** | Solvate, minimize and simulate (implicit or explicit water, NVT/NPT) on the GPU; analyze RMSD, RMSF, interaction occupancy and energies; set up and check umbrella sampling and metadynamics; estimate binding with ABFE-lite (steered guided exit, an apparent ΔG, not an alchemical free energy) | OpenMM, MDAnalysis, MDTraj, pymbar |
+| **Molecular dynamics** | Solvate, minimize and simulate (implicit or explicit water, NVT/NPT) on the GPU; analyze RMSD, RMSF, interaction occupancy and energies; enhanced sampling on the GPU with free-energy profiles: umbrella sampling (MBAR), well-tempered metadynamics, accelerated MD (aMD) and Gaussian accelerated MD (GaMD) with reweighting; machine-learned potentials (ANI-2x, whole molecule or ligand in ML/MM); estimate binding with ABFE-lite (steered guided exit, an apparent ΔG, not an alchemical free energy) | OpenMM, OpenMM-ML/TorchANI, MDAnalysis, MDTraj, pymbar |
 | **Complex systems** | Automatic parameters for cofactors (heme, NAD, ATP), metal sites, modified and phosphorylated residues, and ligands bound to Cys, Lys or Ser; validated builds with charge and stability checks | CHARMM36, Amber ff14SB/phosaa/lipid17/GLYCAM, GAFF2, PDB Chemical Component Dictionary |
 | **Membranes** | Orient membrane proteins (OPM or predicted helices), embed them in single lipids or mixtures (POPC:cholesterol, POPE:POPG, asymmetric leaflets), equilibrate with a membrane barostat | OpenMM, PACKMOL-Memgen |
 | **Materials** | Metal surfaces and nanoparticles (Au, Ag, Pt, Pd, Cu, Ni, Al, Pb), graphene, hydroxylated silica; proteins placed on them with a chosen site facing the solution; QM clusters cut from the interface | ASE, INTERFACE-FF, ClayFF |
@@ -84,9 +84,14 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 | **QM/MM** | Reactions inside enzymes: QM regions around active sites and metal centers, single points, optimizations, relaxed scans, transition states | MOPAC PM7 + OpenMM |
 | **Workflow** | Projects, publication figures, readiness checks for each module, reusable pipelines that rerun a protocol on new molecules | — |
 
-**Not in this version yet:** alchemical binding free energies (FEP, thermodynamic integration),
-production umbrella-sampling or metadynamics runs with PMFs on real complexes (Leonardo prepares and
-checks them, but does not run them yet), and OpenMM-ML (ANI) simulations (template only).
+**Enhanced sampling, checked against each other.** On alanine dipeptide (amber14/GBn2, 300 K) the free-energy
+profile along φ from umbrella sampling, metadynamics, GaMD and aMD agrees within 0.8–1.7 kJ/mol where each
+method sampled ([figure](docs/images/enhanced_sampling_alanine_phi.png);
+`python scripts/enhanced_sampling_validation.py OUT`). Short runs are qualitative: every result reports its
+sampling diagnostics (window overlap, hills, boost anharmonicity). ANI potentials cover H, C, N, O, F, S and
+Cl in neutral molecules; they run on NVIDIA GPUs or the CPU.
+
+**Not in this version yet:** alchemical binding free energies (FEP, thermodynamic integration).
 
 **GPUs.** OpenMM runs on NVIDIA (CUDA), AMD (HIP) and Apple or other OpenCL GPUs, and Leonardo picks
 the fastest one it finds; set `LEONARDO_OPENMM_PLATFORM=CUDA|HIP|OpenCL|CPU` to choose. NVIDIA and
@@ -125,8 +130,8 @@ calculations; explain the results in your language.
 - Anything outside its tools: it cannot run arbitrary programs, edit files or browse the web.
 - Invent parameters a method does not have. For example, it will not make up force-field values
   for TiO2.
-- Turn a docking score into a binding free energy, or produce production free-energy profiles.
-  Enhanced sampling is set up but not run to convergence.
+- Turn a docking score into a binding free energy. Its enhanced-sampling profiles come from short runs
+  and carry their convergence diagnostics; it does not claim converged free energies.
 - Work offline: the model runs in the cloud, so it needs an internet connection and an API key,
   and each request costs API credits.
 - Replace your judgment. Language models can misread a request or choose a poor default; that is

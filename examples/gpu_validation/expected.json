@@ -65,6 +65,54 @@
     "OpenCL",
     "Metal"
    ]
+  },
+  "umbrella_platform": {
+   "path": "11.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "metadynamics_platform": {
+   "path": "12.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "gamd_platform": {
+   "path": "13.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "amd_platform": {
+   "path": "14.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "openmm_ml_platform": {
+   "path": "15.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "CPU"
+   ]
   }
  }
 }
