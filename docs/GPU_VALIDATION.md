@@ -23,6 +23,11 @@ Metal).
 | Minimization | pass, OpenCL | |
 | ABFE-lite, trypsin-benzamidine, 3 replicas x 1 ns | pass, OpenCL; 2 of 3 replicas completed exit/return cycles, ΔG ≈ -54 kJ/mol (qualitative) | |
 | Protein on Au(111), build + minimization | pass, OpenCL single | |
+| Umbrella sampling (alanine φ, MBAR) | pass, OpenCL | |
+| Well-tempered metadynamics | pass, OpenCL | |
+| GaMD / aMD (dual boost, reweighting) | pass, OpenCL | |
+| OpenMM-ML, ANI-2x (leonardo-ml env) | pass, CPU (openmm-torch has no OpenCL kernels) | CUDA expected |
+| Enhanced-sampling cross-check (alanine φ, 1 ns each) | umbrella/metaD/GaMD/aMD agree within 0.8-1.7 kJ/mol (docs/ENHANCED_SAMPLING.md) | |
 | Membrane build + equilibration | runs on the GPU (same code path as surfaces); full run not repeated here | |
 | MC side-chain ensemble | CPU by design (reproducible); GPU optional with CPU fallback | |
 | Lead-opt refinement (OpenMM + PyMBAR) | fixed for Apple GPUs (always failed before); not rerun end to end | |
@@ -46,5 +51,4 @@ ligand against the protein surface (no estimate from that replica). Use 3 or mor
 
 ## Not in this version
 
-Alchemical free energies (FEP, thermodynamic integration); production umbrella sampling or metadynamics with
-PMFs on real complexes (set up and checked only); OpenMM-ML (ANI) simulations (template only).
+Alchemical free energies (FEP, thermodynamic integration).
