@@ -4292,8 +4292,11 @@ def test_psi4_runtime_driver_plan_helpers():
 
     ts_opts = psi4_build_driver_options("ts", "sto-3g", scf_type="pk", geom_maxiter=30)
     assert ts_opts["options"]["opt_type"] == "TS"
+    assert ts_opts["options"]["full_hess_every"] == 0         # exact Hessian first: a model Hessian has no climb
     assert ts_opts["options"]["geom_maxiter"] == 30
+    assert "full_hess_every" not in psi4_build_driver_options("optimize", "sto-3g")["options"]
     assert "irc_direction" not in ts_opts["options"]
+    assert psi4_build_driver_options("irc", "sto-3g")["options"]["covalent_connect"] == 1.6
 
     opts = psi4_build_driver_options(
         "irc",

@@ -376,3 +376,36 @@ def test_psi4_make_script_preserves_nonwater_supported_solvent_name():
 
     assert "Solvent = THF" in script
     assert "Solvent = Water" not in script
+
+
+def test_psi4_ts_script_refines_away_extra_imaginary_modes():
+    # a TS search that stops with soft extra imaginary modes (e.g. a keto-enol TS: 1758i plus 156i and 49i) is
+    # displaced along them and optimized again; before, the IRC then refused the TS
+    dlg = _build_dummy_dialog()
+    dlg._psi4_element_token = lambda element: psi4_element_token(element)
+    atoms = [{"index": 1, "name": "O1", "element": "O", "x": 0.0, "y": 0.0, "z": 0.0},
+             {"index": 2, "name": "H1", "element": "H", "x": 0.96, "y": 0.0, "z": 0.0},
+             {"index": 3, "name": "H2", "element": "H", "x": -0.24, "y": 0.93, "z": 0.0}]
+    job = {"operation": "ts", "method": "hf", "basis": "sto-3g",
+           "molecule_block": dlg._psi4_molecule_block(atoms, charge=0, multiplicity=1), "memory_gb": 1,
+           "threads": 1, "implicit": False, "scf_type": "pk", "charge": 0, "multiplicity": 1}
+    script = dlg._psi4_make_script(job)
+    assert "for _ts_round in range(2):" in script and "result.setdefault('ts_refinements', [])" in script
+    assert script.count("psi4.frequency(method_name, return_wfn=True)") >= 2
+    compile(script, "psi4_ts_script.py", "exec")
+    assert "'g_convergence': 'gau_tight'" in script
+
+
+def test_psi4_irc_script_gives_each_branch_room_to_settle():
+    # OptKing counts every constrained IRC step against geom_maxiter; 100 ran out near the keto-enol minimum
+    dlg = _build_dummy_dialog()
+    dlg._psi4_element_token = lambda element: psi4_element_token(element)
+    atoms = [{"index": 1, "name": "O1", "element": "O", "x": 0.0, "y": 0.0, "z": 0.0},
+             {"index": 2, "name": "H1", "element": "H", "x": 0.96, "y": 0.0, "z": 0.0},
+             {"index": 3, "name": "H2", "element": "H", "x": -0.24, "y": 0.93, "z": 0.0}]
+    job = {"operation": "irc", "method": "hf", "basis": "sto-3g",
+           "molecule_block": dlg._psi4_molecule_block(atoms, charge=0, multiplicity=1), "memory_gb": 1,
+           "threads": 1, "implicit": False, "scf_type": "pk", "charge": 0, "multiplicity": 1}
+    script = dlg._psi4_make_script(job)
+    assert "'geom_maxiter': max(int(psi4.core.get_option('OPTKING', 'GEOM_MAXITER')), 300)" in script
+    compile(script, "psi4_irc_script.py", "exec")

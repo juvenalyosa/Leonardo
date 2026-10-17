@@ -292,6 +292,9 @@ def psi4_build_driver_options(
     }
     if op == "ts":
         opts["opt_type"] = "TS"
+        # an exact Hessian at the first step: OptKing's model Hessian has no negative curvature, and a TS search
+        # started from it ended on higher-order saddles (a Diels-Alder TS came out with two imaginary modes)
+        opts["full_hess_every"] = 0
     elif op == "irc":
         opts["opt_type"] = "IRC"
         # Psi4/OptKing accepts FORWARD or BACKWARD as a single run. Leonardo's
@@ -299,6 +302,9 @@ def psi4_build_driver_options(
         opts["irc_direction"] = "FORWARD" if str(irc["irc_direction"]).upper() == "BOTH" else irc["irc_direction"]
         opts["irc_points"] = int(irc["irc_points"])
         opts["irc_step_size"] = float(irc["irc_step"])
+        # a TS's moving atom sits between partners (a keto-enol H at 1.59 A from C and 1.35 A from O); OptKing's
+        # default bond test (1.3x covalent radii) left it unconnected and the IRC walked without ever moving it
+        opts["covalent_connect"] = 1.6
     if freeze_cart and op in ("optimize", "stationary", "ts", "irc"):
         # OptKing takes a string of "atom xyz" pairs (1-based); a list makes psi4.set_options fail
         opts["frozen_cartesian"] = " ".join(f"{int(ai)} xyz" for ai in freeze_atoms)
