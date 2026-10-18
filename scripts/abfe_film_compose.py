@@ -78,7 +78,30 @@ def load():
     r = json.load(open(DATA / "results.json"))
     z = np.load(DATA / "trajectories.npz")
     disp = [z[f"disp_{k}"] for k in range(r["replicas"])]
-    return {"r": r, "disp": disp}
+    figs = {name: Image.open(DATA / f"{name}.png").convert("RGB") for name in ("analysis", "exit_profiles")}
+    PANELS.update(find_panels(figs["analysis"]))
+    return {"r": r, "disp": disp, "figs": figs}
+
+
+def find_panels(img):
+    """Panel rectangles of Leonardo's 2 x 2 analysis figure, from its axes frames (#D1D5DB spines): the header
+    above them grows with the run's summary, so fixed fractions would cut titles."""
+    a = np.asarray(img, dtype=int)
+    h, w = a.shape[:2]
+    spine = np.all(np.abs(a - np.array([209, 213, 219])) <= 14, axis=2)
+    rows = np.where(spine[:, : w // 2].sum(axis=1) > 0.3 * (w // 2))[0]
+    if rows.size < 4:
+        return {}
+    groups = np.split(rows, np.where(np.diff(rows) > 3)[0] + 1)
+    ys = [int(g.mean()) for g in groups]
+    if len(ys) < 4:
+        return {}
+    top_u, bot_u, top_l = ys[0], ys[1], ys[2]
+    title = 0.038 * h                           # panel title above its frame
+    y0 = (top_u - title - 0.008 * h) / h
+    split = (top_l - title) / h                 # upper x-axis labels end above the lower titles
+    return {"conv": (0.0, y0, 0.505, split), "epmf": (0.505, y0, 1.0, split),
+            "rpmf": (0.0, split + 0.006, 0.505, 1.0), "surf": (0.505, split + 0.006, 1.0, 1.0)}
 
 
 def fmt_kj(v, signed=True):
@@ -135,6 +158,126 @@ def trace_panel(lay, t, k, D, replicas, frac, title, sub, span=1.0):
             px, py = pts[-1]
             ImageDraw.Draw(lay).ellipse((px - 6, py - 6, px + 6, py + 6), fill=(255, 255, 255, int(255 * k)))
     return box
+
+
+# Leonardo's 4-panel analysis figure: where each panel sits (fractions of the image, title included)
+PANELS = {"full": (0.0, 0.0, 1.0, 1.0), "conv": (0.0, 0.14, 0.5, 0.585), "epmf": (0.5, 0.14, 1.0, 0.585),
+          "rpmf": (0.0, 0.565, 0.5, 1.0), "surf": (0.5, 0.565, 1.0, 1.0)}
+# (start s into the scene, figure, view, label, caption) — the camera moves to each view in turn
+ANALYSIS_SHOTS = [
+    (0.0, "analysis", "full", "LEONARDO'S ANALYSIS",
+     "The report Leonardo draws after every ABFE-lite run, from all three replicas"),
+    (3.4, "analysis", "conv", "FREE-ENERGY CONVERGENCE",
+     "ΔG as frames accumulate. The cumulant estimate swings by thousands of kJ/mol: it has not converged"),
+    (6.6, "analysis", "epmf", "PMF FROM THE ENERGY DISTRIBUTION",
+     "Free-energy profile of the protein–ligand interaction energy over the sampled states"),
+    (9.8, "analysis", "rpmf", "PMF ALONG THE EXIT COORDINATE",
+     "The bound basin in the pocket and the cost of leaving it; dashed line: Leonardo's bound cutoff"),
+    (13.0, "analysis", "surf", "2D FREE-ENERGY SURFACE",
+     "Exit distance against interaction energy: the bound basin, the unbound one, grey where the ligand never went"),
+    (16.0, "exit_profiles", "full", "EXIT PROFILES",
+     "Every replica leaves the pocket and comes back; dashed line: Leonardo's bound cutoff"),
+]
+
+
+def window_box():
+    return (96, 292, 1110, 968) if FMT == "yt" else (40, 430, 1040, 1180)
+
+
+def shot_at(u):
+    k = 0
+    for q, sh in enumerate(ANALYSIS_SHOTS):
+        if u >= sh[0]:
+            k = q
+    return k
+
+
+def view_rect(view, img):
+    x0, y0, x1, y1 = PANELS[view]
+    w, h = img.size
+    return np.array([x0 * w, y0 * h, x1 * w, y1 * h])
+
+
+def render_view(img, rect, size):
+    """The figure region rect fitted whole into size, padded with the figure's own background colour."""
+    cw, ch = size
+    part = img.crop(tuple(int(round(v)) for v in rect))
+    f = min(cw / part.width, ch / part.height)
+    part = part.resize((max(1, int(part.width * f)), max(1, int(part.height * f))), Image.LANCZOS)
+    out = Image.new("RGB", (int(cw), int(ch)), img.getpixel((4, 4)))
+    out.paste(part, ((int(cw) - part.width) // 2, (int(ch) - part.height) // 2))
+    return out
+
+
+def figure_window(base, t, a, b, D):
+    """Leonardo's figures in an app-style window; the view glides from panel to panel."""
+    u = t - a
+    k = window(t, a + 0.1, b, 0.6)
+    if k <= 0:
+        return
+    x0, y0, x1, y1 = window_box()
+    bar = 46
+    cw, ch = x1 - x0, y1 - y0 - bar
+    q = shot_at(u)
+    start, fig_name, view = ANALYSIS_SHOTS[q][:3]
+    img = D["figs"][fig_name]
+    rect = view_rect(view, img)
+    if q > 0 and ANALYSIS_SHOTS[q - 1][1] == fig_name:          # glide from the previous view
+        prev = view_rect(ANALYSIS_SHOTS[q - 1][2], img)
+        m = ease((u - start) / 0.9)
+        rect = prev + (rect - prev) * m
+    content = render_view(img, rect, (cw, ch))
+    if q > 0 and ANALYSIS_SHOTS[q - 1][1] != fig_name:          # cross-fade to another figure
+        old = D["figs"][ANALYSIS_SHOTS[q - 1][1]]
+        before = render_view(old, view_rect(ANALYSIS_SHOTS[q - 1][2], old), (cw, ch))
+        content = Image.blend(before, content.convert("RGB"), ease((u - start) / 0.7))
+    # window: soft shadow, dark title bar with traffic lights, the figure
+    scale = 0.94 + 0.06 * tc.ease_out((t - a) / 0.9)
+    win = Image.new("RGBA", (int(cw), int(ch + bar)), (0, 0, 0, 0))
+    d = ImageDraw.Draw(win)
+    d.rounded_rectangle((0, 0, cw - 1, ch + bar - 1), radius=14, fill=(18, 26, 40, 255))
+    for j, col in enumerate(((255, 95, 87), (254, 188, 46), (40, 200, 64))):
+        d.ellipse((18 + 22 * j, bar / 2 - 6, 30 + 22 * j, bar / 2 + 6), fill=(*col, 255))
+    tc.text(win, (cw / 2, bar / 2), "Leonardo · ABFE-lite analysis" if fig_name == "analysis"
+            else "Leonardo · Plot: ABFE-lite exit profiles", 18, (196, 210, 232), "medium", 1.0, "mm")
+    mask = Image.new("L", (int(cw), int(ch)), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, -20, cw - 1, ch - 1), radius=14, fill=255)
+    win.paste(content, (0, bar), mask)
+    if scale < 0.999:
+        win = win.resize((int(win.width * scale), int(win.height * scale)), Image.LANCZOS)
+    px = int(x0 + (cw - win.width) / 2)
+    py = int(y0 + (ch + bar - win.height) / 2)
+    shadow = Image.new("RGBA", base.size)
+    ImageDraw.Draw(shadow).rounded_rectangle((px + 6, py + 18, px + win.width + 6, py + win.height + 18), radius=18,
+                                             fill=(0, 0, 0, int(170 * k)))
+    base.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(22)))
+    glow = Image.new("RGBA", base.size)
+    ImageDraw.Draw(glow).rounded_rectangle((px - 2, py - 2, px + win.width + 2, py + win.height + 2), radius=16,
+                                           outline=(*TEAL, int(90 * k)), width=2)
+    base.alpha_composite(glow.filter(ImageFilter.GaussianBlur(6)))
+    if k < 1:
+        win.putalpha(win.getchannel("A").point(lambda v: int(v * k)))
+    base.alpha_composite(win, (px, py))
+
+
+def analysis_caption(lay, t, a, b):
+    u = t - a
+    q = shot_at(u)
+    start, _fig, _view, label, cap = ANALYSIS_SHOTS[q]
+    end = ANALYSIS_SHOTS[q + 1][0] if q + 1 < len(ANALYSIS_SHOTS) else (b - a)
+    k = window(u, start + 0.35, end, 0.4) * window(t, a, b, 0.4)
+    if FMT == "yt":
+        x, y = 1180, 470
+        text(lay, (x, y - 40), f"{q + 1} / {len(ANALYSIS_SHOTS)}", 18, MUTED, "demi", k, "lm", spacing=3)
+        text(lay, (x, y), label, 26, TEAL, "demi", k, "lm", spacing=3)
+        for j, line in enumerate(oc.wrap(cap, 34)):
+            text(lay, (x, y + 52 + 40 * j), line, 28, INK, "regular", k, "lm")
+    else:
+        y = 1270
+        text(lay, (W / 2, y - 44), f"{q + 1} / {len(ANALYSIS_SHOTS)}", 18, MUTED, "demi", k, "mm", spacing=3)
+        text(lay, (W / 2, y), label, 26, TEAL, "demi", k, "mm", spacing=3)
+        for j, line in enumerate(oc.wrap(cap, 36)):
+            text(lay, (W / 2, y + 56 + 42 * j), line, 30, INK, "regular", k, "mm")
 
 
 def overlay(base, t, i, D):
@@ -205,48 +348,61 @@ def overlay(base, t, i, D):
             oc.metric(lay, x0 + 40 + step * q, yy, f"{'Rep.' if FMT == 'yt' else 'Replica'} {q + 1} bound",
                       f"{100 * pb:.0f}" if pb is not None else "n/a", "%", kq, COLS[q % 3])
         oc.provenance(lay, t, a, "run_abfe in Leonardo · populations and ΔG estimators from Leonardo's own report")
+    # ---------------------------------------------------------------------------------- analysis
+    a, b = SCENES["analysis"]
+    if a - 0.1 <= t < b + 0.2:
+        oc.tag(lay, t, a + 0.2, "04", "ANALYSIS", "What Leonardo reports",
+               "The free-energy analysis Leonardo draws from the three replicas, unedited")
+        figure_window(base, t, a, b, D)
+        analysis_caption(lay, t, a, b)
+        oc.provenance(lay, t, a, "Leonardo's ABFE-lite report figure (saved with the results) and show_plot('abfe')")
     # ------------------------------------------------------------------------------------ result
     a, b = SCENES["result"]
     if a - 0.1 <= t < b + 0.2:
         k = window(t, a + 0.2, b, 0.6)
         if FMT == "yt":
-            box = (cx - 520, 150, cx + 520, 930)
+            box = (cx - 580, 150, cx + 580, 930)
         else:
             box = (60, 330, W - 60, 1420)
         card(lay, box, k)
         x0, y0, x1, y1 = box
         badge(lay, (cx, y0 + 70), k, 24)
         text(lay, (cx, y0 + 150), "What ABFE-lite estimated, ΔG in kJ/mol", 40, INK, "demi", k, "mm")
-        prev = r.get("previous_run_kj") or {}
-        rows = [("Selected estimator (solvent-rescored hold windows)", r.get("dg_selected_kj"), prev.get("selected"), CORAL),
-                ("Bias-reweighted, standard state", r.get("dg_reweighted_standard_kj"),
-                 prev.get("reweighted_standard"), AMBER),
-                ("Bound / unbound populations", r.get("dg_pop_kj"), prev.get("population"), (196, 210, 232)),
-                ("Exponential average", r.get("dg_exp_kj"), prev.get("exp_avg"), (196, 210, 232))]
+        prevs = list(r.get("previous_runs_kj") or [])
+        keys = ("selected", "reweighted_standard", "population", "exp_avg")
+        rows = [("Selected (solvent-rescored hold windows)", r.get("dg_selected_kj"), CORAL),
+                ("Bias-reweighted, standard state", r.get("dg_reweighted_standard_kj"), AMBER),
+                ("Bound / unbound populations", r.get("dg_pop_kj"), (196, 210, 232)),
+                ("Exponential average", r.get("dg_exp_kj"), (196, 210, 232))]
         yy = y0 + 240
-        if FMT == "yt" and prev:
-            text(lay, (x1 - 190, yy - 46), "THIS RUN", 15, MUTED, "demi", k, "rm", spacing=2)
-            text(lay, (x1 - 50, yy - 46), "PREVIOUS", 15, MUTED, "demi", k, "rm", spacing=2)
-        for q, (lab, v, pv, col) in enumerate(rows):
+        cols_x = [x1 - 50 - 125 * (len(prevs) - j) for j in range(len(prevs) + 1)]   # earlier runs, then this film
+        if FMT == "yt":
+            for j in range(len(prevs)):
+                text(lay, (cols_x[j], yy - 46), f"RUN {j + 1}", 16, MUTED, "demi", k, "rm")
+            text(lay, (cols_x[-1], yy - 46), "THIS FILM", 16, TEAL, "demi", k, "rm")
+        for q, (lab, v, col) in enumerate(rows):
             kr = k * ease((t - a - 0.8 - 0.35 * q) / 0.5)
+            pvs = [p_.get(keys[q]) for p_ in prevs]
             if FMT == "yt":
-                text(lay, (x0 + 70, yy), lab, 26, (196, 210, 232), "regular", kr, "lm")
-                text(lay, (x1 - 190, yy), fmt_kj(v), 30, col, "demi", kr, "rm")
-                text(lay, (x1 - 50, yy), fmt_kj(pv), 26, MUTED, "medium", kr, "rm")
+                text(lay, (x0 + 70, yy), lab, 24, (196, 210, 232), "regular", kr, "lm")
+                for j, pv in enumerate(pvs):
+                    text(lay, (cols_x[j], yy), fmt_kj(pv), 24, MUTED, "medium", kr, "rm")
+                text(lay, (cols_x[-1], yy), fmt_kj(v), 30, col, "demi", kr, "rm")
                 yy += 66
             else:
                 for jj, line in enumerate(oc.wrap(lab, 34)):
                     text(lay, (x0 + 50, yy + 34 * jj), line, 28, (196, 210, 232), "regular", kr, "lm")
                 text(lay, (x1 - 50, yy), f"{fmt_kj(v)}", 38, col, "demi", kr, "rm")
-                if pv is not None:
-                    text(lay, (x1 - 50, yy + 40), f"previous run {fmt_kj(pv)}", 22, MUTED, "regular", kr, "rm")
+                if pvs:
+                    text(lay, (x1 - 50, yy + 40), "earlier runs " + ", ".join(fmt_kj(pv) for pv in pvs), 22, MUTED,
+                         "regular", kr, "rm")
                 yy += 34 * len(oc.wrap(lab, 34)) + 84
         km = k * ease((t - a - 2.6) / 0.6)
         ImageDraw.Draw(lay).line((x0 + 60, yy - 10, x1 - 60, yy - 10), fill=(120, 160, 220, int(90 * km)), width=1)
         yy += 30
         if FMT == "yt":
-            text(lay, (x0 + 70, yy), "Measured (experiment), kJ/mol", 26, TEAL, "demi", km, "lm")
-            text(lay, (x1 - 190, yy), f"≈ {fmt_kj(r['dg_measured_kj'])}", 30, TEAL, "demi", km, "rm")
+            text(lay, (x0 + 70, yy), "Measured (experiment)", 26, TEAL, "demi", km, "lm")
+            text(lay, (x1 - 50, yy), f"≈ {fmt_kj(r['dg_measured_kj'])}", 30, TEAL, "demi", km, "rm")
         else:
             text(lay, (x0 + 50, yy), "Measured (experiment)", 28, TEAL, "demi", km, "lm")
             text(lay, (x1 - 50, yy), f"≈ {fmt_kj(r['dg_measured_kj'])}", 38, TEAL, "demi", km, "rm")
@@ -259,18 +415,18 @@ def overlay(base, t, i, D):
     if t >= SCENES["outro"][0]:
         a = SCENES["outro"][0]
         y0 = 400 if FMT == "yt" else 760
-        oc.title_card(base, t, a + 0.4, 60.5, y0, "BINDING FREE ENERGY  ·  ABFE-LITE")
-        k = window(t, a + 1.6, 60.5, 0.7)
+        oc.title_card(base, t, a + 0.4, TOTAL + 0.5, y0, "BINDING FREE ENERGY  ·  ABFE-LITE")
+        k = window(t, a + 1.6, TOTAL + 0.5, 0.7)
         lines = (["A real calculation, run with Leonardo on a laptop GPU.", "The method is still experimental."]
                  if FMT == "yt" else ["A real calculation, run with", "Leonardo on a laptop GPU.",
                                       "The method is still experimental."])
         for j, line in enumerate(lines):
             text(lay, (cx, y0 + 200 + 48 * j), line, 34, INK if j < len(lines) - 1 else AMBER, "medium", k, "mm")
-        k2 = window(t, a + 2.6, 60.5, 0.7)
+        k2 = window(t, a + 2.6, TOTAL + 0.5, 0.7)
         yy = y0 + 200 + 48 * len(lines) + 50
         text(lay, (cx, yy), "github.com/juvenalyosa/Leonardo", 28, TEAL, "demi", k2, "mm")
         text(lay, (cx, yy + 44), "juvenal.yosa@gmail.com", 22, MUTED, "regular", k2, "mm")
-        k3 = window(t, a + 3.2, 60.5, 0.7)
+        k3 = window(t, a + 3.2, TOTAL + 0.5, 0.7)
         foot = ["Built using PyMOL™* · Leonardo is an independent project, not a Schrodinger product",
                 "* PyMOL is a trademark of Schrodinger, LLC.",
                 "Music: “Ouroboros” / “Exhilarate” by Kevin MacLeod (incompetech.com), CC BY 4.0"]
@@ -285,7 +441,7 @@ def compose(i, D):
     t = i / FPS
     scene, a = scene_at(t)
     j = i - int(round(a * FPS))
-    if scene in ("result", "outro"):
+    if scene in ("analysis", "result", "outro"):
         nrep = int(round((SCENES["replicas"][1] - SCENES["replicas"][0]) * FPS))
         img = mol_frame("replicas", nrep - 1)
     else:
@@ -296,13 +452,13 @@ def compose(i, D):
         if blur > 0.2:
             img = img.filter(ImageFilter.GaussianBlur(blur))
         img = Image.blend(Image.new("RGBA", (W, H), (3, 6, 13, 255)), img, 0.42 + 0.58 * k)
-    if scene in ("result", "outro"):
+    if scene in ("analysis", "result", "outro"):
         img = Image.blend(Image.new("RGBA", (W, H), (3, 6, 13, 255)), img.filter(ImageFilter.GaussianBlur(5)), 0.36)
     for _n, (sa, _sb) in SCENES.items():
         if sa > 0 and abs(t - sa) < 0.3:
             img = Image.blend(img, Image.new("RGBA", (W, H), (3, 6, 13, 255)), 0.8 * ease(1 - abs(t - sa) / 0.3))
     base = tc.grade(img).convert("RGBA")
-    end = SCENES["result"][0]
+    end = SCENES["analysis"][0]
     if 6.0 <= t < end:
         sc = tc.scrim() if FMT == "yt" else oc.vertical_scrim()
         k = ease((t - 6.0) / 0.8) * (1 - ease((t - (end - 0.6)) / 0.6))

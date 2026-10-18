@@ -7,6 +7,8 @@ PyMOL and compositing stages.  The pack saves Leonardo's session; its ABFE traje
 the states Leonardo sampled) are read from that session.
 
     python scripts/abfe_film_data.py [RESULTS.json] [PROJECT_FOLDER]
+
+The pack must be recorded with --keep: Leonardo's figures live in the replay's working folder.
 """
 from __future__ import annotations
 
@@ -24,14 +26,16 @@ DATA = ROOT / "artifacts" / "abfe_2026" / "data"
 KJ_PER_KCAL = 4.184
 # trypsin-benzamidine, the commonly used experimental reference: about -6.4 kcal/mol (Kd in the tens of uM)
 DG_MEASURED_KJ = -27.0
-# the same pack's protocol run once before (2026-10-18, docs/GPU_VALIDATION.md): shown so the film does not
-# present one stochastic run as the answer
-PREVIOUS_RUN_KJ = {"selected": -62.1, "reweighted_standard": -33.7, "population": -2.6, "exp_avg": 0.7}
+# earlier runs of the same protocol (2026-10-18, docs/GPU_VALIDATION.md): shown next to the film's run so the
+# film does not present one stochastic run as the answer
+PREVIOUS_RUNS_KJ = [{"selected": -62.1, "reweighted_standard": -33.7, "population": -2.6, "exp_avg": 0.7},
+                    {"selected": -79.2, "reweighted_standard": -25.7, "population": -3.1, "exp_avg": 1.4},
+                    {"selected": -60.9, "reweighted_standard": -19.6, "population": -2.2, "exp_avg": -1.2}]
 
 # ------------------------------------------------- shared by the PyMOL and compositing stages (no pymol here)
-FPS, TOTAL = 24, 60.0
-SCENES = {"site": (0.0, 10.0), "exit": (10.0, 33.0), "replicas": (33.0, 45.0), "result": (45.0, 53.0),
-          "outro": (53.0, 60.0)}
+FPS, TOTAL = 24, 75.0
+SCENES = {"site": (0.0, 10.0), "exit": (10.0, 30.0), "replicas": (30.0, 40.0), "analysis": (40.0, 59.0),
+          "result": (59.0, 68.0), "outro": (68.0, 75.0)}
 EXIT_FRACTION = 0.4          # the guided-exit scene plays this first part of replica 1 (its first exit and return)
 REPLICA_COLORS = ((43, 227, 200), (255, 179, 71), (111, 168, 255))     # teal, amber, blue
 
@@ -40,7 +44,18 @@ def main(argv):
     results = Path(argv[0]) if argv else RUNS / "11_abfe_lite.results.json"
     r = json.load(open(results))
     abfe = r["4"]
-    project = Path(argv[1]) if len(argv) > 1 else Path(r["5"]["project"])
+    steps = [r[k] for k in sorted(r, key=int)]
+    project = Path(argv[1]) if len(argv) > 1 else Path(next(x["project"] for x in steps if "project" in x))
+    import shutil
+
+    DATA.mkdir(parents=True, exist_ok=True)
+    # Leonardo's own figures: the 4-panel free-energy analysis and the exit profiles of show_plot('abfe')
+    figs = {"analysis.png": abfe.get("analysis_figure"),
+            "exit_profiles.png": next((x.get("image") for x in steps if x.get("kind") == "abfe"), None)}
+    for name, src in figs.items():
+        if not src or not Path(src).is_file():
+            raise SystemExit(f"{name}: Leonardo's figure is missing ({src}); record the pack with --keep")
+        shutil.copy(src, DATA / name)
     pse = sorted(glob.glob(str(project / "session" / "*.pse")))[-1]
 
     from pymol import cmd
@@ -50,7 +65,6 @@ def main(argv):
     trajs = sorted(o for o in cmd.get_names("objects") if o.startswith("abfe_local_md_traj_"))
     if not trajs:
         raise SystemExit(f"no ABFE trajectory in {pse}")
-    DATA.mkdir(parents=True, exist_ok=True)
     ref = trajs[0]
     lig_sel = f"{ref} and resn BEN"
     n_atoms = cmd.count_atoms(ref)
@@ -85,7 +99,7 @@ def main(argv):
         "dg_exp_kj": abfe.get("dg_exp"),
         "dg_exp_ci": [abfe.get("dg_exp_ci_low"), abfe.get("dg_exp_ci_high")],
         "dg_measured_kj": DG_MEASURED_KJ,
-        "previous_run_kj": PREVIOUS_RUN_KJ,
+        "previous_runs_kj": PREVIOUS_RUNS_KJ,
         "n_bound": abfe.get("n_bound"),
         "n_unbound": abfe.get("n_unbound"),
         "reliability": abfe.get("production_reliability"),
