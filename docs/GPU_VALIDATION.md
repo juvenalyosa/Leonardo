@@ -22,7 +22,7 @@ Metal).
 | MD, explicit water NPT, ligand + Ca site (0.02 ns) | pass, OpenCL; 300.7 K, 1.03 g/mL, 93 ns/day (27k atoms) | |
 | Minimization | pass, OpenCL | |
 | ABFE-lite, trypsin-benzamidine, 3 replicas x 1 ns | pass, OpenCL; 2 of 3 replicas completed exit/return cycles, ΔG ≈ -54 kJ/mol (qualitative) | |
-| ABFE-lite defaults, trypsin-benzamidine, 3 replicas x 3 ns | runs, OpenCL (21 min, process tree ≤ 1.7 GB, wired memory flat); ΔG not accurate: selected -62, bias-reweighted standard-state -33.7, population -2.2 to -3.0, exp-avg +0.7 kJ/mol vs ≈ -27 measured; three more runs (film pack 11): selected -79.2/-60.9/-59.2, reweighted -25.7/-19.6/-20.7, population -3.1/-2.2/-3.2 | not yet run |
+| ABFE-lite defaults, trypsin-benzamidine, 3 replicas x 3 ns | runs, OpenCL (21 min, process tree ≤ 1.7 GB, wired memory flat); ΔG not accurate: selected -62, bias-reweighted standard-state -33.7, population -2.2 to -3.0, exp-avg +0.7 kJ/mol vs ≈ -27 measured; six more runs (film pack 11): selected -53.8 to -79.2, reweighted -19.6 to -25.7, population -2.2 to -4.1 | not yet run |
 | Protein on Au(111), build + minimization | pass, OpenCL single | |
 | Umbrella sampling (alanine φ, MBAR) | pass, OpenCL | |
 | Well-tempered metadynamics | pass, OpenCL | |

@@ -212,3 +212,22 @@ def test_openmm_step_synced_reads_the_context_of_a_simulation():
 
     assert openmm_step_synced(_Sim, None, 500, sync_every=100) == 500
     assert len(seen) == 4
+
+
+def test_kde_free_energy_surface_is_a_landscape():
+    """Two sampled basins give one continuous surface: minimum 0 in the more populated basin, a capped plateau
+    where nothing was sampled, finite everywhere."""
+    from leonardo.abfe_runtime import abfe_kde_free_energy_surface
+
+    rng = np.random.default_rng(1)
+    x = np.concatenate([rng.normal(3.0, 0.3, 300), rng.normal(20.0, 2.0, 80)])
+    y = np.concatenate([rng.normal(-150.0, 30.0, 300), rng.normal(0.0, 10.0, 80)])
+    gx, gy, F = abfe_kde_free_energy_surface(x, y, None, 2.494, 30.0, n=80)
+    assert F.shape == (80, 80) and np.all(np.isfinite(F))
+    assert float(F.min()) == 0.0 and float(F.max()) <= 30.0 + 1e-9
+    iy, ix = np.unravel_index(int(np.argmin(F)), F.shape)
+    assert abs(gx[ix] - 3.0) < 1.5 and abs(gy[iy] + 150.0) < 40.0
+    jx, jy = int(np.argmin(abs(gx - 20.0))), int(np.argmin(abs(gy - 0.0)))
+    kx, ky = int(np.argmin(abs(gx - 11.0))), int(np.argmin(abs(gy - 200.0)))
+    assert F[jy, jx] < F[ky, kx]                     # the unbound basin lies below the unsampled plateau
+    assert abfe_kde_free_energy_surface(x[:5], y[:5], None, 2.494, 30.0) is None

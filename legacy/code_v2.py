@@ -52452,6 +52452,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 Yc=Yc,
                 Fsurf=Fsurf,
                 surface_clip_max_kj=float(numeric_payload.get("surface_clip_max_kj", np.nan)),
+                surface_style=str(numeric_payload.get("surface_style", "bins") or "bins"),
+                surface_samples=numeric_payload.get("surface_samples", None),
                 bound_cutoff_a=float(bound_cutoff_a),
                 bound_center=dict(numeric_payload.get("bound_center", {}) or {}),
                 unbound_center=dict(numeric_payload.get("unbound_center", {}) or {}),
@@ -52639,15 +52641,26 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 # every sampled bin drawn as it is (a filled contour of sparse bins invented smooth regions
                 # and left the rest white); unsampled bins in their own grey, so they read as "not visited"
                 ax_surf.set_facecolor(str(surf.get("unsampled_color", "#E5E7EB")))
-                cf = ax_surf.pcolormesh(
-                    Xc_plot,
-                    Yc_plot,
-                    Fsurf_masked,
-                    shading="nearest",
-                    cmap=str(surf.get("cmap", "viridis")),
-                    vmin=0.0,
-                    vmax=max(0.5, surf_upper),
-                )
+                if str(surf.get("style", "bins")) == "smooth":
+                    # continuous landscape (KDE): filled levels, iso-energy lines drawn below
+                    cf = ax_surf.contourf(
+                        Xc_plot,
+                        Yc_plot,
+                        Fsurf_masked,
+                        levels=np.linspace(0.0, max(0.5, surf_upper), max(8, surf_levels)),
+                        cmap=str(surf.get("cmap", "viridis")),
+                        extend="max",
+                    )
+                else:
+                    cf = ax_surf.pcolormesh(
+                        Xc_plot,
+                        Yc_plot,
+                        Fsurf_masked,
+                        shading="nearest",
+                        cmap=str(surf.get("cmap", "viridis")),
+                        vmin=0.0,
+                        vmax=max(0.5, surf_upper),
+                    )
                 contour_n = int(max(0, int(surf.get("contour_levels", 0) or 0)))
                 dense = finite_surface.size >= 0.6 * np.asarray(Fsurf_masked).size
                 if contour_n > 0 and finite_surface.size > 0 and dense:
@@ -52822,6 +52835,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 fig_path = os.path.join(fig_dir, datetime.datetime.now().strftime("abfe_analysis_%Y%m%d_%H%M%S.png"))
                 fig.savefig(fig_path, dpi=200, facecolor=fig.get_facecolor())
                 self._abfe_last_analysis_figure = fig_path
+                # the plotted arrays too, so the figure can be redrawn without rerunning the simulation
+                try:
+                    arrays = {}
+                    for sec, block in dict(plot_payload or {}).items():
+                        for key, val in dict(block if isinstance(block, dict) else {}).items():
+                            if isinstance(val, np.ndarray):
+                                arrays[f"{sec}.{key}"] = val
+                    np.savez_compressed(fig_path[:-4] + ".npz", **arrays)
+                except Exception as e:
+                    self._append_debug_log(f"ABFE analysis data not saved: {e}")
                 self._append_debug_log(f"ABFE analysis figure saved: {fig_path}")
             except Exception as e:
                 self._append_debug_log(f"ABFE analysis figure not saved: {e}")

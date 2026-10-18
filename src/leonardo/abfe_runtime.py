@@ -8671,6 +8671,8 @@ def build_abfe_free_energy_numeric_payload(
         }
 
     has_surface = False
+    surface_style = "bins"
+    surface_samples = (None, None, None)
     Xc = None
     Yc = None
     Fsurf = None
@@ -8703,6 +8705,14 @@ def build_abfe_free_energy_numeric_payload(
                     Yc = 0.5 * (yedges[:-1] + yedges[1:])
                     Fsurf = F.T
                     has_surface = True
+                    # a free-energy landscape, not scattered bins: -kT ln of a Gaussian KDE of the samples,
+                    # capped where the ligand never went (same cap as the histogram surface)
+                    surface_samples = (np.asarray(rr, dtype=float), np.asarray(ee, dtype=float),
+                                       None if surf_weights is None else np.asarray(surf_weights, dtype=float))
+                    smooth = abfe_kde_free_energy_surface(rr, ee, surf_weights, kbt, surface_clip_max_kj)
+                    if smooth is not None:
+                        Xc, Yc, Fsurf = smooth
+                        surface_style = "smooth"
 
     def _safe_int(value, default=0):
         try:
@@ -8998,10 +9008,61 @@ def build_abfe_free_energy_numeric_payload(
         "Xc": (np.asarray(Xc, dtype=float) if Xc is not None else None),
         "Yc": (np.asarray(Yc, dtype=float) if Yc is not None else None),
         "Fsurf": (np.asarray(Fsurf, dtype=float) if Fsurf is not None else None),
+        "surface_style": str(surface_style),
+        "surface_samples": surface_samples,
         "surface_clip_max_kj": float(surface_clip_max_kj) if np.isfinite(surface_clip_max_kj) else np.nan,
         "bound_center": dict(bound_center or {}),
         "unbound_center": dict(unbound_center or {}),
     }
+
+
+# smoothing width of the free-energy surface, as a fraction of each axis' sampled range (about 1 A and 20 kJ/mol
+# for an ABFE exit).  A fixed width, not a bandwidth from the data: with bias reweighting the unbound frames
+# carry little weight, and scipy's weighted KDE then took the spread of the bound frames alone (0.15 A) and
+# resolved noise into stripes instead of basins
+SURFACE_SMOOTH_FRACTION = 0.04
+
+
+def abfe_kde_free_energy_surface(x, y, weights, kbt, cap_kj, n=120):
+    """Free-energy landscape -kT ln p(x, y): the (weighted) samples histogrammed on an n x n grid padded 8 %
+    beyond them and smoothed with a Gaussian of SURFACE_SMOOTH_FRACTION of each axis' range; shifted to 0 at its
+    minimum and capped at cap_kj where the ligand (almost) never went.  Returns (x grid, y grid, F[y, x]) or None
+    (scipy missing, too few or degenerate samples)."""
+    try:
+        from scipy.ndimage import gaussian_filter
+    except Exception:
+        return None
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    w = None
+    if weights is not None and np.asarray(weights).size == x.size:
+        w = np.clip(np.asarray(weights, dtype=float), 0.0, None)
+        ok &= np.isfinite(w)
+    x, y = x[ok], y[ok]
+    if w is not None:
+        w = w[ok]
+        if float(np.sum(w)) <= 0.0:
+            w = None
+    if x.size < 20:
+        return None
+    rx = float(np.max(x)) - float(np.min(x))
+    ry = float(np.max(y)) - float(np.min(y))
+    if rx <= 0.0 or ry <= 0.0:
+        return None
+    gx = np.linspace(float(np.min(x)) - 0.08 * rx, float(np.max(x)) + 0.08 * rx, int(n))
+    gy = np.linspace(float(np.min(y)) - 0.08 * ry, float(np.max(y)) + 0.08 * ry, int(n))
+    dx, dy = gx[1] - gx[0], gy[1] - gy[0]
+    edges_x = np.append(gx - dx / 2, gx[-1] + dx / 2)
+    edges_y = np.append(gy - dy / 2, gy[-1] + dy / 2)
+    H, _, _ = np.histogram2d(y, x, bins=(edges_y, edges_x), weights=w)
+    P = gaussian_filter(H, sigma=(SURFACE_SMOOTH_FRACTION * ry / dy, SURFACE_SMOOTH_FRACTION * rx / dx),
+                        mode="constant")
+    if float(np.max(P)) <= 0.0:
+        return None
+    F = -float(kbt) * np.log(np.clip(P / float(np.max(P)), 1.0e-300, None))
+    cap = float(cap_kj) if np.isfinite(_safe_float(cap_kj)) and float(cap_kj) > 0.0 else float(np.percentile(F, 60.0))
+    return gx, gy, np.minimum(F, cap)
 
 
 def build_abfe_free_energy_plot_payload(
@@ -9022,6 +9083,8 @@ def build_abfe_free_energy_plot_payload(
     Yc=None,
     Fsurf=None,
     surface_clip_max_kj=np.nan,
+    surface_style="bins",
+    surface_samples=None,
     bound_cutoff_a=np.nan,
     bound_center=None,
     unbound_center=None,
@@ -9072,6 +9135,10 @@ def build_abfe_free_energy_plot_payload(
         and run_exp_sem_arr.size == run_frames_arr.size
     )
     surf_vmax = _safe_float(surface_clip_max_kj)
+
+    def _sample_arr(k):
+        rows = tuple(surface_samples) if surface_samples is not None else ()
+        return np.asarray(rows[k] if len(rows) > k and rows[k] is not None else [], dtype=float)
 
     def _marker_payload(center_row, label, color, marker):
         row = dict(center_row or {})
@@ -9169,6 +9236,11 @@ def build_abfe_free_energy_plot_payload(
             "Xc": (np.asarray(Xc, dtype=float) if Xc is not None else None),
             "Yc": (np.asarray(Yc, dtype=float) if Yc is not None else None),
             "Fsurf": (np.asarray(Fsurf, dtype=float) if Fsurf is not None else None),
+            "style": "smooth" if str(surface_style) == "smooth" else "bins",
+            # the frames behind the surface (distance, energy, weight), saved with the figure for redrawing
+            "samples_x": _sample_arr(0),
+            "samples_y": _sample_arr(1),
+            "samples_w": _sample_arr(2),
             "levels": 28,
             "contour_levels": 9,
             "cmap": "viridis",
@@ -9178,7 +9250,7 @@ def build_abfe_free_energy_plot_payload(
             "cbar_label": "Free Energy (kJ/mol)",
             "xlabel": str(dist_axis_label),
             "ylabel": "Interaction Energy (kJ/mol)",
-            "title": "2D Free-Energy Surface",
+            "title": "2D Free-Energy Surface" + (" (smoothed)" if str(surface_style) == "smooth" else ""),
             "bound_marker": _marker_payload(bound_center_row, "bound basin", "#DC2626", "o"),
             "unbound_marker": _marker_payload(unbound_center_row, "unbound basin", "#F59E0B", "^"),
             "no_data_text": "Insufficient samples for 2D surface",
