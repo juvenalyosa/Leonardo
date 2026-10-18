@@ -1,0 +1,18 @@
+{
+ "name": "Film 11 - ABFE-lite: benzamidine leaving trypsin (experimental)",
+ "slug": "film11_abfe_lite",
+ "description": "Trypsin-benzamidine (PDB 3PTB): benzamidine protonated at pH 7.4, GAFF2/AM1-BCC parameters, then ABFE-lite with Leonardo's defaults (3 replicas x 3 ns, guided exit with pull, hold and return). The session is saved so the film can show the trajectories. ABFE-lite is experimental: its ΔG is not validated against experiment.",
+ "format": 1,
+ "parameters": {
+  "pack": {"default": ".", "description": "this pack's folder (filled in by leonardo.replay)"},
+  "project": {"default": "artifacts/leonardo_pack_runs/11_abfe_lite_project", "description": "folder where the session (with the ABFE trajectories) is saved"}
+ },
+ "steps": [
+  {"tool": "load_structure_file", "args": {"path": "{{pack}}/3PTB.pdb", "object_name": "trypsin"}},
+  {"tool": "prepare_docking_ligand", "args": {"selection": "trypsin and resn BEN", "ph": 7.4}},
+  {"tool": "parametrize_ligand", "args": {"charge_method": "bcc", "atom_types": "gaff2"}},
+  {"tool": "run_abfe", "args": {"object": "{{step:1.object}}", "ligand": {"chain": "A", "resi": "1", "resn": "BEN"},
+   "sim_ns": 3.0, "replicas": 3, "steering": "pull_hold_return"}},
+  {"tool": "save_project", "args": {"folder": "{{project}}"}}
+ ]
+}
