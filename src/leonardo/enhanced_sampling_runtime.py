@@ -28,6 +28,18 @@ import traceback
 
 import numpy as np
 
+
+def _step_synced(sim, steps, every=250):
+    """sim.step(steps) with a position download every ``every`` steps: one long step() on Apple's OpenCL
+    wires ~20 kB of driver memory per queued step (openmm_dynamics_runtime.openmm_step_synced)."""
+    done, total = 0, int(steps)
+    while done < total:
+        n = min(int(every), total - done)
+        sim.step(n)
+        done += n
+        if done < total:
+            sim.context.getState(getPositions=True)
+
 KB_KJ_MOL_K = 0.0083144626           # Boltzmann constant, kJ/mol/K
 KJ_PER_KCAL = 4.184                  # every kcal parameter (GaMD sigma0, aMD offsets) is converted here only
 DIHEDRAL_GROUP = 1                   # torsion forces: the dihedral boost of aMD/GaMD acts on this force group
@@ -572,7 +584,7 @@ def run_umbrella(spec):
         ctx.setParameter("c0", float(centers[w]))
         ctx.setParameter("k_umb", k)
         emit(f"window {n + 1}/{len(centers)} at {centers[w]:.3f}")
-        sim.step(eq_steps)
+        _step_synced(sim, eq_steps)
         if w == start:
             saved = ctx.getState(getPositions=True, getVelocities=True, getParameters=True)
         vals = []
@@ -824,7 +836,7 @@ def run_boosted(spec, kind):
     plat = platform_fn(bsim)
     bsim.context.setState(state)
     emit("boosted equilibration")
-    bsim.step(equil_steps)
+    _step_synced(bsim, equil_steps)
     rows = []
     box = None
     for i in range(max(1, prod_steps // stride)):

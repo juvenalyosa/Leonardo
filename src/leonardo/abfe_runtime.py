@@ -112,6 +112,7 @@ def openmm_platform_override():
         if value:
             return value
     return ""
+OPENMM_CPU_THREADS_ENV = "PROTLIGINTERACT_OPENMM_CPU_THREADS"
 OPENMM_GPU_PLATFORM_NAMES = {"CUDA", "Metal", "HIP", "OpenCL"}
 ABFE_STEERING_POLICY_MODEL_ENV = "PROTLIGINTERACT_ABFE_STEERING_POLICY_JSON"
 ABFE_STEERING_ACTION_NAMES = (
@@ -318,7 +319,32 @@ def openmm_gpu_properties(platform_name):
     return {"Precision": "single"}, ["gpu_has_no_mixed_precision_using_single"]
 
 
-def _normalize_platform_properties(platform_name, platform_properties):
+
+def openmm_cpu_thread_budget(cpu_count=None, env_value=None):
+    """
+    Threads for the OpenMM CPU platform.
+
+    OpenMM uses every core by default. Inside PyMOL that leaves nothing for the
+    GUI, the window server and the kernel's own daemons; long ABFE runs on a
+    laptop can starve them until macOS panics (watchdog timeout). Keep two cores
+    free unless the user sets PROTLIGINTERACT_OPENMM_CPU_THREADS.
+    """
+    raw = os.environ.get(OPENMM_CPU_THREADS_ENV, "") if env_value is None else env_value
+    try:
+        forced = int(str(raw or "").strip())
+    except ValueError:
+        forced = 0
+    if forced > 0:
+        return int(forced)
+    try:
+        n = int(cpu_count if cpu_count is not None else (os.cpu_count() or 1))
+    except (TypeError, ValueError):
+        n = 1
+    n = max(1, n)
+    return int(max(1, n - 2)) if n > 2 else 1
+
+
+def _normalize_platform_properties(platform_name, platform_properties, cpu_count=None):
     props = dict(platform_properties or {})
     picked = str(platform_name or "").strip()
     notes = []
@@ -329,6 +355,10 @@ def _normalize_platform_properties(platform_name, platform_properties):
         gpu_props, gpu_notes = openmm_gpu_properties(picked)
         props.update(gpu_props)
         notes.extend(gpu_notes)
+    if picked.upper() == "CPU" and "threads" not in existing_keys:
+        threads = openmm_cpu_thread_budget(cpu_count=cpu_count)
+        props["Threads"] = str(int(threads))
+        notes.append(f"cpu_threads_capped:{int(threads)}")
     return props, notes
 
 
@@ -356,6 +386,7 @@ def build_openmm_platform_selection_plan(
     *,
     platform_override="",
     os_name="",
+    cpu_count=None,
 ):
     available = {}
     for name in list(available_platform_names or []):
@@ -392,7 +423,7 @@ def build_openmm_platform_selection_plan(
             picked = str(name)
             break
 
-    props, prop_notes = _normalize_platform_properties(picked, {})
+    props, prop_notes = _normalize_platform_properties(picked, {}, cpu_count=cpu_count)
     notes.extend(list(prop_notes))
     if override and override not in available:
         notes.append(f"requested_platform_unavailable:{override}")
@@ -2827,9 +2858,19 @@ def build_abfe_tunnel_restraint_payload(
     k_axial_kj_mol_nm2=1000.0,
     pull_distance_a=12.0,
     axial_margin_a=4.0,
+    shape="cylinder",
+    cone_half_angle_deg=35.0,
+    cone_length_a=6.0,
 ):
     """
     Validate a cylindrical guide tunnel for ABFE-lite steering.
+
+    ``shape="funnel"`` turns the constant radius into a Limongelli-style funnel:
+    a cone that is wide at the binding site (the bound ligand keeps its natural
+    fluctuations and can re-dock in any orientation) and narrows to the tunnel
+    radius ``cone_length_a`` along the exit axis, followed by the cylinder up to
+    the axial cap.  Unbound sampling is confined to a small volume in front of
+    the entrance, so the return pull finds the pocket instead of the surface.
 
     The tunnel is intentionally soft: the ligand center of mass is unpenalized
     inside the cylinder and receives a harmonic radial wall only when it leaves
@@ -2847,6 +2888,10 @@ def build_abfe_tunnel_restraint_payload(
         "k_axial_kj_mol_nm2": np.nan,
         "zmin_nm": -0.25,
         "zmax_nm": np.nan,
+        "shape": "cylinder",
+        "tan_alpha": 0.0,
+        "zcc_nm": 0.0,
+        "energy_expression": ABFE_TUNNEL_ENERGY_EXPRESSION,
         "notes": [],
     }
     if not bool(enabled):
@@ -2902,6 +2947,30 @@ def build_abfe_tunnel_restraint_payload(
     if (not np.isfinite(margin_nm)) or margin_nm < 0.0:
         margin_nm = 0.4
     zmax_nm = float(max(pull_nm + margin_nm, 2.0 * pull_nm, radius_nm + 0.6))
+    shape_txt = str(shape or "cylinder").strip().lower()
+    if shape_txt not in {"cylinder", "funnel"}:
+        out["notes"].append(f"unknown_shape_defaulted:{shape_txt}")
+        shape_txt = "cylinder"
+    tan_alpha = 0.0
+    zcc_nm = 0.0
+    if shape_txt == "funnel":
+        try:
+            alpha = float(cone_half_angle_deg)
+        except (TypeError, ValueError):
+            alpha = 35.0
+        if not np.isfinite(alpha):
+            alpha = 35.0
+        alpha = float(np.clip(alpha, 10.0, 60.0))
+        tan_alpha = float(np.tan(np.deg2rad(alpha)))
+        try:
+            zcc_nm = 0.1 * float(cone_length_a)
+        except (TypeError, ValueError):
+            zcc_nm = 0.6
+        if (not np.isfinite(zcc_nm)) or zcc_nm <= 0.0:
+            zcc_nm = 0.6
+            out["notes"].append("cone_length_defaulted")
+        # the cone must end before the axial cap, otherwise there is no cylinder
+        zcc_nm = float(min(zcc_nm, max(0.1, zmax_nm - 0.3)))
     out.update(
         {
             "ok": True,
@@ -2913,9 +2982,242 @@ def build_abfe_tunnel_restraint_payload(
             "k_axial_kj_mol_nm2": float(k_axial),
             "zmin_nm": -float(max(0.15, min(0.50, radius_nm))),
             "zmax_nm": float(zmax_nm),
+            "shape": str(shape_txt),
+            "tan_alpha": float(tan_alpha),
+            "zcc_nm": float(zcc_nm),
+            "energy_expression": ABFE_TUNNEL_ENERGY_EXPRESSION,
         }
     )
     return out
+
+
+# Single-COM wall for CustomCentroidBondForce(1, ...): free inside, harmonic outside.
+# The allowed radius is r0 on the cylinder and grows as (zcc - z)*tan_a toward the site,
+# so tan_a = 0 recovers the plain cylinder.
+ABFE_TUNNEL_ENERGY_EXPRESSION = (
+    "0.5*k_cyl*step(radial-rallow)*(radial-rallow)^2"
+    " + 0.5*k_axial*step(zmin-axisproj)*(zmin-axisproj)^2"
+    " + 0.5*k_axial*step(axisproj-zmax)*(axisproj-zmax)^2;"
+    "rallow=r0+tan_a*step(zcc-axisproj)*(zcc-axisproj);"
+    "radial=sqrt(max(0.0, rx*rx+ry*ry+rz*rz-axisproj*axisproj));"
+    "axisproj=rx*ux+ry*uy+rz*uz;"
+    "rx=x1-ox; ry=y1-oy; rz=z1-oz"
+)
+
+
+def abfe_tunnel_wall_energy(com_nm, payload):
+    """NumPy mirror of ABFE_TUNNEL_ENERGY_EXPRESSION (kJ/mol), for tests and diagnostics."""
+    p = dict(payload or {})
+    r = np.asarray(com_nm, dtype=float) - np.asarray(p.get("origin_nm"), dtype=float)
+    u = np.asarray(p.get("direction"), dtype=float)
+    z = float(np.dot(r, u))
+    radial = float(np.sqrt(max(0.0, float(np.dot(r, r)) - z * z)))
+    zcc = float(p.get("zcc_nm", 0.0) or 0.0)
+    rallow = float(p["radius_nm"]) + float(p.get("tan_alpha", 0.0) or 0.0) * max(0.0, zcc - z)
+    k_cyl = float(p["k_radial_kj_mol_nm2"])
+    k_ax = float(p["k_axial_kj_mol_nm2"])
+    e = 0.5 * k_cyl * max(0.0, radial - rallow) ** 2
+    e += 0.5 * k_ax * max(0.0, float(p["zmin_nm"]) - z) ** 2
+    e += 0.5 * k_ax * max(0.0, z - float(p["zmax_nm"])) ** 2
+    return float(e)
+
+
+def build_abfe_funnel_axis_payload(
+    *,
+    coords_nm=None,
+    protein_heavy_idx=None,
+    ligand_heavy_idx=None,
+    tube_radius_a=5.0,
+    pocket_skip_a=4.0,
+    n_directions=500,
+):
+    """
+    Pick the funnel/exit axis as the most open way from the ligand to bulk solvent.
+
+    A direction is scored by casting a ligand-sized tube (``tube_radius_a``) from the
+    ligand center: protein heavy atoms inside the tube past the pocket (``pocket_skip_a``)
+    block it; atoms in a shell just outside the tube mean the path hugs the surface.
+    Among the least blocked directions the one reaching solvent soonest wins.  The
+    returned ``exit_depth_nm`` is how far along the axis the last nearby protein atom
+    is, i.e. where the ligand is really out; the cone should reach about that far and
+    the pull must go beyond it.
+    """
+    out = {"ok": False, "reason": "", "direction": np.asarray([1.0, 0.0, 0.0]), "origin_nm": None,
+           "exit_depth_nm": np.nan, "blocked_atoms": -1, "surface_atoms": -1}
+    try:
+        xyz = np.asarray(coords_nm, dtype=float)
+        p_idx = np.asarray(list(protein_heavy_idx or []), dtype=int)
+        l_idx = np.asarray(list(ligand_heavy_idx or []), dtype=int)
+    except (TypeError, ValueError):
+        out["reason"] = "invalid_input"
+        return out
+    if xyz.ndim != 2 or xyz.shape[1] != 3 or p_idx.size == 0 or l_idx.size == 0:
+        out["reason"] = "invalid_input"
+        return out
+    origin = np.mean(xyz[l_idx], axis=0)
+    rel = xyz[p_idx] - origin[None, :]
+    r2 = np.sum(rel * rel, axis=1)
+    tube = 0.1 * float(tube_radius_a)
+    shell = tube + 0.3
+    skip = 0.1 * float(pocket_skip_a)
+    n = int(max(50, n_directions))
+    k = np.arange(n, dtype=float) + 0.5
+    z = 1.0 - 2.0 * k / n
+    rho = np.sqrt(np.maximum(0.0, 1.0 - z * z))
+    phi = np.pi * (1.0 + 5.0 ** 0.5) * k
+    dirs = np.stack([rho * np.cos(phi), rho * np.sin(phi), z], axis=1)
+    fwd = rel @ dirs.T  # (n_atoms, n_dirs)
+    lat = np.sqrt(np.maximum(0.0, r2[:, None] - fwd * fwd))
+    ahead = fwd > skip
+    blocked = np.sum(ahead & (lat < tube), axis=0)
+    surface = np.sum(ahead & (lat < shell), axis=0)
+    near = (fwd > 0.0) & (lat < shell)
+    depth = np.where(np.any(near, axis=0), np.max(np.where(near, fwd, 0.0), axis=0), 0.0)
+    order = np.lexsort((depth, surface, blocked))
+    best = int(order[0])
+    out.update(
+        {
+            "ok": True,
+            "reason": "ok",
+            "direction": np.asarray(dirs[best], dtype=float),
+            "origin_nm": np.asarray(origin, dtype=float),
+            "exit_depth_nm": float(depth[best]),
+            "blocked_atoms": int(blocked[best]),
+            "surface_atoms": int(surface[best]),
+        }
+    )
+    return out
+
+
+def build_abfe_memory_guard_decision(
+    *,
+    available_mb=None,
+    total_mb=None,
+    swap_used_mb=None,
+    swap_used_start_mb=None,
+    wired_mb=None,
+    pressure_level=None,
+    min_available_mb=1536.0,
+    min_available_fraction=0.08,
+    max_swap_used_mb=4096.0,
+    max_swap_growth_mb=1024.0,
+    max_wired_fraction=0.70,
+):
+    """
+    Decide whether a long in-process MD run must stop to protect the machine.
+
+    The failure it prevents is macOS running out of pageable memory until watchdogd misses its check-ins
+    and the kernel panics (16 GB M4, 2026-09-29 and 2026-10-17).  Each trigger stops the run on its own:
+    low system available memory, swap in use above max_swap_used_mb, swap grown during this run by more
+    than max_swap_growth_mb, wired memory above max_wired_fraction of RAM, or critical kernel pressure.
+
+    Never make the low-memory or swap triggers conditional on another reading.  On 2026-10-17 the guard
+    was relaxed to "low memory AND 2 GB swap growth" because it stopped a run on a busy laptop; the
+    next run panicked the machine with all 16 GB wired, swap nearly full and the kernel's pressure flag
+    still False.  Wired memory (GPU buffers on Apple Silicon) cannot be paged out, so it is the reading
+    that sees that failure coming.  Unknown readings never abort.
+    """
+
+    def _mb(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return np.nan
+        return f if np.isfinite(f) and f >= 0.0 else np.nan
+
+    def _num(v, default):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return float(default)
+        return f if np.isfinite(f) else float(default)
+
+    avail = _mb(available_mb)
+    total = _mb(total_mb)
+    swap = _mb(swap_used_mb)
+    swap0 = _mb(swap_used_start_mb)
+    wired = _mb(wired_mb)
+    floor_mb = float(max(256.0, _num(min_available_mb, 1536.0)))
+    if np.isfinite(total) and total > 0.0:
+        frac = _num(min_available_fraction, 0.08)
+        floor_mb = float(max(floor_mb, total * float(np.clip(frac, 0.0, 0.5))))
+    swap_cap = _num(max_swap_used_mb, 4096.0)
+    growth = float(swap - swap0) if (np.isfinite(swap) and np.isfinite(swap0)) else np.nan
+    growth_cap = _num(max_swap_growth_mb, 1024.0)
+    wired_frac = float(wired / total) if (np.isfinite(wired) and np.isfinite(total) and total > 0.0) else np.nan
+    wired_cap = float(np.clip(_num(max_wired_fraction, 0.70), 0.3, 0.95))
+    try:
+        level = int(pressure_level) if pressure_level is not None else 0
+    except (TypeError, ValueError):
+        level = 0
+    reasons = []
+    if np.isfinite(avail) and avail < floor_mb:
+        reasons.append(f"available_memory_low:{avail:.0f}MB<{floor_mb:.0f}MB")
+    if np.isfinite(swap) and swap_cap > 0.0 and swap > swap_cap:
+        reasons.append(f"swap_used_high:{swap:.0f}MB>{swap_cap:.0f}MB")
+    if np.isfinite(growth) and growth_cap > 0.0 and growth > growth_cap:
+        reasons.append(f"swap_grew_during_run:{growth:.0f}MB>{growth_cap:.0f}MB")
+    if np.isfinite(wired_frac) and wired_frac > wired_cap:
+        reasons.append(f"wired_memory_high:{wired:.0f}MB>{100.0 * wired_cap:.0f}%_of_{total:.0f}MB")
+    if level >= 4:
+        reasons.append("memory_pressure_critical")
+    return {
+        "ok": True,
+        "should_abort": bool(reasons),
+        "reasons": list(reasons),
+        "available_mb": float(avail) if np.isfinite(avail) else None,
+        "floor_mb": float(floor_mb),
+        "swap_used_mb": float(swap) if np.isfinite(swap) else None,
+        "swap_growth_mb": float(growth) if np.isfinite(growth) else None,
+        "wired_mb": float(wired) if np.isfinite(wired) else None,
+        "pressure_level": level,
+    }
+
+
+def build_abfe_pymol_state_budget(
+    *,
+    n_atoms=0,
+    requested_max_states=1500,
+    budget_mb=384.0,
+    bytes_per_atom_state=160.0,
+):
+    """
+    Cap the states of the final ABFE trajectory object loaded into PyMOL.
+
+    PyMOL keeps a full coordinate set per state plus per-state representation
+    geometry (cartoon, sticks) once a state is drawn, far more than the float32
+    coordinates Leonardo keeps.  ``bytes_per_atom_state`` is a deliberately
+    conservative estimate of that total.
+    """
+    try:
+        n = int(n_atoms or 0)
+    except (TypeError, ValueError):
+        n = 0
+    n = max(1, n)
+    try:
+        req = int(requested_max_states or 1)
+    except (TypeError, ValueError):
+        req = 1
+    req = max(1, req)
+    try:
+        budget = float(budget_mb)
+    except (TypeError, ValueError):
+        budget = 384.0
+    budget = float(max(16.0, budget if np.isfinite(budget) else 384.0))
+    try:
+        per_atom = float(bytes_per_atom_state)
+    except (TypeError, ValueError):
+        per_atom = 160.0
+    per_atom = float(max(12.0, per_atom if np.isfinite(per_atom) else 160.0))
+    mb_per_state = (n * per_atom) / 1048576.0
+    by_memory = int(max(2, np.floor(budget / max(mb_per_state, 1.0e-9))))
+    max_states = int(min(req, by_memory))
+    return {
+        "ok": True,
+        "max_states": int(max_states),
+        "estimated_mb": float(mb_per_state * max_states),
+        "limited_by_memory": bool(by_memory < req),
+    }
 
 
 def build_abfe_adaptive_steering_state_payload(
@@ -3777,6 +4079,10 @@ def configure_abfe_steering_cycles(adaptive_state=None, *, n_cycles=1, n_samples
             "rebound_target_samples": int(max(4, round(0.08 * per_cycle))),
             "rebound_since_sample": -1,
             "return_timeout_samples": int(max(ramp_samples, round(0.20 * per_cycle))),
+            # out of the pocket but still stuck to the protein surface (e.g. a salt bridge on the
+            # rim): the far-unbound test never passes, so return after this many samples anyway
+            "out_of_site_timeout_samples": int(max(4, round(0.12 * per_cycle))),
+            "out_of_site_since_sample": -1,
             "return_zero_since_sample": -1,
             "return_force_boosts": 0,
         }
@@ -4288,6 +4594,12 @@ def build_abfe_adaptive_steering_update_decision(
             next_state["far_hold_target_k_kj_nm2"] = np.nan
             next_state["recent_far_hold_break"] = True
             next_state["far_hold_break_count"] = int(max(0, int(next_state.get("far_hold_break_count", 0) or 0)) + 1)
+            # the settle force is ~1% of the pull force; resuming "pull" with it leaves the
+            # ligand on the surface for the rest of the run
+            restored_k = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+            if restored_k > current_k + 1.0e-6:
+                new_k = float(restored_k)
+                out["update_pull_k"] = True
             reason = "detached_settle_broken_resume_pull"
         out["pull_k_kj_nm2"] = float(new_k)
         out["pull_distance_scale"] = float(new_distance_scale)
@@ -4482,6 +4794,41 @@ def build_abfe_adaptive_steering_update_decision(
         out["reason"] = str(reason)
         out["adaptive_state"] = dict(next_state)
         return out
+
+    if (
+        phase == "pull"
+        and bool(state.get("state_driven_lambda", False))
+        and str(state.get("steering_mode", "pull_hold")) == "pull_hold_return"
+    ):
+        out_of_site = bool(np.isfinite(latest_site) and latest_site >= far_site)
+        if out_of_site and not far_ready:
+            since = int(state.get("out_of_site_since_sample", -1) if state.get("out_of_site_since_sample") is not None else -1)
+            if since < 0:
+                since = int(sample_index)
+            next_state["out_of_site_since_sample"] = int(since)
+            timeout = int(state.get("out_of_site_timeout_samples", 0) or 0)
+            if timeout > 0 and (int(sample_index) - since + 1) >= timeout:
+                next_state["phase"] = "return"
+                next_state["out_of_site_since_sample"] = -1
+                next_state["return_zero_since_sample"] = -1
+                next_state["rebound_since_sample"] = -1
+                next_state["pull_surface_detach_active"] = False
+                new_k = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+                out["update_pull_k"] = bool(abs(new_k - current_k) > 1.0e-6)
+                out["pull_k_kj_nm2"] = float(new_k)
+                out["pull_distance_scale"] = float(new_distance_scale)
+                out["direction_index"] = int(new_dir)
+                out["phase"] = "return"
+                out["should_adapt"] = bool(out["update_pull_k"])
+                out["notes"].append("out_of_site_surface_bound")
+                next_state["current_pull_k_kj_nm2"] = float(new_k)
+                next_state["current_pull_distance_scale"] = float(new_distance_scale)
+                next_state["last_direction_index"] = int(new_dir)
+                out["reason"] = "out_of_site_timeout_enter_return"
+                out["adaptive_state"] = dict(next_state)
+                return out
+        else:
+            next_state["out_of_site_since_sample"] = -1
 
     if far_ready:
         next_state["phase"] = "far_hold"

@@ -35,6 +35,44 @@ _CV_TYPE_REQUIREMENTS = {
 }
 
 
+OPENMM_STEP_SYNC_EVERY = 250
+
+
+def openmm_step_synced(integrator, context, steps, sync_every=OPENMM_STEP_SYNC_EVERY):
+    """
+    Run ``steps`` MD steps, downloading positions every ``sync_every`` steps.
+
+    One long ``step(N)`` on Apple's OpenCL queues N steps of kernels without a host round trip, and the
+    driver holds wired (unpageable) memory for all of them: ~20 kB per step for a 1638-atom ABFE system,
+    so a 120 000-step equilibration wired several GB and on 2026-10-17 a 16 GB M4 kernel-panicked
+    (watchdog timeout).  A real download (positions or energy; an empty getState or getTime is not
+    enough) drains the queue: peak memory fell from +807 MB to +64 MB over 40 000 steps and the run got
+    2x faster.  The trajectory is unchanged (getState only reads).  ``integrator`` may be an OpenMM
+    Integrator or an ``openmm.app.Simulation`` (whose reporters keep firing on the same steps).
+    """
+    try:
+        total = int(steps)
+    except (TypeError, ValueError):
+        total = 0
+    if total <= 0:
+        return 0
+    try:
+        every = int(sync_every)
+    except (TypeError, ValueError):
+        every = OPENMM_STEP_SYNC_EVERY
+    every = max(1, every)
+    if context is None:
+        context = getattr(integrator, "context", None)
+    done = 0
+    while done < total:
+        n = min(every, total - done)
+        integrator.step(n)
+        done += n
+        if context is not None and done < total:
+            context.getState(getPositions=True)
+    return done
+
+
 def _clip_float(value, default, lower, upper):
     try:
         val = float(value)
@@ -689,7 +727,7 @@ def run_openmm_umbrella_smoke(
         platform_used = str(picked or platform_used)
         e0 = _potential_kj_mol(simulation, unit)
         simulation.minimizeEnergy(maxIterations=20)
-        simulation.step(int(steps))
+        openmm_step_synced(simulation, simulation.context, int(steps))
         e1 = _potential_kj_mol(simulation, unit)
         dist = _distance_nm_from_simulation(simulation, unit)
         rows.append(
@@ -1378,7 +1416,7 @@ def run_openmm_alanine_cv_suite(
     current_step = 0
     while current_step < int(total_steps):
         chunk = min(int(stride), int(total_steps) - int(current_step))
-        simulation.step(int(chunk))
+        openmm_step_synced(simulation, simulation.context, int(chunk))
         current_step += int(chunk)
         sample(current_step)
     final_energy = _potential_kj_mol(simulation, unit)

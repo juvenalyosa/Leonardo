@@ -850,10 +850,12 @@ def test_openmm_platform_selection_plan_prefers_cpu_on_macos():
     plan = build_openmm_platform_selection_plan(
         ["Metal", "CPU", "Reference"],
         os_name="darwin",
+        cpu_count=10,
     )
 
     assert plan["picked_platform_name"] == "CPU"
-    assert plan["platform_properties"] == {}
+    # two cores stay free for PyMOL and the OS
+    assert plan["platform_properties"] == {"Threads": "8"}
     assert "macos_auto_prefers_cpu" in plan["notes"]
 
 

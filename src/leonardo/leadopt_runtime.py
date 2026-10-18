@@ -722,9 +722,14 @@ def leadopt_run_openmm_refinement_sampling(
             pass
         context.setVelocitiesToTemperature(float(max(1.0, temperature_k)) * omm_unit.kelvin)
         try:
-            integrator.step(int(max(50, equil_steps)))
+            from .openmm_dynamics_runtime import openmm_step_synced
+        except ImportError:  # loaded as a top-level module by code_v2's non-package import block
+            from openmm_dynamics_runtime import openmm_step_synced
+
+        try:
+            openmm_step_synced(integrator, context, int(max(50, equil_steps)))
         except Exception:
-            integrator.step(200)
+            openmm_step_synced(integrator, context, 200)
         energies = []
         dmins = []
         n_prod = int(max(240, prod_steps))
