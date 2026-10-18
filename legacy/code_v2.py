@@ -269,7 +269,11 @@ try:
     from .modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
     from .openmm_dynamics_runtime import (
         apply_openmm_cv_preset,
+        openmm_close_context,
+        openmm_make_context,
+        openmm_minimize,
         openmm_step_synced,
+        openmm_update_force_in_context,
         build_openmm_capability_report,
         normalize_openmm_cv_definition,
         normalize_openmm_run_controls,
@@ -715,7 +719,11 @@ except Exception:
     from modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
     from openmm_dynamics_runtime import (
         apply_openmm_cv_preset,
+        openmm_close_context,
+        openmm_make_context,
+        openmm_minimize,
         openmm_step_synced,
+        openmm_update_force_in_context,
         build_openmm_capability_report,
         normalize_openmm_cv_definition,
         normalize_openmm_run_controls,
@@ -14833,7 +14841,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 pass
             proc = psutil.Process()
-            out["rss_mb"] = float(proc.memory_info().rss) / 1048576.0
+            rss = float(proc.memory_info().rss)
+            for child in proc.children(recursive=True):     # the OpenMM context process, if any
+                try:
+                    rss += float(child.memory_info().rss)
+                except Exception:
+                    pass
+            out["rss_mb"] = rss / 1048576.0
             out["threads"] = int(proc.num_threads())
         except Exception:
             pass
@@ -50135,9 +50149,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if bool((attempt or {}).get("use_platform", False)) and (platform is not None):
                         if bool((attempt or {}).get("use_properties", False)):
                             props_try = dict((attempt or {}).get("properties", {}) or {})
-                            context = OMM.Context(system, integrator, platform, props_try)
+                            context = openmm_make_context(system, integrator, platform, props_try, log=self._append_debug_log)
                         else:
-                            context = OMM.Context(system, integrator, platform)
+                            context = openmm_make_context(system, integrator, platform, log=self._append_debug_log)
                         platform_name = str((attempt or {}).get("picked_platform_name", picked) or picked or "default")
                     else:
                         context = OMM.Context(system, integrator)
@@ -50211,7 +50225,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         if (lig_min_hold_force is not None) and (k_hold_val is not None):
                             context.setParameter("k_hold", float(k_hold_val))
                         op_iters = int(max(1, int(op.get("minimize_max_iters", max_it) or max_it)))
-                        OMM.LocalEnergyMinimizer.minimize(context, maxIterations=op_iters)
+                        openmm_minimize(context, op_iters)
                 except Exception as e:
                     try:
                         self._append_debug_log(f"ABFE staged minimization warning: {e}")
@@ -50290,7 +50304,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             pass
                     if rescue_iters > 0:
                         try:
-                            OMM.LocalEnergyMinimizer.minimize(context, maxIterations=int(rescue_iters))
+                            openmm_minimize(context, int(rescue_iters))
                         except Exception as e:
                             try:
                                 self._append_debug_log(f"ABFE rescue minimization warning: {e}")
@@ -50602,7 +50616,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             float(vv[2]),
                         ],
                     )
-                bias_force.updateParametersInContext(context)
+                openmm_update_force_in_context(bias_force, context)
                 applied_pull_vec_nm = np.asarray(vv, dtype=float)
                 return True
             lig_masses = np.asarray([max(1.0, masses[i]) for i in lig_heavy_idx], dtype=float)
@@ -51623,6 +51637,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             if bool(teardown_plan.get("should_release_context", False)):
                 try:
+                    openmm_close_context(context)        # stops an OpenMMContextProcess child
                     del context
                     if bool(teardown_plan.get("clear_references", True)):
                         context = None

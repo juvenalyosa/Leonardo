@@ -63,6 +63,8 @@ def openmm_step_synced(integrator, context, steps, sync_every=OPENMM_STEP_SYNC_E
     every = max(1, every)
     if context is None:
         context = getattr(integrator, "context", None)
+    if hasattr(context, "step_synced"):           # OpenMMContextProcess: the child steps and syncs itself
+        return int(context.step_synced(total, every))
     done = 0
     while done < total:
         n = min(every, total - done)
@@ -71,6 +73,79 @@ def openmm_step_synced(integrator, context, steps, sync_every=OPENMM_STEP_SYNC_E
         if context is not None and done < total:
             context.getState(getPositions=True)
     return done
+
+
+def openmm_context_process_wanted(platform_name):
+    """
+    Whether a long run should keep its Context in a child process (OpenMMContextProcess).
+
+    Yes for OpenCL on macOS, where Apple's driver leaks pageable memory per kernel launch that only the
+    end of the process returns.  LEONARDO_OPENMM_CONTEXT_PROCESS=1 forces it on any platform, =0 off.
+    """
+    flag = str(os.environ.get("LEONARDO_OPENMM_CONTEXT_PROCESS", "") or "").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        return False
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    import sys
+
+    return sys.platform == "darwin" and str(platform_name or "").strip().lower() == "opencl"
+
+
+def openmm_make_context(system, integrator, platform=None, properties=None, log=None):
+    """
+    openmm.Context(system, integrator[, platform[, properties]]), or an OpenMMContextProcess with the same
+    calls where openmm_context_process_wanted() says so.  If the child cannot start, the Context is made
+    in this process and ``log`` says why.
+    """
+    import openmm
+
+    name = ""
+    try:
+        name = str(platform.getName()) if platform is not None else ""
+    except Exception:
+        name = ""
+    if openmm_context_process_wanted(name):
+        try:
+            from .openmm_context_process import OpenMMContextProcess
+            return OpenMMContextProcess(system, integrator, platform_name=name,
+                                        properties=dict(properties or {}), log=log)
+        except Exception as exc:
+            if log is not None:
+                try:
+                    log(f"OpenMM context process unavailable ({exc}); running the context in-process")
+                except Exception:
+                    pass
+    if platform is None:
+        return openmm.Context(system, integrator)
+    if properties:
+        return openmm.Context(system, integrator, platform, dict(properties))
+    return openmm.Context(system, integrator, platform)
+
+
+def openmm_minimize(context, max_iterations=0, tolerance=10.0):
+    """LocalEnergyMinimizer.minimize for an openmm.Context or an OpenMMContextProcess."""
+    if hasattr(context, "minimize") and hasattr(context, "step_synced"):
+        context.minimize(int(max_iterations), float(tolerance))
+        return
+    import openmm
+
+    openmm.LocalEnergyMinimizer.minimize(context, float(tolerance), int(max_iterations))
+
+
+def openmm_update_force_in_context(force, context):
+    """force.updateParametersInContext(context) for an openmm.Context or an OpenMMContextProcess."""
+    if hasattr(context, "update_force"):
+        context.update_force(force)
+    else:
+        force.updateParametersInContext(context)
+
+
+def openmm_close_context(context):
+    """Stop the child of an OpenMMContextProcess (an in-process Context is left to garbage collection)."""
+    close = getattr(context, "close", None)
+    if callable(close):
+        close()
 
 
 def _clip_float(value, default, lower, upper):
