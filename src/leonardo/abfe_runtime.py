@@ -7,6 +7,16 @@ import sys
 
 import numpy as np
 
+# Shown in every ABFE-lite report, the agent's result card and the GUI.  On trypsin-benzamidine
+# (3 replicas x 3 ns, Apple M4 GPU, 2026-10-18) the replicas agreed with each other but the estimators did
+# not agree with each other or with experiment (selected -62, reweighted standard-state -33.7, population -2.5, exp-avg +0.7 kJ/mol;
+# experiment about -27).  Remove only after a multi-target validation on a dedicated GPU.
+ABFE_EXPERIMENTAL_NOTE = (
+    "EXPERIMENTAL: ABFE-lite is not validated against experiment. Its ΔG estimators can disagree with each "
+    "other and with measured affinities by tens of kJ/mol; use it to compare poses or ligands qualitatively, "
+    "not as a binding free energy."
+)
+
 # Compact ABFE-lite calibration trained with leave-one-target-out group CV.
 # Model origin: benchmark_results/diverse_abfe_panel_best_all_available/calibration_compact/deploy_models.json
 ABFE_COMPACT_CALIBRATION = {
@@ -7853,6 +7863,8 @@ def build_abfe_free_energy_report_payload(
             f"    <span style=\"display:inline-block; padding:4px 10px; border-radius:999px; background:{proto_badge_bg}; color:{proto_badge_fg}; font-weight:700; font-size:12px; margin-right:6px;\">{proto_label}</span>",
             f"    <span style=\"display:inline-block; padding:4px 10px; border-radius:999px; background:{conf_style['bg']}; color:{conf_style['fg']}; border:1px solid {conf_style['border']}; font-weight:700; font-size:12px;\">Confidence: {conf_txt}</span>",
             "  </div>",
+            "  <div style=\"margin-bottom:10px; padding:8px 10px; background:#FFF4E5; border:1px solid #F0C27B; "
+            f"border-radius:8px; font-size:12px; color:#7A4A00;\">{ABFE_EXPERIMENTAL_NOTE}</div>",
             f"  <div style=\"font-size:22px; font-weight:800; color:#17212B; margin-bottom:2px;\">Selected ΔG: {selected_value_txt}</div>",
             f"  <div style=\"font-size:12px; color:#5A6572; margin-bottom:10px;\">Kd(app): {selected_kd_txt} &nbsp;&nbsp; pKd: {selected_pkd_txt} &nbsp;&nbsp; Estimator: {str(selected_estimator or 'gated_off')}</div>",
             "  <table style=\"width:100%; border-collapse:separate; border-spacing:0 6px; font-size:12px;\">",
@@ -7878,6 +7890,8 @@ def build_abfe_free_energy_report_payload(
 
     msg_lines = [
         str(intro),
+        "",
+        ABFE_EXPERIMENTAL_NOTE,
         "",
         f"ΔG (exp-avg): {float(dg_exp):.3f} kJ/mol",
         f"95% CI: [{float(ci_low):.3f}, {float(ci_high):.3f}] kJ/mol",
@@ -7933,6 +7947,7 @@ def build_abfe_free_energy_report_payload(
         "dialog_title": f"{proto_label} Summary",
         "message_lines": list(msg_lines),
         "message_text": "\n".join(msg_lines),
+        "experimental_note": ABFE_EXPERIMENTAL_NOTE,
     }
 
 

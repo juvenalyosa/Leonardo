@@ -56,6 +56,7 @@ try:
     from .abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
     from .abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
     from .abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
+    from .abfe_runtime import ABFE_EXPERIMENTAL_NOTE as abfe_experimental_note
     from .abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
     from .abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
     from .abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
@@ -508,6 +509,7 @@ except Exception:
     from abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
     from abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
     from abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
+    from abfe_runtime import ABFE_EXPERIMENTAL_NOTE as abfe_experimental_note
     from abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
     from abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
     from abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
@@ -6639,7 +6641,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_free_energy = QtWidgets.QPushButton("Guided Exit Diagnostic")
             self.btn_free_energy.setToolTip(
                 "Run the historical ABFE-lite guided-exit workflow as a trajectory/state-gating "
-                "diagnostic; production binding affinity is not reported."
+                "diagnostic; production binding affinity is not reported.\n\n" + abfe_experimental_note
             )
             self.btn_free_energy.clicked.connect(lambda _checked=False: self._run_trajectory_free_energy_calculation(source="traj"))
             vbox.addWidget(self.btn_free_energy)
@@ -21166,6 +21168,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_pose.addWidget(self.cb_pose_abfe_keep_scene, 1, 1)
             self.btn_pose_abfe = QtWidgets.QPushButton("Run ABFE-lite on Selected Pose")
             self.btn_pose_abfe.clicked.connect(self._on_run_abfe_for_selected_pose)
+            self.btn_pose_abfe.setToolTip(abfe_experimental_note)
             row_pose.addWidget(self.btn_pose_abfe, 0, 2, 2, 1)
             for _col in range(3):
                 row_pose.setColumnStretch(_col, 1)

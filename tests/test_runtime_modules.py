@@ -3341,6 +3341,9 @@ def test_abfe_runtime_free_energy_report_and_debug_helpers():
     assert "Selected ΔG" in str(payload["message_html"])
     assert "Confidence:" in str(payload["message_html"])
     assert "ABFE-lite whole-protein MD Summary" == str(payload["dialog_title"])
+    # ABFE-lite is experimental (not validated against experiment): every report says so
+    assert "EXPERIMENTAL" in str(payload["message_text"])
+    assert "EXPERIMENTAL" in str(payload["message_html"])
 
     payload_jeff = build_abfe_free_energy_report_payload(
         protocol="trajectory_energy_rescoring",

@@ -22,6 +22,7 @@ Metal).
 | MD, explicit water NPT, ligand + Ca site (0.02 ns) | pass, OpenCL; 300.7 K, 1.03 g/mL, 93 ns/day (27k atoms) | |
 | Minimization | pass, OpenCL | |
 | ABFE-lite, trypsin-benzamidine, 3 replicas x 1 ns | pass, OpenCL; 2 of 3 replicas completed exit/return cycles, ΔG ≈ -54 kJ/mol (qualitative) | |
+| ABFE-lite defaults, trypsin-benzamidine, 3 replicas x 3 ns | runs, OpenCL (21 min, process tree ≤ 1.7 GB, wired memory flat); ΔG not accurate: selected -62, bias-reweighted standard-state -33.7, population -2.2 to -3.0, exp-avg +0.7 kJ/mol vs ≈ -27 measured | not yet run |
 | Protein on Au(111), build + minimization | pass, OpenCL single | |
 | Umbrella sampling (alanine φ, MBAR) | pass, OpenCL | |
 | Well-tempered metadynamics | pass, OpenCL | |
@@ -34,6 +35,12 @@ Metal).
 
 ABFE-lite is a steered guided-exit protocol: its ΔG is an apparent value, and one replica can stall with the
 ligand against the protein surface (no estimate from that replica). Use 3 or more replicas.
+
+**ABFE-lite is experimental.** It runs safely on a 16 GB Mac GPU, but its estimators disagree with each other
+and with experiment by tens of kJ/mol (row above); every report, agent card and the GUI say so. It needs a
+multi-target calibration on a dedicated GPU before its ΔG can be quoted.  On Apple OpenCL the OpenMM Context
+runs in a child process recycled at 1.2 GB (Apple's driver leaks per kernel launch and frees only at process
+exit); `LEONARDO_OPENMM_CONTEXT_PROCESS=0/1` turns this off/on.
 
 ## Fixed while validating
 
