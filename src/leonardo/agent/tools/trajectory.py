@@ -3,6 +3,7 @@
 
 import contextlib
 import math
+import os
 import sys
 
 from .. import presentation
@@ -364,6 +365,9 @@ def register(reg):
                 out["trajectory_object"] = traj
             out["scene"] = ctx.scene(f"ABFE-lite of {object}")
             out["experimental"] = True               # not validated against experiment (abfe_runtime.ABFE_EXPERIMENTAL_NOTE)
+            fig = str(getattr(dlg, "_abfe_last_analysis_figure", "") or "")
+            if fig and os.path.isfile(fig):
+                out["analysis_figure"] = fig             # Leonardo's 4-panel free-energy analysis (PNG)
             dg = out.get("dg_selected")
             if dg is not None:
                 ci_txt = (f"; 95% CI {out.get('ci_low')} to {out.get('ci_high')}" if "ci_low" in out

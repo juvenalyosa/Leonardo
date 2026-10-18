@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import urllib.error
 import urllib.parse
@@ -52635,17 +52636,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     surf_upper = float(np.nanmax(finite_surface))
                 else:
                     surf_upper = float(surf_vmax) if np.isfinite(surf_vmax) else 1.0
-                level_values = np.linspace(0.0, max(0.5, surf_upper), max(8, surf_levels))
-                cf = ax_surf.contourf(
+                # every sampled bin drawn as it is (a filled contour of sparse bins invented smooth regions
+                # and left the rest white); unsampled bins in their own grey, so they read as "not visited"
+                ax_surf.set_facecolor(str(surf.get("unsampled_color", "#E5E7EB")))
+                cf = ax_surf.pcolormesh(
                     Xc_plot,
                     Yc_plot,
                     Fsurf_masked,
-                    levels=level_values,
+                    shading="nearest",
                     cmap=str(surf.get("cmap", "viridis")),
-                    extend="max",
+                    vmin=0.0,
+                    vmax=max(0.5, surf_upper),
                 )
                 contour_n = int(max(0, int(surf.get("contour_levels", 0) or 0)))
-                if contour_n > 0 and finite_surface.size > 0:
+                dense = finite_surface.size >= 0.6 * np.asarray(Fsurf_masked).size
+                if contour_n > 0 and finite_surface.size > 0 and dense:
                     ax_surf.contour(
                         Xc_plot,
                         Yc_plot,
@@ -52674,15 +52679,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             linewidths=0.9,
                             zorder=5,
                         )
+                        mx = float(marker_row.get("x", np.nan))
+                        x_lo, x_hi = ax_surf.get_xlim()
+                        near_right = bool(np.isfinite(mx) and mx > x_lo + 0.7 * (x_hi - x_lo))
                         ax_surf.text(
-                            float(marker_row.get("x", np.nan)),
+                            mx,
                             float(marker_row.get("y", np.nan)),
-                            " " + str(marker_row.get("label", "")),
+                            (str(marker_row.get("label", "")) + " ") if near_right else (" " + str(marker_row.get("label", ""))),
                             color=str(marker_row.get("color", "#000000")),
                             fontsize=8,
+                            fontweight="bold",
                             va="center",
-                            ha="left",
+                            ha="right" if near_right else "left",
                             zorder=6,
+                            bbox={"boxstyle": "round,pad=0.2", "facecolor": "white", "edgecolor": "none", "alpha": 0.75},
                         )
                 ax_surf.set_xlabel(str(surf.get("xlabel", dist_axis_label)))
                 ax_surf.set_ylabel(str(surf.get("ylabel", "Interaction Energy (kJ/mol)")))
@@ -52780,24 +52790,41 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 distance_metric=str(distance_metric),
                 replica_summary=dict(replica_summary or {}),
             )
+            # long titles and summaries are wrapped: unwrapped they ran off both edges of the figure
+            suptitle_txt = textwrap.fill(str(report_payload.get("suptitle", "") or ""), width=125)
+            suptitle_lines = suptitle_txt.count("\n") + 1 if suptitle_txt else 0
             fig.suptitle(
-                str(report_payload.get("suptitle", "") or ""),
+                suptitle_txt,
                 fontsize=11,
                 fontweight="bold",
                 color=str(theme.get("title_color", "#1F2933")),
+                y=0.995,
             )
-            summary_strip = str(report_payload.get("summary_strip", "") or "").strip()
+            summary_strip = textwrap.fill(str(report_payload.get("summary_strip", "") or "").strip(), width=175)
+            strip_lines = summary_strip.count("\n") + 1 if summary_strip else 0
+            strip_top = 0.995 - 0.022 * suptitle_lines
             if summary_strip:
                 fig.text(
                     0.014,
-                    0.948,
+                    strip_top,
                     summary_strip,
                     ha="left",
                     va="top",
                     fontsize=8.6,
                     color=str(theme.get("subtitle_color", "#6B7280")),
                 )
-            fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.955 if summary_strip else 0.97])
+            fig.tight_layout(rect=[0.0, 0.0, 1.0, strip_top - 0.0155 * strip_lines + 0.025])
+            # keep the analysis figure with the results (the window alone is lost when it is closed)
+            self._abfe_last_analysis_figure = ""
+            try:
+                fig_dir = os.path.join(self._dock_workspace_dir(), "abfe")
+                os.makedirs(fig_dir, exist_ok=True)
+                fig_path = os.path.join(fig_dir, datetime.datetime.now().strftime("abfe_analysis_%Y%m%d_%H%M%S.png"))
+                fig.savefig(fig_path, dpi=200, facecolor=fig.get_facecolor())
+                self._abfe_last_analysis_figure = fig_path
+                self._append_debug_log(f"ABFE analysis figure saved: {fig_path}")
+            except Exception as e:
+                self._append_debug_log(f"ABFE analysis figure not saved: {e}")
             plt.show()
             self._show_abfe_summary_dialog(report_payload)
             if protocol == "abfe_lite_local_md":

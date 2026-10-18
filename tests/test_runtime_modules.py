@@ -3998,14 +3998,14 @@ def test_abfe_runtime_free_energy_plot_payload():
     assert str(theme["axes_facecolor"]) == "#FFFFFF"
     epmf = dict(payload["energy_pmf"])
     assert str(epmf["xlabel"]) == "Interaction Energy (kJ/mol)"
-    assert np.isclose(float(epmf["fill_alpha"]), 0.22)
+    assert np.isclose(float(epmf["fill_alpha"]), 0.12)
     rpmf = dict(payload["distance_pmf"])
     assert bool(rpmf["has_data"]) is True
     assert str(rpmf["xlabel"]) == "Min Distance to Initial Pocket Anchor (Å)"
     assert str(dict(rpmf["bound_cutoff_line"])["label"]) == "Bound cutoff"
     surf = dict(payload["surface"])
     assert bool(surf["has_data"]) is True
-    assert str(surf["cmap"]) == "Greys_r"
+    assert str(surf["cmap"]) == "viridis"     # perceptual; unsampled bins get their own grey
     assert np.asarray(surf["Xc"], dtype=float).shape == (2,)
     assert np.asarray(surf["Fsurf"], dtype=float).shape == (2, 2)
     assert str(dict(surf["bound_marker"])["label"]) == "bound basin"
