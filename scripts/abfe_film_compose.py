@@ -160,7 +160,7 @@ def overlay(base, t, i, D):
         j = int(round((t - a) * FPS))
         p = anchor("site", j).get("ligand")
         if p is not None and FMT == "yt":
-            tc.leader(lay, p, "benzamidine", window(t, 7.0, b - 0.2, 0.5), TEAL, dx=170, dy=-110,
+            tc.leader(lay, p, "benzamidine", window(t, 7.0, b - 0.2, 0.5), TEAL, dx=190, dy=90,
                       sub="in the S1 pocket")
         oc.provenance(lay, t, 6.2, "load_structure_file · prepare_docking_ligand · parametrize_ligand  "
                                    "(Leonardo film pack 11)")
@@ -202,7 +202,7 @@ def overlay(base, t, i, D):
         for q, rep in enumerate(per):
             kq = k * ease((t - a - 3.0 - 0.5 * q) / 0.6)
             pb = rep.get("p_bound")
-            oc.metric(lay, x0 + 40 + step * q, yy, f"Replica {q + 1} bound",
+            oc.metric(lay, x0 + 40 + step * q, yy, f"{'Rep.' if FMT == 'yt' else 'Replica'} {q + 1} bound",
                       f"{100 * pb:.0f}" if pb is not None else "n/a", "%", kq, COLS[q % 3])
         oc.provenance(lay, t, a, "run_abfe in Leonardo · populations and ΔG estimators from Leonardo's own report")
     # ------------------------------------------------------------------------------------ result
