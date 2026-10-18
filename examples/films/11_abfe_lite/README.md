@@ -27,14 +27,15 @@ the process tree peaked at 2.6 GB in run 2 (watchdog log) and system wired memor
 estimators do not agree with each other or with experiment (measured binding free energy about -27 kJ/mol,
 -6.4 kcal/mol). The film shows all of them next to the measured value.
 
-Four runs of this protocol on 2026-10-18 (kJ/mol; the recorded run, shown in the film, last):
+Runs of this protocol on 2026-10-18 (kJ/mol; the recorded run, shown in the film, last; run 6 repeated run 4 to
+the last digit):
 
-| Estimator | Run 1 | Run 2 | Run 3 | Recorded |
-|---|---|---|---|---|
-| Selected (solvent-rescored hold windows) | -62.1 | -79.2 | -60.9 | -59.2 |
-| Bias-reweighted, standard state | -33.7 | -25.7 | -19.6 | -20.7 |
-| Bound / unbound populations | -2.6 | -3.1 | -2.2 | -3.2 |
-| Exponential average | +0.7 | +1.4 | -1.2 | -0.6 |
+| Estimator | 1 | 2 | 3 | 4 | 5 | 6 | Recorded |
+|---|---|---|---|---|---|---|---|
+| Selected (solvent-rescored hold windows) | -62.1 | -79.2 | -60.9 | -59.2 | -53.8 | -59.2 | -73.2 |
+| Bias-reweighted, standard state | -33.7 | -25.7 | -19.6 | -20.7 | -21.0 | -20.7 | -22.2 |
+| Bound / unbound populations | -2.6 | -3.1 | -2.2 | -3.2 | -3.2 | -3.2 | -4.1 |
+| Exponential average | +0.7 | +1.4 | -1.2 | -0.6 | -1.2 | -0.6 | +1.4 |
 
 An estimator landing near experiment in one run is not evidence that it is right. The metrics in `expected.json` only check
 that the defaults finish on a GPU with three replicas and that the estimates stay within wide bands: the run is

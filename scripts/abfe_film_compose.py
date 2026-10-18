@@ -174,8 +174,12 @@ ANALYSIS_SHOTS = [
     (9.8, "analysis", "rpmf", "PMF ALONG THE EXIT COORDINATE",
      "The bound basin in the pocket and the cost of leaving it; dashed line: Leonardo's bound cutoff"),
     (13.0, "analysis", "surf", "2D FREE-ENERGY SURFACE",
-     "Exit distance against interaction energy: the bound basin, the unbound one, grey where the ligand never went"),
-    (16.0, "exit_profiles", "full", "EXIT PROFILES",
+     "Exit distance against interaction energy: the deep bound basin, the shallow unbound one, and the flat "
+     "plateau where the ligand never went"),
+    (16.2, "surface3d", "full", "THE SAME SURFACE, IN 3D",
+     "Leonardo's saved surface data as a landscape: the bound state is the deep well, the plateau where the "
+     "ligand never went"),
+    (20.6, "exit_profiles", "full", "EXIT PROFILES",
      "Every replica leaves the pocket and comes back; dashed line: Leonardo's bound cutoff"),
 ]
 
@@ -196,6 +200,27 @@ def view_rect(view, img):
     x0, y0, x1, y1 = PANELS[view]
     w, h = img.size
     return np.array([x0 * w, y0 * h, x1 * w, y1 * h])
+
+
+def surface3d_frame(u_shot, size):
+    """Frame of the rotating 3D surface (scripts/abfe_film_surface3d.py), u_shot seconds into its shot."""
+    d = ART / "frames" / FMT / "surface3d"
+    n = len(list(d.glob("mol_*.png")))
+    p = d / f"mol_{min(max(0, int(u_shot * FPS)), max(0, n - 1)):04d}.png"
+    img = Image.open(p).convert("RGB") if p.exists() else Image.new("RGB", (int(size[0]), int(size[1])), (18, 26, 40))
+    return img.resize((int(size[0]), int(size[1])), Image.LANCZOS)
+
+
+def shot_content(q, u, size):
+    """Window content of analysis shot q at u seconds into the scene (no glide or fade)."""
+    start, fig_name, view = ANALYSIS_SHOTS[q][:3]
+    if fig_name == "surface3d":
+        return surface3d_frame(u - start, size)
+    img = _FIGS[fig_name]
+    return render_view(img, view_rect(view, img), size)
+
+
+_FIGS = {}
 
 
 def render_view(img, rect, size):
@@ -220,17 +245,19 @@ def figure_window(base, t, a, b, D):
     cw, ch = x1 - x0, y1 - y0 - bar
     q = shot_at(u)
     start, fig_name, view = ANALYSIS_SHOTS[q][:3]
-    img = D["figs"][fig_name]
-    rect = view_rect(view, img)
-    if q > 0 and ANALYSIS_SHOTS[q - 1][1] == fig_name:          # glide from the previous view
+    _FIGS.update(D["figs"])
+    if fig_name != "surface3d" and q > 0 and ANALYSIS_SHOTS[q - 1][1] == fig_name:   # glide from the previous view
+        img = D["figs"][fig_name]
         prev = view_rect(ANALYSIS_SHOTS[q - 1][2], img)
-        m = ease((u - start) / 0.9)
-        rect = prev + (rect - prev) * m
-    content = render_view(img, rect, (cw, ch))
-    if q > 0 and ANALYSIS_SHOTS[q - 1][1] != fig_name:          # cross-fade to another figure
-        old = D["figs"][ANALYSIS_SHOTS[q - 1][1]]
-        before = render_view(old, view_rect(ANALYSIS_SHOTS[q - 1][2], old), (cw, ch))
-        content = Image.blend(before, content.convert("RGB"), ease((u - start) / 0.7))
+        rect = prev + (view_rect(view, img) - prev) * ease((u - start) / 0.9)
+        content = render_view(img, rect, (cw, ch))
+    else:
+        content = shot_content(q, u, (cw, ch))
+        if q > 0 and ANALYSIS_SHOTS[q - 1][1] != fig_name:      # cross-fade from another figure
+            prev_start = ANALYSIS_SHOTS[q - 1][0]
+            before = shot_content(q - 1, min(u, start - 1.0 / FPS) if ANALYSIS_SHOTS[q - 1][1] == "surface3d"
+                                  else prev_start + 1.0, (cw, ch))
+            content = Image.blend(before, content.convert("RGB"), ease((u - start) / 0.7))
     # window: soft shadow, dark title bar with traffic lights, the figure
     scale = 0.94 + 0.06 * tc.ease_out((t - a) / 0.9)
     win = Image.new("RGBA", (int(cw), int(ch + bar)), (0, 0, 0, 0))
@@ -238,8 +265,9 @@ def figure_window(base, t, a, b, D):
     d.rounded_rectangle((0, 0, cw - 1, ch + bar - 1), radius=14, fill=(18, 26, 40, 255))
     for j, col in enumerate(((255, 95, 87), (254, 188, 46), (40, 200, 64))):
         d.ellipse((18 + 22 * j, bar / 2 - 6, 30 + 22 * j, bar / 2 + 6), fill=(*col, 255))
-    tc.text(win, (cw / 2, bar / 2), "Leonardo · ABFE-lite analysis" if fig_name == "analysis"
-            else "Leonardo · Plot: ABFE-lite exit profiles", 18, (196, 210, 232), "medium", 1.0, "mm")
+    titles = {"analysis": "Leonardo · ABFE-lite analysis", "exit_profiles": "Leonardo · Plot: ABFE-lite exit profiles",
+              "surface3d": "Leonardo's free-energy surface data · 3D view"}
+    tc.text(win, (cw / 2, bar / 2), titles[fig_name], 18, (196, 210, 232), "medium", 1.0, "mm")
     mask = Image.new("L", (int(cw), int(ch)), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, -20, cw - 1, ch - 1), radius=14, fill=255)
     win.paste(content, (0, bar), mask)
@@ -355,7 +383,8 @@ def overlay(base, t, i, D):
                "The free-energy analysis Leonardo draws from the three replicas, unedited")
         figure_window(base, t, a, b, D)
         analysis_caption(lay, t, a, b)
-        oc.provenance(lay, t, a, "Leonardo's ABFE-lite report figure (saved with the results) and show_plot('abfe')")
+        oc.provenance(lay, t, a, "Leonardo's ABFE-lite report figure and show_plot('abfe'); the 3D view is drawn from the "
+                                 "surface data Leonardo saves with the figure")
     # ------------------------------------------------------------------------------------ result
     a, b = SCENES["result"]
     if a - 0.1 <= t < b + 0.2:
@@ -375,27 +404,33 @@ def overlay(base, t, i, D):
                 ("Bound / unbound populations", r.get("dg_pop_kj"), (196, 210, 232)),
                 ("Exponential average", r.get("dg_exp_kj"), (196, 210, 232))]
         yy = y0 + 240
-        cols_x = [x1 - 50 - 125 * (len(prevs) - j) for j in range(len(prevs) + 1)]   # earlier runs, then this film
+        col_now, col_prev = x1 - 50, x1 - 230
         if FMT == "yt":
-            for j in range(len(prevs)):
-                text(lay, (cols_x[j], yy - 46), f"RUN {j + 1}", 16, MUTED, "demi", k, "rm")
-            text(lay, (cols_x[-1], yy - 46), "THIS FILM", 16, TEAL, "demi", k, "rm")
+            text(lay, (col_prev, yy - 46), f"{len(prevs)} EARLIER RUNS", 16, MUTED, "demi", k, "rm")
+            text(lay, (col_now, yy - 46), "THIS FILM", 16, TEAL, "demi", k, "rm")
+
+        def span(vals):
+            vals = [v for v in vals if v is not None]
+            if not vals:
+                return ""
+            lo, hi = min(vals), max(vals)
+            return fmt_kj(lo) if abs(hi - lo) < 0.05 else f"{fmt_kj(lo)} to {fmt_kj(hi)}"
+
         for q, (lab, v, col) in enumerate(rows):
             kr = k * ease((t - a - 0.8 - 0.35 * q) / 0.5)
             pvs = [p_.get(keys[q]) for p_ in prevs]
             if FMT == "yt":
                 text(lay, (x0 + 70, yy), lab, 24, (196, 210, 232), "regular", kr, "lm")
-                for j, pv in enumerate(pvs):
-                    text(lay, (cols_x[j], yy), fmt_kj(pv), 24, MUTED, "medium", kr, "rm")
-                text(lay, (cols_x[-1], yy), fmt_kj(v), 30, col, "demi", kr, "rm")
+                text(lay, (col_prev, yy), span(pvs), 24, MUTED, "medium", kr, "rm")
+                text(lay, (col_now, yy), fmt_kj(v), 30, col, "demi", kr, "rm")
                 yy += 66
             else:
                 for jj, line in enumerate(oc.wrap(lab, 34)):
                     text(lay, (x0 + 50, yy + 34 * jj), line, 28, (196, 210, 232), "regular", kr, "lm")
                 text(lay, (x1 - 50, yy), f"{fmt_kj(v)}", 38, col, "demi", kr, "rm")
                 if pvs:
-                    text(lay, (x1 - 50, yy + 40), "earlier runs " + ", ".join(fmt_kj(pv) for pv in pvs), 22, MUTED,
-                         "regular", kr, "rm")
+                    text(lay, (x1 - 50, yy + 40), f"{len(pvs)} earlier runs: {span(pvs)}", 22, MUTED, "regular", kr,
+                         "rm")
                 yy += 34 * len(oc.wrap(lab, 34)) + 84
         km = k * ease((t - a - 2.6) / 0.6)
         ImageDraw.Draw(lay).line((x0 + 60, yy - 10, x1 - 60, yy - 10), fill=(120, 160, 220, int(90 * km)), width=1)

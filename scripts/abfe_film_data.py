@@ -30,12 +30,14 @@ DG_MEASURED_KJ = -27.0
 # film does not present one stochastic run as the answer
 PREVIOUS_RUNS_KJ = [{"selected": -62.1, "reweighted_standard": -33.7, "population": -2.6, "exp_avg": 0.7},
                     {"selected": -79.2, "reweighted_standard": -25.7, "population": -3.1, "exp_avg": 1.4},
-                    {"selected": -60.9, "reweighted_standard": -19.6, "population": -2.2, "exp_avg": -1.2}]
+                    {"selected": -60.9, "reweighted_standard": -19.6, "population": -2.2, "exp_avg": -1.2},
+                    {"selected": -53.8, "reweighted_standard": -21.0, "population": -3.2, "exp_avg": -1.2},
+                    {"selected": -59.2, "reweighted_standard": -20.7, "population": -3.2, "exp_avg": -0.6}]
 
 # ------------------------------------------------- shared by the PyMOL and compositing stages (no pymol here)
-FPS, TOTAL = 24, 75.0
-SCENES = {"site": (0.0, 10.0), "exit": (10.0, 30.0), "replicas": (30.0, 40.0), "analysis": (40.0, 59.0),
-          "result": (59.0, 68.0), "outro": (68.0, 75.0)}
+FPS, TOTAL = 24, 80.0
+SCENES = {"site": (0.0, 10.0), "exit": (10.0, 30.0), "replicas": (30.0, 40.0), "analysis": (40.0, 63.5),
+          "result": (63.5, 72.5), "outro": (72.5, 80.0)}
 EXIT_FRACTION = 0.4          # the guided-exit scene plays this first part of replica 1 (its first exit and return)
 REPLICA_COLORS = ((43, 227, 200), (255, 179, 71), (111, 168, 255))     # teal, amber, blue
 
@@ -51,6 +53,7 @@ def main(argv):
     DATA.mkdir(parents=True, exist_ok=True)
     # Leonardo's own figures: the 4-panel free-energy analysis and the exit profiles of show_plot('abfe')
     figs = {"analysis.png": abfe.get("analysis_figure"),
+            "analysis.npz": str(abfe.get("analysis_figure") or "")[:-4] + ".npz",
             "exit_profiles.png": next((x.get("image") for x in steps if x.get("kind") == "abfe"), None)}
     for name, src in figs.items():
         if not src or not Path(src).is_file():
