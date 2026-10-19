@@ -75,6 +75,39 @@ def test_label_is_placed_off_the_obstacles():
     assert xy[0] > 0.0                       # pushed away from the side it should avoid
 
 
+def test_interface_callouts_never_overlap_and_stay_in_frame():
+    # 14 residues crowded along an interface line, labels as wide as real ones, a frame that is tight for them
+    rng = np.random.default_rng(3)
+    anchors = [(float(x), float(y)) for x, y in zip(rng.normal(0.0, 1.5, 14), np.linspace(-9.0, 9.0, 14))]
+    boxes = [V.pymol_label_box(t, 3.0) for t in ("Arg59", "His102", "Gly31", "Tyr29", "dG2:B", "Asp35",
+                                                 "Lys27", "Glu60", "Arg83", "Arg87", "Asn33", "Leu34",
+                                                 "Thr42", "Glu76")]
+    away = [(6.0 if i % 2 else -6.0, a[1]) for i, a in enumerate(anchors)]
+    frame = (20.0, 13.0)
+    obstacles = [(float(x), float(y)) for x, y in zip(rng.normal(0.0, 2.0, 200), rng.uniform(-10, 10, 200))]
+    spots = V.layout_callouts(anchors, boxes, away, frame, obstacles=obstacles, interactions=[(0.0, 0.0)])
+    rects = [(x - b[0] / 2, y - b[1] / 2, x + b[0] / 2, y + b[1] / 2) for (x, y), b in zip(spots, boxes)]
+    for i in range(len(rects)):
+        assert -frame[0] <= rects[i][0] and rects[i][2] <= frame[0]
+        assert -frame[1] <= rects[i][1] and rects[i][3] <= frame[1]
+        for j in range(i):
+            assert not V._rect_overlap(rects[i], rects[j]), (i, j)
+
+
+def test_pymol_label_box_matches_measured_labels():
+    # ray-traced PyMOL 3.1 labels, font 7, label_size -2, padding 0.2: 'Arg59 A' 3.60 x 1.02 A, 'W' 1.08 A wide
+    w, h = V.pymol_label_box("Arg59 A", 2.0)
+    assert 3.6 <= w <= 3.95 and 1.0 <= h <= 1.1
+    assert 1.05 <= V.pymol_label_box("W", 2.0)[0] <= 1.25
+
+
+def test_interface_side_items_name_chains_and_kind():
+    items = V.interface_side_items({"A": {"chains": ["A"], "kind": "protein", "selection": "protein"},
+                                    "B": {"chains": ["B", "C"], "kind": "dna", "selection": "nucleic"}})
+    assert [t for t, _rgb in items] == ["Chain A (protein)", "Chains B, C (DNA)"]
+    assert items[0][1] == V.SIDE_COLORS["A"][1]
+
+
 def test_2d_map_draws_every_residue_without_overlaps(tmp_path):
     pytest.importorskip("PIL")
     atoms = _benzamidinium()

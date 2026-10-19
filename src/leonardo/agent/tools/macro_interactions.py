@@ -276,10 +276,14 @@ def register(reg):
 
             figure_path = os.path.abspath(os.path.expanduser(str(figure_path)))
             sides = result["sides"]
+            kind = str(result.get("interface_type") or "")
+            kind = kind[:1].upper() + kind[1:]
+            buried = (result.get("sasa") or {}).get("buried_total")
             interaction_view.export_figure(
-                figure_path, result["interactions"], 2000, 1300, title=f"{object} interface",
-                subtitle=f"{sides['A']['selection']} vs {sides['B']['selection']}",
-                items=interaction_view.interface_legend_items(result["interactions"]))
+                figure_path, result["interactions"], 2000, 1300, title=f"{kind} interface" if kind else "Interface",
+                subtitle=object + (f"  ·  {buried:.0f} Å² buried" if buried else ""),
+                items=interaction_view.interface_legend_items(result["interactions"]),
+                sides=interaction_view.interface_side_items(sides))
             objects["figure"] = figure_path
         max_rows = int(max_rows or 15)
         top = [r for r in result["interactions"] if r["type"] != "Hydrophobic"][:max_rows]
