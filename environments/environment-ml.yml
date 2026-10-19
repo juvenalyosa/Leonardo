@@ -1,0 +1,14 @@
+# Machine-learned potentials for OpenMM (openmm-ml + TorchANI, ANI-2x/ANI-1ccx) in their own environment:
+# PyTorch's builds conflict with the main environment. Leonardo runs its OpenMM-ML jobs here
+# (src/leonardo/openmm_ml_runtime.py); scripts/install_envs.sh also downloads the ANI-2x weights.
+# torchani builds exist for Python >= 3.12 only.
+name: leonardo-ml
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - openmm
+  - openmm-torch
+  - openmm-ml
+  - torchani

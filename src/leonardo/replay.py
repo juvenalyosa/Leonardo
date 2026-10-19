@@ -11,7 +11,8 @@ A pack is a folder with
     python -m leonardo.replay record examples/films/01_molecular_docking   # (re)write the reference values
     python -m leonardo.replay verify my_pack --set protein=1HRC --set mutation=K13A   # other parameter values
 
-``kind``: "abs" (|observed - value| <= tol), "exact" (equal), "max" (observed <= value).
+``kind``: "abs" (|observed - value| <= tol), "exact" (equal), "max" (observed <= value), "in" (observed is one of
+the listed values, e.g. the OpenMM platform is a GPU; kept as written when recording).
 The language model never runs here: the same tool calls with the same seeds are replayed, which is what makes
 a result reproducible (the same prompt to an AI agent does not guarantee the same tool calls).
 """
@@ -83,6 +84,8 @@ def check(metric, observed):
         return None
     if kind == "exact":
         return observed == ref
+    if kind == "in":
+        return observed in list(ref)
     if kind == "max":
         return observed is not None and float(observed) <= float(ref)
     return observed is not None and abs(float(observed) - float(ref)) <= float(metric.get("tol", 0.0))
@@ -225,7 +228,10 @@ def main(argv=None):
         except (KeyError, IndexError, ValueError, TypeError, ZeroDivisionError) as exc:
             observed = None
             print(f"  {name}: missing ({exc})")
-        if a.action == "record":
+        if a.action == "record" and metric.get("kind") == "in":
+            # an allowed set (e.g. the GPU platforms) is part of the protocol, not a recorded value
+            passed = bool(check(metric, observed))
+        elif a.action == "record":
             # a metric the run did not produce is a failure, and its reference value is kept
             passed = observed is not None
             if passed:
@@ -254,7 +260,7 @@ def main(argv=None):
     width = max((len(r["metric"]) for r in rows), default=0)
     print(f"\n{report['pack']}: {a.action} on {env['platform']} · Leonardo {env['leonardo']}")
     for r in rows:
-        tol = "" if r["kind"] == "exact" else f" ± {r['tol']}" if r["kind"] == "abs" else " (max)"
+        tol = ("" if r["kind"] in ("exact", "in") else f" ± {r['tol']}" if r["kind"] == "abs" else " (max)")
         print(f"  {'PASS' if r['pass'] else 'FAIL'}  {r['metric']:<{width}}  observed {r['observed']}  "
               f"expected {r['expected']}{tol}")
     print(("ALL CHECKS PASSED" if ok_all else "SOME CHECKS FAILED") + f" · {report['seconds']} s · report: {out}")

@@ -1,0 +1,56 @@
+{
+ "description": "ABFE-lite is stochastic (Langevin noise, GPU arithmetic) and experimental. The metrics check that the defaults finish on a GPU with three replicas that sample bound and unbound states; the \u0394G tolerances are wide on purpose (see README.md).",
+ "metrics": {
+  "replicas": {
+   "path": "4.replicas",
+   "kind": "exact",
+   "value": 3
+  },
+  "platform": {
+   "path": "4.platform",
+   "kind": "in",
+   "value": [
+    "OpenCL",
+    "CUDA",
+    "HIP",
+    "Metal"
+   ]
+  },
+  "experimental_flag": {
+   "path": "4.experimental",
+   "kind": "exact",
+   "value": true
+  },
+  "dg_selected_kj_mol": {
+   "path": "4.dg_selected",
+   "kind": "abs",
+   "tol": 40.0,
+   "value": -73.21368
+  },
+  "dg_population_kj_mol": {
+   "path": "4.dg_pop",
+   "kind": "abs",
+   "tol": 6.0,
+   "value": -4.06025
+  },
+  "bound_frames": {
+   "path": "4.n_bound",
+   "kind": "abs",
+   "tol": 200,
+   "value": 550
+  }
+ },
+ "recorded_with": {
+  "leonardo": "0.2.0a12 (2026-10-17-r1)",
+  "python": "3.11.15",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "date": "2026-10-18T17:42:22",
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- May  8 2020 -- 15:48:11",
+  "openmm": "8.4",
+  "rdkit": "2023.09.6",
+  "meeko": "0.7.1",
+  "numpy": "1.26.4"
+ }
+}

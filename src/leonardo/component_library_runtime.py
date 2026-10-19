@@ -1069,6 +1069,64 @@ def split_chains_at_breaks(topology, positions, max_link_nm=0.2):
     return new, breaks
 
 
+CAP_RESN = {"ACE", "NME", "NMA", "NH2"}
+
+
+def rejoin_terminal_caps(topology, positions, max_link_nm=0.2):
+    """
+    Copy of a topology where a terminal cap (ACE, NME, NMA, NH2) that sits alone in its own chain is put back
+    into the chain it is bonded to (C-N within max_link_nm). PyMOL writes a TER record before an NME/NH2 cap
+    (it does not count it as polymer), so OpenMM starts a new chain there; the lone cap was then dropped and the
+    peptide got a charged C terminus. Returns (topology, rejoined residue ids).
+    """
+    import openmm.app as app
+    from openmm import unit
+
+    pos = [p.value_in_unit(unit.nanometer) for p in positions]
+    chains = [list(c.residues()) for c in topology.chains()]
+    ids = [c.id for c in topology.chains()]
+    merged = []
+
+    def link(prev_res, next_res):
+        pa = {a.name: a for a in prev_res.atoms()}
+        ra = {a.name: a for a in next_res.atoms()}
+        return "C" in pa and "N" in ra and _dist(pos[pa["C"].index], pos[ra["N"].index]) <= max_link_nm
+
+    groups = []                                            # lists of residues, one per new chain
+    for i, res in enumerate(chains):
+        only_caps = res and all(r.name.upper() in CAP_RESN for r in res)
+        if only_caps and groups and res[0].name.upper() != "ACE" and link(groups[-1][1][-1], res[0]):
+            groups[-1][1].extend(res)                       # NME/NMA/NH2 after the residue it caps
+            merged.extend(f"{r.name}{r.id}" for r in res)
+            continue
+        if groups and groups[-1][2] and link(groups[-1][1][-1], res[0]):
+            groups[-1][1].extend(res)                       # a lone ACE before the residue it caps
+            groups[-1] = (groups[-1][0], groups[-1][1], False)
+            continue
+        is_lone_ace = bool(res) and len(res) == 1 and res[0].name.upper() == "ACE"
+        if is_lone_ace:
+            merged.append(f"{res[0].name}{res[0].id}")
+        groups.append((ids[i], list(res), is_lone_ace))
+    if not merged:
+        return topology, []
+    # a lone ACE that did not find its residue stays as it was
+    merged = [m for m in merged if not any(g[2] and f"{g[1][0].name}{g[1][0].id}" == m for g in groups)]
+    if not merged:
+        return topology, []
+    new = app.Topology()
+    new.setPeriodicBoxVectors(topology.getPeriodicBoxVectors())
+    atom_map = {}
+    for cid, residues, _lone in groups:
+        chain = new.addChain(cid)
+        for res in residues:
+            nr = new.addResidue(res.name, chain, res.id, res.insertionCode)
+            for a in res.atoms():
+                atom_map[a] = new.addAtom(a.name, a.element, nr, a.id)
+    for bond in topology.bonds():
+        new.addBond(atom_map[bond[0]], atom_map[bond[1]])
+    return new, merged
+
+
 def additive_residue_names(library=None):
     """Crystallization additives (sulfate, glycerol, PEG...) that are removed before building by default."""
     comps = (library or load_library()).get("components", {})
@@ -2436,7 +2494,8 @@ def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters
               and a.element is not None and a.element.symbol == "H"]
     if drop or drop_h:
         pre.delete(drop + drop_h)
-    split_top, breaks = split_chains_at_breaks(pre.topology, pre.positions)
+    capped_top, rejoined = rejoin_terminal_caps(pre.topology, pre.positions)
+    split_top, breaks = split_chains_at_breaks(capped_top, pre.positions)
     # a lone amino acid/nucleotide left by a gap has no template (both termini at once): drop it
     lone = [r for c in split_top.chains() for r in c.residues()
             if len(list(c.residues())) == 1 and str(r.name).upper() in STANDARD_POLYMER_RESN]
@@ -2472,7 +2531,7 @@ def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters
     pos_nm = [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions]
     plan = resolve_components(modeller.topology, pos_nm, family=family)
     report = {"family": family, "plan": plan, "ok": False, "chain_breaks": breaks,
-              "removed_isolated_residues": lone_ids}
+              "removed_isolated_residues": lone_ids, "rejoined_caps": rejoined}
     allowed = {"library", "gaff"} if gaff_ligands else {"library"}
     blocked = [r for r in plan["components"] if r["source"] not in allowed and not r.get("buildable")]
     if blocked:

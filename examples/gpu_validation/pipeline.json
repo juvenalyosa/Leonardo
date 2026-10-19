@@ -1,0 +1,209 @@
+{
+ "name": "GPU validation: every OpenMM path Leonardo runs on a GPU",
+ "slug": "gpu_validation",
+ "description": "Runs each OpenMM workflow that uses the GPU and checks that it really ran on one (CUDA, HIP, OpenCL or Metal), with sane results: implicit-solvent MD, explicit-solvent NPT MD with a parameterized ligand and a calcium site, minimization, ABFE-lite (3 replicas) and a protein on a gold surface. Not a film pack: it fails on a machine without a GPU. Also umbrella sampling, metadynamics, GaMD and aMD on alanine dipeptide (short), and ANI-2x MD (openmm-torch: CUDA on NVIDIA, the CPU elsewhere).",
+ "format": 1,
+ "parameters": {
+  "pack": {
+   "default": ".",
+   "description": "this pack's folder (filled in by leonardo.replay)"
+  }
+ },
+ "steps": [
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/3PTB.pdb",
+    "object_name": "trypsin_3PTB"
+   }
+  },
+  {
+   "tool": "run_md",
+   "args": {
+    "object": "{{step:1.object}}",
+    "production_ns": 0.1,
+    "solvent": "implicit",
+    "temperature_K": 300.0,
+    "force_field": "amber14",
+    "timestep_fs": 2.0,
+    "keep_crystal_waters": false,
+    "keep_ions": false,
+    "keep_cofactors": false
+   }
+  },
+  {
+   "tool": "run_md",
+   "args": {
+    "object": "{{step:1.object}}",
+    "production_ns": 0.02,
+    "solvent": "explicit",
+    "ensemble": "npt",
+    "water_model": "tip3p",
+    "temperature_K": 300.0,
+    "force_field": "amber14",
+    "timestep_fs": 2.0,
+    "keep_cofactors": true,
+    "keep_ions": true,
+    "keep_crystal_waters": false
+   }
+  },
+  {
+   "tool": "minimize_structure",
+   "args": {
+    "object": "{{step:1.object}}",
+    "solvent": "implicit",
+    "max_iterations": 500
+   }
+  },
+  {
+   "tool": "prepare_docking_ligand",
+   "args": {
+    "selection": "trypsin_3PTB and resn BEN",
+    "ph": 7.4
+   }
+  },
+  {
+   "tool": "parametrize_ligand",
+   "args": {
+    "charge_method": "bcc",
+    "atom_types": "gaff2"
+   }
+  },
+  {
+   "tool": "run_abfe",
+   "args": {
+    "object": "{{step:1.object}}",
+    "ligand": {
+     "chain": "A",
+     "resi": "1",
+     "resn": "BEN"
+    },
+    "sim_ns": 1.0,
+    "replicas": 3,
+    "steering": "pull_hold_return"
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/1AKI.pdb",
+    "object_name": "lysozyme_1AKI"
+   }
+  },
+  {
+   "tool": "build_protein_surface_system",
+   "args": {
+    "object": "{{step:8.object}}",
+    "material": "Au",
+    "facet": "111",
+    "layers": 4
+   }
+  },
+  {
+   "tool": "load_structure_file",
+   "args": {
+    "path": "{{pack}}/alanine_dipeptide.pdb",
+    "object_name": "ala2"
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "umbrella",
+    "action": "run",
+    "windows": 8,
+    "force_constant_kj_mol_nm2": 150,
+    "cv_start": -3.0,
+    "cv_end": -0.4,
+    "equilibration_ps_per_window": 1,
+    "production_ns_per_window": 0.004,
+    "sample_stride_steps": 20,
+    "cv_type": "dihedral",
+    "cv_name": "phi",
+    "selection_a": "resi 1 and name C",
+    "selection_b": "resi 2 and name N",
+    "selection_c": "resi 2 and name CA",
+    "selection_d": "resi 2 and name C",
+    "periodic": true
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "metadynamics",
+    "action": "run",
+    "production_ns": 0.05,
+    "bias_factor": 8,
+    "hill_height_kj_mol": 1.0,
+    "bias_width": 0.3,
+    "deposit_frequency_steps": 250,
+    "cv_start": -3.1416,
+    "cv_end": 3.1416,
+    "cv_type": "dihedral",
+    "cv_name": "phi",
+    "selection_a": "resi 1 and name C",
+    "selection_b": "resi 2 and name N",
+    "selection_c": "resi 2 and name CA",
+    "selection_d": "resi 2 and name C",
+    "periodic": true
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "gamd",
+    "action": "run",
+    "production_ns": 0.05,
+    "cmd_ns": 0.01,
+    "sample_stride_steps": 50,
+    "bias_width": 0.3,
+    "cv_start": -3.1416,
+    "cv_end": 3.1416,
+    "cv_type": "dihedral",
+    "cv_name": "phi",
+    "selection_a": "resi 1 and name C",
+    "selection_b": "resi 2 and name N",
+    "selection_c": "resi 2 and name CA",
+    "selection_d": "resi 2 and name C",
+    "periodic": true
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "amd",
+    "action": "run",
+    "production_ns": 0.05,
+    "cmd_ns": 0.01,
+    "sample_stride_steps": 50,
+    "bias_width": 0.3,
+    "cv_start": -3.1416,
+    "cv_end": 3.1416,
+    "cv_type": "dihedral",
+    "cv_name": "phi",
+    "selection_a": "resi 1 and name C",
+    "selection_b": "resi 2 and name N",
+    "selection_c": "resi 2 and name CA",
+    "selection_d": "resi 2 and name C",
+    "periodic": true
+   }
+  },
+  {
+   "tool": "run_enhanced_sampling",
+   "args": {
+    "object": "ala2",
+    "mode": "openmm_ml",
+    "action": "run",
+    "ml_model": "ani2x",
+    "ml_mode": "ml_only",
+    "production_ns": 0.001,
+    "timestep_fs": 1.0,
+    "sample_stride_steps": 50
+   }
+  }
+ ]
+}

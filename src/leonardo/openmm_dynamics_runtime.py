@@ -35,6 +35,119 @@ _CV_TYPE_REQUIREMENTS = {
 }
 
 
+OPENMM_STEP_SYNC_EVERY = 250
+
+
+def openmm_step_synced(integrator, context, steps, sync_every=OPENMM_STEP_SYNC_EVERY):
+    """
+    Run ``steps`` MD steps, downloading positions every ``sync_every`` steps.
+
+    One long ``step(N)`` on Apple's OpenCL queues N steps of kernels without a host round trip, and the
+    driver holds wired (unpageable) memory for all of them: ~20 kB per step for a 1638-atom ABFE system,
+    so a 120 000-step equilibration wired several GB and on 2026-10-17 a 16 GB M4 kernel-panicked
+    (watchdog timeout).  A real download (positions or energy; an empty getState or getTime is not
+    enough) drains the queue: peak memory fell from +807 MB to +64 MB over 40 000 steps and the run got
+    2x faster.  The trajectory is unchanged (getState only reads).  ``integrator`` may be an OpenMM
+    Integrator or an ``openmm.app.Simulation`` (whose reporters keep firing on the same steps).
+    """
+    try:
+        total = int(steps)
+    except (TypeError, ValueError):
+        total = 0
+    if total <= 0:
+        return 0
+    try:
+        every = int(sync_every)
+    except (TypeError, ValueError):
+        every = OPENMM_STEP_SYNC_EVERY
+    every = max(1, every)
+    if context is None:
+        context = getattr(integrator, "context", None)
+    if hasattr(context, "step_synced"):           # OpenMMContextProcess: the child steps and syncs itself
+        return int(context.step_synced(total, every))
+    done = 0
+    while done < total:
+        n = min(every, total - done)
+        integrator.step(n)
+        done += n
+        if context is not None and done < total:
+            context.getState(getPositions=True)
+    return done
+
+
+def openmm_context_process_wanted(platform_name):
+    """
+    Whether a long run should keep its Context in a child process (OpenMMContextProcess).
+
+    Yes for OpenCL on macOS, where Apple's driver leaks pageable memory per kernel launch that only the
+    end of the process returns.  LEONARDO_OPENMM_CONTEXT_PROCESS=1 forces it on any platform, =0 off.
+    """
+    flag = str(os.environ.get("LEONARDO_OPENMM_CONTEXT_PROCESS", "") or "").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        return False
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    import sys
+
+    return sys.platform == "darwin" and str(platform_name or "").strip().lower() == "opencl"
+
+
+def openmm_make_context(system, integrator, platform=None, properties=None, log=None):
+    """
+    openmm.Context(system, integrator[, platform[, properties]]), or an OpenMMContextProcess with the same
+    calls where openmm_context_process_wanted() says so.  If the child cannot start, the Context is made
+    in this process and ``log`` says why.
+    """
+    import openmm
+
+    name = ""
+    try:
+        name = str(platform.getName()) if platform is not None else ""
+    except Exception:
+        name = ""
+    if openmm_context_process_wanted(name):
+        try:
+            from .openmm_context_process import OpenMMContextProcess
+            return OpenMMContextProcess(system, integrator, platform_name=name,
+                                        properties=dict(properties or {}), log=log)
+        except Exception as exc:
+            if log is not None:
+                try:
+                    log(f"OpenMM context process unavailable ({exc}); running the context in-process")
+                except Exception:
+                    pass
+    if platform is None:
+        return openmm.Context(system, integrator)
+    if properties:
+        return openmm.Context(system, integrator, platform, dict(properties))
+    return openmm.Context(system, integrator, platform)
+
+
+def openmm_minimize(context, max_iterations=0, tolerance=10.0):
+    """LocalEnergyMinimizer.minimize for an openmm.Context or an OpenMMContextProcess."""
+    if hasattr(context, "minimize") and hasattr(context, "step_synced"):
+        context.minimize(int(max_iterations), float(tolerance))
+        return
+    import openmm
+
+    openmm.LocalEnergyMinimizer.minimize(context, float(tolerance), int(max_iterations))
+
+
+def openmm_update_force_in_context(force, context):
+    """force.updateParametersInContext(context) for an openmm.Context or an OpenMMContextProcess."""
+    if hasattr(context, "update_force"):
+        context.update_force(force)
+    else:
+        force.updateParametersInContext(context)
+
+
+def openmm_close_context(context):
+    """Stop the child of an OpenMMContextProcess (an in-process Context is left to garbage collection)."""
+    close = getattr(context, "close", None)
+    if callable(close):
+        close()
+
+
 def _clip_float(value, default, lower, upper):
     try:
         val = float(value)
@@ -689,7 +802,7 @@ def run_openmm_umbrella_smoke(
         platform_used = str(picked or platform_used)
         e0 = _potential_kj_mol(simulation, unit)
         simulation.minimizeEnergy(maxIterations=20)
-        simulation.step(int(steps))
+        openmm_step_synced(simulation, simulation.context, int(steps))
         e1 = _potential_kj_mol(simulation, unit)
         dist = _distance_nm_from_simulation(simulation, unit)
         rows.append(
@@ -1378,7 +1491,7 @@ def run_openmm_alanine_cv_suite(
     current_step = 0
     while current_step < int(total_steps):
         chunk = min(int(stride), int(total_steps) - int(current_step))
-        simulation.step(int(chunk))
+        openmm_step_synced(simulation, simulation.context, int(chunk))
         current_step += int(chunk)
         sample(current_step)
     final_energy = _potential_kj_mol(simulation, unit)

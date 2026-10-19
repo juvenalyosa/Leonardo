@@ -136,7 +136,8 @@ def _modeling(args, r):
 
 
 def _abfe(args, r):
-    w = []
+    w = ["ABFE-lite is experimental: its ΔG is not validated against experiment (estimators can be off by tens "
+         "of kJ/mol); report it as a qualitative comparison only"]
     if r.get("dg_selected") is None:
         w.append("no binding free energy: the run is only diagnostic (ligand did not sample bound and "
                  "unbound states); more replicas / longer runs are needed")

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import urllib.error
 import urllib.parse
@@ -56,6 +57,7 @@ try:
     from .abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
     from .abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
     from .abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
+    from .abfe_runtime import ABFE_EXPERIMENTAL_NOTE as abfe_experimental_note
     from .abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
     from .abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
     from .abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
@@ -81,6 +83,7 @@ try:
     from .abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
     from .abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
     from .abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
+    from .abfe_runtime import openmm_gpu_properties as abfe_openmm_gpu_properties
     from .abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
     from .abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
     from .abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
@@ -168,6 +171,9 @@ try:
     from .dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
     from .dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
     from .dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
+    from .abfe_runtime import build_abfe_memory_guard_decision as abfe_build_memory_guard_decision
+    from .abfe_runtime import build_abfe_funnel_axis_payload as abfe_build_funnel_axis_payload
+    from .abfe_runtime import build_abfe_pymol_state_budget as abfe_build_pymol_state_budget
     from .dock_runtime import format_docking_grid_summary as dock_format_docking_grid_summary
     from .dock_runtime import normalize_docking_grid as dock_normalize_docking_grid
     from .dock_runtime import parse_fpocket_info_text as dock_parse_fpocket_info_text
@@ -265,6 +271,11 @@ try:
     from .modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
     from .openmm_dynamics_runtime import (
         apply_openmm_cv_preset,
+        openmm_close_context,
+        openmm_make_context,
+        openmm_minimize,
+        openmm_step_synced,
+        openmm_update_force_in_context,
         build_openmm_capability_report,
         normalize_openmm_cv_definition,
         normalize_openmm_run_controls,
@@ -499,6 +510,7 @@ except Exception:
     from abfe_runtime import build_abfe_free_energy_numeric_payload as abfe_build_free_energy_numeric_payload
     from abfe_runtime import build_abfe_free_energy_plot_payload as abfe_build_free_energy_plot_payload
     from abfe_runtime import build_abfe_free_energy_report_payload as abfe_build_free_energy_report_payload
+    from abfe_runtime import ABFE_EXPERIMENTAL_NOTE as abfe_experimental_note
     from abfe_runtime import build_abfe_gbsa_mmgbsa_rescore_payload as abfe_build_gbsa_mmgbsa_rescore_payload
     from abfe_runtime import build_abfe_live_plot_apply_plan as abfe_build_live_plot_apply_plan
     from abfe_runtime import build_abfe_live_plot_setup_plan as abfe_build_live_plot_setup_plan
@@ -524,6 +536,7 @@ except Exception:
     from abfe_runtime import build_abfe_openmm_staged_prep_plan as abfe_build_openmm_staged_prep_plan
     from abfe_runtime import build_abfe_post_interaction_report_payload as abfe_build_post_interaction_report_payload
     from abfe_runtime import build_abfe_post_sampling_metrics as abfe_build_post_sampling_metrics
+    from abfe_runtime import openmm_gpu_properties as abfe_openmm_gpu_properties
     from abfe_runtime import build_abfe_replica_aggregate_payload as abfe_build_replica_aggregate_payload
     from abfe_runtime import build_abfe_scene_apply_operations as abfe_build_scene_apply_operations
     from abfe_runtime import build_abfe_scene_restore_default_payload as abfe_build_scene_restore_default_payload
@@ -611,6 +624,9 @@ except Exception:
     from dock_runtime import build_meeko_flexres_spec as dock_build_meeko_flexres_spec
     from dock_runtime import build_meeko_receptor_input_args as dock_build_meeko_receptor_input_args
     from dock_runtime import build_smina_flexres_spec as dock_build_smina_flexres_spec
+    from abfe_runtime import build_abfe_memory_guard_decision as abfe_build_memory_guard_decision
+    from abfe_runtime import build_abfe_funnel_axis_payload as abfe_build_funnel_axis_payload
+    from abfe_runtime import build_abfe_pymol_state_budget as abfe_build_pymol_state_budget
     from dock_runtime import format_docking_grid_summary as dock_format_docking_grid_summary
     from dock_runtime import normalize_docking_grid as dock_normalize_docking_grid
     from dock_runtime import parse_fpocket_info_text as dock_parse_fpocket_info_text
@@ -706,6 +722,11 @@ except Exception:
     from modeler_runtime import write_modeler_score_records_csv as modeler_write_score_records_csv
     from openmm_dynamics_runtime import (
         apply_openmm_cv_preset,
+        openmm_close_context,
+        openmm_make_context,
+        openmm_minimize,
+        openmm_step_synced,
+        openmm_update_force_in_context,
         build_openmm_capability_report,
         normalize_openmm_cv_definition,
         normalize_openmm_run_controls,
@@ -963,8 +984,8 @@ try:
 except ImportError:
     from leonardo import ui_theme
 # Literal aliases are retained for legacy packaging/version inspections.
-PLUGIN_VERSION = "0.2.0a12"
-PLUGIN_BUILD = "2026-10-17-r1"
+PLUGIN_VERSION = "0.2.0a13"
+PLUGIN_BUILD = "2026-10-19-r1"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
@@ -6621,7 +6642,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.btn_free_energy = QtWidgets.QPushButton("Guided Exit Diagnostic")
             self.btn_free_energy.setToolTip(
                 "Run the historical ABFE-lite guided-exit workflow as a trajectory/state-gating "
-                "diagnostic; production binding affinity is not reported."
+                "diagnostic; production binding affinity is not reported.\n\n" + abfe_experimental_note
             )
             self.btn_free_energy.clicked.connect(lambda _checked=False: self._run_trajectory_free_energy_calculation(source="traj"))
             vbox.addWidget(self.btn_free_energy)
@@ -6711,6 +6732,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 lambda v: self._on_abfe_guide_tunnel_radius_changed(float(v), source="traj")
             )
             row_abfe_tunnel.addWidget(self.spin_abfe_guide_tunnel_radius, 0, 3)
+            row_abfe_tunnel.addWidget(QtWidgets.QLabel("Guide shape"), 1, 0)
+            self.cmb_abfe_guide_tunnel_shape = self._make_abfe_guide_tunnel_shape_combo("traj")
+            row_abfe_tunnel.addWidget(self.cmb_abfe_guide_tunnel_shape, 1, 1)
             row_abfe_tunnel.setColumnStretch(1, 1)
             row_abfe_tunnel.setColumnStretch(3, 1)
             vbox.addLayout(row_abfe_tunnel)
@@ -7233,6 +7257,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.cmb_openmm_advanced = QtWidgets.QComboBox()
             self.cmb_openmm_advanced.addItem("Umbrella sampling", "umbrella")
             self.cmb_openmm_advanced.addItem("Metadynamics", "metadynamics")
+            self.cmb_openmm_advanced.addItem("Accelerated MD (aMD)", "amd")
+            self.cmb_openmm_advanced.addItem("Gaussian accelerated MD (GaMD)", "gamd")
             self.cmb_openmm_advanced.addItem("Guided-exit binding diagnostic", "abfe")
             self.cmb_openmm_advanced.addItem("OpenMM-ML potential wrapper", "openmm_ml")
             row_adv.addWidget(self.cmb_openmm_advanced, 0, 1)
@@ -7272,6 +7298,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             quick_methods = [
                 ("Umbrella...", "umbrella"),
                 ("Metadynamics...", "metadynamics"),
+                ("aMD...", "amd"),
+                ("GaMD...", "gamd"),
                 ("ABFE...", "abfe"),
                 ("OpenMM-ML...", "openmm_ml"),
             ]
@@ -12699,7 +12727,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 done = 0
                 while done < n_run:
                     step_now = int(min(interval, n_run - done))
-                    simulation.step(step_now)
+                    openmm_step_synced(simulation, simulation.context, step_now)
                     done += step_now
                     dyn_step_counter += step_now
                     qmsg = (
@@ -12882,7 +12910,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             if not ok_stage:
                                 return out
                         else:
-                            simulation.step(int(per_stage))
+                            openmm_step_synced(simulation, simulation.context, int(per_stage))
                     rem = int(n_steps - (per_stage * n_stage))
                     if rem > 0:
                         if qmmm_force_coupled:
@@ -12895,7 +12923,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             if not ok_stage:
                                 return out
                         else:
-                            simulation.step(int(rem))
+                            openmm_step_synced(simulation, simulation.context, int(rem))
                 else:
                     if qmmm_force_coupled:
                         ok_stage = _run_steps_with_qmmm_coupling(
@@ -12907,7 +12935,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         if not ok_stage:
                             return out
                     else:
-                        simulation.step(n_steps)
+                        openmm_step_synced(simulation, simulation.context, n_steps)
             if run_equil and int(data.get("equil_steps", 0)) > 0:
                 _emit(74, "Equilibration")
                 n_equil = int(max(1, int(data.get("equil_steps", 0))))
@@ -12921,7 +12949,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if not ok_stage:
                         return out
                 else:
-                    simulation.step(int(n_equil))
+                    openmm_step_synced(simulation, simulation.context, int(n_equil))
             if run_prod and int(data.get("prod_steps", 0)) > 0:
                 _emit(82, "Production")
                 dcd_path = os.path.join(job_dir, f"{safe_obj}_openmm.dcd")
@@ -12969,7 +12997,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     next_probe = int(qmmm_probe_interval) if qmmm_probe_interval > 0 else 0
                     while done < n_prod:
                         step_now = int(min(chunk, n_prod - done))
-                        simulation.step(step_now)
+                        openmm_step_synced(simulation, simulation.context, step_now)
                         done += step_now
                         while next_probe > 0 and done >= next_probe:
                             qmsg = f"QM/MM periodic probe at production step {next_probe}/{n_prod}"
@@ -13708,6 +13736,204 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "timestep_fs": float(spin_dt.value()),
             },
         }
+    def _openmm_prompt_amd_params(self):
+        return self._openmm_prompt_boosted_params("amd")
+    def _openmm_prompt_gamd_params(self):
+        return self._openmm_prompt_boosted_params("gamd")
+    def _openmm_prompt_boosted_params(self, kind):
+        """aMD / GaMD settings: a short conventional MD gives the potential statistics, then the boosted run;
+        the CV preset is the coordinate the PMF is reweighted along."""
+        title = "Accelerated MD (aMD)" if kind == "amd" else "Gaussian accelerated MD (GaMD)"
+        intro = ("Dual-boost aMD (Hamelberg 2004; thresholds from Pierce et al. 2012)" if kind == "amd" else
+                 "Dual-boost GaMD (Miao et al. 2015, lower-bound threshold)") + \
+            (". A Langevin integrator with the boost in its force term runs on the GPU; the PMF along the chosen "
+             "CV is reweighted (cumulant 2nd order and exponential). Short runs are qualitative.")
+        dlg, form = self._openmm_build_advanced_dialog(f"{title} Parameters", intro)
+        cmb_obj = self._openmm_add_advanced_object_picker(form, label="Structure object")
+        cmb_preset = QtWidgets.QComboBox()
+        for preset in openmm_cv_presets():
+            cmb_preset.addItem(str(preset.get("label", preset.get("id", "CV"))), str(preset.get("id", "")))
+        try:
+            idx = int(cmb_preset.findData(self._openmm_selected_cv_preset_id()))
+            if idx >= 0:
+                cmb_preset.setCurrentIndex(idx)
+        except Exception:
+            pass
+        form.addRow("Reweighting CV", cmb_preset)
+        cmb_solvent = QtWidgets.QComboBox()
+        cmb_solvent.addItem("Implicit water (amber14 GBn2)", "implicit")
+        cmb_solvent.addItem("Explicit water (TIP3P, PME)", "explicit")
+        form.addRow("Solvent", cmb_solvent)
+        cmb_boost = QtWidgets.QComboBox()
+        cmb_boost.addItem("Dual (total + dihedral)", "dual")
+        cmb_boost.addItem("Total potential", "total")
+        cmb_boost.addItem("Dihedral only", "dihedral")
+        form.addRow("Boost", cmb_boost)
+        spin_cmd = QtWidgets.QDoubleSpinBox()
+        spin_cmd.setRange(0.001, 50.0)
+        spin_cmd.setDecimals(3)
+        spin_cmd.setValue(0.05)
+        spin_cmd.setSuffix(" ns")
+        form.addRow("Conventional MD (statistics)", spin_cmd)
+        spin_prod = QtWidgets.QDoubleSpinBox()
+        spin_prod.setRange(0.002, 500.0)
+        spin_prod.setDecimals(3)
+        spin_prod.setValue(1.0)
+        spin_prod.setSuffix(" ns")
+        form.addRow("Boosted production", spin_prod)
+        spin_strength = QtWidgets.QDoubleSpinBox()
+        if kind == "gamd":
+            spin_strength.setRange(0.5, 20.0)
+            spin_strength.setValue(6.0)
+            spin_strength.setSuffix(" kcal/mol")
+            form.addRow("σ0 (boost SD limit)", spin_strength)
+        else:
+            spin_strength.setRange(0.1, 5.0)
+            spin_strength.setValue(1.0)
+            form.addRow("Boost level (x Pierce)", spin_strength)
+        spin_temp = QtWidgets.QDoubleSpinBox()
+        spin_temp.setRange(200.0, 500.0)
+        spin_temp.setValue(300.0)
+        spin_temp.setSuffix(" K")
+        form.addRow("Temperature", spin_temp)
+        spin_stride = QtWidgets.QSpinBox()
+        spin_stride.setRange(10, 100000)
+        spin_stride.setValue(100)
+        form.addRow("Frame every (steps)", spin_stride)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        obj = str(cmb_obj.currentText() or "").strip()
+        cv = self._openmm_cv_from_selected_preset(workflow="metadynamics", preset_id=cmb_preset.currentData(),
+                                                  obj_name=obj)
+        dt = 2.0
+        prod = max(1000, int(round(spin_prod.value() * 1e6 / dt)))
+        boost = {"cmd_steps": max(500, int(round(spin_cmd.value() * 1e6 / dt))), "equil_steps": max(200, prod // 10),
+                 "prod_steps": prod, "stride": int(spin_stride.value()), "boost": str(cmb_boost.currentData())}
+        boost["sigma0_kcal" if kind == "gamd" else "level"] = float(spin_strength.value())
+        return {"object": obj, "method": kind, "temperature_k": float(spin_temp.value()), "timestep_fs": dt,
+                "solvent": str(cmb_solvent.currentData()), "boost": boost, "collective_variables": [cv]}
+    def _openmm_run_enhanced_sampling_job(self, mode, obj, method_payload, template_path=""):
+        """Run an umbrella / metadynamics / aMD / GaMD template on the real system in a background process
+        (leonardo.enhanced_sampling_runtime), report progress in the Advanced panel and show the result."""
+        try:
+            from leonardo.agent.tools.md_advanced import build_run_spec, _run_card, _main_image, _all_files
+            from leonardo.agent.tools.diagnostics import _python_executable
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"Enhanced-sampling runner unavailable:\n{e}")
+            return
+        payload = dict(method_payload or {})
+        cvs = [payload["cv"]] if isinstance(payload.get("cv"), dict) else list(payload.get("collective_variables") or [])
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = os.path.join(self._openmm_workspace_dir(), f"{mode}_{obj}_{ts}")
+        os.makedirs(out_dir, exist_ok=True)
+        pdb_path = os.path.join(out_dir, f"{obj}.pdb")
+        try:
+            previous = cmd.get("pdb_conect_all")
+            cmd.set("pdb_conect_all", 1)
+            try:
+                cmd.save(pdb_path, f"({obj}) and not alt B+C+D", state=1)
+            finally:
+                cmd.set("pdb_conect_all", previous)
+            spec = build_run_spec(obj, mode, payload, cvs, {"solvent": payload.get("solvent")}, pdb_path, out_dir)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"Cannot set up the {mode} run:\n{e}")
+            return
+        spec["result_json"] = os.path.join(out_dir, "result.json")
+        job_path = os.path.join(out_dir, "job.json")
+        with open(job_path, "w", encoding="utf-8") as fh:
+            json.dump(spec, fh, indent=1)
+        env = dict(os.environ)
+        pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__import__("leonardo").__file__)))
+        env["PYTHONPATH"] = pkg_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        log_path = os.path.join(out_dir, "log.txt")
+        log = open(log_path, "w")
+        proc = subprocess.Popen([_python_executable(), "-m", "leonardo.enhanced_sampling_runtime", job_path],
+                                cwd=out_dir, stdout=log, stderr=subprocess.STDOUT, env=env)
+        self._append_debug_log(f"{mode} job started for {obj}: {out_dir}")
+        timer = QtCore.QTimer(self)
+        timer.setInterval(2000)
+
+        def poll():
+            if proc.poll() is None:
+                try:
+                    with open(log_path) as fh:
+                        rows = [ln[9:].strip() for ln in fh if ln.startswith("PROGRESS")]
+                    if rows and hasattr(self, "lbl_openmm_advanced"):
+                        self.lbl_openmm_advanced.setText(f"{mode} on {obj}: {rows[-1]}")
+                except OSError:
+                    pass
+                return
+            timer.stop()
+            log.close()
+            res = {}
+            try:
+                with open(spec["result_json"]) as fh:
+                    res = json.load(fh)
+            except Exception:
+                pass
+            if not res.get("ok"):
+                msg = str(res.get("error") or "")
+                if not msg:
+                    try:
+                        msg = open(log_path).read()[-800:]
+                    except OSError:
+                        msg = "no result"
+                if hasattr(self, "lbl_openmm_advanced"):
+                    self.lbl_openmm_advanced.setText(f"{mode} on {obj} failed")
+                QtWidgets.QMessageBox.warning(self, "OpenMM Advanced", f"{mode} on {obj} failed:\n{msg[:2000]}")
+                return
+            card = _run_card(mode, obj, res).replace("**", "")
+            if hasattr(self, "lbl_openmm_advanced"):
+                self.lbl_openmm_advanced.setText(f"{mode} on {obj} done | output={out_dir}")
+            self._append_debug_log(card)
+            main = _main_image(mode, res)
+            pngs = [main] + [f for f in _all_files(res) if str(f).endswith(".png") and f != main]
+            self._openmm_show_enhanced_sampling_result(f"{mode} — {obj}", card, pngs, out_dir)
+
+        timer.timeout.connect(poll)
+        timer.start()
+        self._enhanced_sampling_jobs = list(getattr(self, "_enhanced_sampling_jobs", [])) + [(proc, timer)]
+        if hasattr(self, "lbl_openmm_advanced"):
+            self.lbl_openmm_advanced.setText(f"{mode} on {obj}: starting (output {out_dir})")
+    def _openmm_show_enhanced_sampling_result(self, title, text, images, out_dir):
+        """The result card and every plot of the run, one tab each (profile, histograms, traces, boost...)."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(title)
+        try:
+            self._fit_dialog_to_screen(dlg, preferred_w=920, preferred_h=820, min_w=760, min_h=640)
+        except Exception:
+            dlg.resize(920, 820)
+        v = QtWidgets.QVBoxLayout(dlg)
+        lbl = QtWidgets.QLabel(text)
+        lbl.setWordWrap(True)
+        v.addWidget(lbl)
+        paths = [p for p in ([images] if isinstance(images, str) else list(images or [])) if p and os.path.isfile(p)]
+        if paths:
+            tabs = QtWidgets.QTabWidget()
+            for path in paths:
+                img = QtWidgets.QLabel()
+                img.setAlignment(QtCore.Qt.AlignCenter)
+                pix = QtGui.QPixmap(path)
+                # the whole plot visible in the tab (no scrolling to find the axis)
+                img.setPixmap(pix.scaled(QtCore.QSize(min(840, pix.width()), min(540, pix.height())),
+                                         QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+                scroll = QtWidgets.QScrollArea()
+                scroll.setWidget(img)
+                scroll.setWidgetResizable(True)
+                name = os.path.splitext(os.path.basename(path))[0].replace("_", " ")
+                tabs.addTab(scroll, name)
+            tabs.setMinimumHeight(600)              # a whole plot per tab, axis labels included
+            tabs.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+            v.addWidget(tabs, 1)
+        row = QtWidgets.QHBoxLayout()
+        btn_open = QtWidgets.QPushButton("Open results folder")
+        btn_open.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(out_dir)))
+        row.addWidget(btn_open)
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        row.addWidget(btn_close)
+        v.addLayout(row)
+        dlg.show()
     def _openmm_prompt_metadynamics_params(self):
         dlg, form = self._openmm_build_advanced_dialog(
             "Metadynamics Parameters",
@@ -14074,10 +14300,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "launch_abfe_lite_now": bool(cb_run_now.isChecked()),
         }
     def _openmm_prompt_openmm_ml_params(self):
+        # openmm-ml/TorchANI live in the separate leonardo-ml environment (PyTorch conflicts with this one)
         has_ml = False
         try:
-            import openmmml  # noqa: F401
-            has_ml = True
+            from leonardo.enhanced_sampling_runtime import ml_python
+            has_ml = bool(ml_python())
         except Exception:
             has_ml = False
         dlg, form = self._openmm_build_advanced_dialog(
@@ -14261,6 +14488,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         builder_map = {
             "umbrella": self._openmm_prompt_umbrella_params,
             "metadynamics": self._openmm_prompt_metadynamics_params,
+            "amd": self._openmm_prompt_amd_params,
+            "gamd": self._openmm_prompt_gamd_params,
             "abfe": self._openmm_prompt_abfe_params,
             "openmm_ml": self._openmm_prompt_openmm_ml_params,
         }
@@ -14300,6 +14529,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._on_openmm_abfe_lite()
             except Exception as e:
                 self._append_debug_log(f"ABFE-lite launch warning after template save: {e}")
+        if mode in ("umbrella", "metadynamics", "amd", "gamd", "openmm_ml") and \
+                not getattr(self, "_openmm_advanced_headless", False):
+            answer = QtWidgets.QMessageBox.question(
+                self, "OpenMM Advanced",
+                f"Template saved:\n{out_json}\n\nRun {mode} on {obj} now? It runs in the background on the GPU "
+                "(if available); results open when it finishes.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes)
+            if answer == QtWidgets.QMessageBox.Yes:
+                self._openmm_run_enhanced_sampling_job(mode, obj, method_payload, out_json)
+                return
         try:
             cv_rows = []
             params = dict(method_payload or {})
@@ -14573,6 +14812,122 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self._save_settings()
         except Exception:
             pass
+    def _abfe_resource_probe(self):
+        """System memory, process RSS and thread count for the ABFE memory guard and log."""
+        out = {"available_mb": None, "total_mb": None, "swap_used_mb": None, "rss_mb": None,
+               "threads": None, "wired_mb": None, "pressure_level": None}
+        try:
+            import psutil
+
+            vm = psutil.virtual_memory()
+            out["available_mb"] = float(vm.available) / 1048576.0
+            out["total_mb"] = float(vm.total) / 1048576.0
+            # macOS: GPU buffers are wired and cannot be paged out; all-wired RAM is how the M4 panicked
+            if getattr(vm, "wired", None) is not None:
+                out["wired_mb"] = float(vm.wired) / 1048576.0
+            if sys.platform == "darwin":
+                try:
+                    import ctypes
+
+                    libc = ctypes.CDLL(None)
+                    lvl = ctypes.c_int(0)
+                    size = ctypes.c_size_t(ctypes.sizeof(lvl))
+                    if libc.sysctlbyname(b"kern.memorystatus_vm_pressure_level", ctypes.byref(lvl),
+                                         ctypes.byref(size), None, ctypes.c_size_t(0)) == 0:
+                        out["pressure_level"] = int(lvl.value)
+                except Exception:
+                    pass
+            try:
+                sw = psutil.swap_memory()
+                if float(sw.total) > 0.0:
+                    out["swap_used_mb"] = float(sw.used) / 1048576.0
+            except Exception:
+                pass
+            proc = psutil.Process()
+            rss = float(proc.memory_info().rss)
+            for child in proc.children(recursive=True):     # the OpenMM context process, if any
+                try:
+                    rss += float(child.memory_info().rss)
+                except Exception:
+                    pass
+            out["rss_mb"] = rss / 1048576.0
+            out["threads"] = int(proc.num_threads())
+        except Exception:
+            pass
+        if sys.platform == "darwin":
+            # the kernel's own verdict (1 normal, 2 warning, 4 critical): what ends in a watchdog panic
+            try:
+                res = subprocess.run(["sysctl", "-n", "kern.memorystatus_vm_pressure_level"], capture_output=True,
+                                     text=True, timeout=2)
+                out["pressure_level"] = int(res.stdout.strip() or 0)
+            except Exception:
+                out["pressure_level"] = None
+        return out
+    def _abfe_guide_tunnel_shape(self, source=None):
+        attr_pairs = [("cmb_abfe_guide_tunnel_shape", "traj"), ("cmb_pose_abfe_guide_tunnel_shape", "dock")]
+        if source == "dock":
+            attr_pairs = list(reversed(attr_pairs))
+        for attr, _src in attr_pairs:
+            cmb = getattr(self, attr, None)
+            if cmb is None:
+                continue
+            try:
+                val = str(cmb.currentData() or "").strip().lower()
+            except Exception:
+                continue
+            if val in ("funnel", "cylinder"):
+                return val
+        try:
+            val = str(getattr(self, "_settings", {}).get("abfe_guide_tunnel_shape", "funnel") or "").strip().lower()
+        except Exception:
+            val = "funnel"
+        return val if val in ("funnel", "cylinder") else "funnel"
+    def _set_abfe_guide_tunnel_shape(self, shape, source=None):
+        val = str(shape or "funnel").strip().lower()
+        if val not in ("funnel", "cylinder"):
+            val = "funnel"
+        for attr, src in (("cmb_abfe_guide_tunnel_shape", "traj"), ("cmb_pose_abfe_guide_tunnel_shape", "dock")):
+            cmb = getattr(self, attr, None)
+            if cmb is None or source == src:
+                continue
+            try:
+                idx = cmb.findData(val)
+                if idx >= 0:
+                    cmb.blockSignals(True)
+                    cmb.setCurrentIndex(idx)
+                    cmb.blockSignals(False)
+            except Exception:
+                pass
+        try:
+            if hasattr(self, "_settings"):
+                self._settings["abfe_guide_tunnel_shape"] = val
+        except Exception:
+            pass
+    def _on_abfe_guide_tunnel_shape_changed(self, shape, source=None):
+        self._set_abfe_guide_tunnel_shape(shape, source=source)
+        try:
+            if hasattr(self, "_settings"):
+                self._save_settings()
+        except Exception:
+            pass
+    def _make_abfe_guide_tunnel_shape_combo(self, source):
+        cmb = QtWidgets.QComboBox()
+        cmb.addItem("Funnel (re-entry)", "funnel")
+        cmb.addItem("Cylinder", "cylinder")
+        cmb.setToolTip(
+            "Funnel: cone wide at the pocket that narrows into the tunnel, capped outside the protein; "
+            "keeps the unbound ligand in front of the entrance so it can re-enter. Cylinder: constant radius."
+        )
+        try:
+            idx = cmb.findData(self._abfe_guide_tunnel_shape())
+            if idx >= 0:
+                cmb.setCurrentIndex(idx)
+        except Exception:
+            pass
+        cmb.currentIndexChanged.connect(
+            lambda _i: self._on_abfe_guide_tunnel_shape_changed(cmb.currentData(), source=source)
+        )
+        return cmb
     def _on_abfe_guide_tunnel_radius_changed(self, radius_a, source=None):
         self._set_abfe_guide_tunnel_radius_a(float(radius_a), source=source)
         try:
@@ -20814,6 +21169,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             row_pose.addWidget(self.cb_pose_abfe_keep_scene, 1, 1)
             self.btn_pose_abfe = QtWidgets.QPushButton("Run ABFE-lite on Selected Pose")
             self.btn_pose_abfe.clicked.connect(self._on_run_abfe_for_selected_pose)
+            self.btn_pose_abfe.setToolTip(abfe_experimental_note)
             row_pose.addWidget(self.btn_pose_abfe, 0, 2, 2, 1)
             for _col in range(3):
                 row_pose.setColumnStretch(_col, 1)
@@ -20897,6 +21253,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 lambda v: self._set_abfe_steering_cycles(int(v), source="dock")
             )
             row_pose_steer.addWidget(self.spin_pose_abfe_steering_cycles, 3, 1)
+            row_pose_steer.addWidget(QtWidgets.QLabel("Guide shape"), 3, 2)
+            self.cmb_pose_abfe_guide_tunnel_shape = self._make_abfe_guide_tunnel_shape_combo("dock")
+            row_pose_steer.addWidget(self.cmb_pose_abfe_guide_tunnel_shape, 3, 3)
             for _col in range(4):
                 row_pose_steer.setColumnStretch(_col, 1)
             dbox.addLayout(row_pose_steer)
@@ -48375,12 +48734,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         if (hw_pick in available and bool(hw_md.get("is_gpu")) and hw_bench.get("steps_per_s")
                 and not user_override):
             # measured in a child process on this machine (a crashing GPU driver never reached PyMOL)
-            threads = int(((hw or {}).get("threads") or {}).get("openmm_cpu") or 0)
-            props = {"Precision": "mixed"} if hw_pick in ("CUDA", "OpenCL", "HIP", "Metal") else (
-                {"Threads": str(threads)} if hw_pick == "CPU" and threads else {})
+            # mixed precision, or single on GPUs without 64-bit floats (Apple's OpenCL rejects mixed)
+            props = abfe_openmm_gpu_properties(hw_pick)[0]
             return available[hw_pick], props, hw_pick
         pick_plan = abfe_build_openmm_platform_selection_plan(list(available.keys()))
         picked = str(pick_plan.get("picked_platform_name", "") or "").strip()
+        bad = [n for n in pick_plan.get("notes", []) if str(n).startswith(("requested_platform_unavailable",
+                                                                           "ignored_unknown_platform_override"))]
+        if bad and not getattr(self, "_openmm_override_warned", False):
+            # LEONARDO_OPENMM_PLATFORM=CUDA on a Mac, or a typo, used to be ignored without a word
+            self._openmm_override_warned = True
+            try:
+                self._append_debug_log(f"OpenMM platform request not honoured ({', '.join(bad)}); using {picked}. "
+                                       f"Available: {', '.join(available)}")
+            except Exception:
+                pass
         if picked and picked in available:
             props = dict(pick_plan.get("platform_properties", {}) or {})
             return available[picked], props, picked
@@ -48774,6 +49142,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         guide_tunnel_enabled=True,
         guide_tunnel_radius_a=3.5,
         guide_tunnel_k_kj_nm2=650.0,
+        guide_tunnel_shape="funnel",
         steering_cycles=3,
     ):
         """
@@ -48849,7 +49218,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return None
             self.ligand_info = lig
             state_idx = int(cmd.get_state())
-            if state_idx <= 0:
+            # the viewer's frame belongs to whatever was shown last (e.g. frame 500 of an MD trajectory): a
+            # single-state complex has no atoms there, and ABFE stopped with "no atoms"
+            try:
+                n_states = int(cmd.count_states(self.loaded_object))
+            except Exception:
+                n_states = 1
+            if state_idx <= 0 or state_idx > max(1, n_states):
                 state_idx = 1
             model = cmd.get_model(self.loaded_object, state=state_idx)
             atoms = list(getattr(model, "atom", []))
@@ -49440,6 +49815,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             guide_tunnel_force = None
             guide_tunnel_active = False
             guide_tunnel_payload = {}
+            guide_axis_payload = {}
             if bool(enforce_unbound):
                 lig_anchor = np.asarray(local_lig_heavy if len(local_lig_heavy) else local_lig, dtype=int)
                 prot_anchor = np.asarray(local_prot_heavy if len(local_prot_heavy) else local_prot, dtype=int)
@@ -49481,6 +49857,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             "alignment": float(pull_diag.get("alignment", np.nan)),
                             "score": np.nan,
                         }]
+                    if bool(guide_tunnel_enabled):
+                        # The guide is fixed in space and locks the corridor, so its axis must be a
+                        # real way out to solvent. The first ranked corridor can run along the
+                        # surface; then the ligand never gets free and the cycle never closes.
+                        try:
+                            guide_axis_payload = abfe_build_funnel_axis_payload(
+                                coords_nm=np.asarray(local_coords0, dtype=float),
+                                protein_heavy_idx=list(local_prot_heavy if len(local_prot_heavy) else local_prot),
+                                ligand_heavy_idx=list(local_lig_heavy if len(local_lig_heavy) else local_lig),
+                            )
+                        except Exception as axis_e:
+                            guide_axis_payload = {"ok": False, "reason": str(axis_e)}
+                        if bool(guide_axis_payload.get("ok", False)):
+                            steering_corridors = [{
+                                "direction": np.asarray(guide_axis_payload["direction"], dtype=float),
+                                # same meaning as the corridor ranking: free path ahead (capped at 2.5 nm)
+                                "clearance_nm": (
+                                    2.5
+                                    if int(guide_axis_payload.get("blocked_atoms", 0) or 0) == 0
+                                    else float(guide_axis_payload.get("exit_depth_nm", np.nan))
+                                ),
+                                "collision_penalty": float(guide_axis_payload.get("blocked_atoms", 0)),
+                                "alignment": np.nan,
+                                "score": np.nan,
+                            }] + list(steering_corridors)
                     steering_dir_index = 0
                     pull_dir = np.asarray(steering_corridors[0]["direction"], dtype=float)
                     pull_clearance_nm = float(steering_corridors[0].get("clearance_nm", np.nan))
@@ -49488,6 +49889,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if np.isfinite(pull_clearance_nm):
                         # Keep steering target moderate to avoid violent/unphysical exits.
                         pull_distance_nm = max(pull_distance_nm, min(2.0, pull_clearance_nm + 1.0))
+                    if bool(guide_axis_payload.get("ok", False)):
+                        # pull past the last protein atom along the exit axis
+                        pull_distance_nm = max(
+                            pull_distance_nm, float(guide_axis_payload.get("exit_depth_nm", 0.0)) + 0.8
+                        )
                     pull_distance_a = float(pull_distance_nm * 10.0)
                     if np.isfinite(pull_clearance_nm):
                         if pull_clearance_nm < 0.45:
@@ -49617,18 +50023,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                 k_axial_kj_mol_nm2=float(max(900.0, 1.6 * float(guide_tunnel_k_kj_nm2))),
                                 pull_distance_a=float(max(pull_distance_a, 10.0 * pull_distance_nm * max(1.0, max_scale))),
                                 axial_margin_a=5.0,
+                                shape=str(guide_tunnel_shape or "funnel"),
+                                cone_length_a=(
+                                    float(10.0 * float(guide_axis_payload.get("exit_depth_nm", 0.6)))
+                                    if bool(guide_axis_payload.get("ok", False))
+                                    else 6.0
+                                ),
                             )
                             if bool(tunnel_plan.get("ok", False)):
-                                # Single-COM cylindrical wall: free inside the tunnel, harmonic only
-                                # after the ligand COM leaves the selected entrance corridor.
-                                tunnel_expr = (
-                                    "0.5*k_cyl*step(radial-r0)*(radial-r0)^2"
-                                    " + 0.5*k_axial*step(zmin-axisproj)*(zmin-axisproj)^2"
-                                    " + 0.5*k_axial*step(axisproj-zmax)*(axisproj-zmax)^2;"
-                                    "radial=sqrt(max(0.0, rx*rx+ry*ry+rz*rz-axisproj*axisproj));"
-                                    "axisproj=rx*ux+ry*uy+rz*uz;"
-                                    "rx=x1-ox; ry=y1-oy; rz=z1-oz"
-                                )
+                                # Single-COM wall (cylinder or funnel): free inside, harmonic only after
+                                # the ligand COM leaves the entrance corridor. Static parameters, one
+                                # force for the whole run: no per-cycle context or parameter churn.
+                                tunnel_expr = str(tunnel_plan.get("energy_expression", ""))
                                 guide_tunnel_force = OMM.CustomCentroidBondForce(1, tunnel_expr)
                                 guide_tunnel_force.addGlobalParameter(
                                     "k_cyl", float(tunnel_plan.get("k_radial_kj_mol_nm2", 650.0))
@@ -49639,6 +50045,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                 guide_tunnel_force.addGlobalParameter("r0", float(tunnel_plan.get("radius_nm", 0.35)))
                                 guide_tunnel_force.addGlobalParameter("zmin", float(tunnel_plan.get("zmin_nm", -0.25)))
                                 guide_tunnel_force.addGlobalParameter("zmax", float(tunnel_plan.get("zmax_nm", 2.4)))
+                                guide_tunnel_force.addGlobalParameter("tan_a", float(tunnel_plan.get("tan_alpha", 0.0)))
+                                guide_tunnel_force.addGlobalParameter("zcc", float(tunnel_plan.get("zcc_nm", 0.0)))
                                 origin_nm = np.asarray(tunnel_plan.get("origin_nm", tunnel_origin_nm), dtype=float)
                                 axis_u = np.asarray(tunnel_plan.get("direction", pull_dir), dtype=float)
                                 guide_tunnel_force.addGlobalParameter("ox", float(origin_nm[0]))
@@ -49666,7 +50074,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             f"pull={pull_distance_a:.2f} Å, k_input={pull_k_kj_nm2:.1f}, "
                             f"k_per_atom={pull_k_effective_kj_nm2:.1f} kJ/mol/nm², pull_atoms={n_pull_particles}, "
                             f"corridors={len(steering_corridors)}, "
-                            f"tunnel={'on' if guide_tunnel_active else 'off'}"
+                            f"tunnel={(str((guide_tunnel_payload or {}).get('shape', 'cylinder')) if guide_tunnel_active else 'off')}"
                         )
                     except Exception:
                         pass
@@ -49718,6 +50126,25 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 except Exception:
                     pass
 
+            # Same guard as the sample loop, before minutes of preparation and before GPU buffers exist.
+            preflight = abfe_build_memory_guard_decision(**{
+                k: self._abfe_resource_probe().get(k)
+                for k in ("available_mb", "total_mb", "swap_used_mb", "wired_mb", "pressure_level")
+            })
+            if bool(preflight.get("should_abort", False)):
+                self._abfe_last_memory_guard = dict(preflight)
+                msg = (
+                    "ABFE-lite did not start, to protect the computer: "
+                    + ", ".join(list(preflight.get("reasons", []) or []))
+                    + ". Close memory-heavy programs (browsers, local LLMs) and run it again."
+                )
+                print(msg)
+                try:
+                    self._append_debug_log(msg)
+                except Exception:
+                    pass
+                QtWidgets.QMessageBox.warning(self, "ABFE", msg)
+                return None
             context = None
             platform_name = "default"
             for attempt in list(setup_plan.get("context_attempts", []) or []):
@@ -49726,9 +50153,9 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if bool((attempt or {}).get("use_platform", False)) and (platform is not None):
                         if bool((attempt or {}).get("use_properties", False)):
                             props_try = dict((attempt or {}).get("properties", {}) or {})
-                            context = OMM.Context(system, integrator, platform, props_try)
+                            context = openmm_make_context(system, integrator, platform, props_try, log=self._append_debug_log)
                         else:
-                            context = OMM.Context(system, integrator, platform)
+                            context = openmm_make_context(system, integrator, platform, log=self._append_debug_log)
                         platform_name = str((attempt or {}).get("picked_platform_name", picked) or picked or "default")
                     else:
                         context = OMM.Context(system, integrator)
@@ -49802,7 +50229,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         if (lig_min_hold_force is not None) and (k_hold_val is not None):
                             context.setParameter("k_hold", float(k_hold_val))
                         op_iters = int(max(1, int(op.get("minimize_max_iters", max_it) or max_it)))
-                        OMM.LocalEnergyMinimizer.minimize(context, maxIterations=op_iters)
+                        openmm_minimize(context, op_iters)
                 except Exception as e:
                     try:
                         self._append_debug_log(f"ABFE staged minimization warning: {e}")
@@ -49837,7 +50264,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         context.setParameter("k_hold", float(k_hold_val))
                     steps = int(max(0, int(op.get("steps", 0) or 0)))
                     if steps > 0:
-                        integrator.step(steps)
+                        openmm_step_synced(integrator, context, steps)
             except Exception as e:
                 try:
                     self._append_debug_log(f"ABFE staged equilibration warning: {e}")
@@ -49881,7 +50308,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             pass
                     if rescue_iters > 0:
                         try:
-                            OMM.LocalEnergyMinimizer.minimize(context, maxIterations=int(rescue_iters))
+                            openmm_minimize(context, int(rescue_iters))
                         except Exception as e:
                             try:
                                 self._append_debug_log(f"ABFE rescue minimization warning: {e}")
@@ -49893,7 +50320,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                                 context.setVelocitiesToTemperature(float(temperature_k) * OMM_UNIT.kelvin, int(random_seed))
                             else:
                                 context.setVelocitiesToTemperature(float(temperature_k) * OMM_UNIT.kelvin)
-                            integrator.step(int(rescue_relax_steps))
+                            openmm_step_synced(integrator, context, int(rescue_relax_steps))
                         except Exception as e:
                             try:
                                 self._append_debug_log(f"ABFE rescue relaxation warning: {e}")
@@ -50193,11 +50620,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             float(vv[2]),
                         ],
                     )
-                bias_force.updateParametersInContext(context)
+                openmm_update_force_in_context(bias_force, context)
                 applied_pull_vec_nm = np.asarray(vv, dtype=float)
                 return True
             lig_masses = np.asarray([max(1.0, masses[i]) for i in lig_heavy_idx], dtype=float)
             md_progress_canceled = False
+            memory_guard_abort = {}
+            memory_swap_start_mb = None          # swap in use when this run started (other programs' share)
+            memory_guard_last_t = 0.0
+            self._abfe_last_memory_guard = {}
             ui_event_stride = 1
             xyz_runtime_prev = np.asarray(local_coords0, dtype=float)
             for s in range(n_samples):
@@ -50209,6 +50640,49 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 if bool(progress_step.get("should_abort", False)):
                     md_progress_canceled = True
                     break
+                # Stop before macOS starts thrashing swap (that ends in a watchdog panic,
+                # not an exception). Checked on wall-clock time so it is cheap.
+                now_t = time.monotonic()
+                if (now_t - memory_guard_last_t) >= 5.0:
+                    memory_guard_last_t = now_t
+                    probe = self._abfe_resource_probe()
+                    if memory_swap_start_mb is None:
+                        memory_swap_start_mb = probe.get("swap_used_mb")
+                    guard = abfe_build_memory_guard_decision(
+                        available_mb=probe.get("available_mb"),
+                        total_mb=probe.get("total_mb"),
+                        swap_used_mb=probe.get("swap_used_mb"),
+                        swap_used_start_mb=memory_swap_start_mb,
+                        wired_mb=probe.get("wired_mb"),
+                        pressure_level=probe.get("pressure_level"),
+                    )
+                    try:
+                        self._append_debug_log(
+                            f"ABFE resources: sample={s}/{n_samples} "
+                            f"phase={str((steering_adaptive_state or {}).get('phase', '-'))} "
+                            f"cycle={int((steering_adaptive_state or {}).get('cycles_completed', 0) or 0)} "
+                            f"avail_mb={probe.get('available_mb') or float('nan'):.0f} "
+                            f"rss_mb={probe.get('rss_mb') or float('nan'):.0f} "
+                            f"wired_mb={probe.get('wired_mb') or float('nan'):.0f} "
+                            f"threads={probe.get('threads')}"
+                        )
+                    except Exception:
+                        pass
+                    if bool(guard.get("should_abort", False)):
+                        memory_guard_abort = dict(guard)
+                        self._abfe_last_memory_guard = dict(guard)
+                        md_progress_canceled = True
+                        msg = (
+                            "ABFE-lite stopped early to protect the computer: "
+                            + ", ".join(list(guard.get("reasons", []) or []))
+                            + f" (sample {s}/{n_samples}). Partial results are kept."
+                        )
+                        print(msg)
+                        try:
+                            self._append_debug_log(msg)
+                        except Exception:
+                            pass
+                        break
                 if bias_force is not None:
                     try:
                         lam_value_runtime = float(lam_schedule[s])
@@ -50327,7 +50801,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         context.setParameter("lam", float(lam_value_runtime))
                     except Exception:
                         pass
-                integrator.step(stride)
+                openmm_step_synced(integrator, context, stride)
                 if bool(progress_step.get("should_set_progress", False)):
                     pd.setValue(int(progress_step.get("progress_next_value", int(s + 1))))
                 st_pos = context.getState(getPositions=True)
@@ -50647,7 +51121,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     timestamp_token=datetime.datetime.now().strftime("%H%M%S"),
                     existing_objects=list(existing_objects or []),
                     object_prefix="abfe_local_md_traj",
-                    max_states_view=1500,
+                    max_states_view=int(
+                        abfe_build_pymol_state_budget(
+                            n_atoms=int(max(len(local_model_indices or []), int(n_local))),
+                            requested_max_states=1500,
+                            budget_mb=384.0,
+                        ).get("max_states", 1500)
+                    ),
                     group_name="ABFE.LocalMD",
                 )
                 if bool(final_traj_plan.get("should_build", False)):
@@ -50716,6 +51196,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception as traj_e:
                 final_view_obj = None
                 self._append_debug_log(f"ABFE final trajectory build warning: {traj_e}")
+            try:
+                # which platform ran and whether its interaction energies were usable (a GPU that returns non-finite
+                # group energies leaves no valid frame, and the free-energy step only says "not enough frames")
+                _n = len(total_e)
+                self._append_debug_log(
+                    f"ABFE sampling energies on {platform_name}: finite LJ {int(np.sum(np.isfinite(lj_e)))}/{_n}, "
+                    f"Coulomb {int(np.sum(np.isfinite(coul_e)))}/{_n}, total {int(np.sum(np.isfinite(total_e)))}/{_n}; "
+                    f"first total {total_e[:3]}"
+                )
+            except Exception:
+                pass
             post_payload = abfe_build_post_sampling_metrics(
                 frames=list(frames),
                 times_ps=list(times_ps),
@@ -51056,6 +51547,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             if isinstance(result, dict):
                 result["steering_cycles_target"] = int((steering_adaptive_state or {}).get("cycles_target", 1) or 1)
+                result["memory_guard_abort"] = dict(memory_guard_abort or {})
                 result["steering_cycles_completed"] = int((steering_adaptive_state or {}).get("cycles_completed", 0) or 0)
             return result
         except Exception as e:
@@ -51135,6 +51627,13 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     self._append_debug_log(str(scene_restore_payload.get("debug_line", "")))
                 except Exception:
                     pass
+            # Each replica opens its own live figure; close it or the Qt/matplotlib
+            # windows (and their GPU-backed surfaces) pile up run after run.
+            try:
+                if HAS_MPL and bool((live_plot or {}).get("enabled", False)) and (live_plot or {}).get("fig") is not None:
+                    plt.close(live_plot["fig"])
+            except Exception:
+                pass
             teardown_plan = abfe_build_local_md_teardown_plan(
                 has_context=bool(context is not None),
                 has_integrator=bool(integrator is not None),
@@ -51142,6 +51641,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             )
             if bool(teardown_plan.get("should_release_context", False)):
                 try:
+                    openmm_close_context(context)        # stops an OpenMMContextProcess child
                     del context
                     if bool(teardown_plan.get("clear_references", True)):
                         context = None
@@ -51638,6 +52138,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         guide_tunnel_enabled = bool(self._abfe_guide_tunnel_enabled(source=source))
         guide_tunnel_radius_a = float(self._abfe_guide_tunnel_radius_a(source=source))
         steering_cycles = int(self._abfe_steering_cycles(source=source))
+        guide_tunnel_shape = str(self._abfe_guide_tunnel_shape(source=source))
         try:
             replica_seed0 = int(getattr(self, "_settings", {}).get("abfe_replica_seed0", 20260311))
         except Exception:
@@ -51645,7 +52146,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         replica_results = []
         data = None
         replica_aggregate = {}
+        # each replica leaves its trajectory as the topology object; the next replica must start from the same
+        # complex, not from that trajectory (whose renumbered chains failed the gap check: only replica 1 ran)
+        source_topology = getattr(self, "_traj_topology_object", None)
+        source_loaded = getattr(self, "loaded_object", None)
         for rep_idx in range(int(max(1, replica_count_req))):
+            if rep_idx:
+                self._traj_topology_object = source_topology
+                self.loaded_object = source_loaded
             rep_seed = int(replica_seed0 + rep_idx) if replica_seed0 > 0 else 0
             rep_data = self._run_abfe_lite_local_md(
                 sim_ns=float(sim_ns_req),
@@ -51665,10 +52173,14 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 guide_tunnel_enabled=bool(guide_tunnel_enabled),
                 guide_tunnel_radius_a=float(guide_tunnel_radius_a),
                 guide_tunnel_k_kj_nm2=650.0,
+                guide_tunnel_shape=str(guide_tunnel_shape),
                 steering_cycles=int(steering_cycles),
             )
             if rep_data:
                 replica_results.append(rep_data)
+            if dict(getattr(self, "_abfe_last_memory_guard", {}) or {}).get("should_abort", False):
+                print("ABFE-lite: remaining replicas skipped after the memory guard stopped a run.")
+                break
         if replica_results:
             data = dict(replica_results[0] or {})
             if len(replica_results) > 1:
@@ -51765,10 +52277,15 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             binding_estimate_status = str(data.get("binding_estimate_status", "") or "")
             binding_estimate_note = str(data.get("binding_estimate_note", "") or "")
             if total_valid.size < 3:
+                # frames count only in a clean bound or unbound state: a ligand that stalls against the protein
+                # surface after the pull is neither, and the run ends with no estimate (say why, not just "frames")
                 QtWidgets.QMessageBox.warning(
                     self,
                     "Result",
-                    "Not enough valid energy frames for free-energy estimation.",
+                    "No free-energy estimate: fewer than 3 frames were in a clean bound or unbound state "
+                    f"(bound {n_bound}, unbound {n_unbound}, sampled {len(np.atleast_1d(data.get('frames', [])))}). "
+                    "The ligand most likely stalled against the protein surface during the exit and never reached "
+                    "a stable unbound state. Run more replicas or a longer simulation.",
                 )
                 return
             run_exp_sem = np.asarray([], dtype=float)
@@ -51935,6 +52452,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 Yc=Yc,
                 Fsurf=Fsurf,
                 surface_clip_max_kj=float(numeric_payload.get("surface_clip_max_kj", np.nan)),
+                surface_style=str(numeric_payload.get("surface_style", "bins") or "bins"),
+                surface_samples=numeric_payload.get("surface_samples", None),
                 bound_cutoff_a=float(bound_cutoff_a),
                 bound_center=dict(numeric_payload.get("bound_center", {}) or {}),
                 unbound_center=dict(numeric_payload.get("unbound_center", {}) or {}),
@@ -52119,17 +52638,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     surf_upper = float(np.nanmax(finite_surface))
                 else:
                     surf_upper = float(surf_vmax) if np.isfinite(surf_vmax) else 1.0
-                level_values = np.linspace(0.0, max(0.5, surf_upper), max(8, surf_levels))
-                cf = ax_surf.contourf(
-                    Xc_plot,
-                    Yc_plot,
-                    Fsurf_masked,
-                    levels=level_values,
-                    cmap=str(surf.get("cmap", "viridis")),
-                    extend="max",
-                )
+                # every sampled bin drawn as it is (a filled contour of sparse bins invented smooth regions
+                # and left the rest white); unsampled bins in their own grey, so they read as "not visited"
+                ax_surf.set_facecolor(str(surf.get("unsampled_color", "#E5E7EB")))
+                if str(surf.get("style", "bins")) == "smooth":
+                    # continuous landscape (KDE): filled levels, iso-energy lines drawn below
+                    cf = ax_surf.contourf(
+                        Xc_plot,
+                        Yc_plot,
+                        Fsurf_masked,
+                        levels=np.linspace(0.0, max(0.5, surf_upper), max(8, surf_levels)),
+                        cmap=str(surf.get("cmap", "viridis")),
+                        extend="max",
+                    )
+                else:
+                    cf = ax_surf.pcolormesh(
+                        Xc_plot,
+                        Yc_plot,
+                        Fsurf_masked,
+                        shading="nearest",
+                        cmap=str(surf.get("cmap", "viridis")),
+                        vmin=0.0,
+                        vmax=max(0.5, surf_upper),
+                    )
                 contour_n = int(max(0, int(surf.get("contour_levels", 0) or 0)))
-                if contour_n > 0 and finite_surface.size > 0:
+                dense = finite_surface.size >= 0.6 * np.asarray(Fsurf_masked).size
+                if contour_n > 0 and finite_surface.size > 0 and dense:
                     ax_surf.contour(
                         Xc_plot,
                         Yc_plot,
@@ -52158,15 +52692,20 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             linewidths=0.9,
                             zorder=5,
                         )
+                        mx = float(marker_row.get("x", np.nan))
+                        x_lo, x_hi = ax_surf.get_xlim()
+                        near_right = bool(np.isfinite(mx) and mx > x_lo + 0.7 * (x_hi - x_lo))
                         ax_surf.text(
-                            float(marker_row.get("x", np.nan)),
+                            mx,
                             float(marker_row.get("y", np.nan)),
-                            " " + str(marker_row.get("label", "")),
+                            (str(marker_row.get("label", "")) + " ") if near_right else (" " + str(marker_row.get("label", ""))),
                             color=str(marker_row.get("color", "#000000")),
                             fontsize=8,
+                            fontweight="bold",
                             va="center",
-                            ha="left",
+                            ha="right" if near_right else "left",
                             zorder=6,
+                            bbox={"boxstyle": "round,pad=0.2", "facecolor": "white", "edgecolor": "none", "alpha": 0.75},
                         )
                 ax_surf.set_xlabel(str(surf.get("xlabel", dist_axis_label)))
                 ax_surf.set_ylabel(str(surf.get("ylabel", "Interaction Energy (kJ/mol)")))
@@ -52264,24 +52803,51 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 distance_metric=str(distance_metric),
                 replica_summary=dict(replica_summary or {}),
             )
+            # long titles and summaries are wrapped: unwrapped they ran off both edges of the figure
+            suptitle_txt = textwrap.fill(str(report_payload.get("suptitle", "") or ""), width=125)
+            suptitle_lines = suptitle_txt.count("\n") + 1 if suptitle_txt else 0
             fig.suptitle(
-                str(report_payload.get("suptitle", "") or ""),
+                suptitle_txt,
                 fontsize=11,
                 fontweight="bold",
                 color=str(theme.get("title_color", "#1F2933")),
+                y=0.995,
             )
-            summary_strip = str(report_payload.get("summary_strip", "") or "").strip()
+            summary_strip = textwrap.fill(str(report_payload.get("summary_strip", "") or "").strip(), width=175)
+            strip_lines = summary_strip.count("\n") + 1 if summary_strip else 0
+            strip_top = 0.995 - 0.022 * suptitle_lines
             if summary_strip:
                 fig.text(
                     0.014,
-                    0.948,
+                    strip_top,
                     summary_strip,
                     ha="left",
                     va="top",
                     fontsize=8.6,
                     color=str(theme.get("subtitle_color", "#6B7280")),
                 )
-            fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.955 if summary_strip else 0.97])
+            fig.tight_layout(rect=[0.0, 0.0, 1.0, strip_top - 0.0155 * strip_lines + 0.025])
+            # keep the analysis figure with the results (the window alone is lost when it is closed)
+            self._abfe_last_analysis_figure = ""
+            try:
+                fig_dir = os.path.join(self._dock_workspace_dir(), "abfe")
+                os.makedirs(fig_dir, exist_ok=True)
+                fig_path = os.path.join(fig_dir, datetime.datetime.now().strftime("abfe_analysis_%Y%m%d_%H%M%S.png"))
+                fig.savefig(fig_path, dpi=200, facecolor=fig.get_facecolor())
+                self._abfe_last_analysis_figure = fig_path
+                # the plotted arrays too, so the figure can be redrawn without rerunning the simulation
+                try:
+                    arrays = {}
+                    for sec, block in dict(plot_payload or {}).items():
+                        for key, val in dict(block if isinstance(block, dict) else {}).items():
+                            if isinstance(val, np.ndarray):
+                                arrays[f"{sec}.{key}"] = val
+                    np.savez_compressed(fig_path[:-4] + ".npz", **arrays)
+                except Exception as e:
+                    self._append_debug_log(f"ABFE analysis data not saved: {e}")
+                self._append_debug_log(f"ABFE analysis figure saved: {fig_path}")
+            except Exception as e:
+                self._append_debug_log(f"ABFE analysis figure not saved: {e}")
             plt.show()
             self._show_abfe_summary_dialog(report_payload)
             if protocol == "abfe_lite_local_md":
@@ -56133,6 +56699,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "abfe_policy_mode": "heuristic",
             "abfe_guide_tunnel_enabled": True,
             "abfe_guide_tunnel_radius_a": 3.5,
+            "abfe_guide_tunnel_shape": "funnel",
             "abfe_replica_count": 3,
             "abfe_replica_seed0": 20260311,
         }
@@ -56221,6 +56788,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self._set_abfe_policy_mode(str(s.get("abfe_policy_mode", "heuristic")))
             self._set_abfe_guide_tunnel_enabled(bool(s.get("abfe_guide_tunnel_enabled", True)))
             self._set_abfe_guide_tunnel_radius_a(float(s.get("abfe_guide_tunnel_radius_a", 3.5)))
+            self._set_abfe_guide_tunnel_shape(str(s.get("abfe_guide_tunnel_shape", "funnel") or "funnel"))
             if hasattr(self, "show_angle_labels_cb"):
                 self.show_angle_labels_cb.blockSignals(True)
                 self.show_angle_labels_cb.setChecked(bool(s.get("show_angle_labels", False)))

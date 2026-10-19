@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 from openmm import (
+    CustomCentroidBondForce,
     CustomExternalForce,
     CustomNonbondedForce,
     LangevinIntegrator,
@@ -50,9 +51,11 @@ from .abfe_runtime import (
     build_abfe_adaptive_steering_state_payload,
     build_abfe_adaptive_steering_update_decision,
     build_abfe_free_energy_numeric_payload,
+    build_abfe_funnel_axis_payload,
     build_abfe_gbsa_mmgbsa_rescore_payload,
     build_abfe_steering_lambda_schedule,
     build_abfe_surface_detach_direction_payload,
+    build_abfe_tunnel_restraint_payload,
     compute_runtime_pocket_descriptors,
     configure_abfe_steering_cycles,
 )
@@ -411,6 +414,16 @@ def build_single_state_probe_command(args, *, ligand_sdf: Path, state_label: str
         str(args.tleap),
         "--random-seed",
         str(args.random_seed),
+        "--steering-mode",
+        str(args.steering_mode),
+        "--cycles",
+        str(args.cycles),
+        "--guide-shape",
+        str(args.guide_shape),
+        "--guide-radius-a",
+        str(args.guide_radius_a),
+        "--guide-axis",
+        str(args.guide_axis),
         "--energy-unit",
         str(args.energy_unit),
         "--target-ph",
@@ -1150,6 +1163,11 @@ def main():
     ap.add_argument("--steering-mode", choices=["pull_hold_return", "pull_hold"], default="pull_hold_return",
                     help="pull_hold_return: exit + re-entry cycles; pull_hold: exit only")
     ap.add_argument("--cycles", type=int, default=3, help="exit + re-entry cycles (pull_hold_return)")
+    ap.add_argument("--guide-shape", choices=["none", "cylinder", "funnel"], default="none",
+                    help="ligand-COM guide along the exit axis (same force as the Leonardo UI)")
+    ap.add_argument("--guide-radius-a", type=float, default=3.5)
+    ap.add_argument("--guide-axis", choices=["corridor", "open"], default="open",
+                    help="guide axis: first steering corridor, or the most open way to solvent")
     ap.add_argument("--energy-unit", choices=["kcal", "kj"], default="kcal")
     args = ap.parse_args()
 
@@ -1479,6 +1497,31 @@ def main():
         ]
 
     pull_dist_nm = max(0.4, float(args.pull_distance_a) * 0.1)
+    funnel_axis = {"ok": False}
+    if str(args.guide_shape) != "none" and str(args.guide_axis) == "open":
+        # the guide is fixed in space, so its axis must be a real way out to solvent, and
+        # the steering corridor must be the same axis
+        funnel_axis = build_abfe_funnel_axis_payload(
+            coords_nm=xyz0,
+            protein_heavy_idx=list(protein_heavy_idx or protein_idx),
+            ligand_heavy_idx=list(ligand_heavy_idx or ligand_idx),
+        )
+        if bool(funnel_axis.get("ok", False)):
+            steering_corridors = [
+                {
+                    "direction": np.asarray(funnel_axis["direction"], dtype=float),
+                    "clearance_nm": float(funnel_axis["exit_depth_nm"]),
+                    "collision_penalty": float(funnel_axis["blocked_atoms"]),
+                    "alignment": np.nan,
+                    "score": np.nan,
+                }
+            ]
+            pull_dist_nm = float(max(pull_dist_nm, float(funnel_axis["exit_depth_nm"]) + 0.8))
+            print(
+                f"Funnel axis: exit depth {10.0 * float(funnel_axis['exit_depth_nm']):.1f} A, "
+                f"blocked={funnel_axis['blocked_atoms']} surface={funnel_axis['surface_atoms']}, "
+                f"pull {10.0 * pull_dist_nm:.1f} A"
+            )
     steering_dir_index = 0
     steering_switch_count = 0
     steering_k_current = float(max(200.0, float(args.pull_k)))
@@ -1511,6 +1554,36 @@ def main():
     corridor_pull_vec = np.asarray(pull_vec, dtype=float)
     steer.setForceGroup(3)
     system.addForce(steer)
+
+    guide_payload = {"ok": False, "shape": "none"}
+    if str(args.guide_shape) != "none":
+        guide_payload = build_abfe_tunnel_restraint_payload(
+            enabled=True,
+            origin_nm=np.asarray(lig_com0, dtype=float),
+            direction=np.asarray(pull_dir, dtype=float),
+            radius_a=float(args.guide_radius_a),
+            k_radial_kj_mol_nm2=650.0,
+            k_axial_kj_mol_nm2=1040.0,
+            pull_distance_a=float(10.0 * pull_dist_nm),
+            axial_margin_a=5.0,
+            shape=str(args.guide_shape),
+            cone_length_a=(
+                float(10.0 * float(funnel_axis["exit_depth_nm"])) if bool(funnel_axis.get("ok", False)) else 6.0
+            ),
+        )
+        if bool(guide_payload.get("ok", False)):
+            guide = CustomCentroidBondForce(1, str(guide_payload["energy_expression"]))
+            for name, key in (("k_cyl", "k_radial_kj_mol_nm2"), ("k_axial", "k_axial_kj_mol_nm2"), ("r0", "radius_nm"),
+                              ("zmin", "zmin_nm"), ("zmax", "zmax_nm"), ("tan_a", "tan_alpha"), ("zcc", "zcc_nm")):
+                guide.addGlobalParameter(name, float(guide_payload[key]))
+            for name, val in zip(("ox", "oy", "oz"), guide_payload["origin_nm"]):
+                guide.addGlobalParameter(name, float(val))
+            for name, val in zip(("ux", "uy", "uz"), guide_payload["direction"]):
+                guide.addGlobalParameter(name, float(val))
+            gid = guide.addGroup([int(i) for i in lig_heavy.tolist()], [float(m) for m in lig_masses.tolist()])
+            guide.addBond([int(gid)], [])
+            guide.setForceGroup(3)
+            system.addForce(guide)
 
     d_all = np.linalg.norm(xyz0[prot_anchor] - lig_com0[None, :], axis=1)
     keep_idx = np.argsort(d_all)[: min(96, len(d_all))]
@@ -1801,7 +1874,8 @@ def main():
         if bool(steer_decision.get("update_pull_k", False)):
             steering_k_current = float(steer_decision.get("pull_k_kj_nm2", steering_k_current))
             sim.context.setParameter("k_pull", float(steering_k_current / float(max(1, len(pull_particles)))))
-        if bool(steer_decision.get("switch_direction", False)):
+        if bool(steer_decision.get("switch_direction", False)) and not bool(guide_payload.get("ok", False)):
+            # the guide fixes the exit axis; switching corridors would pull against its wall
             next_dir = int(steer_decision.get("direction_index", steering_dir_index))
             if 0 <= next_dir < len(steering_corridors):
                 steering_dir_index = int(next_dir)
@@ -2008,6 +2082,9 @@ def main():
             "steering_mode": str(args.steering_mode),
             "steering_cycles_target": int((adaptive_state or {}).get("cycles_target", 1) or 1),
             "steering_cycles_completed": int((adaptive_state or {}).get("cycles_completed", 0) or 0),
+            "guide_shape": str(guide_payload.get("shape", "none")) if bool(guide_payload.get("ok", False)) else "none",
+            "guide_origin_nm": [float(v) for v in np.asarray(guide_payload.get("origin_nm", []), dtype=float)],
+            "guide_direction": [float(v) for v in np.asarray(guide_payload.get("direction", []), dtype=float)],
         },
         "steering_timeline": {
             "time_ps": [float(v) for v in times_ps],

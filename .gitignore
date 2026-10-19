@@ -97,3 +97,5 @@ examples/films/*/last_report.json
 
 # local run outputs (films data, downloaded inputs)
 artifacts/
+examples/gpu_validation/last_report.json
+examples/enhanced_sampling/last_report.json

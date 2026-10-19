@@ -341,7 +341,15 @@ def sample_ensemble(pdb_in, out_dir, n_structures=10, site_residues=None, temper
     props = {"DeterministicForces": "true"} if "DeterministicForces" in plat.getPropertyNames() else {}
     if reproducible and "Threads" in plat.getPropertyNames():
         props["Threads"] = "1"
-    ctx = mm.Context(system, mm.VerletIntegrator(0.001 * unit.picoseconds), plat, props)
+    try:
+        ctx = mm.Context(system, mm.VerletIntegrator(0.001 * unit.picoseconds), plat, props)
+    except Exception:
+        # a GPU that does not start (driver, busy device) must not end the ensemble: the CPU runs it
+        if plat.getName() == "CPU":
+            raise
+        plat = mm.Platform.getPlatformByName("CPU")
+        ctx = mm.Context(system, mm.VerletIntegrator(0.001 * unit.picoseconds), plat,
+                         {"DeterministicForces": "true"} if "DeterministicForces" in plat.getPropertyNames() else {})
     ctx.setPositions(pos0)
     mm.LocalEnergyMinimizer.minimize(ctx, 10.0, 500)
 

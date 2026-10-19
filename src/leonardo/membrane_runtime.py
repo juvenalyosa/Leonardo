@@ -676,6 +676,7 @@ def build_membrane_system(pdb_path, lipid="POPC", family="amber14", ph=7.0, padd
     emit("minimizing")
     integ = mm.LangevinMiddleIntegrator(303 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picoseconds)
     sim = _simulation(app, mm, modeller.topology, system, integ)
+    report.update(simulation_platform(sim))
     sim.context.setPositions(modeller.positions)
     e0 = sim.context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
     sim.minimizeEnergy(maxIterations=int(minimize_steps))
@@ -736,20 +737,44 @@ def build_membrane_system(pdb_path, lipid="POPC", family="amber14", ph=7.0, padd
 
 
 def _platform_order():
+    """GPUs first (these jobs run in their own process, so a driver crash cannot take PyMOL down), the platform
+    asked for in PROTLIGINTERACT_OPENMM_PLATFORM / LEONARDO_OPENMM_PLATFORM before everything else. HIP and Metal
+    were missing: AMD GPUs without OpenCL ran on the CPU."""
     import openmm as mm
 
+    from .abfe_runtime import _canonical_openmm_platform_name, openmm_platform_override
     names = [mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())]
-    order = [p for p in ("CUDA", "OpenCL", "CPU") if p in names]
+    wanted = _canonical_openmm_platform_name(openmm_platform_override())
+    order = ([wanted] if wanted in names else []) + [p for p in ("CUDA", "HIP", "Metal", "OpenCL", "CPU")
+                                                     if p in names and p != wanted]
     return order or ["Reference"]
 
 
+def _gpu_properties(plat):
+    from .abfe_runtime import openmm_gpu_properties
+    return openmm_gpu_properties(plat)[0]
+
+
 def _simulation(app, mm, topology, system, integrator):
+    """A Simulation on the first platform that starts (mixed precision on GPUs that support it). The platform
+    that ran is sim.context.getPlatform().getName()."""
     for plat in _platform_order():
-        try:
-            return app.Simulation(topology, system, integrator, mm.Platform.getPlatformByName(plat))
-        except Exception:
-            continue
+        for props in ([_gpu_properties(plat)] if _gpu_properties(plat) else []) + [{}]:
+            try:
+                return app.Simulation(topology, system, integrator, mm.Platform.getPlatformByName(plat), props)
+            except Exception:
+                continue
     return app.Simulation(topology, system, integrator)
+
+
+def simulation_platform(sim):
+    """{"platform": "CUDA", "precision": "mixed"} of a running Simulation, for reports."""
+    try:
+        plat = sim.context.getPlatform()
+        prec = plat.getPropertyValue(sim.context, "Precision") if "Precision" in plat.getPropertyNames() else ""
+        return {"platform": plat.getName(), "precision": prec}
+    except Exception:
+        return {"platform": "", "precision": ""}
 
 
 # --------------------------------------------------------------------------- equilibration
@@ -827,7 +852,8 @@ def equilibrate_membrane(pdb_path, system_xml, out_dir, stages_ps=(50, 50, 100),
         app.PDBFile.writeFile(pdb.topology, st.getPositions(), fh, keepIds=True)
     last = rows[-1]
     ref = REFERENCE.get(lipid.upper(), (None, None))
-    return {"ok": True, "trajectory": dcd, "csv": csv, "final_pdb": final, "frames": len(rows),
+    return {"ok": True, **simulation_platform(sim), "trajectory": dcd, "csv": csv, "final_pdb": final,
+            "frames": len(rows),
             "final_area_per_lipid_nm2": last["area_per_lipid_nm2"], "final_thickness_PP_nm": last["thickness_PP_nm"],
             "reference_area_per_lipid_nm2": ref[0], "reference_thickness_PP_nm": ref[1],
             "total_ps": sum(stages_ps)}

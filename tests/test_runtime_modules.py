@@ -850,10 +850,12 @@ def test_openmm_platform_selection_plan_prefers_cpu_on_macos():
     plan = build_openmm_platform_selection_plan(
         ["Metal", "CPU", "Reference"],
         os_name="darwin",
+        cpu_count=10,
     )
 
     assert plan["picked_platform_name"] == "CPU"
-    assert plan["platform_properties"] == {}
+    # two cores stay free for PyMOL and the OS
+    assert plan["platform_properties"] == {"Threads": "8"}
     assert "macos_auto_prefers_cpu" in plan["notes"]
 
 
@@ -867,6 +869,15 @@ def test_openmm_platform_selection_plan_honors_explicit_platform_override():
     assert plan["picked_platform_name"] == "Metal"
     assert plan["platform_properties"] == {"Precision": "mixed"}
     assert "explicit_platform_override:Metal" in plan["notes"]
+
+
+def test_openmm_platform_selection_plan_reads_the_leonardo_env_name(monkeypatch):
+    # LEONARDO_OPENMM_PLATFORM made code_v2 skip the hardware pick, but this plan ignored it: macOS got the CPU
+    monkeypatch.delenv("PROTLIGINTERACT_OPENMM_PLATFORM", raising=False)
+    monkeypatch.setenv("LEONARDO_OPENMM_PLATFORM", "OpenCL")
+    plan = build_openmm_platform_selection_plan(["OpenCL", "CPU", "Reference"], os_name="darwin")
+    assert plan["picked_platform_name"] == "OpenCL"
+    assert "explicit_platform_override:OpenCL" in plan["notes"]
 
 
 def test_abfe_runtime_md_sample_payload():
@@ -3330,6 +3341,9 @@ def test_abfe_runtime_free_energy_report_and_debug_helpers():
     assert "Selected ΔG" in str(payload["message_html"])
     assert "Confidence:" in str(payload["message_html"])
     assert "ABFE-lite whole-protein MD Summary" == str(payload["dialog_title"])
+    # ABFE-lite is experimental (not validated against experiment): every report says so
+    assert "EXPERIMENTAL" in str(payload["message_text"])
+    assert "EXPERIMENTAL" in str(payload["message_html"])
 
     payload_jeff = build_abfe_free_energy_report_payload(
         protocol="trajectory_energy_rescoring",
@@ -3984,14 +3998,14 @@ def test_abfe_runtime_free_energy_plot_payload():
     assert str(theme["axes_facecolor"]) == "#FFFFFF"
     epmf = dict(payload["energy_pmf"])
     assert str(epmf["xlabel"]) == "Interaction Energy (kJ/mol)"
-    assert np.isclose(float(epmf["fill_alpha"]), 0.22)
+    assert np.isclose(float(epmf["fill_alpha"]), 0.12)
     rpmf = dict(payload["distance_pmf"])
     assert bool(rpmf["has_data"]) is True
     assert str(rpmf["xlabel"]) == "Min Distance to Initial Pocket Anchor (Å)"
     assert str(dict(rpmf["bound_cutoff_line"])["label"]) == "Bound cutoff"
     surf = dict(payload["surface"])
     assert bool(surf["has_data"]) is True
-    assert str(surf["cmap"]) == "Greys_r"
+    assert str(surf["cmap"]) == "viridis"     # perceptual; unsampled bins get their own grey
     assert np.asarray(surf["Xc"], dtype=float).shape == (2,)
     assert np.asarray(surf["Fsurf"], dtype=float).shape == (2, 2)
     assert str(dict(surf["bound_marker"])["label"]) == "bound basin"
@@ -14048,5 +14062,5 @@ def test_package_import_is_lazy_and_does_not_require_pymol(monkeypatch):
     monkeypatch.syspath_prepend(str(os.path.dirname(os.path.dirname(__file__))))
     sys.modules.pop("ProtLigInteract", None)
     pkg = importlib.import_module("ProtLigInteract")
-    assert getattr(pkg, "__version__", None) == "0.2.0a12"
+    assert getattr(pkg, "__version__", None) == "0.2.0a13"
     assert callable(getattr(pkg, "__init_plugin__", None))

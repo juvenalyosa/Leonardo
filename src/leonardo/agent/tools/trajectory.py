@@ -3,6 +3,7 @@
 
 import contextlib
 import math
+import os
 import sys
 
 from .. import presentation
@@ -268,7 +269,8 @@ def register(reg):
                         f"(range {t.get('min')} to {t.get('max')}); an interaction energy, not a binding ΔG.")
         return out
 
-    @reg.tool("run_abfe", "ABFE-lite / guided exit: steered MD pulls the ligand out of the site through a guided "
+    @reg.tool("run_abfe", "EXPERIMENTAL (not validated against experiment; tell the user). "
+              "ABFE-lite / guided exit: steered MD pulls the ligand out of the site through a guided "
               "tunnel (protein restrained), holds and optionally returns it, over several replicas; the bound/"
               "unbound populations give an apparent binding free energy with a confidence interval. Needs a "
               "protein-ligand complex with a parameterized ligand (parametrize_ligand + export_ligand_files "
@@ -342,6 +344,11 @@ def register(reg):
             report = reports[-1]["result"] if isinstance(reports[-1]["result"], dict) else {}
             if report.get("message_text"):
                 out["report"] = str(report["message_text"])[:3000]
+            # the OpenMM platform each replica ran on ("openmm (OpenCL)" -> "OpenCL")
+            plats = sorted({str(r.get("energy_mode", "")).partition("(")[2].rstrip(")") for r in replicas_out
+                            if "(" in str(r.get("energy_mode", ""))})
+            if plats:
+                out["platform"] = plats[0] if len(plats) == 1 else ", ".join(plats)
             out.update({"energy_units": "kJ/mol", "object": object, "sim_ns": sim_ns, "replicas": len(replicas_out) or replicas,
                         "steering_policy": _abfe_policy_used(dlg, replicas_out),
                         "per_replica": [jsonable({k: r.get(k) for k in ("dg_pop_kj", "p_bound", "kd_app_m",
@@ -357,18 +364,23 @@ def register(reg):
                 presentation.focus(traj, buffer=6.0)
                 out["trajectory_object"] = traj
             out["scene"] = ctx.scene(f"ABFE-lite of {object}")
+            out["experimental"] = True               # not validated against experiment (abfe_runtime.ABFE_EXPERIMENTAL_NOTE)
+            fig = str(getattr(dlg, "_abfe_last_analysis_figure", "") or "")
+            if fig and os.path.isfile(fig):
+                out["analysis_figure"] = fig             # Leonardo's 4-panel free-energy analysis (PNG)
             dg = out.get("dg_selected")
             if dg is not None:
                 ci_txt = (f"; 95% CI {out.get('ci_low')} to {out.get('ci_high')}" if "ci_low" in out
                           else "; no CI for this estimator")
                 out["_card"] = (f"ABFE-lite **ΔG ≈ {dg} kJ/mol** ({out.get('selected_estimator')}{ci_txt}); "
                                 f"reliability {out.get('production_reliability')}. Apparent value from a "
-                                "guided-exit protocol, not alchemical ABFE.")
+                                "guided-exit protocol, not alchemical ABFE. **Experimental:** not validated against "
+                                "experiment; compare poses or ligands qualitatively only.")
             else:
                 out["_card"] = (f"ABFE-lite ran ({out.get('replicas')} replica(s), {sim_ns} ns) but gave **no binding "
                                 f"estimate** (estimator {out.get('selected_estimator')}; bound frames "
                                 f"{out.get('n_bound')}, unbound {out.get('n_unbound')}). Diagnostic only: more replicas "
-                                "and longer runs are needed.")
+                                "and longer runs are needed. ABFE-lite is experimental.")
             return out
 
         return start_deferred_job(ctx, "abfe", run, collect, description=f"ABFE-lite {object}")

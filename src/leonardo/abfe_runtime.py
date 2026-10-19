@@ -7,6 +7,16 @@ import sys
 
 import numpy as np
 
+# Shown in every ABFE-lite report, the agent's result card and the GUI.  On trypsin-benzamidine
+# (3 replicas x 3 ns, Apple M4 GPU, 2026-10-18) the replicas agreed with each other but the estimators did
+# not agree with each other or with experiment (selected -62, reweighted standard-state -33.7, population -2.5, exp-avg +0.7 kJ/mol;
+# experiment about -27).  Remove only after a multi-target validation on a dedicated GPU.
+ABFE_EXPERIMENTAL_NOTE = (
+    "EXPERIMENTAL: ABFE-lite is not validated against experiment. Its ΔG estimators can disagree with each "
+    "other and with measured affinities by tens of kJ/mol; use it to compare poses or ligands qualitatively, "
+    "not as a binding free energy."
+)
+
 # Compact ABFE-lite calibration trained with leave-one-target-out group CV.
 # Model origin: benchmark_results/diverse_abfe_panel_best_all_available/calibration_compact/deploy_models.json
 ABFE_COMPACT_CALIBRATION = {
@@ -100,6 +110,19 @@ ABFE_RUNTIME_DEPLOY_CANDIDATES = [
 _ABFE_RUNTIME_DEPLOY_CACHE = None
 _ABFE_RUNTIME_DEPLOY_SOURCE = ""
 OPENMM_PLATFORM_OVERRIDE_ENV = "PROTLIGINTERACT_OPENMM_PLATFORM"
+# the documented Leonardo name; code_v2 already honoured it, but this plan did not, so on macOS a request for
+# a GPU through it ended on the CPU
+OPENMM_PLATFORM_OVERRIDE_ENVS = (OPENMM_PLATFORM_OVERRIDE_ENV, "LEONARDO_OPENMM_PLATFORM")
+
+
+def openmm_platform_override():
+    """The platform the user asked for through the environment ('' if none)."""
+    for name in OPENMM_PLATFORM_OVERRIDE_ENVS:
+        value = str(os.environ.get(name, "") or "").strip()
+        if value:
+            return value
+    return ""
+OPENMM_CPU_THREADS_ENV = "PROTLIGINTERACT_OPENMM_CPU_THREADS"
 OPENMM_GPU_PLATFORM_NAMES = {"CUDA", "Metal", "HIP", "OpenCL"}
 ABFE_STEERING_POLICY_MODEL_ENV = "PROTLIGINTERACT_ABFE_STEERING_POLICY_JSON"
 ABFE_STEERING_ACTION_NAMES = (
@@ -261,17 +284,91 @@ def _sanitize_md_duration_ns(value, default=1.0):
     return float(out), note
 
 
-def _normalize_platform_properties(platform_name, platform_properties):
+_PRECISION_SUPPORT = {}
+
+
+def openmm_precision_supported(platform_name, precision="mixed"):
+    """Whether this machine's `platform_name` accepts `precision` (one tiny context, cached per process).
+    Apple GPUs have no 64-bit floats: their OpenCL rejects 'mixed' ("No compatible OpenCL platform is available")
+    and only runs 'single'. A platform that is not installed, or fails for any precision, counts as supported:
+    only a definite "single works, this precision does not" downgrades."""
+    key = (str(platform_name), str(precision))
+    if key in _PRECISION_SUPPORT:
+        return _PRECISION_SUPPORT[key]
+    ok = True
+    try:
+        import openmm as mm
+
+        names = [mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())]
+        if str(platform_name) in names:
+            plat = mm.Platform.getPlatformByName(str(platform_name))
+
+            def _try(prec):
+                system = mm.System()
+                system.addParticle(1.0)
+                try:
+                    ctx = mm.Context(system, mm.VerletIntegrator(0.001), plat, {"Precision": prec})
+                    del ctx
+                    return True
+                except Exception:
+                    return False
+
+            ok = _try(str(precision)) or not _try("single")
+    except Exception:
+        ok = True
+    _PRECISION_SUPPORT[key] = ok
+    return ok
+
+
+def openmm_gpu_properties(platform_name):
+    """Context properties for a GPU platform: mixed precision where the device supports it, else single."""
+    if str(platform_name or "").upper() not in {"CUDA", "OPENCL", "HIP", "METAL"}:
+        return {}, []
+    if openmm_precision_supported(platform_name, "mixed"):
+        return {"Precision": "mixed"}, ["added_mixed_precision_for_gpu_platform"]
+    return {"Precision": "single"}, ["gpu_has_no_mixed_precision_using_single"]
+
+
+
+def openmm_cpu_thread_budget(cpu_count=None, env_value=None):
+    """
+    Threads for the OpenMM CPU platform.
+
+    OpenMM uses every core by default. Inside PyMOL that leaves nothing for the
+    GUI, the window server and the kernel's own daemons; long ABFE runs on a
+    laptop can starve them until macOS panics (watchdog timeout). Keep two cores
+    free unless the user sets PROTLIGINTERACT_OPENMM_CPU_THREADS.
+    """
+    raw = os.environ.get(OPENMM_CPU_THREADS_ENV, "") if env_value is None else env_value
+    try:
+        forced = int(str(raw or "").strip())
+    except ValueError:
+        forced = 0
+    if forced > 0:
+        return int(forced)
+    try:
+        n = int(cpu_count if cpu_count is not None else (os.cpu_count() or 1))
+    except (TypeError, ValueError):
+        n = 1
+    n = max(1, n)
+    return int(max(1, n - 2)) if n > 2 else 1
+
+
+def _normalize_platform_properties(platform_name, platform_properties, cpu_count=None):
     props = dict(platform_properties or {})
     picked = str(platform_name or "").strip()
     notes = []
     if not picked:
         return props, notes
-    picked_upper = picked.upper()
     existing_keys = {str(k).strip().lower(): k for k in props.keys()}
-    if picked_upper in {"CUDA", "OPENCL", "HIP", "METAL"} and "precision" not in existing_keys:
-        props["Precision"] = "mixed"
-        notes.append("added_mixed_precision_for_gpu_platform")
+    if "precision" not in existing_keys:
+        gpu_props, gpu_notes = openmm_gpu_properties(picked)
+        props.update(gpu_props)
+        notes.extend(gpu_notes)
+    if picked.upper() == "CPU" and "threads" not in existing_keys:
+        threads = openmm_cpu_thread_budget(cpu_count=cpu_count)
+        props["Threads"] = str(int(threads))
+        notes.append(f"cpu_threads_capped:{int(threads)}")
     return props, notes
 
 
@@ -299,6 +396,7 @@ def build_openmm_platform_selection_plan(
     *,
     platform_override="",
     os_name="",
+    cpu_count=None,
 ):
     available = {}
     for name in list(available_platform_names or []):
@@ -306,7 +404,7 @@ def build_openmm_platform_selection_plan(
         if canonical and canonical not in available:
             available[canonical] = str(name)
 
-    override_raw = str(platform_override or os.environ.get(OPENMM_PLATFORM_OVERRIDE_ENV, "") or "").strip()
+    override_raw = str(platform_override or openmm_platform_override() or "").strip()
     override = _canonical_openmm_platform_name(override_raw)
     notes = []
     order = []
@@ -335,7 +433,7 @@ def build_openmm_platform_selection_plan(
             picked = str(name)
             break
 
-    props, prop_notes = _normalize_platform_properties(picked, {})
+    props, prop_notes = _normalize_platform_properties(picked, {}, cpu_count=cpu_count)
     notes.extend(list(prop_notes))
     if override and override not in available:
         notes.append(f"requested_platform_unavailable:{override}")
@@ -2770,9 +2868,19 @@ def build_abfe_tunnel_restraint_payload(
     k_axial_kj_mol_nm2=1000.0,
     pull_distance_a=12.0,
     axial_margin_a=4.0,
+    shape="cylinder",
+    cone_half_angle_deg=35.0,
+    cone_length_a=6.0,
 ):
     """
     Validate a cylindrical guide tunnel for ABFE-lite steering.
+
+    ``shape="funnel"`` turns the constant radius into a Limongelli-style funnel:
+    a cone that is wide at the binding site (the bound ligand keeps its natural
+    fluctuations and can re-dock in any orientation) and narrows to the tunnel
+    radius ``cone_length_a`` along the exit axis, followed by the cylinder up to
+    the axial cap.  Unbound sampling is confined to a small volume in front of
+    the entrance, so the return pull finds the pocket instead of the surface.
 
     The tunnel is intentionally soft: the ligand center of mass is unpenalized
     inside the cylinder and receives a harmonic radial wall only when it leaves
@@ -2790,6 +2898,10 @@ def build_abfe_tunnel_restraint_payload(
         "k_axial_kj_mol_nm2": np.nan,
         "zmin_nm": -0.25,
         "zmax_nm": np.nan,
+        "shape": "cylinder",
+        "tan_alpha": 0.0,
+        "zcc_nm": 0.0,
+        "energy_expression": ABFE_TUNNEL_ENERGY_EXPRESSION,
         "notes": [],
     }
     if not bool(enabled):
@@ -2845,6 +2957,30 @@ def build_abfe_tunnel_restraint_payload(
     if (not np.isfinite(margin_nm)) or margin_nm < 0.0:
         margin_nm = 0.4
     zmax_nm = float(max(pull_nm + margin_nm, 2.0 * pull_nm, radius_nm + 0.6))
+    shape_txt = str(shape or "cylinder").strip().lower()
+    if shape_txt not in {"cylinder", "funnel"}:
+        out["notes"].append(f"unknown_shape_defaulted:{shape_txt}")
+        shape_txt = "cylinder"
+    tan_alpha = 0.0
+    zcc_nm = 0.0
+    if shape_txt == "funnel":
+        try:
+            alpha = float(cone_half_angle_deg)
+        except (TypeError, ValueError):
+            alpha = 35.0
+        if not np.isfinite(alpha):
+            alpha = 35.0
+        alpha = float(np.clip(alpha, 10.0, 60.0))
+        tan_alpha = float(np.tan(np.deg2rad(alpha)))
+        try:
+            zcc_nm = 0.1 * float(cone_length_a)
+        except (TypeError, ValueError):
+            zcc_nm = 0.6
+        if (not np.isfinite(zcc_nm)) or zcc_nm <= 0.0:
+            zcc_nm = 0.6
+            out["notes"].append("cone_length_defaulted")
+        # the cone must end before the axial cap, otherwise there is no cylinder
+        zcc_nm = float(min(zcc_nm, max(0.1, zmax_nm - 0.3)))
     out.update(
         {
             "ok": True,
@@ -2856,9 +2992,242 @@ def build_abfe_tunnel_restraint_payload(
             "k_axial_kj_mol_nm2": float(k_axial),
             "zmin_nm": -float(max(0.15, min(0.50, radius_nm))),
             "zmax_nm": float(zmax_nm),
+            "shape": str(shape_txt),
+            "tan_alpha": float(tan_alpha),
+            "zcc_nm": float(zcc_nm),
+            "energy_expression": ABFE_TUNNEL_ENERGY_EXPRESSION,
         }
     )
     return out
+
+
+# Single-COM wall for CustomCentroidBondForce(1, ...): free inside, harmonic outside.
+# The allowed radius is r0 on the cylinder and grows as (zcc - z)*tan_a toward the site,
+# so tan_a = 0 recovers the plain cylinder.
+ABFE_TUNNEL_ENERGY_EXPRESSION = (
+    "0.5*k_cyl*step(radial-rallow)*(radial-rallow)^2"
+    " + 0.5*k_axial*step(zmin-axisproj)*(zmin-axisproj)^2"
+    " + 0.5*k_axial*step(axisproj-zmax)*(axisproj-zmax)^2;"
+    "rallow=r0+tan_a*step(zcc-axisproj)*(zcc-axisproj);"
+    "radial=sqrt(max(0.0, rx*rx+ry*ry+rz*rz-axisproj*axisproj));"
+    "axisproj=rx*ux+ry*uy+rz*uz;"
+    "rx=x1-ox; ry=y1-oy; rz=z1-oz"
+)
+
+
+def abfe_tunnel_wall_energy(com_nm, payload):
+    """NumPy mirror of ABFE_TUNNEL_ENERGY_EXPRESSION (kJ/mol), for tests and diagnostics."""
+    p = dict(payload or {})
+    r = np.asarray(com_nm, dtype=float) - np.asarray(p.get("origin_nm"), dtype=float)
+    u = np.asarray(p.get("direction"), dtype=float)
+    z = float(np.dot(r, u))
+    radial = float(np.sqrt(max(0.0, float(np.dot(r, r)) - z * z)))
+    zcc = float(p.get("zcc_nm", 0.0) or 0.0)
+    rallow = float(p["radius_nm"]) + float(p.get("tan_alpha", 0.0) or 0.0) * max(0.0, zcc - z)
+    k_cyl = float(p["k_radial_kj_mol_nm2"])
+    k_ax = float(p["k_axial_kj_mol_nm2"])
+    e = 0.5 * k_cyl * max(0.0, radial - rallow) ** 2
+    e += 0.5 * k_ax * max(0.0, float(p["zmin_nm"]) - z) ** 2
+    e += 0.5 * k_ax * max(0.0, z - float(p["zmax_nm"])) ** 2
+    return float(e)
+
+
+def build_abfe_funnel_axis_payload(
+    *,
+    coords_nm=None,
+    protein_heavy_idx=None,
+    ligand_heavy_idx=None,
+    tube_radius_a=5.0,
+    pocket_skip_a=4.0,
+    n_directions=500,
+):
+    """
+    Pick the funnel/exit axis as the most open way from the ligand to bulk solvent.
+
+    A direction is scored by casting a ligand-sized tube (``tube_radius_a``) from the
+    ligand center: protein heavy atoms inside the tube past the pocket (``pocket_skip_a``)
+    block it; atoms in a shell just outside the tube mean the path hugs the surface.
+    Among the least blocked directions the one reaching solvent soonest wins.  The
+    returned ``exit_depth_nm`` is how far along the axis the last nearby protein atom
+    is, i.e. where the ligand is really out; the cone should reach about that far and
+    the pull must go beyond it.
+    """
+    out = {"ok": False, "reason": "", "direction": np.asarray([1.0, 0.0, 0.0]), "origin_nm": None,
+           "exit_depth_nm": np.nan, "blocked_atoms": -1, "surface_atoms": -1}
+    try:
+        xyz = np.asarray(coords_nm, dtype=float)
+        p_idx = np.asarray(list(protein_heavy_idx or []), dtype=int)
+        l_idx = np.asarray(list(ligand_heavy_idx or []), dtype=int)
+    except (TypeError, ValueError):
+        out["reason"] = "invalid_input"
+        return out
+    if xyz.ndim != 2 or xyz.shape[1] != 3 or p_idx.size == 0 or l_idx.size == 0:
+        out["reason"] = "invalid_input"
+        return out
+    origin = np.mean(xyz[l_idx], axis=0)
+    rel = xyz[p_idx] - origin[None, :]
+    r2 = np.sum(rel * rel, axis=1)
+    tube = 0.1 * float(tube_radius_a)
+    shell = tube + 0.3
+    skip = 0.1 * float(pocket_skip_a)
+    n = int(max(50, n_directions))
+    k = np.arange(n, dtype=float) + 0.5
+    z = 1.0 - 2.0 * k / n
+    rho = np.sqrt(np.maximum(0.0, 1.0 - z * z))
+    phi = np.pi * (1.0 + 5.0 ** 0.5) * k
+    dirs = np.stack([rho * np.cos(phi), rho * np.sin(phi), z], axis=1)
+    fwd = rel @ dirs.T  # (n_atoms, n_dirs)
+    lat = np.sqrt(np.maximum(0.0, r2[:, None] - fwd * fwd))
+    ahead = fwd > skip
+    blocked = np.sum(ahead & (lat < tube), axis=0)
+    surface = np.sum(ahead & (lat < shell), axis=0)
+    near = (fwd > 0.0) & (lat < shell)
+    depth = np.where(np.any(near, axis=0), np.max(np.where(near, fwd, 0.0), axis=0), 0.0)
+    order = np.lexsort((depth, surface, blocked))
+    best = int(order[0])
+    out.update(
+        {
+            "ok": True,
+            "reason": "ok",
+            "direction": np.asarray(dirs[best], dtype=float),
+            "origin_nm": np.asarray(origin, dtype=float),
+            "exit_depth_nm": float(depth[best]),
+            "blocked_atoms": int(blocked[best]),
+            "surface_atoms": int(surface[best]),
+        }
+    )
+    return out
+
+
+def build_abfe_memory_guard_decision(
+    *,
+    available_mb=None,
+    total_mb=None,
+    swap_used_mb=None,
+    swap_used_start_mb=None,
+    wired_mb=None,
+    pressure_level=None,
+    min_available_mb=1536.0,
+    min_available_fraction=0.08,
+    max_swap_used_mb=4096.0,
+    max_swap_growth_mb=1024.0,
+    max_wired_fraction=0.70,
+):
+    """
+    Decide whether a long in-process MD run must stop to protect the machine.
+
+    The failure it prevents is macOS running out of pageable memory until watchdogd misses its check-ins
+    and the kernel panics (16 GB M4, 2026-09-29 and 2026-10-17).  Each trigger stops the run on its own:
+    low system available memory, swap in use above max_swap_used_mb, swap grown during this run by more
+    than max_swap_growth_mb, wired memory above max_wired_fraction of RAM, or critical kernel pressure.
+
+    Never make the low-memory or swap triggers conditional on another reading.  On 2026-10-17 the guard
+    was relaxed to "low memory AND 2 GB swap growth" because it stopped a run on a busy laptop; the
+    next run panicked the machine with all 16 GB wired, swap nearly full and the kernel's pressure flag
+    still False.  Wired memory (GPU buffers on Apple Silicon) cannot be paged out, so it is the reading
+    that sees that failure coming.  Unknown readings never abort.
+    """
+
+    def _mb(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return np.nan
+        return f if np.isfinite(f) and f >= 0.0 else np.nan
+
+    def _num(v, default):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return float(default)
+        return f if np.isfinite(f) else float(default)
+
+    avail = _mb(available_mb)
+    total = _mb(total_mb)
+    swap = _mb(swap_used_mb)
+    swap0 = _mb(swap_used_start_mb)
+    wired = _mb(wired_mb)
+    floor_mb = float(max(256.0, _num(min_available_mb, 1536.0)))
+    if np.isfinite(total) and total > 0.0:
+        frac = _num(min_available_fraction, 0.08)
+        floor_mb = float(max(floor_mb, total * float(np.clip(frac, 0.0, 0.5))))
+    swap_cap = _num(max_swap_used_mb, 4096.0)
+    growth = float(swap - swap0) if (np.isfinite(swap) and np.isfinite(swap0)) else np.nan
+    growth_cap = _num(max_swap_growth_mb, 1024.0)
+    wired_frac = float(wired / total) if (np.isfinite(wired) and np.isfinite(total) and total > 0.0) else np.nan
+    wired_cap = float(np.clip(_num(max_wired_fraction, 0.70), 0.3, 0.95))
+    try:
+        level = int(pressure_level) if pressure_level is not None else 0
+    except (TypeError, ValueError):
+        level = 0
+    reasons = []
+    if np.isfinite(avail) and avail < floor_mb:
+        reasons.append(f"available_memory_low:{avail:.0f}MB<{floor_mb:.0f}MB")
+    if np.isfinite(swap) and swap_cap > 0.0 and swap > swap_cap:
+        reasons.append(f"swap_used_high:{swap:.0f}MB>{swap_cap:.0f}MB")
+    if np.isfinite(growth) and growth_cap > 0.0 and growth > growth_cap:
+        reasons.append(f"swap_grew_during_run:{growth:.0f}MB>{growth_cap:.0f}MB")
+    if np.isfinite(wired_frac) and wired_frac > wired_cap:
+        reasons.append(f"wired_memory_high:{wired:.0f}MB>{100.0 * wired_cap:.0f}%_of_{total:.0f}MB")
+    if level >= 4:
+        reasons.append("memory_pressure_critical")
+    return {
+        "ok": True,
+        "should_abort": bool(reasons),
+        "reasons": list(reasons),
+        "available_mb": float(avail) if np.isfinite(avail) else None,
+        "floor_mb": float(floor_mb),
+        "swap_used_mb": float(swap) if np.isfinite(swap) else None,
+        "swap_growth_mb": float(growth) if np.isfinite(growth) else None,
+        "wired_mb": float(wired) if np.isfinite(wired) else None,
+        "pressure_level": level,
+    }
+
+
+def build_abfe_pymol_state_budget(
+    *,
+    n_atoms=0,
+    requested_max_states=1500,
+    budget_mb=384.0,
+    bytes_per_atom_state=160.0,
+):
+    """
+    Cap the states of the final ABFE trajectory object loaded into PyMOL.
+
+    PyMOL keeps a full coordinate set per state plus per-state representation
+    geometry (cartoon, sticks) once a state is drawn, far more than the float32
+    coordinates Leonardo keeps.  ``bytes_per_atom_state`` is a deliberately
+    conservative estimate of that total.
+    """
+    try:
+        n = int(n_atoms or 0)
+    except (TypeError, ValueError):
+        n = 0
+    n = max(1, n)
+    try:
+        req = int(requested_max_states or 1)
+    except (TypeError, ValueError):
+        req = 1
+    req = max(1, req)
+    try:
+        budget = float(budget_mb)
+    except (TypeError, ValueError):
+        budget = 384.0
+    budget = float(max(16.0, budget if np.isfinite(budget) else 384.0))
+    try:
+        per_atom = float(bytes_per_atom_state)
+    except (TypeError, ValueError):
+        per_atom = 160.0
+    per_atom = float(max(12.0, per_atom if np.isfinite(per_atom) else 160.0))
+    mb_per_state = (n * per_atom) / 1048576.0
+    by_memory = int(max(2, np.floor(budget / max(mb_per_state, 1.0e-9))))
+    max_states = int(min(req, by_memory))
+    return {
+        "ok": True,
+        "max_states": int(max_states),
+        "estimated_mb": float(mb_per_state * max_states),
+        "limited_by_memory": bool(by_memory < req),
+    }
 
 
 def build_abfe_adaptive_steering_state_payload(
@@ -3720,6 +4089,10 @@ def configure_abfe_steering_cycles(adaptive_state=None, *, n_cycles=1, n_samples
             "rebound_target_samples": int(max(4, round(0.08 * per_cycle))),
             "rebound_since_sample": -1,
             "return_timeout_samples": int(max(ramp_samples, round(0.20 * per_cycle))),
+            # out of the pocket but still stuck to the protein surface (e.g. a salt bridge on the
+            # rim): the far-unbound test never passes, so return after this many samples anyway
+            "out_of_site_timeout_samples": int(max(4, round(0.12 * per_cycle))),
+            "out_of_site_since_sample": -1,
             "return_zero_since_sample": -1,
             "return_force_boosts": 0,
         }
@@ -4231,6 +4604,12 @@ def build_abfe_adaptive_steering_update_decision(
             next_state["far_hold_target_k_kj_nm2"] = np.nan
             next_state["recent_far_hold_break"] = True
             next_state["far_hold_break_count"] = int(max(0, int(next_state.get("far_hold_break_count", 0) or 0)) + 1)
+            # the settle force is ~1% of the pull force; resuming "pull" with it leaves the
+            # ligand on the surface for the rest of the run
+            restored_k = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+            if restored_k > current_k + 1.0e-6:
+                new_k = float(restored_k)
+                out["update_pull_k"] = True
             reason = "detached_settle_broken_resume_pull"
         out["pull_k_kj_nm2"] = float(new_k)
         out["pull_distance_scale"] = float(new_distance_scale)
@@ -4425,6 +4804,41 @@ def build_abfe_adaptive_steering_update_decision(
         out["reason"] = str(reason)
         out["adaptive_state"] = dict(next_state)
         return out
+
+    if (
+        phase == "pull"
+        and bool(state.get("state_driven_lambda", False))
+        and str(state.get("steering_mode", "pull_hold")) == "pull_hold_return"
+    ):
+        out_of_site = bool(np.isfinite(latest_site) and latest_site >= far_site)
+        if out_of_site and not far_ready:
+            since = int(state.get("out_of_site_since_sample", -1) if state.get("out_of_site_since_sample") is not None else -1)
+            if since < 0:
+                since = int(sample_index)
+            next_state["out_of_site_since_sample"] = int(since)
+            timeout = int(state.get("out_of_site_timeout_samples", 0) or 0)
+            if timeout > 0 and (int(sample_index) - since + 1) >= timeout:
+                next_state["phase"] = "return"
+                next_state["out_of_site_since_sample"] = -1
+                next_state["return_zero_since_sample"] = -1
+                next_state["rebound_since_sample"] = -1
+                next_state["pull_surface_detach_active"] = False
+                new_k = float(state.get("initial_pull_k_kj_nm2", current_k) or current_k)
+                out["update_pull_k"] = bool(abs(new_k - current_k) > 1.0e-6)
+                out["pull_k_kj_nm2"] = float(new_k)
+                out["pull_distance_scale"] = float(new_distance_scale)
+                out["direction_index"] = int(new_dir)
+                out["phase"] = "return"
+                out["should_adapt"] = bool(out["update_pull_k"])
+                out["notes"].append("out_of_site_surface_bound")
+                next_state["current_pull_k_kj_nm2"] = float(new_k)
+                next_state["current_pull_distance_scale"] = float(new_distance_scale)
+                next_state["last_direction_index"] = int(new_dir)
+                out["reason"] = "out_of_site_timeout_enter_return"
+                out["adaptive_state"] = dict(next_state)
+                return out
+        else:
+            next_state["out_of_site_since_sample"] = -1
 
     if far_ready:
         next_state["phase"] = "far_hold"
@@ -7449,6 +7863,8 @@ def build_abfe_free_energy_report_payload(
             f"    <span style=\"display:inline-block; padding:4px 10px; border-radius:999px; background:{proto_badge_bg}; color:{proto_badge_fg}; font-weight:700; font-size:12px; margin-right:6px;\">{proto_label}</span>",
             f"    <span style=\"display:inline-block; padding:4px 10px; border-radius:999px; background:{conf_style['bg']}; color:{conf_style['fg']}; border:1px solid {conf_style['border']}; font-weight:700; font-size:12px;\">Confidence: {conf_txt}</span>",
             "  </div>",
+            "  <div style=\"margin-bottom:10px; padding:8px 10px; background:#FFF4E5; border:1px solid #F0C27B; "
+            f"border-radius:8px; font-size:12px; color:#7A4A00;\">{ABFE_EXPERIMENTAL_NOTE}</div>",
             f"  <div style=\"font-size:22px; font-weight:800; color:#17212B; margin-bottom:2px;\">Selected ΔG: {selected_value_txt}</div>",
             f"  <div style=\"font-size:12px; color:#5A6572; margin-bottom:10px;\">Kd(app): {selected_kd_txt} &nbsp;&nbsp; pKd: {selected_pkd_txt} &nbsp;&nbsp; Estimator: {str(selected_estimator or 'gated_off')}</div>",
             "  <table style=\"width:100%; border-collapse:separate; border-spacing:0 6px; font-size:12px;\">",
@@ -7474,6 +7890,8 @@ def build_abfe_free_energy_report_payload(
 
     msg_lines = [
         str(intro),
+        "",
+        ABFE_EXPERIMENTAL_NOTE,
         "",
         f"ΔG (exp-avg): {float(dg_exp):.3f} kJ/mol",
         f"95% CI: [{float(ci_low):.3f}, {float(ci_high):.3f}] kJ/mol",
@@ -7529,6 +7947,7 @@ def build_abfe_free_energy_report_payload(
         "dialog_title": f"{proto_label} Summary",
         "message_lines": list(msg_lines),
         "message_text": "\n".join(msg_lines),
+        "experimental_note": ABFE_EXPERIMENTAL_NOTE,
     }
 
 
@@ -8252,6 +8671,8 @@ def build_abfe_free_energy_numeric_payload(
         }
 
     has_surface = False
+    surface_style = "bins"
+    surface_samples = (None, None, None)
     Xc = None
     Yc = None
     Fsurf = None
@@ -8284,6 +8705,14 @@ def build_abfe_free_energy_numeric_payload(
                     Yc = 0.5 * (yedges[:-1] + yedges[1:])
                     Fsurf = F.T
                     has_surface = True
+                    # a free-energy landscape, not scattered bins: -kT ln of a Gaussian KDE of the samples,
+                    # capped where the ligand never went (same cap as the histogram surface)
+                    surface_samples = (np.asarray(rr, dtype=float), np.asarray(ee, dtype=float),
+                                       None if surf_weights is None else np.asarray(surf_weights, dtype=float))
+                    smooth = abfe_kde_free_energy_surface(rr, ee, surf_weights, kbt, surface_clip_max_kj)
+                    if smooth is not None:
+                        Xc, Yc, Fsurf = smooth
+                        surface_style = "smooth"
 
     def _safe_int(value, default=0):
         try:
@@ -8579,10 +9008,61 @@ def build_abfe_free_energy_numeric_payload(
         "Xc": (np.asarray(Xc, dtype=float) if Xc is not None else None),
         "Yc": (np.asarray(Yc, dtype=float) if Yc is not None else None),
         "Fsurf": (np.asarray(Fsurf, dtype=float) if Fsurf is not None else None),
+        "surface_style": str(surface_style),
+        "surface_samples": surface_samples,
         "surface_clip_max_kj": float(surface_clip_max_kj) if np.isfinite(surface_clip_max_kj) else np.nan,
         "bound_center": dict(bound_center or {}),
         "unbound_center": dict(unbound_center or {}),
     }
+
+
+# smoothing width of the free-energy surface, as a fraction of each axis' sampled range (about 1 A and 20 kJ/mol
+# for an ABFE exit).  A fixed width, not a bandwidth from the data: with bias reweighting the unbound frames
+# carry little weight, and scipy's weighted KDE then took the spread of the bound frames alone (0.15 A) and
+# resolved noise into stripes instead of basins
+SURFACE_SMOOTH_FRACTION = 0.04
+
+
+def abfe_kde_free_energy_surface(x, y, weights, kbt, cap_kj, n=120):
+    """Free-energy landscape -kT ln p(x, y): the (weighted) samples histogrammed on an n x n grid padded 8 %
+    beyond them and smoothed with a Gaussian of SURFACE_SMOOTH_FRACTION of each axis' range; shifted to 0 at its
+    minimum and capped at cap_kj where the ligand (almost) never went.  Returns (x grid, y grid, F[y, x]) or None
+    (scipy missing, too few or degenerate samples)."""
+    try:
+        from scipy.ndimage import gaussian_filter
+    except Exception:
+        return None
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    w = None
+    if weights is not None and np.asarray(weights).size == x.size:
+        w = np.clip(np.asarray(weights, dtype=float), 0.0, None)
+        ok &= np.isfinite(w)
+    x, y = x[ok], y[ok]
+    if w is not None:
+        w = w[ok]
+        if float(np.sum(w)) <= 0.0:
+            w = None
+    if x.size < 20:
+        return None
+    rx = float(np.max(x)) - float(np.min(x))
+    ry = float(np.max(y)) - float(np.min(y))
+    if rx <= 0.0 or ry <= 0.0:
+        return None
+    gx = np.linspace(float(np.min(x)) - 0.08 * rx, float(np.max(x)) + 0.08 * rx, int(n))
+    gy = np.linspace(float(np.min(y)) - 0.08 * ry, float(np.max(y)) + 0.08 * ry, int(n))
+    dx, dy = gx[1] - gx[0], gy[1] - gy[0]
+    edges_x = np.append(gx - dx / 2, gx[-1] + dx / 2)
+    edges_y = np.append(gy - dy / 2, gy[-1] + dy / 2)
+    H, _, _ = np.histogram2d(y, x, bins=(edges_y, edges_x), weights=w)
+    P = gaussian_filter(H, sigma=(SURFACE_SMOOTH_FRACTION * ry / dy, SURFACE_SMOOTH_FRACTION * rx / dx),
+                        mode="constant")
+    if float(np.max(P)) <= 0.0:
+        return None
+    F = -float(kbt) * np.log(np.clip(P / float(np.max(P)), 1.0e-300, None))
+    cap = float(cap_kj) if np.isfinite(_safe_float(cap_kj)) and float(cap_kj) > 0.0 else float(np.percentile(F, 60.0))
+    return gx, gy, np.minimum(F, cap)
 
 
 def build_abfe_free_energy_plot_payload(
@@ -8603,6 +9083,8 @@ def build_abfe_free_energy_plot_payload(
     Yc=None,
     Fsurf=None,
     surface_clip_max_kj=np.nan,
+    surface_style="bins",
+    surface_samples=None,
     bound_cutoff_a=np.nan,
     bound_center=None,
     unbound_center=None,
@@ -8654,6 +9136,10 @@ def build_abfe_free_energy_plot_payload(
     )
     surf_vmax = _safe_float(surface_clip_max_kj)
 
+    def _sample_arr(k):
+        rows = tuple(surface_samples) if surface_samples is not None else ()
+        return np.asarray(rows[k] if len(rows) > k and rows[k] is not None else [], dtype=float)
+
     def _marker_payload(center_row, label, color, marker):
         row = dict(center_row or {})
         x = _safe_float(row.get("x", np.nan))
@@ -8686,13 +9172,13 @@ def build_abfe_free_energy_plot_payload(
             "y_exp": np.asarray(run_exp_arr, dtype=float),
             "x_cum": np.asarray(run_frames_arr, dtype=int),
             "y_cum": np.asarray(run_cum_arr, dtype=float),
-            "line_exp": {"color": "#111827", "linewidth": 1.9, "label": "ΔG exp-avg"},
-            "line_cum": {"color": "#6B7280", "linewidth": 1.5, "label": "ΔG cumulant"},
-            "hline_exp": {"y": float(dg_exp), "color": "#111827", "linestyle": "--", "linewidth": 1.0, "alpha": 0.8},
+            "line_exp": {"color": "#2563EB", "linewidth": 2.0, "label": "ΔG exp-avg"},
+            "line_cum": {"color": "#D97706", "linewidth": 1.6, "label": "ΔG cumulant"},
+            "hline_exp": {"y": float(dg_exp), "color": "#2563EB", "linestyle": "--", "linewidth": 1.0, "alpha": 0.8},
             "ci_band": {
                 "ymin": float(ci_low),
                 "ymax": float(ci_high),
-                "color": "#6B7280",
+                "color": "#2563EB",
                 "alpha": 0.12,
                 "label": "95% CI (bootstrap)",
             },
@@ -8709,16 +9195,16 @@ def build_abfe_free_energy_plot_payload(
                 "exp_sem": np.asarray(run_exp_sem_arr, dtype=float),
                 "cum_mean": np.asarray(run_cum_arr, dtype=float),
                 "cum_sem": np.asarray(run_cum_sem_arr, dtype=float),
-                "exp_band": {"color": "#111827", "alpha": 0.10, "label": "Replica exp ± SEM"},
-                "cum_band": {"color": "#6B7280", "alpha": 0.09, "label": "Replica cum ± SEM"},
+                "exp_band": {"color": "#2563EB", "alpha": 0.14, "label": "Replica exp ± SEM"},
+                "cum_band": {"color": "#D97706", "alpha": 0.14, "label": "Replica cum ± SEM"},
             },
         },
         "energy_pmf": {
             "x": np.asarray(e_cent_arr, dtype=float),
             "y": np.asarray(e_pmf_arr, dtype=float),
-            "line": {"color": "#374151", "linewidth": 1.8},
-            "fill_color": "#D1D5DB",
-            "fill_alpha": 0.22,
+            "line": {"color": "#7C3AED", "linewidth": 2.0},
+            "fill_color": "#7C3AED",
+            "fill_alpha": 0.12,
             "xlabel": "Interaction Energy (kJ/mol)",
             "ylabel": "PMF (kJ/mol)",
             "title": "PMF from Energy Distribution",
@@ -8728,9 +9214,9 @@ def build_abfe_free_energy_plot_payload(
             "has_data": bool(has_rpmf),
             "x": np.asarray(r_cent_arr, dtype=float),
             "y": np.asarray(r_pmf_arr, dtype=float),
-            "line": {"color": "#4B5563", "linewidth": 1.8},
-            "fill_color": "#E5E7EB",
-            "fill_alpha": 0.22,
+            "line": {"color": "#0D9488", "linewidth": 2.0},
+            "fill_color": "#0D9488",
+            "fill_alpha": 0.12,
             "xlabel": str(dist_axis_label),
             "ylabel": "PMF (kJ/mol)",
             "title": "PMF along ABFE Distance Coordinate",
@@ -8738,9 +9224,9 @@ def build_abfe_free_energy_plot_payload(
             "bound_cutoff_line": {
                 "enabled": bool(np.isfinite(_safe_float(bound_cutoff_a))),
                 "x": float(bound_cutoff_a) if np.isfinite(_safe_float(bound_cutoff_a)) else np.nan,
-                "color": "#111827",
+                "color": "#DC2626",
                 "linestyle": "--",
-                "linewidth": 1.0,
+                "linewidth": 1.2,
                 "label": "Bound cutoff",
             },
             "no_data_text": "No valid distance samples",
@@ -8750,17 +9236,23 @@ def build_abfe_free_energy_plot_payload(
             "Xc": (np.asarray(Xc, dtype=float) if Xc is not None else None),
             "Yc": (np.asarray(Yc, dtype=float) if Yc is not None else None),
             "Fsurf": (np.asarray(Fsurf, dtype=float) if Fsurf is not None else None),
+            "style": "smooth" if str(surface_style) == "smooth" else "bins",
+            # the frames behind the surface (distance, energy, weight), saved with the figure for redrawing
+            "samples_x": _sample_arr(0),
+            "samples_y": _sample_arr(1),
+            "samples_w": _sample_arr(2),
             "levels": 28,
             "contour_levels": 9,
-            "cmap": "Greys_r",
-            "contour_color": "#111827",
+            "cmap": "viridis",
+            "contour_color": "#FFFFFF",
+            "unsampled_color": "#E5E7EB",
             "vmax": float(surf_vmax) if np.isfinite(surf_vmax) else np.nan,
             "cbar_label": "Free Energy (kJ/mol)",
             "xlabel": str(dist_axis_label),
             "ylabel": "Interaction Energy (kJ/mol)",
-            "title": "2D Free-Energy Surface",
-            "bound_marker": _marker_payload(bound_center_row, "bound basin", "#111827", "o"),
-            "unbound_marker": _marker_payload(unbound_center_row, "unbound basin", "#6B7280", "^"),
+            "title": "2D Free-Energy Surface" + (" (smoothed)" if str(surface_style) == "smooth" else ""),
+            "bound_marker": _marker_payload(bound_center_row, "bound basin", "#DC2626", "o"),
+            "unbound_marker": _marker_payload(unbound_center_row, "unbound basin", "#F59E0B", "^"),
             "no_data_text": "Insufficient samples for 2D surface",
         },
     }

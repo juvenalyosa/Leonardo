@@ -23,6 +23,8 @@ def test_value_paths_and_checks():
     assert replay.check({"kind": "exact", "value": "3/3 repeats"}, "3/3 repeats")
     assert not replay.check({"kind": "exact", "value": 20260915}, 20260916)
     assert replay.check({"kind": "max", "value": 2.0}, 1.2) and not replay.check({"kind": "max", "value": 2.0}, 2.5)
+    gpu = {"kind": "in", "value": ["CUDA", "HIP", "OpenCL", "Metal"]}
+    assert replay.check(gpu, "CUDA") and not replay.check(gpu, "CPU")
 
 
 def test_film08_pack_asks_for_a_reproducible_seeded_ensemble():

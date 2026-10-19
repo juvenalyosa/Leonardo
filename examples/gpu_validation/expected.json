@@ -1,0 +1,118 @@
+{
+ "description": "GPU checks: every step must run on a GPU platform; MD must stay folded.",
+ "metrics": {
+  "md_implicit_platform": {
+   "path": "2.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "md_implicit_rmsd_max_A": {
+   "path": "2.ca_rmsd_vs_first_frame.max_A",
+   "kind": "max",
+   "value": 2.5
+  },
+  "md_explicit_platform": {
+   "path": "3.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "md_explicit_rmsd_max_A": {
+   "path": "3.ca_rmsd_vs_first_frame.max_A",
+   "kind": "max",
+   "value": 2.5
+  },
+  "minimize_platform": {
+   "path": "4.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "abfe_platform": {
+   "path": "7.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "abfe_replicas": {
+   "path": "7.per_replica|count",
+   "kind": "exact",
+   "value": 3
+  },
+  "surface_platform": {
+   "path": "9.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "umbrella_platform": {
+   "path": "11.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "metadynamics_platform": {
+   "path": "12.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "gamd_platform": {
+   "path": "13.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "amd_platform": {
+   "path": "14.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "HIP",
+    "OpenCL",
+    "Metal"
+   ]
+  },
+  "openmm_ml_platform": {
+   "path": "15.platform",
+   "kind": "in",
+   "value": [
+    "CUDA",
+    "CPU"
+   ]
+  }
+ }
+}

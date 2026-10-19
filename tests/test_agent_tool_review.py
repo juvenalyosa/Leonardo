@@ -162,3 +162,26 @@ def test_align_on_itself_is_a_clear_error():
     cmd.load(UBQ, "ubq")
     with pytest.raises(ToolError, match="both in ubq"):
         _reg(modeling).call("align_structures", {"mobile": "ubq", "target": "ubq and resi 1-40"}, _Ctx())
+
+
+def test_enhanced_sampling_runs_get_a_time_estimate():
+    """run_enhanced_sampling action=run starts minutes-to-hours of GPU work; templates cost nothing."""
+    cmd.reinitialize()
+    cmd.load(UBQ, "ubq")
+
+    class _Dlg:
+        _hw_profile = {"threads": {}, "md_platform": {"name": "OpenCL", "is_gpu": True}}
+
+    ctx = AgentContext(_Dlg())
+    assert "run_enhanced_sampling" in estimates.ESTIMATED_TOOLS
+    assert estimates.estimate(ctx, "run_enhanced_sampling", {"object": "ubq", "mode": "gamd"}) is None
+    umb = estimates.estimate(ctx, "run_enhanced_sampling", {"object": "ubq", "mode": "umbrella", "action": "run",
+                                                            "windows": 10, "production_ns_per_window": 0.1})
+    gamd = estimates.estimate(ctx, "run_enhanced_sampling", {"object": "ubq", "mode": "gamd", "action": "run",
+                                                             "production_ns": 1.0})
+    meta = estimates.estimate(ctx, "run_enhanced_sampling", {"object": "ubq", "mode": "metadynamics", "action": "run",
+                                                             "production_ns": 1.0})
+    assert "10 windows" in umb["text"] and "GAMD" in gamd["text"] and gamd["minutes"] > meta["minutes"] > 0
+    ml = estimates.estimate(ctx, "run_enhanced_sampling", {"object": "ubq", "mode": "openmm_ml", "action": "run",
+                                                           "ml_mode": "ml_only", "production_ns": 0.01})
+    assert "CPU" in ml["text"] and ml["minutes"] > 0
