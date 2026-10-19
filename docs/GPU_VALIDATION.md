@@ -1,6 +1,6 @@
 # GPU validation
 
-How to check that every OpenMM workflow in Leonardo runs on the GPU, and what was checked for 0.2.0a12.
+How to check that every OpenMM workflow in Leonardo runs on the GPU, and what was checked for 0.2.0a13.
 
 ```bash
 bash scripts/gpu_validation.sh 2>&1 | tee gpu_validation.log     # after a full install

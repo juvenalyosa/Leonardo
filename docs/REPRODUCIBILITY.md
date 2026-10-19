@@ -37,6 +37,11 @@ the reference, prints PASS or FAIL, and writes a report with your machine, Leona
 | [`examples/films/05_mutation_enzyme_reaction`](../examples/films/05_mutation_enzyme_reaction) | DhlA wild type vs W125A: QM/MM reaction paths (QST2-type path, TS, IRC) | Verified: identical values across runs (8.08 → 10.32 kcal/mol) |
 | [`examples/films/06_protein_stability_design`](../examples/films/06_protein_stability_design) | Protein G B1 disulfide design (`design_disulfides`) | Verified: best design K10C/E56C, −51% pair motion |
 | [`examples/films/07_protein_stability_multimutant`](../examples/films/07_protein_stability_multimutant) | Screening five disulfide designs | Verified: identical values across runs |
+| [`examples/films/09_materials`](../examples/films/09_materials) | Material surfaces, lysozyme on gold, graphene and silica, PM7 orbitals at the contact | Verified: values within tolerance across runs |
+| [`examples/films/10_organic_catalysis`](../examples/films/10_organic_catalysis) | Aspirin IR spectrum; keto-enol tautomerization with and without a water catalyst (Psi4, B3LYP-D3(BJ)/def2-SVP) | Verified: values within tolerance across runs |
+| [`examples/films/11_abfe_lite`](../examples/films/11_abfe_lite) | Trypsin + benzamidine ABFE-lite, 3 replicas x 3 ns on the GPU (**experimental**) | Checks that the run finishes on a GPU; the ΔG estimates are stochastic and only kept within wide bands |
+| [`examples/gpu_validation`](../examples/gpu_validation) | Every OpenMM workflow on the GPU (see [GPU_VALIDATION.md](GPU_VALIDATION.md)) | Verified on an Apple M4 (OpenCL); NVIDIA/CUDA not yet |
+| [`examples/enhanced_sampling`](../examples/enhanced_sampling) | Umbrella/MBAR, metadynamics, aMD, GaMD on alanine dipeptide; umbrella set-up on trypsin–benzamidine; ANI-2x | Verified on an Apple M4 (OpenCL) |
 
 ## What "the same result" means for each engine
 
