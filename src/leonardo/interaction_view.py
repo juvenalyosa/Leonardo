@@ -586,10 +586,22 @@ def legend_items(interactions):
     return [(style_of(t)["short"] or t, style_of(t)["hex"], n) for t, n in summarize(interactions).items()]
 
 
-def _draw_legend(draw, x, y, max_w, items, scale=1.0):
-    """Wrapped row of [dash sample + 'H-bond (2)'] entries. Returns the height used."""
+def _draw_legend(draw, x, y, max_w, items, scale=1.0, sides=()):
+    """Wrapped row of [colour chip + 'Chain A'] entries for ``sides`` [(text, (r, g, b) 0-1)], then
+    [dash sample + 'H-bond (2)'] entries. Returns the height used."""
     f = _font(int(22 * scale))
     cx, cy, row_h = x, y, int(34 * scale)
+    for text, rgb in sides:
+        w = int(34 * scale) + draw.textbbox((0, 0), text, font=f)[2] + int(30 * scale)
+        if cx + w > x + max_w and cx > x:
+            cx, cy = x, cy + row_h
+        fill = tuple(int(round(255 * c)) for c in rgb)
+        draw.rounded_rectangle((cx, cy + 3 * scale, cx + 24 * scale, cy + 23 * scale), radius=int(5 * scale),
+                               fill=fill)
+        draw.text((cx + 34 * scale, cy), text, font=f, fill=INK)
+        cx += w
+    if sides:
+        cx += int(14 * scale)
     for text, hexcol, n in items:
         label = f"{text}  {n}"
         w = int(46 * scale) + draw.textbbox((0, 0), label, font=f)[2] + int(30 * scale)
@@ -602,8 +614,9 @@ def _draw_legend(draw, x, y, max_w, items, scale=1.0):
     return cy + row_h - y
 
 
-def export_figure(path, interactions, width=1800, height=1200, title="", subtitle="", items=None):
-    """Ray-trace the current scene and add a title and a legend panel below it."""
+def export_figure(path, interactions, width=1800, height=1200, title="", subtitle="", items=None, sides=()):
+    """Ray-trace the current scene and add a title and a legend panel below it (``sides``: colour chips
+    [(text, (r, g, b) 0-1)] listed before the interaction types).  Text scales with the width."""
     import tempfile
 
     from PIL import Image, ImageDraw
@@ -618,22 +631,24 @@ def export_figure(path, interactions, width=1800, height=1200, title="", subtitl
             os.unlink(tmp)
         except OSError:
             pass
-    pad = 40
-    header = 90 if title else 0
+    k = max(1.0, scene.width / 1800.0)
+    pad = int(40 * k)
+    header = int(96 * k) if title else 0
     probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     items = legend_items(interactions) if items is None else items
-    legend_h = _draw_legend(probe, 0, 0, scene.width - 2 * pad, items) + 40
+    legend_h = _draw_legend(probe, 0, 0, scene.width - 2 * pad, items, scale=k, sides=sides) + int(40 * k)
     out = Image.new("RGB", (scene.width, scene.height + header + legend_h), "white")
     out.paste(scene, (0, header))
     d = ImageDraw.Draw(out)
     if title:
-        d.text((pad, 22), title, font=_font(34, True), fill=INK)
+        f_title, f_sub = _font(int(36 * k), True), _font(int(24 * k))
+        d.text((pad, int(22 * k)), title, font=f_title, fill=INK)
         if subtitle:
-            d.text((pad + d.textbbox((0, 0), title, font=_font(34, True))[2] + 24, 34), subtitle,
-                   font=_font(22), fill=MUTED)
-    y = header + scene.height + 14
+            d.text((pad + d.textbbox((0, 0), title, font=f_title)[2] + int(24 * k), int(33 * k)), subtitle,
+                   font=f_sub, fill=MUTED)
+    y = header + scene.height + int(14 * k)
     d.line((pad, y - 6, scene.width - pad, y - 6), fill=(229, 231, 235), width=2)
-    _draw_legend(d, pad, y + 6, scene.width - 2 * pad, items)
+    _draw_legend(d, pad, y + int(6 * k), scene.width - 2 * pad, items, scale=k, sides=sides)
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     out.save(path)
     return path
@@ -1178,12 +1193,112 @@ def _interface_view(side_a, side_b, interface_sel, aspect=1.45, margin=3.0, avoi
     return rot
 
 
-def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix="ivf", max_labels=16,
-                          show_hydrophobic=False, show_water_bridges=False):
+def pymol_label_box(text, size):
+    """(width, height) in Angstrom of a PyMOL label drawn with ``label_size -size`` (font 7, label_padding
+    0.2/0.2, background box included); measured on ray-traced labels in PyMOL 3.1: 0.215 size per character
+    plus 0.31 size, half the size tall.  5 % margin."""
+    return (1.05 * size * (0.215 * len(str(text)) + 0.31), 0.53 * size)
+
+
+def _rect_points_inside(rect, pts):
+    if not len(pts):
+        return 0
+    return int(np.sum((pts[:, 0] > rect[0]) & (pts[:, 0] < rect[2]) & (pts[:, 1] > rect[1]) & (pts[:, 1] < rect[3])))
+
+
+def _rect_border_point(center, box, toward):
+    """Point where the segment from the centre of a ``box`` (w, h) to ``toward`` leaves the box."""
+    c, t = np.asarray(center, float), np.asarray(toward, float)
+    d = t - c
+    sx = (box[0] / 2) / abs(d[0]) if abs(d[0]) > 1e-9 else np.inf
+    sy = (box[1] / 2) / abs(d[1]) if abs(d[1]) > 1e-9 else np.inf
+    s = min(sx, sy, 1.0)
+    return c + d * s
+
+
+def layout_callouts(anchors, boxes, away, frame, obstacles=(), interactions=(), rounds=3):
     """
-    Publication-style scene of a macromolecular interface: both partners as cartoons in two soft colours,
-    interface residues as sticks (carbons in the darker side colour), dashes by interaction type, one label per
-    hotspot residue, side-on camera with partner A on the left.
+    Non-overlapping label positions (camera plane, Angstrom) for callouts with leader lines.
+
+    ``anchors`` [(x, y)] are the points labelled, ``boxes`` [(w, h)] the label sizes, ``away`` [(x, y)] a point
+    each label should move away from (the partner), ``frame`` (half_w, half_h) the image frame; ``obstacles``
+    points labels should not cover (atoms in sticks) and ``interactions`` points on the drawn dashes, which
+    must stay visible.  Every candidate is clamped into the frame before it is scored, so the final position
+    is the one that was checked.  Greedy in the given order, then ``rounds`` passes that re-place each label
+    against all the others.  Returns [(x, y)].
+    """
+    anchors = [np.asarray(a, float) for a in anchors]
+    obstacles = np.asarray(obstacles, float).reshape(-1, 2)
+    dashes = np.asarray(interactions, float).reshape(-1, 2)
+    half_w, half_h = frame
+    unit = float(np.median([b[1] for b in boxes])) if boxes else 1.0
+    pos = [None] * len(anchors)
+
+    def rect(xy, box, grow=0.0):
+        return (xy[0] - box[0] / 2 - grow, xy[1] - box[1] / 2 - grow, xy[0] + box[0] / 2 + grow,
+                xy[1] + box[1] / 2 + grow)
+
+    def cost_of(i, xy, ang_dev):
+        box = boxes[i]
+        r = rect(xy, box)
+        r_pad = rect(xy, box, 0.25 * unit)
+        cost = 0.0
+        for j, other in enumerate(pos):
+            if j == i or other is None:
+                continue
+            if _rect_overlap(r_pad, rect(other, boxes[j])):
+                cost += 1000.0
+            # the leader of this label must not run through another label, and leaders should not cross
+            if _seg_hits_rect(anchors[i], xy, rect(other, boxes[j])):
+                cost += 40.0
+            if _segments_cross(anchors[i], xy, anchors[j], other):
+                cost += 25.0
+        for j, a in enumerate(anchors):
+            if j != i and r[0] < a[0] < r[2] and r[1] < a[1] < r[3]:
+                cost += 60.0                     # covering the point another label explains
+        cost += 0.6 * _rect_points_inside(r, obstacles)
+        cost += 8.0 * _rect_points_inside(rect(xy, box, 0.15 * unit), dashes)
+        cost += 2.5 * float(np.linalg.norm(xy - anchors[i])) / unit + 0.01 * ang_dev
+        return cost
+
+    def best_for(i):
+        a, box = anchors[i], boxes[i]
+        v = a - np.asarray(away[i], float)
+        base = math.atan2(v[1], v[0]) if float(np.linalg.norm(v)) > 1e-6 else math.pi / 2
+        best, best_cost = None, None
+        for r in (0.5, 1.0, 1.6, 2.3, 3.1, 4.0, 5.0, 6.2, 7.6):
+            for dang in range(0, 360, 15):
+                dev = dang if dang <= 180 else 360 - dang
+                ang = base + math.radians(dang)
+                u = np.array([math.cos(ang), math.sin(ang)])
+                reach = abs(u[0]) * box[0] / 2 + abs(u[1]) * box[1] / 2
+                xy = a + u * (reach + r * unit)
+                xy = _clamp(xy, box, half_w, half_h)
+                c = cost_of(i, xy, dev)
+                if best_cost is None or c < best_cost:
+                    best, best_cost = xy, c
+        return best
+
+    for i in range(len(anchors)):
+        pos[i] = best_for(i)
+    for _ in range(int(rounds)):
+        for i in range(len(anchors)):
+            pos[i] = None
+            pos[i] = best_for(i)
+    return pos
+
+
+def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix="ivf", max_labels=14,
+                          show_hydrophobic=False, show_water_bridges=False, aspect=2000 / 1300,
+                          label_fraction=0.042):
+    """
+    Publication-style scene of a macromolecular interface: both partners as opaque cartoons in two soft
+    colours, the residues that make a drawn interaction as sticks (carbons in the darker side colour), dashes
+    by interaction type, side-on camera with partner A on the left.  Each labelled residue gets a callout in
+    its side's colour on a white box, placed so that no two labels overlap and the dashes stay visible, with a
+    thin leader line when the label sits away from its residue.  ``label_fraction`` is the label height as a
+    fraction of the image height (the same for every complex); ``aspect`` the width/height of the image that
+    will be rendered.
 
     ``interactions`` are analyze_interface records (``a``/``b`` atom refs with ``pymol_index``, optional
     ``via``); ``hotspots`` its ranked residues (``side``, ``chain``, ``resi``, ``residue``, ``n_specific``).
@@ -1199,12 +1314,13 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
     cmd.enable(obj)
     for key, value in (("bg_rgb", [1.0, 1.0, 1.0]), ("bg_gradient", 0), ("ray_opaque_background", 1),
                        ("depth_cue", 0), ("ray_trace_fog", 0), ("fog", 0), ("antialias", 2),
-                       ("ray_trace_mode", 0), ("ray_interior_color", "grey80"), ("ray_shadows", 0),
-                       ("ambient", 0.45), ("direct", 0.6), ("reflect", 0.2), ("specular", 0.2), ("orthoscopic", 1), ("cartoon_fancy_helices", 1),
-                       ("cartoon_smooth_loops", 1), ("cartoon_ring_mode", 0),
-                       ("cartoon_nucleic_acid_mode", 4), ("stick_radius", 0.15), ("valence", 0),
-                       ("label_font_id", 7), ("label_outline_color", "white"), ("float_labels", 0),
-                       ("transparency_mode", 2)):
+                       ("ray_trace_mode", 1), ("ray_trace_gain", 0.1), ("ray_trace_color", [0.25, 0.27, 0.30]),
+                       ("ray_interior_color", "grey80"), ("ray_shadows", 0),
+                       ("ambient", 0.5), ("direct", 0.55), ("reflect", 0.15), ("specular", 0.1),
+                       ("orthoscopic", 1), ("cartoon_fancy_helices", 1), ("cartoon_smooth_loops", 1),
+                       ("cartoon_ring_mode", 0), ("cartoon_ladder_mode", 0), ("cartoon_nucleic_acid_mode", 4),
+                       ("cartoon_tube_radius", 0.7), ("stick_radius", 0.17), ("valence", 0),
+                       ("label_font_id", 7), ("float_labels", 0), ("transparency_mode", 2)):
         try:
             cmd.set(key, value)
         except Exception:
@@ -1218,14 +1334,13 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
         cmd.show("cartoon", f"({sel}) and polymer")
         cmd.color(f"{prefix}_cart_{side}", f"({sel}) and polymer")
         cmd.set("cartoon_color", f"{prefix}_cart_{side}", f"({sel}) and polymer")
-        cmd.set("cartoon_transparency", 0.3, f"({sel}) and polymer.protein")
-        cmd.set("cartoon_transparency", 0.0, f"({sel}) and polymer.nucleic")
+        cmd.set("cartoon_transparency", 0.0, f"({sel}) and polymer")
         if cmd.count_atoms(f"({sel}) and polymer.nucleic"):
             # bases of the whole duplex as thin sticks in the cartoon colour (the ladder), interface ones darker
             ladder = (f"({sel}) and polymer.nucleic and not elem H and "
                       "not name P+OP1+OP2+OP3+O5'+C5'+C4'+O4'+C3'+O3'+C2'+O2'")
             cmd.show("sticks", ladder)
-            cmd.set("stick_radius", 0.12, ladder)
+            cmd.set("stick_radius", 0.14, ladder)
             cmd.color(f"{prefix}_cart_{side}", ladder)
 
     def res_sel(h):
@@ -1243,7 +1358,7 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
             continue
         cmd.show("sticks", f"({rsel}) and polymer.protein and not elem H and not name N+C+O")
         cmd.show("sticks", f"({rsel}) and polymer.nucleic and not elem H")
-        cmd.set("stick_radius", 0.13, f"({rsel}) and polymer.nucleic")
+        cmd.set("stick_radius", 0.15, f"({rsel}) and polymer.nucleic")
         cmd.util.cbag(rsel)
         cmd.color(f"{prefix}_carb_{h['side']}", f"({rsel}) and elem C")
         iface_sels.append(rsel)
@@ -1264,9 +1379,10 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
         if p_xyz is not None and len(p_xyz) >= 6:
             axis = np.linalg.svd(p_xyz - p_xyz.mean(axis=0), full_matrices=False)[2][0]
             break
-    rot = _interface_view(side_a, side_b, focus, avoid_axis=axis)
+    margin = 3.0
+    rot = _interface_view(side_a, side_b, focus, aspect=aspect, margin=margin, avoid_axis=axis)
     final_view = cmd.get_view()
-    frame = _frame_half(final_view)
+    frame = _frame_half(final_view, aspect=aspect)
     origin = np.asarray(final_view[12:15], float)
 
     def xyz_of(ref):
@@ -1275,7 +1391,11 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
         c = cmd.get_coords(f"({obj}) and index {int(ref['pymol_index'])}")
         return None if c is None else c[0]
 
+    def cam2(x):
+        return (rot @ (np.asarray(x, float) - origin))[:2]
+
     per_type = OrderedDict()
+    dash_pts = []
     for rec in interactions:
         itype = str(rec.get("type"))
         if (itype == "Hydrophobic" and not show_hydrophobic) or (itype == "Water Bridge" and not show_water_bridges):
@@ -1291,56 +1411,96 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
         name = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in name)
         for u, v in legs:
             per_type.setdefault(name, []).extend(_dashed_cylinder(u, v, rgb, st["radius"], st["dash"], st["gap"]))
+            for t in np.linspace(0.0, 1.0, 5):
+                dash_pts.append(cam2(np.asarray(u) + t * (np.asarray(v) - np.asarray(u))))
         if via is not None:
             per_type.setdefault(name, []).extend([cgo.COLOR, 0.85, 0.15, 0.15, cgo.SPHERE, *via, 0.22])
     for name, seg in per_type.items():
         cmd.load_cgo(seg, name)
 
+    # ---- callouts: one per residue that makes a drawn interaction, most interactions first
     focus_xyz = cmd.get_coords(f"({focus}) and not elem H")
-    z_label = float(((focus_xyz - origin) @ rot[2]).max()) + 1.5
-    span = float(np.ptp((focus_xyz - origin) @ rot[:2].T, axis=0).max())
-    h_lab = 1.2 * RESIDUE_LABEL_A * max(1.0, span / 17.0)
-    stick_boxes = []
-    for x in focus_xyz:
-        c2 = (rot @ (x - origin))[:2]
-        stick_boxes.append((c2[0] - 0.3, c2[1] - 0.3, c2[0] + 0.3, c2[1] + 0.3))
-    placed, leaders = [], []
-    multi = len({h.get("chain") for h in shown}) > 2
-    centers = {s: np.mean([(rot @ (x - origin))[:2] for x in cmd.get_coords(f"({sel}) and not elem H")], axis=0)
-               for s, sel in (("A", side_a), ("B", side_b))}
+    all_xyz = cmd.get_coords(f"({obj})")
+    z_label = float(((all_xyz - origin) @ rot[2]).max()) + 2.0        # in front of everything drawn
+    size = label_fraction * 2.0 * frame[1] / 0.53       # label_size so the box is label_fraction of the height
+    stick_pts = np.array([cam2(x) for x in focus_xyz])
+    chains_of = {}
     for h in shown[:max_labels]:
-        rsel = res_sel(h)
-        xyz = cmd.get_coords(f"({rsel}) and not elem H")
+        chains_of.setdefault(h["side"], set()).add(h.get("chain", ""))
+    centers = {s: np.mean([cam2(x) for x in cmd.get_coords(f"({sel}) and not elem H")], axis=0)
+               for s, sel in (("A", side_a), ("B", side_b))}
+    todo = []
+    for h in shown[:max_labels]:
+        # anchor on an atom that is drawn: the side chain (backbone N/C/O are hidden unless they interact)
+        xyz = cmd.get_coords(f"({res_sel(h)}) and not elem H and rep sticks")
+        if xyz is None:
+            xyz = cmd.get_coords(f"({res_sel(h)}) and not elem H")
         if xyz is None:
             continue
         other = centers["B" if h["side"] == "A" else "A"]
-        cams = np.array([(rot @ (x - origin))[:2] for x in xyz])
+        cams = np.array([cam2(x) for x in xyz])
         anchor = cams[int(np.argmax(np.linalg.norm(cams - other, axis=1)))]   # the end away from the partner
-        text = residue_label(h.get("resn") or str(h.get("residue", "")).split()[0], h["resi"], h.get("chain", ""),
-                             with_chain=True if not multi else True)
-        box = label_box(text, h_lab)
-        xy = _clamp(place_label(anchor, other, box, [(12.0, placed), (0.6, stick_boxes)], bounds=frame), box,
-                    *frame)
-        placed.append((xy[0] - box[0] / 2, xy[1] - box[1] / 2, xy[0] + box[0] / 2, xy[1] + box[1] / 2))
+        resn = h.get("resn") or str(h.get("residue", "")).split()[0]
+        text = residue_label(resn, h["resi"], h.get("chain", ""),
+                             with_chain=len(chains_of.get(h["side"], ())) > 1 or not str(h.get("chain", "")))
+        if str(resn).upper() in ("DA", "DC", "DG", "DT", "DU"):
+            text = "d" + text[1:]                                   # DG2 -> dG2
+        todo.append((h, anchor, other, text, pymol_label_box(text, size)))
+    spots = layout_callouts([t[1] for t in todo], [t[4] for t in todo], [t[2] for t in todo], frame,
+                            obstacles=stick_pts, interactions=dash_pts)
+    leaders = []
+    unit = 0.53 * size
+    for (h, anchor, _other, text, box), xy in zip(todo, spots):
+        side = h["side"]
         cmd.pseudoatom(f"{prefix}_labels", pos=[float(v) for v in origin + rot.T @ np.array([*xy, z_label])],
-                       label=text)
-        gap = float(np.linalg.norm(xy - anchor))
-        if gap > 2.4:
-            end = anchor + (xy - anchor) * (1.0 - 0.6 * box[1] / gap)
-            a3 = origin + rot.T @ np.array([*anchor, z_label - 0.4])
-            b3 = origin + rot.T @ np.array([*end, z_label - 0.3])
-            leaders += [cgo.CYLINDER, *a3, *b3, 0.02, 0.70, 0.73, 0.77, 0.70, 0.73, 0.77]
+                       label=text, segi=side, name="LBL")
+        end = _rect_border_point(xy, box, anchor)
+        if float(np.linalg.norm(end - anchor)) > 0.45 * unit:
+            a3 = origin + rot.T @ np.array([*anchor, z_label - 0.6])
+            b3 = origin + rot.T @ np.array([*end, z_label - 0.6])
+            col = SIDE_COLORS[side][1]
+            leaders += [cgo.CYLINDER, *a3, *b3, 0.035 * unit, *col, *col,
+                        cgo.COLOR, *col, cgo.SPHERE, *a3, 0.11 * unit]
     if leaders:
         cmd.load_cgo(leaders, f"{prefix}_leaders")
-    if f"{prefix}_labels" in cmd.get_names("objects"):
-        cmd.hide("everything", f"{prefix}_labels")
-        cmd.show("labels", f"{prefix}_labels")
-        cmd.set("label_size", -h_lab, f"{prefix}_labels")
-        cmd.set("label_color", "grey15", f"{prefix}_labels")
-        cmd.set("label_position", [0.0, 0.0, 0.0], f"{prefix}_labels")
+    name = f"{prefix}_labels"
+    n_labels = cmd.count_atoms(name) if name in cmd.get_names("objects") else 0
+    if n_labels:
+        cmd.hide("everything", name)
+        cmd.show("labels", name)
+        cmd.set("label_size", -size, name)
+        cmd.set("label_bg_color", "white", name)
+        cmd.set("label_bg_transparency", 0.08, name)
+        cmd.set("label_bg_outline", 0, name)
+        cmd.set("label_padding", [0.2, 0.2, 0.0], name)
+        cmd.set("label_position", [0.0, 0.0, 0.0], name)
+        for side in ("A", "B"):
+            cmd.set_color(f"{prefix}_ink_{side}", [0.6 * c for c in SIDE_COLORS[side][1]])
+            cmd.set("label_color", f"{prefix}_ink_{side}", f"{name} and segi {side}")
+    final_view = list(final_view)
+    cam_dist = -float(final_view[11])
+    final_view[15] = max(1.0, min(float(final_view[15]), cam_dist - z_label - 1.5))    # labels inside the slab
     cmd.set_view(final_view)
     cmd.set("orthoscopic", 1)
-    return {"residues_shown": len(iface_sels), "labels": min(len(shown), max_labels), "dash_objects": list(per_type)}
+    return {"residues_shown": len(iface_sels), "labels": n_labels, "dash_objects": list(per_type)}
+
+
+def interface_side_items(sides):
+    """Legend chips for the two partners of analyze_interface's ``sides``: 'Chain A (protein)', 'Chains B, C (DNA)'."""
+    out = []
+    for key in ("A", "B"):
+        info = sides.get(key) or {}
+        chains = [c for c in info.get("chains") or [] if str(c).strip()]
+        kind = str(info.get("kind") or "").replace("nucleic", "nucleic acid")
+        kind = {"dna": "DNA", "rna": "RNA"}.get(kind.lower(), kind)
+        if chains:
+            text = ("Chain " if len(chains) == 1 else "Chains ") + ", ".join(chains)
+        else:
+            text = str(info.get("selection") or key)
+        if kind:
+            text += f" ({kind})"
+        out.append((text, SIDE_COLORS[key][1]))
+    return out
 
 
 def interface_legend_items(interactions, show_hydrophobic=False, show_water_bridges=False):
