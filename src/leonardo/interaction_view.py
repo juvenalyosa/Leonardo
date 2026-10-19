@@ -628,11 +628,7 @@ def export_figure(path, interactions, width=1800, height=1200, title="", subtitl
         cmd.png(tmp, width=int(width), height=int(height), dpi=300, ray=1)
         scene = Image.open(tmp).convert("RGB")
     finally:
-        for name, (size, _h) in list(_SCALED_LABELS.items()):
-            try:
-                cmd.set("label_size", -size, name)            # back to the window's size
-            except Exception:
-                pass
+        _restore_screen_labels()                            # back to the window's size
         try:
             os.unlink(tmp)
         except OSError:
@@ -1217,20 +1213,42 @@ def label_size_for(box_height_A, height_px):
     return float(box_height_A) / (0.53 * LABEL_REF_HEIGHT / float(height_px))
 
 
-# label objects of the current interface scene: name -> (label_size, image height it was laid out for); the
-# figure export rescales them to its own height so that the labels keep the size and place they had on screen
+# label objects of the current interface scene: name -> (label_size, image height it was laid out for, the
+# window's display_scale_factor); the figure export rescales them to its own height so that the labels keep
+# the size and place they had on screen
 _SCALED_LABELS = {}
+
+
+def display_scale():
+    """PyMOL's display_scale_factor (2 on a Retina Mac): the window draws labels that many times larger in
+    pixels; saved images (cmd.png) do not."""
+    from pymol import cmd
+
+    try:
+        return max(1.0, float(cmd.get("display_scale_factor") or 1))
+    except Exception:
+        return 1.0
 
 
 def _rescale_labels(height_px):
     from pymol import cmd
 
     names = set(cmd.get_names("objects"))
-    for name, (size, laid_out_h) in list(_SCALED_LABELS.items()):
+    for name, (size, laid_out_h, _scale) in list(_SCALED_LABELS.items()):
         if name not in names:
             _SCALED_LABELS.pop(name, None)
             continue
         cmd.set("label_size", -size * float(height_px) / float(laid_out_h), name)
+
+
+def _restore_screen_labels():
+    from pymol import cmd
+
+    for name, (size, _h, scale) in list(_SCALED_LABELS.items()):
+        try:
+            cmd.set("label_size", -size / float(scale or 1.0), name)
+        except Exception:
+            pass
 
 
 def interface_core(residues, radius=16.0, max_residues=14):
@@ -1561,7 +1579,8 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
     if n_labels:
         cmd.hide("everything", name)
         cmd.show("labels", name)
-        cmd.set("label_size", -size, name)
+        scale = display_scale()
+        cmd.set("label_size", -size / scale, name)          # a Retina window draws labels `scale` times larger
         cmd.set("label_bg_color", "white", name)
         cmd.set("label_bg_transparency", 0.08, name)
         cmd.set("label_bg_outline", 0, name)
@@ -1570,7 +1589,7 @@ def build_interface_scene(obj, side_a, side_b, interactions, hotspots, *, prefix
         for side in ("A", "B"):
             cmd.set_color(f"{prefix}_ink_{side}", [0.6 * c for c in SIDE_COLORS[side][1]])
             cmd.set("label_color", f"{prefix}_ink_{side}", f"{name} and segi {side}")
-        _SCALED_LABELS[name] = (size, float(height_px))
+        _SCALED_LABELS[name] = (size, float(height_px), scale)
     final_view = list(final_view)
     cam_dist = -float(final_view[11])
     final_view[15] = max(1.0, cam_dist - z_label - 0.05)      # clip everything in front of the labels
