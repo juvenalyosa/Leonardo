@@ -279,10 +279,18 @@ def register(reg):
             kind = str(result.get("interface_type") or "")
             kind = kind[:1].upper() + kind[1:]
             buried = (result.get("sasa") or {}).get("buried_total")
+            view = objects["view"]
+            subtitle = object + (f"  ·  {buried:.0f} Å² buried" if buried else "")
+            if view.get("core_residues", 0) < view.get("interface_residues", 0):
+                subtitle += (f"  ·  core: {view['core_residues']} of {view['interface_residues']} residues "
+                             "with specific contacts")
+            # the figure has the window's shape, so the labels sit where they were laid out
+            width = 2000
+            height = int(round(min(max(width / float(view.get("aspect") or 1.54), 1000), 2000)))
             interaction_view.export_figure(
-                figure_path, result["interactions"], 2000, 1300, title=f"{kind} interface" if kind else "Interface",
-                subtitle=object + (f"  ·  {buried:.0f} Å² buried" if buried else ""),
-                items=interaction_view.interface_legend_items(result["interactions"]),
+                figure_path, result["interactions"], width, height,
+                title=f"{kind} interface" if kind else "Interface", subtitle=subtitle,
+                items=interaction_view.interface_legend_items_from_counts(view.get("drawn_counts") or {}),
                 sides=interaction_view.interface_side_items(sides))
             objects["figure"] = figure_path
         max_rows = int(max_rows or 15)

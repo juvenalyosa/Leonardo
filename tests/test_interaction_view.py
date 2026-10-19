@@ -101,6 +101,28 @@ def test_pymol_label_box_matches_measured_labels():
     assert 1.05 <= V.pymol_label_box("W", 2.0)[0] <= 1.25
 
 
+def test_label_size_keeps_pixels_at_any_resolution():
+    # a PyMOL label keeps its size in pixels: at half the image height it covers twice the Angstrom
+    w1, h1 = V.pymol_label_box("Arg59", 2.0, 1300)
+    w2, h2 = V.pymol_label_box("Arg59", 2.0, 650)
+    assert abs(w2 / w1 - 2.0) < 1e-9 and abs(h2 / h1 - 2.0) < 1e-9
+    for height in (480, 900, 1300):
+        size = V.label_size_for(1.5, height)
+        assert abs(V.pymol_label_box("W", size, height)[1] - 1.5) < 1e-9
+
+
+def test_interface_core_picks_the_densest_region():
+    # a tight cluster of six residues with many contacts and a far, sparse arm (a large interface)
+    cluster = [(("A", str(i)), (float(i), 0.0, 0.0), 3) for i in range(6)]
+    arm = [(("B", str(i)), (40.0 + 6.0 * i, 0.0, 0.0), 1) for i in range(8)]
+    core = V.interface_core(arm + cluster, radius=12.0, max_residues=10)
+    assert set(core) == {k for k, _x, _w in cluster}
+    small = [(("A", str(i)), (2.0 * i, 0.0, 0.0), 1) for i in range(5)]
+    assert set(V.interface_core(small, radius=16.0)) == {k for k, _x, _w in small}     # small: whole
+    assert len(V.interface_core(arm + cluster, radius=200.0, max_residues=4)) == 4
+    assert V.interface_core([]) == []
+
+
 def test_interface_side_items_name_chains_and_kind():
     items = V.interface_side_items({"A": {"chains": ["A"], "kind": "protein", "selection": "protein"},
                                     "B": {"chains": ["B", "C"], "kind": "dna", "selection": "nucleic"}})
