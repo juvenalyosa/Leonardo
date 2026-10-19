@@ -2492,6 +2492,17 @@ def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters
     # them differently, e.g. N-terminal H01/H02, and the templates would not match)
     drop_h = [a for a in pre.topology.atoms() if str(a.residue.name).upper() in STANDARD_POLYMER_RESN
               and a.element is not None and a.element.symbol == "H"]
+    # protonation states the input already has (e.g. from prepare_protein / PROPKA) are kept
+    kept_states = {}
+    if drop_h:
+        try:
+            from .protein_prep_runtime import variants_from_hydrogens
+
+            for res, v in zip(pre.topology.residues(), variants_from_hydrogens(pre.topology, pre.positions)):
+                if v:
+                    kept_states[(res.chain.id, str(res.id).strip())] = v
+        except Exception:
+            kept_states = {}
     if drop or drop_h:
         pre.delete(drop + drop_h)
     capped_top, rejoined = rejoin_terminal_caps(pre.topology, pre.positions)
@@ -2565,6 +2576,16 @@ def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters
         modeller.topology, [tuple(p.value_in_unit(unit.nanometer)) for p in modeller.positions])
     for idx, v in cov_variants.items():
         variants[idx] = v
+    if kept_states:
+        n_kept = 0
+        for res in modeller.topology.residues():
+            v = kept_states.get((res.chain.id, str(res.id).strip()))
+            if v and variants[res.index] is None and str(res.name).upper() in (
+                    "ASP", "GLU", "HIS", "LYS", "CYS"):
+                variants[res.index] = v
+                n_kept += 1
+        if n_kept:
+            variant_notes = list(variant_notes) + [f"{n_kept} protonation state(s) kept from the input hydrogens"]
     modeller.addHydrogens(ff, pH=float(ph), variants=variants)
     restore_names(modeller.topology, renames)
     report["protonation_variants"] = variant_notes

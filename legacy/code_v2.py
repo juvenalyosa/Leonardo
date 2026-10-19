@@ -12378,6 +12378,21 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             for idx, variant in (out.pop("_component_variants", {}) or {}).items():
                 if h_variants is not None and 0 <= int(idx) < len(h_variants):
                     h_variants[int(idx)] = variant
+            # protonation states the input already has (Prepare Protein / PROPKA) are kept, not re-guessed
+            if h_variants is not None and polymer_h_before > 0:
+                try:
+                    from leonardo.protein_prep_runtime import variants_from_hydrogens
+
+                    _kept = variants_from_hydrogens(modeller.topology, modeller.positions)
+                    _n_kept = 0
+                    for _i, _v in enumerate(_kept):
+                        if _v and h_variants[_i] is None and _v != "CYM":
+                            h_variants[_i] = _v
+                            _n_kept += 1
+                    if _n_kept:
+                        out["notes"].append(f"{_n_kept} protonation state(s) kept from the input hydrogens.")
+                except Exception:
+                    pass
             # reproducible hydrogens: OpenMM places some of them with Python's ``random`` and relaxes them on the
             # fastest platform (GPU sums vary in the last digits); a fixed seed and the Reference platform give
             # the same prepared structure on every run (QM/MM energies depended on it)
