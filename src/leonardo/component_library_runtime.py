@@ -2580,7 +2580,8 @@ def prepare_system_for_solvation(pdb_path, family="amber14", ph=7.0, keep_waters
         n_kept = 0
         for res in modeller.topology.residues():
             v = kept_states.get((res.chain.id, str(res.id).strip()))
-            if v and variants[res.index] is None and str(res.name).upper() in (
+            # CYM is not an addHydrogens variant of CYS (metal / surface thiolates come from their own rules)
+            if v and v != "CYM" and variants[res.index] is None and str(res.name).upper() in (
                     "ASP", "GLU", "HIS", "LYS", "CYS"):
                 variants[res.index] = v
                 n_kept += 1

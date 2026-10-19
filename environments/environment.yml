@@ -30,6 +30,7 @@ dependencies:
   - openff-forcefields
   - openff-amber-ff-ports
   - pdbfixer
+  - propka             # protein pKa (Prepare Protein); reduce comes with ambertools
   - mdanalysis>=2.10,<3
   - pymbar
   - ambertools          # tleap/antechamber/sqm + PACKMOL-Memgen (lipid mixtures)

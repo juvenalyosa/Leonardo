@@ -215,8 +215,17 @@ def phospho_forcefield_files():
     return files if all(files) else []
 
 
+def python_executable():
+    """The environment's Python (inside the PyMOL app ``sys.executable`` can be the PyMOL launcher)."""
+    for cand in (os.path.join(sys.prefix, "bin", "python"), os.path.join(sys.prefix, "python.exe")):
+        if os.path.isfile(cand):
+            return cand
+    return sys.executable
+
+
 def reduce_executable():
-    for cand in (os.path.join(os.path.dirname(sys.executable), "reduce"), shutil.which("reduce") or ""):
+    for cand in (os.path.join(sys.prefix, "bin", "reduce"), os.path.join(os.path.dirname(sys.executable), "reduce"),
+                 shutil.which("reduce") or ""):
         if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
             return cand
     return ""
@@ -230,7 +239,7 @@ def modeller_available():
     global _MODELLER_OK
     if _MODELLER_OK is None:
         try:
-            r = subprocess.run([sys.executable, "-c", "import modeller, sys; sys.exit(0)"], capture_output=True,
+            r = subprocess.run([python_executable(), "-c", "import modeller, sys; sys.exit(0)"], capture_output=True,
                                timeout=60)
             _MODELLER_OK = r.returncode == 0
         except Exception:
@@ -305,6 +314,21 @@ def _positions_nm(positions):
     from openmm import unit
 
     return np.array([[p.x, p.y, p.z] for p in positions.value_in_unit(unit.nanometer)], float)
+
+
+def _sequence_mismatches(fixer):
+    """Chains whose full sequence (SEQRES / given) is not the observed residues plus the missing ones, e.g. a
+    mutated model or the wrong entity: filling their 'gaps' would insert residues that are not missing."""
+    seqs = {s.chainId: len(s.residues) for s in getattr(fixer, "sequences", [])}
+    bad = []
+    for ci, chain in enumerate(fixer.topology.chains()):
+        if chain.id not in seqs:
+            continue
+        observed = sum(1 for r in chain.residues() if r.name in AMINO or r.name in NUCLEIC)
+        missing = sum(len(v) for (c, _r), v in fixer.missingResidues.items() if c == ci)
+        if observed and observed + missing != seqs[chain.id]:
+            bad.append(chain.id)
+    return sorted(set(bad))
 
 
 def _gaps_from_fixer(fixer):
@@ -501,7 +525,7 @@ def build_gaps_modeller(fixer, gaps, workdir, n_models=3, seed=2, progress=None,
     with open(os.path.join(workdir, "gap_build.py"), "w") as fh:
         fh.write(_MODELLER_SCRIPT)
     _log(progress, f"MODELLER: building {len(built)} missing residue(s) ({n_models} models)")
-    r = subprocess.run([sys.executable, "gap_build.py", "gap_args.json"], cwd=workdir, capture_output=True,
+    r = subprocess.run([python_executable(), "gap_build.py", "gap_args.json"], cwd=workdir, capture_output=True,
                        text=True, timeout=timeout)
     result = os.path.join(workdir, "gap_result.json")
     if r.returncode != 0 or not os.path.isfile(result):
@@ -965,6 +989,12 @@ def prepare_protein(pdb_in, pdb_out, *, ph=7.4, fill_gaps=True, fill_termini=Fal
                       for a in fixer.topology.atoms()}
     # 2. missing residues
     fixer.findMissingResidues()
+    bad = _sequence_mismatches(fixer)
+    if bad:
+        report["warnings"].append("the full sequence does not match the structure for chain(s) "
+                                  + ", ".join(bad) + "; their gaps are not filled")
+        fixer.missingResidues = {k: v for k, v in fixer.missingResidues.items()
+                                 if list(fixer.topology.chains())[k[0]].id not in bad}
     gaps = _gaps_from_fixer(fixer)
     report["gaps"] = [{k: v for k, v in g.items() if not k.startswith("_")} for g in gaps]
     to_fill = [g for g in gaps if fill_gaps and (g["where"] == "internal" or fill_termini)]
@@ -1223,3 +1253,91 @@ def _minimize(topology, positions, ff_files, original_heavy, has_waters, k_kj_nm
                                "restrained_atoms": len(restrained),
                                "restrained_rmsd_A": float(np.sqrt(np.mean(d ** 2))),
                                "restrained_max_A": float(d.max())}
+
+
+def launch_job(args, workdir, python=None):
+    """
+    Run ``prepare_protein`` in a child process (the GUI and the assistant stay responsive; a cancel kills it).
+    ``args``: prepare_protein keywords plus pdb_in, pdb_out and optionally pdb_id (RCSB sequence).
+    Returns (Popen, log path, result json path); the log has one ``PROGRESS ...`` line per step.
+    """
+    pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ)
+    env["PYTHONPATH"] = pkg_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    os.makedirs(workdir, exist_ok=True)
+    args = dict(args)
+    args.setdefault("result_json", os.path.join(workdir, "prep_result.json"))
+    args_path = os.path.join(workdir, "prep_args.json")
+    with open(args_path, "w") as fh:
+        json.dump(args, fh)
+    log_path = os.path.join(workdir, "prep_log.txt")
+    log = open(log_path, "w")
+    kw = {"start_new_session": True} if os.name == "posix" else {}
+    proc = subprocess.Popen([python or python_executable(), "-m", "leonardo.protein_prep_runtime", args_path],
+                            cwd=workdir,
+                            stdout=log, stderr=subprocess.STDOUT, env=env, **kw)
+    proc._leonardo_log = log
+    return proc, log_path, args["result_json"]
+
+
+def job_progress(log_path):
+    """Last PROGRESS line of a job log ('' before the first)."""
+    try:
+        with open(log_path) as fh:
+            rows = [ln[9:].strip() for ln in fh if ln.startswith("PROGRESS")]
+        return rows[-1] if rows else ""
+    except OSError:
+        return ""
+
+
+def job_result(proc, log_path, result_json):
+    """(report, error) of a finished job."""
+    log = getattr(proc, "_leonardo_log", None)
+    if log is not None and not log.closed:
+        log.close()
+    res = {}
+    if os.path.isfile(result_json):
+        with open(result_json) as fh:
+            res = json.load(fh)
+    if res.get("ok"):
+        return res["report"], ""
+    tail = ""
+    try:
+        with open(log_path) as fh:
+            tail = fh.read()[-800:]
+    except OSError:
+        pass
+    return None, str(res.get("error") or tail or "protein preparation failed")
+
+
+def _main(args_path):
+    """Background job: ``python -m leonardo.protein_prep_runtime args.json`` (PROGRESS lines, result json)."""
+    with open(args_path) as fh:
+        args = json.load(fh)
+    result_json = args.pop("result_json")
+    pdb_id = args.pop("pdb_id", "")
+    try:
+        if pdb_id and not args.get("sequences") and args.get("fill_gaps", True):
+            with open(args["pdb_in"]) as fh:
+                has_seqres = any(ln.startswith("SEQRES") for ln in fh)
+            if not has_seqres:
+                print(f"PROGRESS full sequence of {pdb_id} from RCSB", flush=True)
+                try:
+                    args["sequences"] = fetch_rcsb_sequences(pdb_id)
+                except Exception as exc:
+                    print(f"PROGRESS RCSB sequence unavailable ({exc}); gaps are reported, not filled", flush=True)
+        pdb_in, pdb_out = args.pop("pdb_in"), args.pop("pdb_out")
+        report = prepare_protein(pdb_in, pdb_out, progress=lambda m: print("PROGRESS " + m, flush=True), **args)
+        out = {"ok": True, "report": report}
+    except Exception as exc:
+        import traceback
+
+        traceback.print_exc()
+        out = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    with open(result_json, "w") as fh:
+        json.dump(out, fh, default=str)
+    return 0 if out["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv[1]))

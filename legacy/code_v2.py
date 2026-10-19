@@ -3695,6 +3695,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 return
             entries = [
                 "btn_open_ai_assistant",
+                "btn_open_protein_prep",
                 "btn_open_modeler",
                 "btn_open_alphafold",
                 "btn_open_bioseq",
@@ -15483,6 +15484,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             btn_close.clicked.connect(self._modeler_dialog.close)
             close_row.addWidget(btn_close)
             vbox.addLayout(close_row)
+            self.btn_open_protein_prep = QtWidgets.QPushButton("Prepare Protein...")
+            self.btn_open_protein_prep.setToolTip(
+                "Make a structure ready for docking/MD/QM-MM: alternate locations, missing loops (MODELLER) and "
+                "side chains, protonation at your pH (PROPKA pKa, reduce flips and His tautomers), hydrogens, "
+                "restrained minimization"
+            )
+            self.btn_open_protein_prep.clicked.connect(self._show_protein_prep_dialog)
+            if hasattr(self, "verticalLayout"):
+                insert_idx = 4 if self.verticalLayout.count() >= 4 else self.verticalLayout.count()
+                self.verticalLayout.insertWidget(insert_idx, self.btn_open_protein_prep)
+            else:
+                self.layout().addWidget(self.btn_open_protein_prep)
             self.btn_open_modeler = QtWidgets.QPushButton("Protein Modeling...")
             self.btn_open_modeler.setToolTip(
                 "Complete internal gaps and/or apply mutations before docking/ABFE"
@@ -53760,6 +53773,32 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if exe:
                 opts["psi4_exe"] = exe
         return opts or None
+    def _show_protein_prep_dialog(self):
+        """Prepare Protein window (gaps, missing atoms, PROPKA protonation, flips, hydrogens, minimization)."""
+        try:
+            try:
+                from .protein_prep_dialog import ProteinPrepDialog
+            except ImportError:
+                from leonardo.protein_prep_dialog import ProteinPrepDialog
+            dlg = getattr(self, "_protein_prep_dialog", None)
+            if dlg is None:
+                dlg = ProteinPrepDialog(
+                    self,
+                    workspace=lambda: os.path.join(str(self._dock_workspace_dir() or os.path.expanduser("~")),
+                                                   "protein_prep"),
+                    submit_task=lambda fn, ok, err, fin: self._submit_background_task(
+                        fn, on_success=ok, on_error=err, on_finished=fin, task_name="Protein analysis"),
+                    infer_pdb_id=self._modeler_infer_pdb_id,
+                )
+                self._protein_prep_dialog = dlg
+            else:
+                dlg.refresh_objects()
+            self._fit_dialog_to_screen(dlg, preferred_w=1000, preferred_h=900, min_w=860, min_h=700)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Prepare Protein", f"Failed to open the Prepare Protein window: {e}")
     def _show_pka_dialog(self):
         """pKa & Protonation window (protonation is decided before charges/parameters)."""
         try:
