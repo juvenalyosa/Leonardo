@@ -72,6 +72,7 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 | Area | What you can do | Engines |
 |---|---|---|
 | **Structures & sequences** | Fetch from RCSB or the AlphaFold DB, compare structures, analyze sequences, motifs, conservation and multiple alignments, map UniProt positions | Biopython, BLAST, HMMER, Clustal Omega, MAFFT |
+| **Protein preparation** | One step from a crystal, cryo-EM or predicted structure to a simulation-ready model: one conformation per residue, missing loops (only the gap moves) and side chains, protonation at your pH from per-residue pKa values (Asp/Glu/His/Lys/Cys), Asn/Gln/His flips and His tautomers, metal-site and covalent-Cys states, phosphorylated residues kept, hydrogens and a restrained minimization; a report of every change | PROPKA, reduce, MODELLER, PDBFixer, OpenMM |
 | **Protein modeling** | Homology models, mutants, gap repair, terminal extensions; AlphaFold/ColabFold predictions (local GPU or Google Colab) and AlphaFold 3 inputs for proteins with ligands, DNA or RNA | MODELLER, ColabFold, AlphaFold 3 |
 | **Ligands** | Draw molecules in the 2D editor, import SMILES, files or PubChem, predict pKa and protonation, build 3D, parameterize for MD | RDKit, Open Babel, Meeko, AmberTools (GAFF2/AM1-BCC) |
 | **Pockets & docking** | Find pockets, dock, analyze interactions, redock to validate, run virtual screening and lead optimization | fpocket, smina/Vina, ProLIF |
@@ -293,6 +294,7 @@ Open the ligand editor, draw aspirin and build it in 3D at pH 7.4.
 
 | You want to… | Type this |
 |---|---|
+| Prepare a protein | `Download 1M17, prepare it at pH 7 and show me which residues changed protonation.` |
 | Check a structure before simulating it | `Download 2GS2 and run a diagnostics check.` |
 | Model a mutant (needs MODELLER) | `Mutate Ile44 of 1UBQ to Ala and build the model.` |
 | Redock a kinase inhibitor | `Download 1IEP, redock imatinib and show its hydrogen bonds.` |

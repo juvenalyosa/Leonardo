@@ -64,6 +64,7 @@ def build_registry(context):
         pka,
         plots,
         pockets,
+        protein_prep,
         psi4,
         qmanalysis,
         qmmm,
@@ -74,7 +75,7 @@ def build_registry(context):
         view,
     )
 
-    for module in (structure, view, pockets, pka, ligands, ligand_editor, docking, redocking, screening, md,
+    for module in (structure, view, pockets, pka, protein_prep, ligands, ligand_editor, docking, redocking, screening, md,
                    md_advanced, components, trajectory, modeling, alphafold, bioseq, psi4, mopac, qmanalysis, qmmm, plots,
                    estimates, extras, pipeline_tools, diagnostics, membrane, materials, design, macro_interactions):
         module.register(reg)
