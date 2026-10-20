@@ -951,3 +951,32 @@ def test_prepared_system_is_independent_of_classical_qm_parameters():
     mm, c = _toy_qmmm_system(k_boundary_bond=7000.0)
     prepare_openmm_system_for_qmmm_coupling(c, [0, 1])
     assert abs(_energy_forces(mm, c)[0] - e0) > 1.0
+
+
+def test_roundtrip_ignores_zero_barrier_torsions():
+    """antechamber/tleap write k = 0 torsions that OpenMM's ForceField drops: same energy, not a mismatch."""
+    import openmm
+    from openmm import unit
+
+    from leonardo.openmm_qmmm_runtime import (
+        compare_openmm_system_term_summaries,
+        summarize_openmm_system_terms,
+    )
+
+    def system(extra_zero, k=2.0):
+        s = openmm.System()
+        for _ in range(4):
+            s.addParticle(12.0)
+        bonds = openmm.HarmonicBondForce()
+        for a, b in ((0, 1), (1, 2), (2, 3)):
+            bonds.addBond(a, b, 0.15, 1000.0)
+        s.addForce(bonds)
+        t = openmm.PeriodicTorsionForce()
+        t.addTorsion(0, 1, 2, 3, 3, 0.0, k)
+        if extra_zero:
+            t.addTorsion(0, 1, 2, 3, 2, 3.14159, 0.0)
+        s.addForce(t)
+        return summarize_openmm_system_terms(s, unit_module=unit)
+
+    assert compare_openmm_system_term_summaries(system(True), system(False))["ok"]
+    assert not compare_openmm_system_term_summaries(system(False), system(False, k=3.0))["ok"]
