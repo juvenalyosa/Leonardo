@@ -73,6 +73,7 @@ assistant. Each area below works from the Leonardo window or by asking the assis
 |---|---|---|
 | **Structures & sequences** | Fetch from RCSB or the AlphaFold DB, compare structures, analyze sequences, motifs, conservation and multiple alignments, map UniProt positions | Biopython, BLAST, HMMER, Clustal Omega, MAFFT |
 | **Protein preparation** | One step from a crystal, cryo-EM or predicted structure to a simulation-ready model: one conformation per residue, missing loops (only the gap moves) and side chains, protonation at your pH from per-residue pKa values (Asp/Glu/His/Lys/Cys), Asn/Gln/His flips and His tautomers, metal-site and covalent-Cys states, phosphorylated residues kept, hydrogens and a restrained minimization; a report of every change | PROPKA, reduce, MODELLER, PDBFixer, OpenMM |
+| **Cryptic pockets** | Leonardo's own method: an elastic-network normal-mode ensemble and a C++ buried-pocket grid find where pockets open with the protein's motions; ranked sites (already open / grows / forms with motion); CryptoBench test AUC 0.81 ([docs](docs/CRYPTIC_POCKETS.md)) | C++ (pybind11), NumPy/SciPy |
 | **Structure validation** | Ramachandran plot of structures, models and trajectories in the six MolProbity classes, outliers listed and shown in PyMOL; models and prepared proteins report it automatically; outlier percentages follow the wwPDB/MolProbity reports (r = 0.98) ([docs](docs/RAMACHANDRAN.md)) | gemmi, own reference from 2,914 high-resolution PDB chains |
 | **Simulation health** | Checks every system before simulating it (chains bonded across missing loops, missing atoms, overlapping atoms, clashes, D-residues, cis peptides, net charge, time step, box size) and watches the run (stops on blow-ups naming the residues; flags unfolding, a ligand leaving its site, density and temperature problems); every MD result comes with a confidence and its reasons ([docs](docs/SIMULATION_HEALTH.md)) | OpenMM, NumPy, SciPy |
 | **Protein modeling** | Homology models, mutants, gap repair, terminal extensions; AlphaFold/ColabFold predictions (local GPU or Google Colab) and AlphaFold 3 inputs for proteins with ligands, DNA or RNA | MODELLER, ColabFold, AlphaFold 3 |
@@ -297,6 +298,7 @@ Open the ligand editor, draw aspirin and build it in 3D at pH 7.4.
 | You want to… | Type this |
 |---|---|
 | Prepare a protein | `Download 1M17, prepare it at pH 7 and show me which residues changed protonation.` |
+| Find cryptic pockets | `Find cryptic pockets in 1M17 chain A and show me the best one.` |
 | Validate a model | `Make the Ramachandran plot of my model and tell me which residues are outliers.` |
 | Check a system before MD | `Is 1M17 ready to simulate? Check it and fix what is wrong.` |
 | Check a structure before simulating it | `Download 2GS2 and run a diagnostics check.` |

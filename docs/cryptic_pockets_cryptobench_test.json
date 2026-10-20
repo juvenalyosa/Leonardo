@@ -1,0 +1,23 @@
+{
+ "static pockets (no dynamics)": {
+  "auc": 0.739,
+  "auprc": 0.145,
+  "auc_per_structure": 0.726,
+  "structures": 222,
+  "residues": 74046
+ },
+ "ensemble pocket score (physics only)": {
+  "auc": 0.797,
+  "auprc": 0.162,
+  "auc_per_structure": 0.797,
+  "structures": 222,
+  "residues": 74046
+ },
+ "Leonardo cryptic score (calibrated)": {
+  "auc": 0.807,
+  "auprc": 0.179,
+  "auc_per_structure": 0.798,
+  "structures": 222,
+  "residues": 74046
+ }
+}

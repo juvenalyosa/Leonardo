@@ -20,6 +20,8 @@ mkdir -p "$PKG_DIR"
 if [ -d "$ROOT_DIR/src/leonardo" ]; then
   mkdir -p "$PKG_DIR/leonardo"
   cp -R "$ROOT_DIR/src/leonardo/"* "$PKG_DIR/leonardo/"
+  # the C++ extension is built on each computer (python -m leonardo.cryptic_build), never shipped
+  rm -f "$PKG_DIR/leonardo/"_cryptic*.so "$PKG_DIR/leonardo/"_cryptic*.pyd
 fi
 
 # Benchmark command helpers imported by the installed ABFE probe module.
@@ -51,6 +53,7 @@ copy_if_exists "THIRD_PARTY_LICENSES.md"
 copy_if_exists "CITATION.cff"
 copy_if_exists "environments"
 copy_if_exists "scripts"
+copy_if_exists "cpp"
 copy_if_exists "installers"
 if [ -d "$ROOT_DIR/installers/shortcuts" ]; then
   find "$ROOT_DIR/installers/shortcuts" -maxdepth 1 -type f -exec cp {} "$PKG_DIR/" \;

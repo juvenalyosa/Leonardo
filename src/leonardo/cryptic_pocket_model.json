@@ -1,0 +1,44 @@
+{
+ "features": [
+  "ens_volume_mean",
+  "nma_mobility",
+  "ens_open_fraction"
+ ],
+ "log_features": [
+  "ens_volume_mean"
+ ],
+ "mean": [
+  1.9651993284663334,
+  0.9999999848430243,
+  0.2483110680398704
+ ],
+ "std": [
+  2.1287104595201014,
+  3.414026387431165,
+  0.34698407856542224
+ ],
+ "coef": [
+  0.6058852876923363,
+  -0.07809483663962466,
+  0.5250366011972716
+ ],
+ "intercept": -3.4880165829530516,
+ "cv_auc_train": 0.8078,
+ "params": {
+  "grid_A": 1.0,
+  "atom_radius_A": 1.8,
+  "probe_A": 3.0,
+  "shell_A": 3.5,
+  "ray_A": 10.0,
+  "n_rays": 30,
+  "min_frac": 0.7,
+  "min_volume_A3": 30.0,
+  "contact_A": 4.0,
+  "anm_cutoff_A": 15.0,
+  "n_modes": 30,
+  "n_conformers": 24,
+  "rmsd_A": 3.0,
+  "seed": 7
+ },
+ "trained_on": "CryptoBench train folds 0-3 (Skrhak et al., Bioinformatics 2025)"
+}

@@ -1707,6 +1707,9 @@ def compare_openmm_system_term_summaries(source_summary, target_summary, tol=1.0
     def _normalize_torsion_rows(rows, bonds):
         out = []
         for row in list(rows or []):
+            if abs(float(row.get("k_kjmol", 0.0) or 0.0)) <= tol_val:
+                # zero-barrier terms (antechamber/tleap write them, OpenMM's ForceField drops them): no energy
+                continue
             ids = [
                 int(row.get("a", 0) or 0),
                 int(row.get("b", 0) or 0),

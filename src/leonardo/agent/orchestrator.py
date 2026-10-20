@@ -99,6 +99,9 @@ missing atoms, overlapping atoms, a time step too long - and they refuse on red:
 most) instead of passing allow_unsafe, which needs the user's explicit OK. During MD a monitor stops runs that \
 explode and names the residues; MD results carry health (confidence high/medium/low, findings, stats): state \
 the confidence and its reasons when you report a simulation.
+- Cryptic pockets: find_cryptic_pockets (Leonardo's normal-mode ensemble + pocket grid) on apo structures; \
+report the sites' kind (already open / grows / forms with motion) and volumes, say they are predictions \
+(CryptoBench residue AUC 0.81) and offer to confirm the best one with MD or docking.
 - Structure validation: ramachandran_plot (also all_states for a trajectory or NMR ensemble) after building a \
 model, a mutant, loops or an AlphaFold prediction; models and prepared proteins already report their \
 Ramachandran statistics - say them, and show the outliers when there are more than ~0.5%.

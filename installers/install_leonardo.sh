@@ -464,6 +464,11 @@ else
   step "7/7 Skipping shortcuts (--no-shortcuts)"
 fi
 
+# ------------------------------------------------------------------ C++ extension (optional)
+step "Building the cryptic-pocket C++ extension"
+PYTHONPATH="$APP_LINK/src" "$CONDA" run -n "$ENV_NAME" python -m leonardo.cryptic_build \
+  || warn "the C++ extension was not built; cryptic-pocket analysis will use its numpy version (same results, slower)."
+
 # ------------------------------------------------------------------ check
 step "Final check"
 if "$CONDA" run -n "$ENV_NAME" python -c "import sys; sys.path[:0]=['$APP_LINK/legacy','$APP_LINK/src','$APP_LINK']; import ProtLigInteract, pymol, openmm, rdkit; print('Leonardo', ProtLigInteract.__version__, 'ready')"; then
