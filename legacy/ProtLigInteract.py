@@ -10,8 +10,8 @@ import os
 import sys
 from importlib import import_module
 
-__version__ = "0.2.0a13"
-__build__ = "2026-10-19-r1"
+__version__ = "0.2.0a14"
+__build__ = "2026-10-20-r1"
 PLUGIN_MENU_NAME = "Leonardo"
 _dialog = None
 _plugin_module = None
