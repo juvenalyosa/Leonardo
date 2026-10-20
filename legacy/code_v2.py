@@ -3704,6 +3704,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "btn_open_ligand_tools",
                 "btn_open_pka",
                 "btn_open_pocket_docking",
+                "btn_open_cryptic",
                 "btn_open_redocking",
                 "btn_open_virtual_screening",
                 "btn_open_traj_tools",
@@ -15653,6 +15654,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self.verticalLayout.insertWidget(insert_idx, self.btn_open_protein_prep)
             else:
                 self.layout().addWidget(self.btn_open_protein_prep)
+            self.btn_open_cryptic = QtWidgets.QPushButton("Cryptic Pockets...")
+            self.btn_open_cryptic.setToolTip(
+                "Where pockets can open with the protein's motions (normal-mode ensemble + C++ pocket grid, "
+                "calibrated on CryptoBench): ranked sites, already open / grows / forms with motion"
+            )
+            self.btn_open_cryptic.clicked.connect(self._show_cryptic_dialog)
+            if hasattr(self, "verticalLayout"):
+                insert_idx = 5 if self.verticalLayout.count() >= 5 else self.verticalLayout.count()
+                self.verticalLayout.insertWidget(insert_idx, self.btn_open_cryptic)
+            else:
+                self.layout().addWidget(self.btn_open_cryptic)
             self.btn_open_ramachandran = QtWidgets.QPushButton("Ramachandran Plot...")
             self.btn_open_ramachandran.setToolTip(
                 "Validate the backbone of a structure, model or trajectory: φ/ψ against the favoured and allowed "
@@ -53941,6 +53953,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if exe:
                 opts["psi4_exe"] = exe
         return opts or None
+    def _show_cryptic_dialog(self):
+        """Cryptic Pockets window (sites that open with the protein's motions)."""
+        try:
+            try:
+                from .cryptic_pocket_dialog import CrypticPocketDialog
+            except ImportError:
+                from leonardo.cryptic_pocket_dialog import CrypticPocketDialog
+            dlg = getattr(self, "_cryptic_dialog", None)
+            if dlg is None:
+                dlg = CrypticPocketDialog(
+                    self,
+                    workspace=lambda: os.path.join(str(self._dock_workspace_dir() or os.path.expanduser("~")),
+                                                   "cryptic_pockets"),
+                    submit_task=lambda fn, ok, err, fin: self._submit_background_task(
+                        fn, on_success=ok, on_error=err, on_finished=fin, task_name="Cryptic pockets"),
+                )
+                self._cryptic_dialog = dlg
+            else:
+                dlg.refresh_objects()
+            self._fit_dialog_to_screen(dlg, preferred_w=900, preferred_h=650, min_w=700, min_h=480)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Cryptic Pockets", f"Failed to open the Cryptic Pockets window: {e}")
     def _show_ramachandran_dialog(self):
         """Ramachandran window (phi/psi validation of a structure, model or trajectory)."""
         try:

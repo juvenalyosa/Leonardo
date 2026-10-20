@@ -84,7 +84,8 @@ py-modules = [
 "share/leonardo" = ["assets/logo.png", "assets/protliginteract.ui"]
 
 [tool.setuptools.package-data]
-leonardo = ["abfe_deploy_models.json", "pka_calibration.json", "component_library.json", "rama_reference.npz"]
+leonardo = ["abfe_deploy_models.json", "pka_calibration.json", "component_library.json", "rama_reference.npz",
+            "cryptic_pocket_model.json"]
 
 [tool.black]
 line-length = 120
