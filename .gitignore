@@ -99,3 +99,4 @@ examples/films/*/last_report.json
 artifacts/
 examples/gpu_validation/last_report.json
 examples/enhanced_sampling/last_report.json
+!src/leonardo/rama_reference.npz

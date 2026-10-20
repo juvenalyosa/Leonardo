@@ -3697,6 +3697,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "btn_open_ai_assistant",
                 "btn_open_protein_prep",
                 "btn_open_modeler",
+                "btn_open_ramachandran",
                 "btn_open_alphafold",
                 "btn_open_bioseq",
                 "btn_open_psi4",
@@ -12161,6 +12162,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             "minimize_only": bool(minimize_only),
             "qmmm_probe": dict(qmmm_probe),
             "prep_notes": list(prep_notes),
+            "allow_unsafe": bool(getattr(self, "_openmm_allow_unsafe", False)),
         }
     def _run_openmm_worker_job(self, payload, progress_cb=None):
         data = dict(payload or {})
@@ -12420,6 +12422,18 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             added_h = int(max(0, total_atoms_after_h - total_atoms_before_h))
             if added_h > 0:
                 out["notes"].append(f"Hydrogen preparation added {added_h} atom(s) before OpenMM system creation.")
+            health_rt = None
+            health_precheck = []
+            try:
+                from leonardo import simulation_health_runtime as health_rt
+
+                health_precheck = health_rt.structure_findings(modeller.topology, modeller.positions)
+            except Exception as e_health:
+                out["notes"].append(f"Structure checks skipped: {e_health}")
+            out["health"] = {"precheck": list(health_precheck)}
+            for line in (health_rt.format_findings([f for f in health_precheck if f["level"] == "red"])
+                         if health_rt else []):
+                out["notes"].insert(0, "WARNING: " + line)
             if mode == "explicit":
                 _emit(24, "Solvating and adding ions")
                 modeller.addSolvent(
@@ -12450,6 +12464,11 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             }
             if mode != "gas":
                 create_kwargs["nonbondedCutoff"] = float(cutoff_nm) * OMM_UNIT.nanometer
+            if 2.5 < float(data.get("timestep_fs", 2.0)) <= 4.5:
+                # only H-bonds are constrained: past 2.5 fs the X-H bends are not integrated unless the
+                # hydrogens are heavier (mass taken from the bonded heavy atom, total mass unchanged)
+                create_kwargs["hydrogenMass"] = 3.0 * OMM_UNIT.amu
+                out["notes"].append(f"Hydrogen mass repartitioning (3 amu) for the {float(data.get('timestep_fs')):g} fs time step.")
             _emit(40, "Creating OpenMM system")
             ok_sys, system, removed_residues, err_sys = self._openmm_create_system_with_autodrop(
                 ff,
@@ -12657,6 +12676,78 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     out["error"] = f"OpenMM simulation initialization failed: {msg}"
                     return out
             simulation.context.setPositions(modeller.positions)
+            health_monitor = None
+            if health_rt is not None:
+                try:
+                    sys_findings = health_rt.system_findings(
+                        system, modeller.topology, modeller.positions,
+                        timestep_fs=float(data.get("timestep_fs", 2.0)), mode=mode, cutoff_nm=float(cutoff_nm))
+                    out["health"]["system"] = sys_findings
+                    reds = [f for f in sys_findings if f["level"] == "red"]
+                    if reds and not bool(data.get("allow_unsafe", False)):
+                        out["error"] = ("The system is not physically valid; not simulating it: "
+                                        + " | ".join(health_rt.format_findings(reds)))
+                        out["health"]["summary"] = health_rt.summarize(health_precheck + sys_findings, stopped=True)
+                        return out
+                    health_monitor = health_rt.MDMonitor(
+                        simulation.context, system, modeller.topology,
+                        temperature_K=float(data.get("temperature_k", 300.0)), ensemble=ensemble,
+                        cutoff_nm=float(cutoff_nm), timestep_fs=float(data.get("timestep_fs", 2.0)))
+                except Exception as e_health:
+                    out["notes"].append(f"Simulation health monitor unavailable: {e_health}")
+                    health_monitor = None
+            health_every = int(max(250, min(5000, round(1000.0 / max(0.2, float(data.get("timestep_fs", 2.0)))))))
+
+            def _health_stop(item):
+                """Stop the run on a health finding: keep what was written, save the frame if it is finite."""
+                lead = ("Simulation failed: " if item.get("code") == "step_error"
+                        else "Simulation stopped by the health monitor: ")
+                out["error"] = lead + " | ".join(health_rt.format_findings([item]))
+                try:
+                    st_bad = simulation.context.getState(getPositions=True)
+                    pos_bad = st_bad.getPositions(asNumpy=True)
+                    if np.all(np.isfinite(np.asarray(pos_bad.value_in_unit(OMM_UNIT.nanometer)))):
+                        bad_pdb = os.path.join(job_dir, f"{safe_obj}_health_stop.pdb")
+                        with open(bad_pdb, "w", encoding="utf-8") as fh_bad:
+                            OMM_APP.PDBFile.writeFile(simulation.topology, pos_bad, fh_bad, keepIds=True)
+                        out["health_stop_pdb"] = bad_pdb
+                except Exception:
+                    pass
+                rep_h = health_monitor.report()
+                out["health"].update(rep_h)
+                out["health"]["stopped"] = item
+                out["health"]["summary"] = health_rt.summarize(
+                    out["health"].get("precheck", []) + out["health"].get("system", []) + rep_h["findings"],
+                    stopped=True)
+                try:
+                    simulation.reporters = []
+                except Exception:
+                    pass
+                _emit(100, out["error"][:300], status="Failed", extra={"health": item})
+                return out
+
+            def _md_steps(n_steps, stage, setpoint_K=None):
+                """openmm_step_synced in chunks with a health check after each; False when the run was stopped."""
+                n_left = int(max(0, int(n_steps)))
+                while n_left > 0:
+                    n_now = int(min(health_every, n_left))
+                    try:
+                        openmm_step_synced(simulation, simulation.context, n_now)
+                        if health_monitor is not None:
+                            health_monitor.check(stage, setpoint_K, steps=n_now)
+                    except health_rt.SimulationHealthError as e_health_stop:
+                        _health_stop(e_health_stop.finding)
+                        return False
+                    except (OMM.OpenMMException, ValueError) as e_step:
+                        # OpenMM stops on NaN coordinates and StateDataReporter on a NaN energy (ValueError);
+                        # other failures (platform, kernels) are reported as failures, not physics
+                        if health_monitor is None or (isinstance(e_step, ValueError) and "nan" not in str(e_step).lower()):
+                            raise
+                        _health_stop(health_monitor.explain_exception(
+                            e_step, stage, list(out["health"].get("precheck", [])) + list(out["health"].get("system", []))))
+                        return False
+                    n_left -= n_now
+                return True
             qmmm_probe_interval = int(max(0, int(qmmm_probe_cfg.get("probe_interval_steps", 0)))) if qmmm_probe_cfg else 0
             probe_series = []
             if qmmm_probe_cfg:
@@ -12743,7 +12834,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 done = 0
                 while done < n_run:
                     step_now = int(min(interval, n_run - done))
-                    openmm_step_synced(simulation, simulation.context, step_now)
+                    if not _md_steps(step_now, str(stage_label).split("[")[0]):
+                        return False
                     done += step_now
                     dyn_step_counter += step_now
                     qmsg = (
@@ -12844,12 +12936,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     while done_stage < stage_iters:
                         chunk = int(min(min_stride, max(1, stage_iters - done_stage)))
                         try:
-                            if tol_unit is not None:
-                                simulation.minimizeEnergy(tolerance=tol_unit, maxIterations=int(chunk))
-                            else:
+                            try:
+                                if tol_unit is not None:
+                                    simulation.minimizeEnergy(tolerance=tol_unit, maxIterations=int(chunk))
+                                else:
+                                    simulation.minimizeEnergy(maxIterations=int(chunk))
+                            except TypeError:
                                 simulation.minimizeEnergy(maxIterations=int(chunk))
-                        except TypeError:
-                            simulation.minimizeEnergy(maxIterations=int(chunk))
+                        except OMM.OpenMMException as e_min:
+                            if health_monitor is None or "nan" not in str(e_min).lower():
+                                raise
+                            return _health_stop(health_monitor.explain_minimization_failure(
+                                e_min, modeller.positions,
+                                list(out["health"].get("precheck", [])) + list(out["health"].get("system", []))))
                         done_stage += chunk
                         done_min += chunk
                         e_cur = None
@@ -12900,6 +12999,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         out["min_csv_path"] = min_csv
                     except Exception as e_min_csv:
                         out["notes"].append(f"Minimization CSV write failed: {e_min_csv}")
+            if health_monitor is not None:
+                try:
+                    # the minimized structure: reference for drift, and its forces say whether dynamics can start
+                    health_monitor.set_reference()
+                except health_rt.SimulationHealthError as e_force:
+                    if not bool(data.get("minimize_only", False)):
+                        return _health_stop(e_force.finding)
+                except Exception as e_ref:
+                    out["notes"].append(f"Health reference skipped: {e_ref}")
+                    health_monitor = None
             if run_heat and int(data.get("heat_steps", 0)) > 0:
                 _emit(62, "Heating")
                 n_steps = int(max(1, int(data.get("heat_steps", 0))))
@@ -12926,7 +13035,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             if not ok_stage:
                                 return out
                         else:
-                            openmm_step_synced(simulation, simulation.context, int(per_stage))
+                            if not _md_steps(int(per_stage), "heating", t_cur):
+                                return out
                     rem = int(n_steps - (per_stage * n_stage))
                     if rem > 0:
                         if qmmm_force_coupled:
@@ -12939,7 +13049,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                             if not ok_stage:
                                 return out
                         else:
-                            openmm_step_synced(simulation, simulation.context, int(rem))
+                            if not _md_steps(int(rem), "heating", t_cur):
+                                return out
                 else:
                     if qmmm_force_coupled:
                         ok_stage = _run_steps_with_qmmm_coupling(
@@ -12951,7 +13062,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                         if not ok_stage:
                             return out
                     else:
-                        openmm_step_synced(simulation, simulation.context, n_steps)
+                        if not _md_steps(n_steps, "heating"):
+                            return out
             if run_equil and int(data.get("equil_steps", 0)) > 0:
                 _emit(74, "Equilibration")
                 n_equil = int(max(1, int(data.get("equil_steps", 0))))
@@ -12965,7 +13077,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     if not ok_stage:
                         return out
                 else:
-                    openmm_step_synced(simulation, simulation.context, int(n_equil))
+                    if not _md_steps(int(n_equil), "equilibration"):
+                        return out
             if run_prod and int(data.get("prod_steps", 0)) > 0:
                 _emit(82, "Production")
                 dcd_path = os.path.join(job_dir, f"{safe_obj}_openmm.dcd")
@@ -13013,7 +13126,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     next_probe = int(qmmm_probe_interval) if qmmm_probe_interval > 0 else 0
                     while done < n_prod:
                         step_now = int(min(chunk, n_prod - done))
-                        openmm_step_synced(simulation, simulation.context, step_now)
+                        if not _md_steps(step_now, "production"):
+                            return out
                         done += step_now
                         while next_probe > 0 and done >= next_probe:
                             qmsg = f"QM/MM periodic probe at production step {next_probe}/{n_prod}"
@@ -13075,6 +13189,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     OMM_APP.PDBFile.writeFile(simulation.topology, state.getPositions(), fh)
             out["removed_residues"] = list(removed_residues or [])
             out["ensemble"] = str(ensemble)
+            if health_rt is not None:
+                try:
+                    if health_monitor is not None:
+                        out["health"].update(health_monitor.finish())
+                    out["health"]["summary"] = health_rt.summarize(
+                        out["health"].get("precheck", []) + out["health"].get("system", [])
+                        + out["health"].get("findings", []))
+                    for line in health_rt.format_findings(out["health"].get("findings", [])):
+                        out["notes"].insert(0, "HEALTH: " + line)
+                except Exception as e_health:
+                    out["notes"].append(f"Health summary failed: {e_health}")
             out["ok"] = True
             _emit(100, "Completed", status="Completed")
             return out
@@ -13394,10 +13519,42 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 + (f"\nNotes: {' | '.join(str(n) for n in notes[:3])}" if notes else "")
             ),
         )
+    def _openmm_confirm_structure_health(self, payload):
+        """Check the input structure before MD (gaps bonded across, missing atoms, overlapping atoms...);
+        when something would make the simulation wrong, say what and how to fix it, and ask."""
+        try:
+            from leonardo import simulation_health_runtime as health_rt
+
+            findings = health_rt.check_pdb(str(payload.get("input_pdb", "") or ""))
+        except Exception as e_health:
+            self._append_debug_log(f"Structure checks skipped: {e_health}")
+            return True
+        for line in health_rt.format_findings(findings, limit=12):
+            self._append_debug_log("Structure check: " + line)
+        reds = [f for f in findings if f.get("level") == "red"]
+        if not reds:
+            return True
+        text = "\n\n".join(
+            f"• {f['title']}: {f['detail']}"
+            + (f"\n   e.g. {'; '.join(f['where'][:3])}" if f.get("where") else "")
+            + (f"\n   Fix: {f['fix']}" if f.get("fix") else "")
+            for f in reds)
+        ans = QtWidgets.QMessageBox.question(
+            self,
+            "Structure problems",
+            "This structure has problems that make the simulation unphysical:\n\n" + text
+            + "\n\nPrepare Protein... fixes most of them. Simulate it anyway?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return ans == QtWidgets.QMessageBox.Yes
+
     def _run_openmm_workflow(self, minimize_only=False):
         payload = self._collect_openmm_run_payload(minimize_only=minimize_only)
         if not bool(payload.get("ok", False)):
             QtWidgets.QMessageBox.warning(self, "OpenMM", str(payload.get("error", "OpenMM setup failed.")))
+            return
+        if not self._openmm_confirm_structure_health(payload):
             return
         if not bool(minimize_only):
             minutes, est_text, advice = self._estimate_openmm_run(payload)
@@ -15496,6 +15653,17 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 self.verticalLayout.insertWidget(insert_idx, self.btn_open_protein_prep)
             else:
                 self.layout().addWidget(self.btn_open_protein_prep)
+            self.btn_open_ramachandran = QtWidgets.QPushButton("Ramachandran Plot...")
+            self.btn_open_ramachandran.setToolTip(
+                "Validate the backbone of a structure, model or trajectory: φ/ψ against the favoured and allowed "
+                "regions of high-resolution PDB chains (MolProbity classes), outliers listed"
+            )
+            self.btn_open_ramachandran.clicked.connect(self._show_ramachandran_dialog)
+            if hasattr(self, "verticalLayout"):
+                insert_idx = 5 if self.verticalLayout.count() >= 5 else self.verticalLayout.count()
+                self.verticalLayout.insertWidget(insert_idx, self.btn_open_ramachandran)
+            else:
+                self.layout().addWidget(self.btn_open_ramachandran)
             self.btn_open_modeler = QtWidgets.QPushButton("Protein Modeling...")
             self.btn_open_modeler.setToolTip(
                 "Complete internal gaps and/or apply mutations before docking/ABFE"
@@ -53773,6 +53941,31 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             if exe:
                 opts["psi4_exe"] = exe
         return opts or None
+    def _show_ramachandran_dialog(self):
+        """Ramachandran window (phi/psi validation of a structure, model or trajectory)."""
+        try:
+            try:
+                from .ramachandran_dialog import RamachandranDialog
+            except ImportError:
+                from leonardo.ramachandran_dialog import RamachandranDialog
+            dlg = getattr(self, "_ramachandran_dialog", None)
+            if dlg is None:
+                dlg = RamachandranDialog(
+                    self,
+                    workspace=lambda: os.path.join(str(self._dock_workspace_dir() or os.path.expanduser("~")),
+                                                   "ramachandran"),
+                    submit_task=lambda fn, ok, err, fin: self._submit_background_task(
+                        fn, on_success=ok, on_error=err, on_finished=fin, task_name="Ramachandran plot"),
+                )
+                self._ramachandran_dialog = dlg
+            else:
+                dlg.refresh_objects()
+            self._fit_dialog_to_screen(dlg, preferred_w=1080, preferred_h=900, min_w=860, min_h=700)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Ramachandran Plot", f"Failed to open the Ramachandran window: {e}")
     def _show_protein_prep_dialog(self):
         """Prepare Protein window (gaps, missing atoms, PROPKA protonation, flips, hydrogens, minimization)."""
         try:
