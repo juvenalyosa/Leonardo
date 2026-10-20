@@ -102,6 +102,24 @@ except Exception:
     traceback.print_exc()
 EOF
 
+# PyMOL reads plugins from ~/.pymol/startup only when ~/.pymolpluginsrc.py puts that folder on its plugin
+# path, and PyMOL writes that file the first time its Plugin Manager installs something.  On a computer where
+# that never happened the loader above is never read (no Plugins > Leonardo), so add the folder ourselves.
+# PyMOL rewrites the file later and keeps the folder (it saves its current user plugin path).
+RC_PATH="${PYMOL_PLUGINSRC:-$HOME/.pymolpluginsrc.py}"
+if [[ "$STARTUP_DIR" == "$HOME/.pymol/startup" ]] && ! grep -q "Leonardo: PyMOL's user plugin folder" "$RC_PATH" 2>/dev/null; then
+  cat >> "$RC_PATH" <<'RCEOF'
+# Leonardo: PyMOL's user plugin folder (~/.pymol/startup), where the Leonardo loader lives
+try:
+  import os, pymol.plugins
+  _p = os.path.expanduser('~/.pymol/startup')
+  if _p not in pymol.plugins.get_startup_path(True):
+    pymol.plugins.set_startup_path([_p] + pymol.plugins.get_startup_path(True), False)
+except Exception:
+  pass
+RCEOF
+fi
+
 [[ "$QUIET" -eq 1 ]] || cat <<EOF
 Installed PyMOL startup loader:
   $LOADER_PATH
