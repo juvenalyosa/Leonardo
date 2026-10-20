@@ -51,6 +51,52 @@ def _component_guard(ctx, object, family, allow_incomplete=False):
     return plan
 
 
+def _health_guard(ctx, object, allow_unsafe=False):
+    """
+    Check the structure before simulating it.  Red findings (a chain bonded across a gap, residues with
+    missing atoms that would be dropped, atoms on top of each other) make the run unphysical: refuse unless
+    the model passes allow_unsafe (the user's OK).  Returns the findings for the result.
+    """
+    try:
+        from ... import simulation_health_runtime as health_rt
+        from .components import _save_object
+
+        findings = health_rt.check_pdb(_save_object(ctx, object, sub="md_checks"))
+    except ToolError:
+        raise
+    except Exception:
+        return []
+    reds = [f for f in findings if f["level"] == "red"]
+    if reds and not allow_unsafe:
+        raise ToolError("the structure would give an unphysical simulation: "
+                        + " | ".join(health_rt.format_findings(reds))
+                        + ". Fix it first (prepare_protein fixes these), or pass allow_unsafe=true only if the user "
+                        "accepts simulating it as it is.")
+    return findings
+
+
+def _health_result(info, res):
+    """The worker's health report, condensed for the model: confidence, findings, key statistics."""
+    found = list(info.pop("_precheck", []) or [])
+    health = dict(res.get("health") or {})
+    if not health:
+        return
+    from ... import simulation_health_runtime as health_rt
+
+    seen = {f["code"] for f in found}
+    for key in ("precheck", "system", "findings"):
+        for f in health.get(key) or []:
+            if f["code"] not in seen:
+                seen.add(f["code"])
+                found.append(f)
+    info["health"] = {"confidence": (health.get("summary") or health_rt.summarize(found))["confidence"],
+                      "findings": [{k: f[k] for k in ("level", "code", "title", "detail", "where", "fix")}
+                                   for f in found if f["level"] in ("red", "yellow")][:10],
+                      "stats": health.get("stats") or {}, "checks": health.get("checks", 0)}
+    if health.get("stopped"):
+        info["health"]["stopped"] = health["stopped"]
+
+
 def _current_family(dlg, requested=None):
     if requested:
         return requested
@@ -86,14 +132,19 @@ def register(reg):
                                                       "10% (min 2 ps, max 10 ps)."},
                   "allow_incomplete": {"type": "boolean", "description": "run even if metals/cofactors/modified "
                                        "residues without parameters would be removed (only with the user's OK)"},
+                  "allow_unsafe": {"type": "boolean", "description": "run even if the health checks find the "
+                                   "structure/system unphysical (gap bonded across, missing atoms, overlapping atoms, "
+                                   "time step too long); only with the user's OK"},
               }, "required": ["object"]},
               permission="compute_heavy", title="Molecular dynamics (OpenMM)")
     def run_md(ctx, object, production_ns=0.1, solvent="implicit", temperature_K=300.0, ph=7.4,
                equilibration_ns=None, force_field=None, water_model=None, ensemble=None, timestep_fs=None,
-               keep_crystal_waters=None, keep_ions=None, keep_cofactors=None, allow_incomplete=False):
+               keep_crystal_waters=None, keep_ions=None, keep_cofactors=None, allow_incomplete=False,
+               allow_unsafe=False):
         from pymol import cmd
 
         dlg = ctx.dlg
+        precheck = _health_guard(ctx, object, allow_unsafe)
         if keep_cofactors is not False:
             _component_guard(ctx, object, _current_family(dlg, force_field), allow_incomplete)
         _select_openmm_object(dlg, object, solvent, ph)
@@ -136,7 +187,7 @@ def register(reg):
 
         def collect(res):
             out_obj = str(getattr(dlg, "_openmm_last_output_object", "") or "")
-            info = {"object": out_obj, "production_ns": production_ns, "solvent": solvent,
+            info = {"_precheck": precheck, "object": out_obj, "production_ns": production_ns, "solvent": solvent,
                     "stages_ps": {"heating": round(heat_ps, 1), "equilibration": round(equil_ps, 1),
                                   "production": round(float(production_ns) * 1000.0, 1)},
                     "force_field": res.get("ff_used_label"), "platform": res.get("platform_used"),
@@ -160,9 +211,44 @@ def register(reg):
                              f"heating {info['stages_ps']['heating']} ps + equilibration "
                              f"{info['stages_ps']['equilibration']} ps. "
                              + (f"final Cα RMSD {r['final_A']} Å (max {r['max_A']} Å)." if r else ""))
+            _health_result(info, res)
+            if info.get("health"):
+                info["_card"] += f" Health: {info['health']['confidence']} confidence."
             return info
 
-        return _openmm_job(ctx, "md", False, collect, description=f"OpenMM MD of {object}")
+        return _openmm_job(ctx, "md", False, collect, description=f"OpenMM MD of {object}",
+                           allow_unsafe=allow_unsafe)
+
+    @reg.tool("check_simulation_system", "Health check of a structure before simulating it (MD, minimization, "
+              "QM/MM, free energies), without changing it: chains bonded across missing segments, residues with "
+              "missing atoms (the force field would drop them), atoms on top of each other, steric clashes, "
+              "unbonded cysteine pairs at disulfide distance, D-amino acids and non-proline cis peptides. Each "
+              "finding is red (the simulation would be wrong), yellow (suspicious) or info, with how to fix it. "
+              "run_md and minimize_structure run it themselves and refuse on red; during MD a monitor stops runs "
+              "that blow up and flags drift, ligand loss, density and temperature problems.",
+              {"properties": {"object": {"type": "string"},
+                              "timestep_fs": {"type": "number", "description": "MD time step to check (optional)"}},
+               "required": ["object"]},
+              permission="read", title="Check system health")
+    def check_simulation_system(ctx, object, timestep_fs=None):
+        from ... import simulation_health_runtime as health_rt
+        from .components import _save_object
+
+        findings = health_rt.check_pdb(_save_object(ctx, object, sub="md_checks"))
+        if timestep_fs and float(timestep_fs) > health_rt.THRESHOLDS["max_timestep_hmr_fs"]:
+            findings.append(health_rt.finding(
+                "red", "timestep", "Time step too long",
+                f"{float(timestep_fs):g} fs is beyond what H-bond constraints with heavier hydrogens allow", (),
+                f"use timestep_fs <= {health_rt.THRESHOLDS['max_timestep_hmr_fs']:g}"))
+        elif timestep_fs and float(timestep_fs) > health_rt.THRESHOLDS["max_timestep_hbonds_fs"]:
+            findings.append(health_rt.finding(
+                "info", "hmr", "Hydrogen mass repartitioning",
+                f"{float(timestep_fs):g} fs: Leonardo will make hydrogens 3 amu so the time step is stable"))
+        summary = health_rt.summarize(findings)
+        lines = health_rt.format_findings(findings, limit=6)
+        card = (f"**{object}** health: **{summary['confidence']}** confidence ({summary['red']} red, "
+                f"{summary['yellow']} yellow)." + ("" if not lines else " " + " | ".join(lines)))
+        return {"object": object, "confidence": summary["confidence"], "findings": findings, "_card": card}
 
     @reg.tool("minimize_structure", "Energy-minimize a protein or complex with OpenMM: hydrogens added at the given pH, "
               "ligands parameterized automatically, and a staged restrained minimization (heavy atoms "
@@ -174,10 +260,14 @@ def register(reg):
                   "max_iterations": {"type": "integer", "minimum": 1, "maximum": 200000},
                   "ph": {"type": "number", "minimum": 0, "maximum": 14},
                   "allow_incomplete": {"type": "boolean"},
+                  "allow_unsafe": {"type": "boolean", "description": "minimize even if the health checks find the "
+                                   "structure unphysical (only with the user's OK)"},
               }, "required": ["object"]},
               permission="compute_light", title="Energy minimization (OpenMM)")
-    def minimize_structure(ctx, object, solvent="implicit", max_iterations=2000, ph=7.4, allow_incomplete=False):
+    def minimize_structure(ctx, object, solvent="implicit", max_iterations=2000, ph=7.4, allow_incomplete=False,
+                           allow_unsafe=False):
         dlg = ctx.dlg
+        precheck = _health_guard(ctx, object, allow_unsafe)
         _component_guard(ctx, object, _current_family(dlg), allow_incomplete)
         _select_openmm_object(dlg, object, solvent, ph)
         for spin in ("spin_openmm_minonly_iters", "spin_openmm_min_steps"):
@@ -188,7 +278,8 @@ def register(reg):
             from pymol import cmd
 
             out_obj = str(getattr(dlg, "_openmm_last_output_object", "") or "")
-            info = {"object": out_obj, "input": object, "solvent": solvent, "force_field": res.get("ff_used_label"),
+            info = {"_precheck": precheck, "object": out_obj, "input": object, "solvent": solvent,
+                    "force_field": res.get("ff_used_label"),
                     "platform": res.get("platform_used"), "minimized_pdb": res.get("final_pdb") or res.get("pdb_path"),
                     "job_dir": res.get("job_dir"), "notes": list(res.get("notes", []) or [])[:8],
                     "removed_residues": list(res.get("removed_residues", []) or []),
@@ -217,9 +308,11 @@ def register(reg):
                              + (f"; E {e['start']} → {e['end']} kJ/mol" if e else "")
                              + (f"; heavy-atom RMSD {info['heavy_atom_rmsd_vs_input_A']} Å"
                                 if "heavy_atom_rmsd_vs_input_A" in info else "") + ".")
+            _health_result(info, res)
             return info
 
-        return _openmm_job(ctx, "minimize", True, collect, description=f"OpenMM minimization of {object}")
+        return _openmm_job(ctx, "minimize", True, collect, description=f"OpenMM minimization of {object}",
+                           allow_unsafe=allow_unsafe)
 
 
 def _select_openmm_object(dlg, object, solvent, ph):
@@ -237,7 +330,7 @@ def _select_openmm_object(dlg, object, solvent, ph):
     dlg.spin_openmm_ph.setValue(float(ph))
 
 
-def _openmm_job(ctx, kind, minimize_only, collect_result, description=""):
+def _openmm_job(ctx, kind, minimize_only, collect_result, description="", allow_unsafe=False):
     """Run Leonardo's OpenMM workflow as a job; ``collect_result(worker_result)`` builds the tool result.
     start_finalize_job restores the dialog's finalize method on every path (setup error, cancel)."""
     dlg = ctx.dlg
@@ -248,9 +341,21 @@ def _openmm_job(ctx, kind, minimize_only, collect_result, description=""):
             raise ToolError("OpenMM did not finish (see Leonardo's message)")
         res = dict(res or {})
         if not res.get("ok", True) and res.get("error"):
-            raise ToolError(str(res.get("error")))
+            stopped = (res.get("health") or {}).get("stopped")
+            extra = ""
+            if res.get("health_stop_pdb"):
+                extra += f" The frame where it stopped: {res['health_stop_pdb']}."
+            if res.get("dcd_path") and stopped:
+                extra += f" Trajectory up to there: {res['dcd_path']}."
+            raise ToolError(str(res.get("error")) + extra)
         return collect_result(res)
 
-    return start_finalize_job(ctx, kind, lambda: dlg._run_openmm_workflow(minimize_only=bool(minimize_only)),
-                              "_openmm_finalize_worker_result", collect, busy_button="btn_openmm_run",
-                              description=description)
+    def launch():
+        dlg._openmm_allow_unsafe = bool(allow_unsafe)
+        try:
+            return dlg._run_openmm_workflow(minimize_only=bool(minimize_only))
+        finally:
+            dlg._openmm_allow_unsafe = False
+
+    return start_finalize_job(ctx, kind, launch, "_openmm_finalize_worker_result", collect,
+                              busy_button="btn_openmm_run", description=description)

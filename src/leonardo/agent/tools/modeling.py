@@ -205,6 +205,11 @@ def _start_modeller(ctx, name, sequence, codes, final_sequence=None, mutations=(
                      + f"; best DOPE **{scores[0]['dope'] if scores else 'n/a'}** (lower is better; compare only "
                        "models of the same sequence).",
         }
+        rama = rama_summary(best)
+        if rama:
+            result["ramachandran"] = rama
+            result["_card"] += (f" Ramachandran: {rama['favoured_pct']:.1f}% favoured, {rama['outliers_pct']:.2f}% "
+                                f"outliers ({rama['verdict']}).")
         if meta.get("modeller_seed") is not None:
             result["modeller_seed"] = meta["modeller_seed"]       # drawn at random when seed=0
         if fit is not None:
@@ -413,7 +418,81 @@ def _prepare_template_components(ctx, codes, source, residues, categories, run_r
     return code, selected, post_load
 
 
+def rama_summary(pdb_path):
+    """Ramachandran statistics of a model file (None if they cannot be computed)."""
+    try:
+        from ... import ramachandran_runtime as rama
+
+        _rows, stats = rama.analyze(pdb_path)
+    except Exception:
+        return None
+    if not stats.get("residues"):
+        return None
+    return {k: stats[k] for k in ("residues", "favoured_pct", "allowed_pct", "outliers_pct", "verdict")} | {
+        "outliers": [o["residue"] for o in stats["outliers"][:12]]}
+
+
+def _rama_selection(cmd, object, outliers, name):
+    keys = []
+    for o in outliers:
+        chain, _sep, rest = o["residue"].rpartition(":")
+        resi = rest[3:] or rest                       # after the 3-letter name: number + insertion code
+        resi = "\\" + resi if resi.startswith("-") else resi
+        keys.append(f"(chain {chain} and resi {resi})" if chain else f"(resi {resi})")
+    cmd.delete(name)
+    if not keys:
+        return ""
+    cmd.select(name, f"({object}) and polymer and (" + " or ".join(keys) + ")", enable=0)
+    cmd.show("sticks", f"{name} and not hydro")
+    cmd.color("red", f"{name} and elem C")
+    return name
+
+
 def register(reg):
+    @reg.tool("ramachandran_plot", "Ramachandran plot of a protein (or of every frame of a trajectory): backbone "
+              "phi/psi of each residue against the favoured (98%) and allowed (99.95%) regions of high-resolution "
+              "PDB chains, in the six MolProbity classes (general, Gly, trans-Pro, cis-Pro, pre-Pro, Ile/Val). "
+              "Returns % favoured / allowed / outliers with a verdict against the MolProbity goals (> 98% "
+              "favoured, < 0.05% outliers), the outlier residues (a red-stick selection <object>_rama_out) and the "
+              "figure. Use it to validate homology models, AlphaFold predictions, built loops and MD structures.",
+              {"properties": {
+                  "object": {"type": "string"},
+                  "chains": {"type": "string", "description": "e.g. 'A' or 'A,B' (default all chains)"},
+                  "all_states": {"type": "boolean", "description": "every state of the object (an MD trajectory "
+                                 "or an NMR ensemble); default only the current structure (state 1)"},
+              }, "required": ["object"]},
+              permission="view", title="Ramachandran plot", main_thread=False)
+    def ramachandran_plot(ctx, object, chains="", all_states=False):
+        from ... import ramachandran_runtime as rama
+
+        cmd = _cmd()
+
+        def save():
+            if object not in cmd.get_names("objects"):
+                raise ToolError(f"no object named {object!r}; call list_objects")
+            if not cmd.count_atoms(f"({object}) and polymer and name CA"):
+                raise ToolError(f"{object!r} has no protein residues")
+            path = os.path.join(ctx.workspace("ramachandran"), time.strftime(f"{object}_%H%M%S.pdb"))
+            cmd.save(path, f"({object}) and polymer and not alt B+C+D", state=0 if all_states else 1)
+            return path
+
+        pdb = ctx.run_on_main(save)
+        chain_list = [c.strip() for c in str(chains or "").split(",") if c.strip()] or None
+        png = os.path.splitext(pdb)[0] + "_rama.png"
+        rows, stats = rama.analyze(pdb, png, chains=chain_list, models="all" if all_states else "first",
+                                   title=f"Ramachandran plot: {object}")
+        if not rows:
+            raise ToolError("no residue has both phi and psi (need at least three bonded residues)")
+        sel = ctx.run_on_main(lambda: _rama_selection(cmd, object, stats["outliers"], f"{object}_rama_out"))
+        outl = ", ".join(o["residue"] + (f" ({o['fraction_of_models']:.0%} of frames)" if "fraction_of_models" in o
+                                         else "") for o in stats["outliers"][:8])
+        card = (f"Ramachandran **{object}**: {stats['residues']} residues"
+                + (f" × {stats['models']} frames" if stats.get("models", 1) > 1 else "")
+                + f"; favoured **{stats['favoured_pct']:.1f}%**, allowed {stats['allowed_pct']:.1f}%, outliers "
+                f"**{stats['outliers_pct']:.2f}%** — {stats['verdict']}." + (f" Outliers: {outl}." if outl else ""))
+        return {"object": object, **stats, "selection": sel, "image": png, "_image": png, "_card": card}
+
+
     @reg.tool("get_uniprot_sequence", "Fetch a protein sequence from UniProt (canonical isoform), optionally a "
               "residue range in UniProt numbering (e.g. EGFR P00533 kinase domain 712-980).",
               {"properties": {

@@ -168,6 +168,13 @@ def _launch(ctx, args, workdir, object, name):
                "selections": {k: f"{name}_{k}" for k, n in counts.items() if n},
                "tools": report.get("tools")}
         out["_card"] = card_for(object, name, report)
+        from .modeling import rama_summary
+
+        rama = rama_summary(args["pdb_out"])
+        if rama:
+            out["ramachandran"] = rama
+            out["_card"] += (f" Ramachandran: {rama['favoured_pct']:.1f}% favoured, {rama['outliers_pct']:.2f}% "
+                             "outliers.")
         out["scene"] = ctx.scene(f"{name}: prepared at pH {report['ph']:g}")
         return {"done": True, "result": out}
 

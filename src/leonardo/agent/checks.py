@@ -18,10 +18,23 @@ def _num(x, default=None):
         return default
 
 
-def _md(args, r):
+def _health(r):
+    """The simulation health findings (simulation_health_runtime) the MD tools attach as ``health``."""
+    h = r.get("health") or {}
     w = []
+    for f in h.get("findings") or []:
+        where = f" ({'; '.join(f['where'][:3])})" if f.get("where") else ""
+        w.append(f"{f['title']}: {f['detail']}{where}" + (f" — fix: {f['fix']}" if f.get("fix") else ""))
+    if h.get("confidence") == "low":
+        w.append("health confidence LOW: do not present this result as reliable; explain the problems and the fixes")
+    return w
+
+
+def _md(args, r):
+    w = _health(r)
     rmsd = (r.get("ca_rmsd_vs_first_frame") or {})
-    if _num(rmsd.get("max_A"), 0) > 5.0:
+    monitored = any(f.get("code") == "unfolding" for f in (r.get("health") or {}).get("findings") or [])
+    if _num(rmsd.get("max_A"), 0) > 5.0 and not monitored:
         w.append(f"Cα RMSD reaches {rmsd['max_A']} Å: large drift or unfolding; check the input structure, "
                  "missing residues and the equilibration")
     notes = " ".join(map(str, r.get("notes") or [])).lower()
@@ -38,7 +51,7 @@ def _md(args, r):
 
 def _minimize(args, r):
     e = r.get("energy_kJ_mol") or {}
-    w = []
+    w = _health(r)
     if _num(e.get("end")) is not None and _num(e.get("end")) > 0:
         w.append(f"final potential energy is positive ({e['end']} kJ/mol): severe clashes or missing parameters")
     if _num(e.get("start")) is not None and _num(e.get("end")) is not None and e["end"] > e["start"] + 1:
@@ -126,8 +139,22 @@ def _redocking(args, r):
     return []
 
 
+def _rama(r):
+    rama = r.get("ramachandran") or {}
+    fav, out = _num(rama.get("favoured_pct")), _num(rama.get("outliers_pct"))
+    if fav is None or out is None:
+        return []
+    if out > 2.0 or fav < 90.0:
+        return [f"Ramachandran: {fav}% favoured, {out}% outliers ({', '.join(rama.get('outliers', [])[:6])}): poor "
+                "backbone geometry; refine the loops / check the alignment before using this model"]
+    if out > 0.5:
+        return [f"Ramachandran outliers {out}% ({', '.join(rama.get('outliers', [])[:6])}): look at them "
+                "(ramachandran_plot) before trusting those regions"]
+    return []
+
+
 def _modeling(args, r):
-    w = []
+    w = _rama(r)
     if r.get("warning"):
         w.append(str(r["warning"]))
     if _num(r.get("rmsd_to_source_A"), 0) > 3.0:
@@ -157,7 +184,7 @@ def _screening(args, r):
 CHECKS = {"run_md": _md, "minimize_structure": _minimize, "run_psi4": _psi4, "run_mopac": _mopac,
           "run_qmmm": _qmmm, "run_docking": _docking, "run_redocking": _redocking,
           "build_homology_model": _modeling, "model_mutant": _modeling, "repair_structure_gaps": _modeling,
-          "run_abfe": _abfe, "run_virtual_screening": _screening}
+          "run_abfe": _abfe, "run_virtual_screening": _screening, "prepare_protein": lambda a, r: _rama(r)}
 
 
 def post_checks(tool, args, result):
