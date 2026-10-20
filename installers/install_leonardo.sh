@@ -6,7 +6,7 @@
 #   * the "protliginteract-full" environment with every third-party program Leonardo uses
 #     (open-source PyMOL, OpenMM, AmberTools, Psi4, MOPAC, MODELLER, RDKit, Open Babel,
 #     smina, fpocket, PACKMOL-Memgen, BLAST, HMMER, Clustal Omega, MAFFT, ...),
-#   * Leonardo itself and its PyMOL loader (Plugins > Leonardo),
+#   * Leonardo itself and its PyMOL loader (Plugin > Leonardo),
 #   * the MODELLER license key (asked once; it can be added later),
 #   * a "Leonardo" app/menu entry and a "Leonardo MODELLER License" helper.
 #
@@ -126,9 +126,15 @@ fi
 if [[ "$OS" == "Linux" ]]; then
   # PyMOL's window needs the usual desktop graphics libraries (present on desktop installs)
   missing_libs=()
+  # ldconfig is in /sbin, often not on a normal user's PATH (Debian/Ubuntu): without it every library looked missing
+  LDCONFIG="$(command -v ldconfig 2>/dev/null || true)"
+  for candidate in /sbin/ldconfig /usr/sbin/ldconfig; do
+    [[ -z "$LDCONFIG" && -x "$candidate" ]] && LDCONFIG="$candidate"
+  done
   for lib in libGL.so.1 libEGL.so.1 libxkbcommon-x11.so.0 libfontconfig.so.1 libdbus-1.so.3 libXrender.so.1; do
+    [[ -n "$LDCONFIG" ]] || break                    # cannot tell: let PyMOL report a missing library itself
     # no `grep -q`: it stops reading early and, with pipefail, ldconfig's SIGPIPE marks the library missing
-    ldconfig -p 2>/dev/null | grep -F "$lib" >/dev/null || missing_libs+=("$lib")
+    "$LDCONFIG" -p 2>/dev/null | grep -F "$lib" >/dev/null || missing_libs+=("$lib")
   done
   if [[ "${#missing_libs[@]}" -gt 0 ]]; then
     warn "graphics libraries PyMOL needs are missing: ${missing_libs[*]}"
@@ -371,7 +377,7 @@ if [[ -n "$MODELLER_KEY" ]]; then
 fi
 
 # ------------------------------------------------------------------ 6. PyMOL plugin
-step "6/7 Adding Leonardo to PyMOL (Plugins > Leonardo)"
+step "6/7 Adding Leonardo to PyMOL (Plugin > Leonardo)"
 startup="$HOME/.pymol/startup"
 mkdir -p "$startup"
 if [[ -d "$startup/Leonardo" ]]; then
@@ -476,6 +482,14 @@ if "$CONDA" run -n "$ENV_NAME" python -c "import sys; sys.path[:0]=['$APP_LINK/l
 else
   die "the final check failed."
 fi
+# what PyMOL itself sees at start: its plugin search must find the Leonardo loader (Plugin > Leonardo)
+# (one line: conda run does not pass arguments that contain line breaks)
+plugin_check="$("$CONDA" run -n "$ENV_NAME" python -c 'import pymol.plugins as P; P.initialize(-2); print("LEONARDO_PLUGIN=" + ("found" if "leonardo" in P.plugins else "missing"))' 2>/dev/null | sed -n 's/^LEONARDO_PLUGIN=//p' | head -n 1 || true)"
+if [[ "$plugin_check" == "found" ]]; then
+  echo "PyMOL finds Leonardo: Plugin > Leonardo"
+else
+  warn "PyMOL does not list the Leonardo plugin (check: ${plugin_check:-no answer}). Look at ~/.pymolpluginsrc.py and ~/.pymol/startup/leonardo.py, or write to the support address in README.md."
+fi
 PYTHONPATH="$APP_LINK/src:$APP_LINK/legacy" "$CONDA" run -n "$ENV_NAME" python -m leonardo.report_scientific_readiness \
   || warn "some optional workflows report missing pieces (see above)."
 # older copies of Leonardo left by previous installations (the environment points at the current one)
@@ -492,7 +506,7 @@ if [[ "$OS" == "Darwin" ]]; then
 else
   echo "  Open it: 'Leonardo' in your applications menu or on your Desktop."
 fi
-echo "  Then, inside PyMOL: Plugins > Leonardo"
+echo "  Then, inside PyMOL: Plugin > Leonardo"
 echo "  MODELLER: $modeller_state"
 echo "  From a terminal: $BIN_DIR/leonardo"
 echo "  To update later, run this installer again."

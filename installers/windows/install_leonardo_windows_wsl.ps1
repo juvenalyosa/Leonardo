@@ -76,7 +76,7 @@ try {
     Write-Host "  $(Join-Path $RepoRoot 'installers\shortcuts\Launch Leonardo Windows.bat')"
     Write-Host ""
     Write-Host "Inside PyMOL open:"
-    Write-Host "  Plugins > Leonardo"
+    Write-Host "  Plugin > Leonardo"
 }
 finally {
     Stop-Transcript | Out-Null

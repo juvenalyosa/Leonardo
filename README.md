@@ -158,7 +158,7 @@ calculations; explain the results in your language.
    **MODELLER license key**, paste yours, or just press Return and add it later.
 
 That's it. Open **Leonardo** from your Desktop or Applications (on Linux, from the
-applications menu), then choose **Plugins → Leonardo** inside PyMOL.
+applications menu), then choose **Plugin → Leonardo** inside PyMOL.
 
 > **MODELLER key (free for academics):** register at
 > <https://salilab.org/modeller/registration.html>. The key arrives by e-mail. To add it later,
@@ -171,7 +171,7 @@ Full step-by-step guide in English and Spanish: [docs/INSTALL.md](docs/INSTALL.m
 ## Your first five minutes
 
 1. Open **Leonardo**. PyMOL starts.
-2. In PyMOL choose **Plugins → Leonardo**.
+2. In PyMOL choose **Plugin → Leonardo**.
 3. Click **AI Assistant…**. The first time, open **Settings** and paste an Anthropic (Claude)
    or OpenAI API key. Keys are kept in your system keychain.
 4. Type a request, for example:

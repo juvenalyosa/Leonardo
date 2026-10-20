@@ -57,7 +57,7 @@ Everything else in Leonardo works without MODELLER.
 - **macOS:** double-click **Leonardo** on the Desktop or in *Applications* (your home folder).
 - **Linux:** open **Leonardo** from the applications menu or the Desktop.
 
-PyMOL opens. Choose **Plugins → Leonardo**.
+PyMOL opens. Choose **Plugin → Leonardo**.
 
 ### Updating and uninstalling
 
@@ -137,7 +137,7 @@ Todo lo demás de Leonardo funciona sin MODELLER.
   usuario).
 - **Linux:** abra **Leonardo** desde el menú de aplicaciones o el Escritorio.
 
-Se abre PyMOL. Elija **Plugins → Leonardo**.
+Se abre PyMOL. Elija **Plugin → Leonardo**.
 
 ### Actualizar y desinstalar
 

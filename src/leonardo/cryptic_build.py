@@ -37,6 +37,10 @@ def build(verbose=True):
     """Compile the extension next to this module; returns (ok, message)."""
     if not os.path.isfile(SOURCE):
         return False, f"source not found: {SOURCE}"
+    if sys.platform == "darwin" and subprocess.run(["xcode-select", "-p"], capture_output=True).returncode != 0:
+        # /usr/bin/c++ is only a stub that opens Apple's install dialog without the Command Line Tools
+        return False, ("no C++ compiler: install Apple's Command Line Tools (xcode-select --install), then run "
+                       "python -m leonardo.cryptic_build")
     cxx = compiler()
     if not cxx:
         return False, "no C++ compiler (macOS: xcode-select --install; Linux: install g++)"

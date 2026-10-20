@@ -57,7 +57,7 @@ macOS (Apple Silicon or Intel)
      then "Open" again.
   2. A Terminal window installs everything (20-60 minutes, about 10 GB). When it asks for
      the MODELLER key, paste it or just press Return to add it later.
-  3. Open "Leonardo" from your Desktop or Applications, then in PyMOL: Plugins > Leonardo.
+  3. Open "Leonardo" from your Desktop or Applications, then in PyMOL: Plugin > Leonardo.
 
 Linux (x86_64, e.g. Ubuntu, Fedora)
   1. Open a terminal in this folder (right-click > "Open in Terminal").
@@ -80,7 +80,7 @@ macOS (Apple Silicon o Intel)
      "Abrir" y luego "Abrir" otra vez.
   2. Una ventana de Terminal instala todo (20-60 minutos, unos 10 GB). Cuando pida la clave
      de MODELLER, péguela o pulse Return para agregarla después.
-  3. Abra "Leonardo" desde el Escritorio o Aplicaciones y en PyMOL: Plugins > Leonardo.
+  3. Abra "Leonardo" desde el Escritorio o Aplicaciones y en PyMOL: Plugin > Leonardo.
 
 Linux (x86_64, p. ej. Ubuntu, Fedora)
   1. Abra una terminal en esta carpeta (clic derecho > "Abrir en terminal").
