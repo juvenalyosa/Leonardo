@@ -64,7 +64,8 @@ def register(reg):
               "open, grows or forms with motion, with pocket volumes in the structure vs the ensemble. On the "
               "CryptoBench test set (222 apo structures) the residue AUC is 0.81 (PocketMiner 0.76, P2Rank 0.81 "
               "on subsets). Seconds to a minute. The object is coloured by probability (blue->red) and the sites "
-              "are selections <object>_cryptic_<rank>. Use apo structures; follow up with MD or docking.",
+              "are selections <object>_cryptic_<rank>. Each site has a docking_box (center, size in A) to pass to "
+              "set_docking_box before run_docking. Use apo structures; follow up with docking or MD.",
               {"properties": {
                   "object": {"type": "string"},
                   "chains": {"type": "string", "description": "e.g. 'A' or 'A,B' (default all protein chains)"},
@@ -101,7 +102,7 @@ def register(reg):
             for s in res["sites"][: int(top)]:
                 sites.append({k: s[k] for k in ("rank", "kind", "n_residues", "mean_probability",
                                                  "pocket_volume_structure_A3", "pocket_volume_ensemble_A3",
-                                                 "opens_in_ensemble", "residues", "centre")}
+                                                 "opens_in_ensemble", "residues", "centre", "docking_box")}
                              | {"selection": f"{object}_cryptic_{s['rank']}"})
             lines = [f"#{s['rank']} {s['kind']} ({s['n_residues']} residues, "
                      f"{s['pocket_volume_structure_A3']:.0f}->{s['pocket_volume_ensemble_A3']:.0f} A^3)" for s in sites]

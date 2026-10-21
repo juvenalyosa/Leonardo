@@ -107,3 +107,48 @@ def test_agent_tool(tmp_path):
     assert res["sites"] and "_card" in res
     assert cmd.count_atoms(res["sites"][0]["selection"]) > 0
     del app
+
+
+def test_agent_chain_cryptic_site_to_docking_box(tmp_path):
+    """What the assistant does after find_cryptic_pockets: the site's docking_box goes to set_docking_box, and
+    Leonardo's docking box is then centred on that site."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("pymol.Qt").QtWidgets
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    import code_v2
+    from pymol import cmd
+
+    from leonardo.agent.orchestrator import SYSTEM_PROMPT
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.load(os.path.join(DATA, "2LZT.pdb"), "lyz")
+    dlg = code_v2.ProtLigInteractDialog()
+    ctx = AgentContext(dlg=dlg)
+
+    def workspace(sub=""):
+        path = os.path.join(str(tmp_path), sub)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    ctx.workspace = workspace
+    reg = build_registry(ctx)
+    job = reg.call("find_cryptic_pockets", {"object": "lyz"}, ctx)
+    t0 = time.time()
+    while True:
+        st = reg.call("job_status", {"job_id": job["job_id"]}, ctx)
+        if st.get("status") != "running" or time.time() - t0 > 120:
+            break
+        app.processEvents()
+        time.sleep(0.2)
+    site = st["result"]["sites"][0]
+    box = site["docking_box"]
+    assert all(16.0 <= s <= 26.0 for s in box["size"])
+    reg.call("set_docking_box", {"center": box["center"], "size": box["size"]}, ctx)
+    got = [dlg.spin_cx.value(), dlg.spin_cy.value(), dlg.spin_cz.value()]
+    assert np.allclose(got, box["center"], atol=0.01) and dlg._dock_grid_user_defined
+    # the assistant is told about the tools and the chain
+    for name in ("find_cryptic_pockets", "prepare_protein", "ramachandran_plot", "check_simulation_system",
+                 "analyze_interface", "run_enhanced_sampling", "docking_box"):
+        assert name in SYSTEM_PROMPT, name
+    dlg.close()

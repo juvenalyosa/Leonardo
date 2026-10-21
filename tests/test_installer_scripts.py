@@ -34,8 +34,8 @@ def test_unstamped_installer_falls_back_to_main_when_the_release_lookup_fails():
 def test_linux_library_check_finds_an_installed_library():
     # with pipefail, `ldconfig -p | grep -q` reports 141 (SIGPIPE) on a long cache: installed libraries
     # were listed as missing
-    snippet = _lines(INSTALLER, "ldconfig -p")
-    stub = ("ldconfig() {\n  echo '\tlibGL.so.1 (libc6,x86-64) => /usr/lib/libGL.so.1'\n"
+    snippet = _lines(INSTALLER, '"$LDCONFIG" -p')
+    stub = ("LDCONFIG=ldconfig\nldconfig() {\n  echo '\tlibGL.so.1 (libc6,x86-64) => /usr/lib/libGL.so.1'\n"
             "  local i; for ((i = 0; i < 50000; i++)); do echo \"\tlibfoo$i.so.1 (libc6,x86-64) => /usr/lib\"; done\n}\n")
     out = _bash(stub + "missing_libs=()\nfor lib in libGL.so.1 libnothere.so.9; do\n" + snippet
                 + "\ndone\necho \"missing=${missing_libs[*]}\"")
@@ -121,3 +121,25 @@ def test_smina_launcher_lands_in_the_environment_despite_activation_noise(tmp_pa
     assert out.returncode == 0, out.stderr
     launcher = (prefix / "bin" / "smina").read_text()
     assert f'exec "{smina}"' in launcher
+
+
+def test_smina_environment_outside_the_conda_base(tmp_path):
+    # a shared conda keeps environments in ~/.conda/envs: the path comes from `conda env list --json`
+    envs = os.path.join(REPO, "scripts", "install_envs.sh")
+    base, prefix = tmp_path / "base", tmp_path / "base" / "envs" / "main"
+    (prefix / "bin").mkdir(parents=True)
+    smina = tmp_path / "home" / ".conda" / "envs" / "leonardo-smina" / "bin" / "smina"
+    smina.parent.mkdir(parents=True)
+    smina.write_text("#!/bin/sh\n")
+    smina.chmod(0o755)
+    stub = ('conda() { case "$1" in\n'
+            '  env) if [[ "$2" == list && "${3:-}" == --json ]]; then\n'
+            '         echo "{\\"envs\\": [\\"$BASE\\", \\"$SMINA_PREFIX\\"]}"; else echo "leonardo-smina $SMINA_PREFIX"; fi\n'
+            '       return 0 ;;\n'
+            '  info) echo "$BASE"; return 0 ;;\n'
+            '  run) echo "LEONARDO_PREFIX=$PREFIX"; return 0 ;;\n'
+            '  esac; }\nSMINA_ENV=leonardo-smina\nSMINA_YAML=x.yml\n')
+    out = _bash(stub + _function(envs, "install_smina_env") + "\ninstall_smina_env main\n",
+                BASE=str(base), PREFIX=str(prefix), SMINA_PREFIX=str(smina.parent.parent))
+    assert out.returncode == 0, out.stderr
+    assert f'exec "{smina}"' in (prefix / "bin" / "smina").read_text()

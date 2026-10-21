@@ -23,12 +23,33 @@ from .registry import APPROVAL_POLICIES, ToolError, result_to_text
 SERVER_NAME = "leonardo"
 
 
+# bullets of the in-app prompt that are about its own plan/approval loop, not about the science or the tools
+_SESSION_ONLY = ("propose_plan", "mark_step", "ask_user", "Every plan step", "Missing inputs", "Reply in the user")
+
+
+def mcp_instructions():
+    """What an external agent (Claude Desktop, another MCP client) should know to use Leonardo's tools well:
+    the in-app assistant's guidance on Leonardo's modules and workflows, without its plan/approve mechanics."""
+    from .orchestrator import SYSTEM_PROMPT
+
+    head, _sep, rest = SYSTEM_PROMPT.partition("How to work:")
+    bullets = ["- " + b.strip() for b in rest.split("\n- ") if b.strip()]
+    keep = [b for b in bullets if not any(k in b for k in _SESSION_ONLY)]
+    intro = ("Leonardo is a molecular-modeling plugin running inside PyMOL; these tools drive it (the same "
+             "functions as its buttons). Calculations ask the user to confirm in Leonardo's window. Look at the "
+             "scene with list_objects/describe_object before acting, and report numbers as the tools return them.")
+    return intro + "\n\n" + head.split("\n\n", 1)[-1].strip() + "\n\nGuidance:\n" + "\n".join(keep)
+
+
 def build_server(registry, run_on_main, context=None, confirm=None, approval_policy="heavy"):
     """Low-level MCP server exposing ``registry`` (explicit JSON schemas, no signature inference)."""
     import mcp.types as types
     from mcp.server.lowlevel import Server
 
-    server = Server(SERVER_NAME)
+    try:
+        server = Server(SERVER_NAME, instructions=mcp_instructions())
+    except TypeError:                                  # older mcp without server instructions
+        server = Server(SERVER_NAME)
     needs_confirmation = APPROVAL_POLICIES.get(approval_policy, APPROVAL_POLICIES["heavy"])
     if callable(confirm):
         # an external client never had a plan approved: every calculation is asked (in the app, quick ones
