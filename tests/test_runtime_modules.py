@@ -14062,5 +14062,5 @@ def test_package_import_is_lazy_and_does_not_require_pymol(monkeypatch):
     monkeypatch.syspath_prepend(str(os.path.dirname(os.path.dirname(__file__))))
     sys.modules.pop("ProtLigInteract", None)
     pkg = importlib.import_module("ProtLigInteract")
-    assert getattr(pkg, "__version__", None) == "0.2.0a16"
+    assert getattr(pkg, "__version__", None) == "0.2.0a17"
     assert callable(getattr(pkg, "__init_plugin__", None))
