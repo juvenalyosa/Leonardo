@@ -219,8 +219,13 @@ install_smina_env() {
   main_prefix="$(conda run -n "$env_name" python -c 'import sys; print("LEONARDO_PREFIX=" + sys.prefix)' \
     | sed -n 's/^LEONARDO_PREFIX=//p' | head -n 1)"
   [[ -n "$main_prefix" && -d "$main_prefix/bin" ]] || { echo "ERROR: could not locate the $env_name environment" >&2; return 1; }
-  local smina_bin="$base/envs/$SMINA_ENV/bin/smina"
-  [[ -x "$smina_bin" ]] || { echo "ERROR: smina not found in $SMINA_ENV" >&2; exit 1; }
+  # environments may live outside <base>/envs (envs_dirs, ~/.conda/envs with a shared conda): ask conda
+  local smina_prefix
+  # (the smina environment has no Python, so its path comes from conda's list of environments)
+  smina_prefix="$(conda env list --json 2>/dev/null | tr -d ' "[]{}' | tr ',' '\n' | grep -E "/${SMINA_ENV}\$" | head -n 1)"
+  [[ -n "$smina_prefix" ]] || smina_prefix="$base/envs/$SMINA_ENV"
+  local smina_bin="$smina_prefix/bin/smina"
+  [[ -x "$smina_bin" ]] || { echo "ERROR: smina not found in $SMINA_ENV ($smina_prefix)" >&2; exit 1; }
   printf '#!/bin/sh\n# smina lives in its own environment (%s): its Boost build conflicts with Qt 6\nexec "%s" "$@"\n' \
     "$SMINA_ENV" "$smina_bin" > "$main_prefix/bin/smina"
   chmod +x "$main_prefix/bin/smina"

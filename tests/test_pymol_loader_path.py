@@ -29,3 +29,46 @@ def test_existing_pluginsrc_is_kept(tmp_path):
     _install(tmp_path)
     rc = (tmp_path / ".pymolpluginsrc.py").read_text()
     assert rc.startswith(original) and "Leonardo: PyMOL's user plugin folder" in rc
+
+
+def test_installer_final_check_asks_pymol_for_the_plugin():
+    text = open(os.path.join(ROOT, "installers", "install_leonardo.sh")).read()
+    line = next(ln for ln in text.splitlines() if "P.initialize(-2)" in ln)
+    assert "\n" not in line and "LEONARDO_PLUGIN=" in line        # conda run drops multi-line arguments
+    assert "PyMOL finds Leonardo" in text
+
+
+def test_smina_environment_found_outside_base(tmp_path):
+    """install_envs.sh reads smina's environment path from `conda env list --json` (envs may live in
+    ~/.conda/envs with a shared conda), including when it is the last entry of the list."""
+    script = open(os.path.join(ROOT, "scripts", "install_envs.sh")).read()
+    line = next(ln for ln in script.splitlines() if 'smina_prefix="$(conda env list --json' in ln)
+    pipeline = line.split('"$(', 1)[1].rsplit(')"', 1)[0].replace("conda env list --json 2>/dev/null", "cat")
+    listing = '{"envs": ["/opt/conda", "/opt/conda/envs/protliginteract-full", "/home/u/.conda/envs/leonardo-smina"]}'
+    out = subprocess.run(["bash", "-c", f"SMINA_ENV=leonardo-smina; {pipeline}"], input=listing, text=True,
+                         capture_output=True, check=True).stdout.strip()
+    assert out == "/home/u/.conda/envs/leonardo-smina"
+
+
+def test_cryptic_build_without_command_line_tools(monkeypatch):
+    """On a Mac without Xcode's Command Line Tools, /usr/bin/c++ only opens Apple's install dialog: report it
+    instead of calling the compiler."""
+    import sys
+
+    from leonardo import cryptic_build
+
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+
+        class R:
+            returncode = 2 if cmd[:1] == ["xcode-select"] else 0
+            stdout = stderr = ""
+        return R()
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(cryptic_build.subprocess, "run", fake_run)
+    ok, msg = cryptic_build.build(verbose=False)
+    assert not ok and "xcode-select --install" in msg
+    assert all(c[:1] == ["xcode-select"] for c in calls)

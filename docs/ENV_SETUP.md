@@ -31,7 +31,7 @@ From Finder:
 1. Double click `installers/shortcuts/Install Leonardo.command`.
 2. If Conda is missing, allow the installer to install Miniforge in `~/miniforge3`.
 3. When installation finishes, double click `installers/shortcuts/Launch Leonardo.command`.
-4. In PyMOL, open `Plugins > Leonardo`.
+4. In PyMOL, open `Plugin > Leonardo`.
 
 The macOS installer first tries the pinned
 `environments/environment-protliginteract-full.lock.yml` file. If that exact environment is

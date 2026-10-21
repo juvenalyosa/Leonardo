@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Install a tiny PyMOL startup loader that registers Leonardo from this source
 # tree every time PyMOL starts.  This keeps the user path simple: launch PyMOL
-# from the Leonardo conda environment and open Plugins > Leonardo.
+# from the Leonardo conda environment and open Plugin > Leonardo.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # the end-user installer points the loader at a stable path (~/.leonardo/app) that survives updates
@@ -104,7 +104,7 @@ EOF
 
 # PyMOL reads plugins from ~/.pymol/startup only when ~/.pymolpluginsrc.py puts that folder on its plugin
 # path, and PyMOL writes that file the first time its Plugin Manager installs something.  On a computer where
-# that never happened the loader above is never read (no Plugins > Leonardo), so add the folder ourselves.
+# that never happened the loader above is never read (no Plugin > Leonardo), so add the folder ourselves.
 # PyMOL rewrites the file later and keeps the folder (it saves its current user plugin path).
 RC_PATH="${PYMOL_PLUGINSRC:-$HOME/.pymolpluginsrc.py}"
 if [[ "$STARTUP_DIR" == "$HOME/.pymol/startup" ]] && ! grep -q "Leonardo: PyMOL's user plugin folder" "$RC_PATH" 2>/dev/null; then
@@ -125,5 +125,5 @@ Installed PyMOL startup loader:
   $LOADER_PATH
 
 Launch PyMOL from Leonardo's conda environment and open:
-  Plugins > Leonardo
+  Plugin > Leonardo
 EOF

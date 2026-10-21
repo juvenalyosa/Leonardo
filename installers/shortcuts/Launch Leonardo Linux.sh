@@ -12,7 +12,7 @@ Launching Leonardo on Linux
 ===========================
 
 PyMOL will open from the Leonardo conda environment.  Inside PyMOL, use:
-  Plugins > Leonardo
+  Plugin > Leonardo
 
 EOF
 

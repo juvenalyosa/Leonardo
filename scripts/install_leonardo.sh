@@ -39,7 +39,7 @@ Options:
 Default behavior:
   1. create/update protliginteract-full, preferring the locked version file
   2. install this repository with python -m pip install -e . --no-build-isolation
-  3. install a PyMOL startup loader so Plugins > Leonardo appears
+  3. install a PyMOL startup loader so Plugin > Leonardo appears
   4. run import/readiness/plugin-packaging smoke checks
   5. run focused or full pytest checks
   6. rebuild dist/Leonardo.zip for PyMOL Plugin Manager
@@ -222,7 +222,7 @@ Launch options:
   Terminal:     $ROOT_DIR/scripts/launch_leonardo.sh
 
 Inside PyMOL:
-  Plugins > Leonardo
+  Plugin > Leonardo
 
 Plugin ZIP is also available for PyMOL Plugin Manager:
   $ROOT_DIR/dist/Leonardo.zip
