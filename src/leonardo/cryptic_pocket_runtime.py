@@ -367,6 +367,25 @@ def site_volume(xyz, atom_res, residues, points, grid_A=1.0, contact_A=4.0):
     return float(np.isfinite(d).sum()) * grid_A ** 3
 
 
+def docking_box(chain, idx, points=None, padding_A=4.0, min_A=16.0, max_A=26.0):
+    """A docking box for a site: centred on the pocket points next to its residues when the structure has some
+    (else on the residues' side-chain atoms), edges = extent + padding, kept between min_A and max_A (a box the
+    size of a drug-sized pocket, not of the whole patch of residues)."""
+    atoms = chain.xyz[np.isin(chain.atom_res, idx)]
+    pts = None
+    if points is not None and len(points):
+        from scipy.spatial import cKDTree
+
+        d, _ = cKDTree(atoms).query(points, distance_upper_bound=4.0)
+        near = points[np.isfinite(d)]
+        if len(near) >= 10:
+            pts = near
+    ref = pts if pts is not None else atoms
+    centre = ref.mean(axis=0)
+    size = np.clip(ref.max(axis=0) - ref.min(axis=0) + 2.0 * padding_A, min_A, max_A)
+    return {"center": [round(float(v), 2) for v in centre], "size": [round(float(v), 1) for v in size]}
+
+
 def sites_from_scores(chain, prob, static_volume, ensemble_volume, open_fraction, threshold=THRESHOLD,
                       link_A=6.5, radius_A=12.0, min_residues=4, static_points=None, frames=None, grid_A=1.0):
     """Group called residues into sites, best first: seeded at the most probable residue not yet used, a site
@@ -403,7 +422,9 @@ def sites_from_scores(chain, prob, static_volume, ensemble_volume, open_fraction
             ve = float(np.mean([site_volume(x, chain.atom_res, idx, pts, grid_A) for x, pts in frames]))
         else:
             v0, ve = float(static_volume[idx].max()), float(ensemble_volume[idx].max())
+        box = docking_box(chain, idx, static_points)
         sites.append({
+            "docking_box": box,
             "residues": [chain.res_keys[i] for i in idx],
             "residue_names": [chain.res_names[i] for i in idx],
             "n_residues": int(len(idx)),

@@ -222,7 +222,8 @@ install_smina_env() {
   # environments may live outside <base>/envs (envs_dirs, ~/.conda/envs with a shared conda): ask conda
   local smina_prefix
   # (the smina environment has no Python, so its path comes from conda's list of environments)
-  smina_prefix="$(conda env list --json 2>/dev/null | tr -d ' "[]{}' | tr ',' '\n' | grep -E "/${SMINA_ENV}\$" | head -n 1)"
+  # (|| true: under set -euo pipefail a list without it must fall back below, not end the installation)
+  smina_prefix="$(conda env list --json 2>/dev/null | tr -d ' "[]{}' | tr ',' '\n' | grep -E "/${SMINA_ENV}\$" | head -n 1 || true)"
   [[ -n "$smina_prefix" ]] || smina_prefix="$base/envs/$SMINA_ENV"
   local smina_bin="$smina_prefix/bin/smina"
   [[ -x "$smina_bin" ]] || { echo "ERROR: smina not found in $SMINA_ENV ($smina_prefix)" >&2; exit 1; }

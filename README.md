@@ -108,7 +108,7 @@ Every MD result reports the platform it ran on.
 
 Leonardo's assistant is **one AI agent**: a single conversation with a large language model of
 your choice, either Anthropic Claude or OpenAI, using your own API key. It works only through
-**118 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
+**123 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
 terminal, no file-system access and no code execution, so it can do only what those tools do.
 
 **How it works.** It first looks at what is loaded, then writes a short **plan** and waits for
@@ -124,10 +124,12 @@ them, reports progress, and you can cancel them at any time. Before heavy runs i
 time on your computer. Results come with quality checks, for example a transition state with two
 imaginary frequencies or an overheated simulation. A finished protocol can be saved as a
 **pipeline** and rerun on new molecules. Leonardo can also expose its tools as an **MCP server**,
-so other AI applications can drive it, with the same confirmations.
+so other AI applications can drive it, with the same confirmations. Those applications also receive
+Leonardo's guidance on when to use each tool and how to chain them.
 
-**What it can do:** fetch and prepare structures; build mutants and models; dock, simulate and
-analyze; build systems with cofactors, membranes or materials; run quantum-chemistry and QM/MM
+**What it can do:** fetch structures and prepare them for simulation (missing loops, protonation at
+your pH); validate models (Ramachandran) and check that a system is physical before simulating it;
+find cryptic pockets and dock into them; build mutants and models; dock, simulate and analyze; build systems with cofactors, membranes or materials; run quantum-chemistry and QM/MM
 calculations; explain the results in your language.
 
 **What it cannot do:**

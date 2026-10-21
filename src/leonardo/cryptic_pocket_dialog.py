@@ -62,6 +62,11 @@ class CrypticPocketDialog(QtWidgets.QDialog):
         self.table.itemSelectionChanged.connect(self._show_site)
         outer.addWidget(self.table, 1)
         bottom = QtWidgets.QHBoxLayout()
+        self.btn_box = QtWidgets.QPushButton("Use as docking box")
+        self.btn_box.setToolTip("Centre Leonardo's docking box on the selected site (Pocket & Docking uses it)")
+        self.btn_box.setEnabled(False)
+        self.btn_box.clicked.connect(self._use_as_box)
+        bottom.addWidget(self.btn_box)
         bottom.addStretch(1)
         btn_close = QtWidgets.QPushButton("Close")
         btn_close.clicked.connect(self.close)
@@ -144,8 +149,27 @@ class CrypticPocketDialog(QtWidgets.QDialog):
         if not rows or not self._result:
             return
         site = self._result["sites"][min(rows)]
+        self.btn_box.setEnabled(True)
         name = f"{self._object}_cryptic_{site['rank']}"
         if name in cmd.get_names("selections"):
             cmd.show("sticks", f"{name} and not name N+C+O")
             cmd.zoom(name, 5)
             cmd.enable(name)
+
+    def _use_as_box(self):
+        rows = {i.row() for i in self.table.selectedItems()}
+        if not rows or not self._result:
+            return
+        site = self._result["sites"][min(rows)]
+        box = site["docking_box"]
+        host = self.parent()
+        spins = ("spin_cx", "spin_cy", "spin_cz", "spin_sx", "spin_sy", "spin_sz")
+        if host is None or not all(hasattr(host, a) for a in spins):
+            QtWidgets.QMessageBox.information(self, TITLE, "Open Leonardo's main window first.")
+            return
+        for attr, v in zip(spins, list(box["center"]) + list(box["size"])):
+            getattr(host, attr).setValue(float(v))
+        host._dock_grid_user_defined = True
+        self.lbl_status.setText(
+            f"Docking box set on site #{site['rank']}: centre {box['center']}, size {box['size']} A. "
+            "Open Pocket & Docking to dock a ligand there.")
