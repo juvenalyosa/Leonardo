@@ -108,7 +108,7 @@ Every MD result reports the platform it ran on.
 
 Leonardo's assistant is **one AI agent**: a single conversation with a large language model of
 your choice, either Anthropic Claude or OpenAI, using your own API key. It works only through
-**123 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
+**124 Leonardo tools**, the same functions behind the buttons of the Leonardo window. It has no
 terminal, no file-system access and no code execution, so it can do only what those tools do.
 
 **How it works.** It first looks at what is loaded, then writes a short **plan** and waits for

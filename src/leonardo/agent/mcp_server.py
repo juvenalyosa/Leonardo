@@ -24,7 +24,8 @@ SERVER_NAME = "leonardo"
 
 
 # bullets of the in-app prompt that are about its own plan/approval loop, not about the science or the tools
-_SESSION_ONLY = ("propose_plan", "mark_step", "ask_user", "Every plan step", "Missing inputs", "Reply in the user")
+_SESSION_ONLY = ("propose_plan", "mark_step", "ask_user", "Every plan step", "Missing inputs", "Reply in the user",
+                 "Session state")
 
 
 def mcp_instructions():

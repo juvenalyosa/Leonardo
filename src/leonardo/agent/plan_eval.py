@@ -19,12 +19,21 @@ import os
 import time
 
 from . import plan_check
-from .orchestrator import AgentSession
+from .orchestrator import SYSTEM_PROMPT, AgentSession
 
 CASES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "benchmarks",
                           "agent_planning", "cases.json")
 QUESTION_ANSWER = ("I cannot answer questions right now: choose sensible defaults, state them as assumptions in "
                    "the plan, and propose it.")
+
+
+def system_prompt(recipes=True, state=True):
+    """The assistant's system prompt; without recipes and state, the earlier one (for A/B runs)."""
+    if recipes and state:
+        return SYSTEM_PROMPT
+    start = SYSTEM_PROMPT.index("- Each request starts with an automatic")
+    end = SYSTEM_PROMPT.index("\n- ", start) + 1
+    return SYSTEM_PROMPT[:start] + SYSTEM_PROMPT[end:]
 
 
 def load_cases(path=None):
@@ -84,7 +93,7 @@ class _CaptureUI:
         return {"approved": False}
 
 
-def run_case(case, provider, registry, execute, state_facts=None, max_tool_calls=40):
+def run_case(case, provider, registry, execute, state_facts=None, state_summary=None, max_tool_calls=40):
     """Run the planning phase of one case; returns the grade with usage, questions and time."""
     ui = _CaptureUI()
     called = []
@@ -94,7 +103,7 @@ def run_case(case, provider, registry, execute, state_facts=None, max_tool_calls
         return execute(name, args)
 
     session = AgentSession(provider, registry, ui, execute=tracked, max_tool_calls=max_tool_calls,
-                           state_facts=state_facts)
+                           state_facts=state_facts, state_summary=state_summary)
     started = time.time()
     try:
         outcome = session.send(case["request"])

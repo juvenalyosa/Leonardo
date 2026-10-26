@@ -35,6 +35,8 @@ def main():
     ap.add_argument("--effort")
     ap.add_argument("--budget", type=float, default=5.0, help="stop once this many USD are spent (Claude only)")
     ap.add_argument("--label", default="", help="name of this run in the report")
+    ap.add_argument("--no-recipes", action="store_true", help="without suggest_workflow (A/B baseline)")
+    ap.add_argument("--no-state", action="store_true", help="without the session-state summary (A/B baseline)")
     args = ap.parse_args()
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -45,8 +47,7 @@ def main():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     from pymol import cmd
 
-    from leonardo.agent import config, plan_check, plan_eval
-    from leonardo.agent.orchestrator import SYSTEM_PROMPT
+    from leonardo.agent import config, plan_check, plan_eval, session_state
     from leonardo.agent.tools import AgentContext, _headless, build_registry
 
     settings = config.load_settings()
@@ -57,10 +58,11 @@ def main():
     if args.effort:
         settings["effort"] = args.effort
     model = config.model_for(settings)
+    prompt = plan_eval.system_prompt(recipes=not args.no_recipes, state=not args.no_state)
     from leonardo.agent.providers.base import ProviderError
 
     try:
-        config.make_provider(settings, SYSTEM_PROMPT, tools=[])
+        config.make_provider(settings, prompt, tools=[])
     except ProviderError as exc:
         print(f"Cannot run the benchmark: {exc}")
         return 2
@@ -80,9 +82,13 @@ def main():
         app.processEvents()
         context = AgentContext(dlg, run_on_main=lambda fn: fn())
         registry = build_registry(context)
-        provider = config.make_provider(settings, SYSTEM_PROMPT, tools=[])
+        if args.no_recipes:
+            registry._tools.pop("suggest_workflow", None)
+        provider = config.make_provider(settings, prompt, tools=[])
         result = plan_eval.run_case(case, provider, registry, lambda name, a: registry.call(name, a, context),
-                                    state_facts=lambda d=dlg: plan_check.scene_facts(d))
+                                    state_facts=lambda d=dlg: plan_check.scene_facts(d),
+                                    state_summary=None if args.no_state else
+                                    (lambda d=dlg, c=context: session_state.describe(d, c.jobs)))
         cost = config.usage_cost(model, result["usage"]) if settings.get("provider", "anthropic") == "anthropic" else None
         result["cost_usd"] = None if cost is None else round(cost, 4)
         spent += cost or 0.0
@@ -104,6 +110,7 @@ def main():
             break
 
     report = {"label": args.label, "provider": settings.get("provider", "anthropic"), "model": model,
+              "recipes": not args.no_recipes, "state": not args.no_state,
               "effort": settings.get("effort", "high"), "summary": plan_eval.summary(results),
               "cost_usd": round(spent, 4), "results": results}
     path = os.path.join(args.out, f"plan_eval_{args.label or model}.json")
