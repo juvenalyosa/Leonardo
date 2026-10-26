@@ -1,3 +1,0 @@
-case,engine,atoms,qst2_qst3_ts_delta_kcal_mol,imaginary_mode_count,primary_imag_cm1,irc_points,irc_energy_span_kcal_mol,endpoint_connectivity_passed,ts_min_drop_to_endpoint_kcal_mol
-Psi4 H + H2,Psi4 UHF/STO-3G,3,0.000212,1,2982.405,25,23.166,True,23.1658
-MOPAC SN2 capped cluster,MOPAC PM7,21,,1,562.97,25,35.313,True,23.244

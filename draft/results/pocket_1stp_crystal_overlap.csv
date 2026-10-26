@@ -1,5 +1,0 @@
-system,pocket_id,n_alpha_spheres,ligand_heavy_atoms,median_ligand_to_alpha_sphere_A,min_ligand_to_alpha_sphere_A,max_ligand_to_alpha_sphere_A,ligand_heavy_atom_fraction_within_4A,ligand_heavy_atom_fraction_within_5A,fpocket_score,druggability_score,rerun_command
-1STP/biotin,1,66,16,0.863,0.094,1.361,1.0,1.0,0.204,0.568,cd draft/results/pocket_1stp_crystal_overlap && fpocket -f receptor_1stp_no_btn_no_waters.pdb
-1STP/biotin,2,20,16,20.637,16.548,27.098,0.0,0.0,0.163,0.0,cd draft/results/pocket_1stp_crystal_overlap && fpocket -f receptor_1stp_no_btn_no_waters.pdb
-1STP/biotin,3,24,16,15.045,12.62,20.593,0.0,0.0,0.142,0.001,cd draft/results/pocket_1stp_crystal_overlap && fpocket -f receptor_1stp_no_btn_no_waters.pdb
-1STP/biotin,4,18,16,14.178,11.675,17.221,0.0,0.0,0.035,0.0,cd draft/results/pocket_1stp_crystal_overlap && fpocket -f receptor_1stp_no_btn_no_waters.pdb

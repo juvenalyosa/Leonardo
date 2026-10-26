@@ -77,19 +77,8 @@ session/
 logs/
 
 # Superseded manuscript artifacts kept out of the review/source archive.
-draft/.matplotlib-cache/
-draft/figures/archive_pre_renumber_*/
-draft/figures/figure_2_pipeline_statistics.*
-draft/manuscript/*.aux
-draft/manuscript/*.bbl
-draft/manuscript/*.blg
-draft/manuscript/*.fdb_latexmk
-draft/manuscript/*.fls
-draft/manuscript/*.log
-draft/manuscript/*.out
-draft/results/pipeline_comparison_statistics.csv
-draft/results/abfe_lite_diagnostic_pmf.csv
-draft/results/redocking_seed_summary_3ptb_ben.csv
+# manuscript and validation artifacts: kept locally, not published
+draft/
 redocking_real_1hsg/
 
 # replay packs: machine-specific verification reports

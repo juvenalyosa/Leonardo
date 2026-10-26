@@ -36,7 +36,7 @@ jobs:
 
       - name: Verify Python files compile
         run: |
-          python -m compileall -q -x '(^|/)(\.git|draft/figures|draft/results|test_outputs|benchmarks/redocking/1stp|dist)(/|$)' .
+          python -m compileall -q -x '(^|/)(\.git|test_outputs|benchmarks/redocking/1stp|dist)(/|$)' .
 
       - name: Verify Qt UI file parses
         run: |
@@ -60,12 +60,6 @@ jobs:
           bash -n scripts/build_installer_bundle.sh
           ./scripts/install_leonardo.sh --check-only --skip-zip --no-pymol-loader
           ./scripts/build_leonardo_zip.sh
-
-      - name: Verify manuscript scripts compile
-        run: |
-          python -m py_compile draft/scripts/generate_bmc_validation_assets.py
-          python -m py_compile draft/scripts/run_interaction_external_benchmark.py
-          python -m py_compile draft/scripts/run_publication_redocking_case.py
 
       - name: Verify packaged plugin artifact
         run: |
@@ -97,4 +91,5 @@ jobs:
       - name: Run full reviewer release checks
         run: |
           leonardo-readiness --strict
-          make reviewer-check
+          make installer-check package
+          env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q

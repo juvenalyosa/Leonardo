@@ -19,8 +19,7 @@ import subprocess
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[2]
-DRAFT = ROOT / "draft"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def sha256_file(path: Path) -> str:
@@ -73,7 +72,6 @@ def default_release_entries(root: Path = ROOT) -> list[tuple[str, Path]]:
     return [
         ("installable_pymol_plugin_zip", root / "dist" / "Leonardo.zip"),
         ("plugin_zip_sha256_sidecar", root / "dist" / "Leonardo.zip.sha256"),
-        ("compiled_manuscript_pdf", root / "draft" / "manuscript" / "main.pdf"),
         ("source_license", root / "LICENSE"),
         ("third_party_license_summary", root / "THIRD_PARTY_LICENSES.md"),
         ("citation_metadata", root / "CITATION.cff"),
@@ -133,7 +131,7 @@ def write_release_manifest_file(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default=str(DRAFT / "results" / "release_manifest.csv"))
+    parser.add_argument("--output", default=str(ROOT / "dist" / "release_manifest.csv"))
     parser.add_argument("--source-commit", default=None)
     args = parser.parse_args()
     info = write_release_manifest_file(Path(args.output), source_commit=args.source_commit)

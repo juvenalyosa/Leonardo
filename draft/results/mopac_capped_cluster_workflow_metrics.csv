@@ -1,9 +1,0 @@
-metric,value,unit
-Method,MOPAC PM7,
-Charge,-1,e
-Atoms,21,
-Frozen environment atoms,15,
-QST2 imaginary frequency,564.44,cm^-1
-QST3 imaginary frequency,562.97,cm^-1
-IRC points,25,
-IRC span,35.313,kcal/mol

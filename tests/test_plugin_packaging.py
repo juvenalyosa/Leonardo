@@ -209,7 +209,7 @@ def test_release_manifest_writer_records_commit(tmp_path):
     subprocess.run(
         [
             "python",
-            "draft/scripts/write_release_manifest.py",
+            "scripts/write_release_manifest.py",
             "--output",
             str(out_csv),
             "--source-commit",
