@@ -84,12 +84,69 @@ def responsive_grid_columns(available_width, *, card_min_width=260, maximum_colu
     return max(1, min(max_cols, width // card_width))
 
 
+# Workflow launcher of the main window: (section title, [launcher button attribute names]), in display order.
+# Every workflow window gets exactly one button here; the top row (the AI assistant, highlighted, and the
+# Advanced Tools window with every assistant tool as a form) sits above the sections.
+LAUNCHER_SECTIONS = (
+    ("Structures & Sequences", (
+        "btn_open_protein_prep",
+        "btn_open_modeler",
+        "btn_open_alphafold",
+        "btn_open_bioseq",
+        "btn_open_ramachandran",
+    )),
+    ("Ligands", (
+        "btn_open_ligand_tools",
+        "btn_open_ligand_editor",
+        "btn_open_pka",
+    )),
+    ("Pockets & Docking", (
+        "btn_open_pocket_docking",
+        "btn_open_cryptic",
+        "btn_open_redocking",
+        "btn_open_virtual_screening",
+    )),
+    ("Molecular Dynamics", (
+        "btn_open_openmm",
+        "btn_open_traj_tools",
+    )),
+    ("Quantum Chemistry & QM/MM", (
+        "btn_open_psi4",
+        "btn_open_psi4_cluster",
+        "btn_open_qmmm",
+    )),
+    ("Workspace", (
+        "btn_open_task_monitor",
+        "btn_open_display_settings",
+        "btn_open_debug",
+    )),
+)
+LAUNCHER_TOP = ("btn_open_ai_assistant", "btn_open_advanced_tools")
+
+
+def launcher_plan(available):
+    """Sections of the launcher that have at least one available button.
+
+    ``available`` is the set of button attribute names that exist on the window; returns
+    ``[(title, [names...]), ...]`` keeping the order of :data:`LAUNCHER_SECTIONS`.
+    """
+
+    have = set(available or ())
+    plan = []
+    for title, names in LAUNCHER_SECTIONS:
+        present = [n for n in names if n in have]
+        if present:
+            plan.append((title, present))
+    return plan
+
+
 def dialog_identity(window_title):
     """Return a concise category and subtitle for a Leonardo tool window."""
 
     title = str(window_title or "Leonardo").strip() or "Leonardo"
     key = title.lower()
     identities = (
+        (("advanced tools",), "ALL TOOLS", "Run any of Leonardo's assistant tools directly from a form."),
         (("openmm", "dynamics"), "MOLECULAR SIMULATION", "Prepare, run, and inspect molecular simulations."),
         (("qm/mm", "mopac"), "HYBRID METHODS", "Configure quantum/classical calculations and reaction workflows."),
         (("psi4", "quantum"), "QUANTUM CHEMISTRY", "Build, execute, and inspect electronic-structure calculations."),

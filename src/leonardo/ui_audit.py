@@ -112,14 +112,16 @@ def audit_widget(root, size_checks=True):
             item = lay.itemAt(i)
             wid = item.widget() if item is not None else None
             if wid is not None and _visible_on_page(wid, root):
-                kids.append(wid)
+                kids.append((wid, item))
         for i in range(len(kids)):
             for j in range(i + 1, len(kids)):
-                inter = kids[i].geometry().intersected(kids[j].geometry())
+                # the layout item's rect, not the widget's: macOS styles draw check boxes and buttons a few pixels
+                # past the cell the layout gave them (layout-item margins), which is not an overlap
+                inter = kids[i][1].geometry().intersected(kids[j][1].geometry())
                 if inter.width() > 2 and inter.height() > 2:
                     issues.append({"kind": "overlap", "widget": host.objectName() or type(host).__name__,
-                                   "a": f"{type(kids[i]).__name__}:{_text(kids[i])[:30]}",
-                                   "b": f"{type(kids[j]).__name__}:{_text(kids[j])[:30]}"})
+                                   "a": f"{type(kids[i][0]).__name__}:{_text(kids[i][0])[:30]}",
+                                   "b": f"{type(kids[j][0]).__name__}:{_text(kids[j][0])[:30]}"})
     return issues
 
 
