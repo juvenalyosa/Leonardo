@@ -1,7 +1,7 @@
 # Contributing to ProtLigInteract
 
 Before adding a file, check [`docs/REPOSITORY_LAYOUT.md`](docs/REPOSITORY_LAYOUT.md).
-Keep generated validation output in `draft/`, release archives in `dist/`, and
+Keep generated validation output in `draft/` (local only, ignored by git), release archives in `dist/`, and
 reusable logic in runtime modules with tests.
 
 Before opening a pull request, run `make lint` and the relevant pytest suite.

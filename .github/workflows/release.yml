@@ -35,7 +35,7 @@ jobs:
       - name: Write release manifest
         run: |
           set -e
-          python draft/scripts/write_release_manifest.py \
+          python scripts/write_release_manifest.py \
             --output dist/release_manifest.csv \
             --source-commit "$GITHUB_SHA"
 
@@ -50,8 +50,6 @@ jobs:
               dist/Leonardo-Installer-*.zip
               dist/Leonardo-Installer-*.zip.sha256
               dist/release_manifest.csv
-              draft/manuscript/main.pdf
-              draft/results/artifact_manifest.csv
             generate_release_notes: true
             prerelease: true
         env:

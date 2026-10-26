@@ -20,7 +20,7 @@ third-party scripts can still import compatibility aliases installed from
 | `installers/` | Platform-specific installers and shortcuts | Thin wrappers around `scripts/install_leonardo.sh` |
 | `docs/` | Maintainer and architecture documentation | Design decisions and migration notes live here |
 | `dist/` | Release ZIP and checksum | Generated; rebuild with `./scripts/build_leonardo_zip.sh` |
-| `draft/` | Manuscript/validation artifacts | Generated or review-specific; never import from runtime code |
+| `draft/` | Manuscript/validation artifacts | Local only (ignored by git, not published); never import from runtime code |
 
 ## Rules
 

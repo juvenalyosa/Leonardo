@@ -1,3 +1,0 @@
-case,engine,branches_present,frame_count_matches_profile,frequency_validation_one_imaginary,imaginary_mode_count,primary_imag_cm1,ts_profile_index,backward_endpoint_index,forward_endpoint_index,backward_endpoint_relative_energy_kcal_mol,ts_relative_energy_kcal_mol,forward_endpoint_relative_energy_kcal_mol,ts_above_both_endpoints,ts_min_drop_to_endpoint_kcal_mol,backward_endpoint_to_ts_rmsd_A,forward_endpoint_to_ts_rmsd_A,endpoint_to_endpoint_rmsd_A,endpoint_connectivity_passed
-Psi4 H + H2,Psi4 UHF/STO-3G,True,True,True,1,2982.405,12,0,24,0.0,23.1658,0.0,True,23.1658,0.885,0.885,1.0208,True
-MOPAC SN2 capped cluster,MOPAC PM7,True,True,True,1,562.97,11,0,24,12.069,35.313,0.0,True,23.244,0.6979,0.6936,1.2155,True

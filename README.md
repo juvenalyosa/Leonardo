@@ -374,7 +374,6 @@ Leonardo/
 ├── scripts/             Build, install, launch and maintenance commands
 ├── installers/          End-user installer and platform shortcuts
 ├── docs/                Installation guide, gallery and maintainer documentation
-├── draft/               Manuscript and generated validation artifacts
 └── dist/                Reproducible PyMOL release archive
 ```
 
