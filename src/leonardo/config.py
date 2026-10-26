@@ -7,8 +7,8 @@ CLI tools, tests, and release packaging.
 import sys
 from pathlib import Path
 
-PLUGIN_VERSION = "0.2.0a18"
-PLUGIN_BUILD = "2026-10-26-r1"
+PLUGIN_VERSION = "0.2.0a19"
+PLUGIN_BUILD = "2026-10-26-r2"
 SUITE_NAME = "Leonardo"
 PROJECT_MASTER_FILE_NAME = f"{SUITE_NAME}.project.json"
 PROJECT_STATE_FILE_NAME = "project_state.json"
