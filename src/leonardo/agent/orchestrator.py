@@ -22,7 +22,7 @@ import json
 import threading
 import time
 
-from . import pipelines
+from . import pipelines, plan_check
 from .checks import post_checks
 from .providers.base import ProviderError, TextDelta, ThinkingDelta, ToolCall, TurnEnd
 from .registry import APPROVAL_POLICIES, ToolError, result_to_text
@@ -112,8 +112,9 @@ docking; ask the pH when it matters. Report the residues whose protonation chang
 criptico/oculto"): find_cryptic_pockets on the apo protein (prepare it first if it has gaps). It returns ranked \
 sites with their kind (already open / grows / forms with motion), pocket volumes in the structure and with motion, \
 and a selection per site (<object>_cryptic_<rank>). Say they are predictions (CryptoBench residue AUC 0.81; the \
-true site is in the top 3 about half the time). To follow a site up: dock into it (set_docking_box with the \
-site's docking_box center and size, then run_docking), or check that it opens with MD / run_enhanced_sampling.
+true site is in the top 3 about half the time). To follow a site up: dock into it (find_pockets on the same \
+structure, because docking needs fpocket's pocket list, then set_docking_box with the site's docking_box center and \
+size, then run_docking), or check that it opens with MD / run_enhanced_sampling.
 - Structure validation: ramachandran_plot (also all_states for a trajectory or NMR ensemble) after building a \
 model, a mutant, loops or an AlphaFold prediction; models and prepared proteins already report their \
 Ramachandran statistics - say them, and show the outliers when there are more than ~0.5%.
@@ -145,10 +146,11 @@ PLAN_TOOL = {
                     "properties": {
                         "title": {"type": "string"},
                         "detail": {"type": "string", "description": "Inputs, settings and why."},
-                        "tools": {"type": "array", "items": {"type": "string"}},
+                        "tools": {"type": "array", "items": {"type": "string"},
+                                  "description": "The Leonardo tools this step calls, in order."},
                         "heavy": {"type": "boolean", "description": "Long calculation (minutes or more)."},
                     },
-                    "required": ["title", "detail"],
+                    "required": ["title", "detail", "tools"],
                 },
             },
             "estimated_time": {"type": "string"},
@@ -197,7 +199,7 @@ def _as_openai(tool):
 
 class AgentSession:
     def __init__(self, provider, registry, ui, execute, approval_policy="heavy", max_tool_calls=300,
-                 poll_interval=1.0):
+                 poll_interval=1.0, state_facts=None):
         self.provider = provider
         self.registry = registry
         self.ui = ui
@@ -205,6 +207,9 @@ class AgentSession:
         self.needs_confirmation = APPROVAL_POLICIES.get(approval_policy, APPROVAL_POLICIES["heavy"])
         self.max_tool_calls = int(max_tool_calls)
         self.poll_interval = float(poll_interval)
+        # () -> set of plan_check facts the session already has (loaded structure, pockets, ligand...)
+        self.state_facts = state_facts
+        self._plan_checked = False
         self.phase = "planning"
         self.plan = None
         self.tool_calls = 0
@@ -236,6 +241,7 @@ class AgentSession:
         # every request starts gated again: one approved plan does not open compute tools for the rest
         # of the chat, and the tool-call budget is per request
         self.tool_calls = 0
+        self._plan_checked = False
         if self.phase != "planning":
             self.phase = "planning"
             self._apply_phase_tools()
@@ -276,8 +282,8 @@ class AgentSession:
                     end = ev
         except ProviderError as exc:
             return [], TurnEnd("error", detail=str(exc))
-        for key in ("input_tokens", "output_tokens"):
-            self.usage[key] += int((end.usage or {}).get(key, 0) or 0)
+        for key, value in (end.usage or {}).items():
+            self.usage[key] = self.usage.get(key, 0) + int(value or 0)
         self.ui.on_event("usage", dict(self.usage))
         self.ui.on_event("text_end", {})
         return calls, end
@@ -333,6 +339,13 @@ class AgentSession:
         plan = call.arguments if isinstance(call.arguments, dict) else {}
         if not plan.get("steps"):
             return self._result(call, "A plan needs at least one step.", is_error=True)
+        problems = self._check_plan(plan)
+        if problems and not self._plan_checked:
+            # once per request: the model fixes the plan, or keeps it and the user sees the findings
+            self._plan_checked = True
+            return self._result(call, plan_check.feedback(problems))
+        if problems:
+            plan = dict(plan, checks=problems)
         self.plan = plan
         self.ui.on_event("plan", {"plan": plan})
         answer = self.ui.ask("plan", {"plan": plan})
@@ -350,6 +363,16 @@ class AgentSession:
         self.phase = "planning"
         self._apply_phase_tools()
         return self._result(call, "The user rejected the plan. Stop and ask what they want instead.", stop=True)
+
+    def _check_plan(self, plan):
+        try:
+            facts = set(self.state_facts() if callable(self.state_facts) else ())
+        except Exception:
+            facts = set()
+        try:
+            return plan_check.check_plan(plan, self.registry, facts)
+        except Exception:
+            return []           # a checker bug must never block a plan
 
     def _handle_leonardo_tool(self, call):
         if call.name == "run_pipeline" and not getattr(self, "_in_pipeline", False):

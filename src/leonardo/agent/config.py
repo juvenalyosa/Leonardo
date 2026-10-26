@@ -135,3 +135,22 @@ def make_provider(settings, system, tools):
     from .providers.anthropic_provider import AnthropicProvider
 
     return AnthropicProvider(model, key, system=system, tools=tools, effort=settings.get("effort", "high"))
+
+
+# USD per million tokens (input, output); cache writes cost 1.25x the input price and cache reads 0.1x
+CLAUDE_PRICES = {
+    "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0), "claude-fable-5-1": (10.0, 50.0),
+    "claude-sonnet-5-5": (2.0, 10.0), "claude-sonnet-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def usage_cost(model, usage):
+    """Cost in USD of a usage dict (input, output and prompt-cache tokens); None for an unknown model."""
+    prices = CLAUDE_PRICES.get(str(model))
+    if not prices:
+        return None
+    u = {k: float((usage or {}).get(k, 0) or 0) for k in
+         ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")}
+    return (u["input_tokens"] + 1.25 * u["cache_creation_input_tokens"] + 0.1 * u["cache_read_input_tokens"]) \
+        / 1e6 * prices[0] + u["output_tokens"] / 1e6 * prices[1]

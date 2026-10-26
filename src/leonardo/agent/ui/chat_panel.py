@@ -241,7 +241,9 @@ class ChatPanel(QtWidgets.QWidget):
         self._sync_composer()
 
     def set_usage(self, usage, cost_text=""):
-        tin = int(usage.get("input_tokens", 0))
+        # with prompt caching, cached tokens are reported apart from the uncached input
+        tin = sum(int(usage.get(k, 0) or 0)
+                  for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
         tout = int(usage.get("output_tokens", 0))
         self.lbl_usage.setText(f"Tokens: {tin:,} in · {tout:,} out" + (f" · {cost_text}" if cost_text else ""))
 
@@ -353,6 +355,8 @@ class ChatPanel(QtWidgets.QWidget):
             lay.addLayout(row)
         if plan.get("assumptions"):
             lay.addWidget(_label("Assumptions: " + "; ".join(map(str, plan["assumptions"])), "muted"))
+        for problem in plan.get("checks") or ():
+            lay.addWidget(_label("⚠ " + str(problem), "muted"))
         if interactive:
             feedback = QtWidgets.QLineEdit()
             feedback.setPlaceholderText("Changes or comments (optional)")
