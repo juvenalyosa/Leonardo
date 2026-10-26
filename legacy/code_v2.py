@@ -976,9 +976,21 @@ except ImportError:
         resource_string,
     )
 try:
-    from .ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
+    from .ui_layout_runtime import (
+        LAUNCHER_TOP,
+        build_responsive_window_plan,
+        dialog_identity,
+        launcher_plan,
+        responsive_grid_columns,
+    )
 except ImportError:
-    from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
+    from ui_layout_runtime import (
+        LAUNCHER_TOP,
+        build_responsive_window_plan,
+        dialog_identity,
+        launcher_plan,
+        responsive_grid_columns,
+    )
 try:
     from . import ui_theme
 except ImportError:
@@ -1521,6 +1533,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._setup_project_ui()
         self._setup_debug_panel()
         self._setup_ai_assistant_ui()
+        self._setup_advanced_tools_ui()
         try:
             self._update_hardware_label()
             self._apply_hardware_defaults()
@@ -1549,21 +1562,54 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.verticalLayout.addWidget(self.btn_open_ai_assistant)
         else:
             self.layout().addWidget(self.btn_open_ai_assistant)
+    def _assistant_controller(self):
+        """The assistant's controller (tool registry, context and background jobs), created on first use;
+        shared by the chat and the Advanced Tools window so both see the same jobs and results."""
+        if self._ai_controller is None:
+            try:
+                from .agent.tools import _headless
+                from .agent.ui.controller import AssistantController
+            except ImportError:
+                from leonardo.agent.tools import _headless
+                from leonardo.agent.ui.controller import AssistantController
+            _headless.install()
+            self._ai_controller = AssistantController(self)
+        return self._ai_controller
     def _show_ai_assistant(self):
         """Open (or bring back) the AI assistant panel, docked in PyMOL's main window."""
         try:
-            if self._ai_controller is None:
-                try:
-                    from .agent.tools import _headless
-                    from .agent.ui.controller import AssistantController
-                except ImportError:
-                    from leonardo.agent.tools import _headless
-                    from leonardo.agent.ui.controller import AssistantController
-                _headless.install()
-                self._ai_controller = AssistantController(self)
-            self._ai_controller.show()
+            self._assistant_controller().show()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "AI Assistant", f"Could not open the AI assistant: {e}")
+    def _setup_advanced_tools_ui(self):
+        """Launcher button of the Advanced Tools window (every assistant tool as a form, no API key needed)."""
+        self._advanced_tools_dialog = None
+        self.btn_open_advanced_tools = QtWidgets.QPushButton("Advanced Tools...")
+        self.btn_open_advanced_tools.setToolTip(
+            "Every tool of the AI assistant as a form: membranes, materials, disulfide design, interfaces, "
+            "validated systems with cofactors, enhanced sampling, QM analysis, pipelines and more"
+        )
+        self.btn_open_advanced_tools.clicked.connect(self._show_advanced_tools)
+        if hasattr(self, "verticalLayout"):
+            self.verticalLayout.addWidget(self.btn_open_advanced_tools)
+        else:
+            self.layout().addWidget(self.btn_open_advanced_tools)
+    def _show_advanced_tools(self):
+        try:
+            if self._advanced_tools_dialog is None:
+                try:
+                    from .agent.ui.tools_dialog import AdvancedToolsDialog
+                except ImportError:
+                    from leonardo.agent.ui.tools_dialog import AdvancedToolsDialog
+                controller = self._assistant_controller()
+                self._advanced_tools_dialog = AdvancedToolsDialog(controller.registry, controller.context, self)
+            self._fit_dialog_to_screen(self._advanced_tools_dialog, preferred_w=1180, preferred_h=820,
+                                       min_w=820, min_h=680)
+            self._advanced_tools_dialog.show()
+            self._advanced_tools_dialog.raise_()
+            self._advanced_tools_dialog.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Advanced Tools", f"Could not open Advanced Tools: {e}")
     def _apply_window_defaults(self):
         """Apply screen-aware defaults to the main Leonardo window."""
         try:
@@ -2510,9 +2556,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             except Exception:
                 ligand_txt = f"{lig[2]} | chain {lig[0]} | resi {lig[1]}"
         self.lbl_main_workspace_summary.setText(
-            f"Structure: {struct_label}\nLigand: {ligand_txt}\n"
-            "Ligand picking, interaction calculation, filters, redraw actions, and export now live in "
-            "'Interaction Controls...'."
+            f"Structure: {struct_label}\nLigand: {ligand_txt}"
         )
     def _setup_interaction_workspace_popup(self):
         try:
@@ -2713,8 +2757,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             layout.setContentsMargins(12, 12, 12, 10)
             layout.setSpacing(8)
             desc = QtWidgets.QLabel(
-                "Load the protein structure here. Small-molecule import and preparation remain available from "
-                "the workflow launcher."
+                "Load or fetch the structure to work on. Ligands are imported, drawn and prepared from the "
+                "Ligands group of the workflow launcher."
             )
             desc.setObjectName("pliOpenMolDesc")
             desc.setWordWrap(True)
@@ -3687,39 +3731,28 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print(f"Project UI setup warning: {e}")
     def _setup_launcher_hub(self):
         """
-        Build a cleaner, card-like launcher section on the main window by collecting
-        popup-entry buttons into a single styled hub.
+        Build the workflow launcher of the main window: the AI assistant on top, then one titled group of
+        cards per area (``ui_layout_runtime.LAUNCHER_SECTIONS``), so every workflow window is one click away.
         """
         try:
             if not hasattr(self, "verticalLayout"):
                 return
-            entries = [
-                "btn_open_ai_assistant",
-                "btn_open_protein_prep",
-                "btn_open_modeler",
-                "btn_open_ramachandran",
-                "btn_open_alphafold",
-                "btn_open_bioseq",
-                "btn_open_psi4",
-                "btn_open_ligand_tools",
-                "btn_open_pka",
-                "btn_open_pocket_docking",
-                "btn_open_cryptic",
-                "btn_open_redocking",
-                "btn_open_virtual_screening",
-                "btn_open_traj_tools",
-                "btn_open_openmm",
-                "btn_open_qmmm",
-                "btn_open_task_monitor",
-                "btn_open_display_settings",
-                "btn_open_debug",
-            ]
-            buttons = []
-            for name in entries:
+
+            def _button(name):
                 w = getattr(self, name, None)
-                if isinstance(w, QtWidgets.QPushButton):
-                    buttons.append(w)
-            if not buttons:
+                return w if isinstance(w, QtWidgets.QPushButton) else None
+
+            def _detach(btn):
+                # some buttons were first inserted straight into the main layout; take them out of it
+                parent = btn.parentWidget()
+                layout = parent.layout() if parent is not None else None
+                if layout is not None:
+                    layout.removeWidget(btn)
+
+            available = [n for n, _ in vars(self).items() if n.startswith("btn_open_") and _button(n) is not None]
+            plan = launcher_plan(available)
+            top = [b for b in (_button(n) for n in LAUNCHER_TOP) if b is not None]
+            if not plan and not top:
                 return
             hub = QtWidgets.QGroupBox("Workflow Launcher")
             hub.setObjectName("pliLauncherHub")
@@ -3727,28 +3760,56 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             hub_layout.setContentsMargins(16, 14, 16, 14)
             hub_layout.setSpacing(10)
             desc = QtWidgets.QLabel(
-                "Open focused workflow panels for structure preparation, docking, "
-                "simulation, and analysis."
+                "Ask the AI assistant, or open a workflow window directly. Advanced Tools runs any assistant tool "
+                "from a form, including those without a window of their own (membranes, materials, design...)."
             )
             desc.setObjectName("pliLauncherDesc")
             desc.setWordWrap(True)
             hub_layout.addWidget(desc)
-            grid = QtWidgets.QGridLayout()
-            grid.setHorizontalSpacing(8)
-            grid.setVerticalSpacing(8)
-            self._launcher_grid = grid
-            self._launcher_buttons = buttons
-            for btn in buttons:
-                try:
+            if top:
+                top_row = QtWidgets.QHBoxLayout()
+                top_row.setSpacing(8)
+                for idx, btn in enumerate(top):
+                    _detach(btn)
+                    if idx == 0:
+                        btn.setProperty("leonardoRole", "primary")
+                    else:
+                        btn.setObjectName("pliLauncherButton")
+                    btn.setMinimumHeight(44)
+                    btn.setMinimumWidth(0)
+                    btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+                    top_row.addWidget(btn, 2 if idx == 0 else 1)
+                hub_layout.addLayout(top_row)
+            self._launcher_sections = []
+            buttons = []
+            for title, names in plan:
+                header = QtWidgets.QLabel(title.upper())
+                header.setObjectName("pliLauncherSection")
+                header.setStyleSheet(
+                    "QLabel#pliLauncherSection { color: #5B626B; font-size: 11px; font-weight: 700;"
+                    " letter-spacing: 1px; padding-top: 6px; }"
+                )
+                hub_layout.addWidget(header)
+                grid = QtWidgets.QGridLayout()
+                grid.setHorizontalSpacing(8)
+                grid.setVerticalSpacing(8)
+                section_buttons = []
+                for name in names:
+                    btn = _button(name)
+                    _detach(btn)
                     btn.setObjectName("pliLauncherButton")
+                    btn.setVisible(True)
                     btn.setMinimumHeight(44)
                     btn.setMaximumHeight(64)
                     btn.setMinimumWidth(0)
                     btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-                except Exception:
-                    pass
+                    section_buttons.append(btn)
+                hub_layout.addLayout(grid)
+                self._launcher_sections.append((grid, section_buttons))
+                buttons.extend(section_buttons)
+            self._launcher_buttons = top + buttons
+            self._launcher_column_count = 0
             self._reflow_launcher_grid()
-            hub_layout.addLayout(grid)
             self.lbl_compute_hardware = QtWidgets.QLabel("Compute: detecting CPU/GPU...")
             self.lbl_compute_hardware.setObjectName("pliLauncherDesc")
             self.lbl_compute_hardware.setWordWrap(True)
@@ -3759,9 +3820,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             print(f"Launcher hub setup warning: {e}")
     def _reflow_launcher_grid(self):
         """Rearrange launcher cards when the main window crosses width breakpoints."""
-        grid = getattr(self, "_launcher_grid", None)
-        buttons = list(getattr(self, "_launcher_buttons", []) or [])
-        if grid is None or not buttons:
+        sections = list(getattr(self, "_launcher_sections", []) or [])
+        if not sections:
             return
         try:
             viewport = getattr(self, "_main_scroll_area", None)
@@ -3769,15 +3829,16 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 available_width = int(viewport.viewport().width()) - 40
             else:
                 available_width = int(self.width()) - 60
-            ncols = responsive_grid_columns(available_width, card_min_width=300, maximum_columns=3)
+            ncols = responsive_grid_columns(available_width, card_min_width=240, maximum_columns=3)
             if int(getattr(self, "_launcher_column_count", 0) or 0) == int(ncols):
                 return
-            while grid.count():
-                grid.takeAt(0)
-            for idx, button in enumerate(buttons):
-                grid.addWidget(button, idx // ncols, idx % ncols)
-            for col in range(3):
-                grid.setColumnStretch(col, 1 if col < ncols else 0)
+            for grid, buttons in sections:
+                while grid.count():
+                    grid.takeAt(0)
+                for idx, button in enumerate(buttons):
+                    grid.addWidget(button, idx // ncols, idx % ncols)
+                for col in range(3):
+                    grid.setColumnStretch(col, 1 if col < ncols else 0)
             self._launcher_column_count = int(ncols)
         except Exception:
             pass
@@ -21511,7 +21572,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 "Ligand Source + Parameterization",
                 lig_group,
                 width=960,
-                height=580,
+                height=740,
             )
             self._dock_run_dialog = self._build_docking_step_dialog(
                 "Docking, Poses, and ABFE-lite",
@@ -34211,14 +34272,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             self.edit_liged_smiles.setVisible(False)
             self.lbl_liged_2d = None
             sketcher.show_status("Draw a ligand, type a SMILES, or use Import to load one.", "info")
-            # Keep a hidden compatibility button; ligand entrypoint is now the
-            # main "Ligand Source & Prep" launcher.
+            # Launcher card (Ligands group of the workflow launcher).
             self.btn_open_ligand_editor = QtWidgets.QPushButton("Ligand Editor...")
             self.btn_open_ligand_editor.setToolTip(
                 "2D ligand editing + 3D rebuild with hydrogens for downstream docking/ABFE workflows"
             )
             self.btn_open_ligand_editor.clicked.connect(self._show_ligand_editor_dialog)
-            self.btn_open_ligand_editor.setVisible(False)
         except Exception as e:
             print(f"Ligand Editor UI Setup Error: {e}")
     def _on_liged_sketcher_changed(self, mol):

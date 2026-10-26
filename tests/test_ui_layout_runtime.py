@@ -1,4 +1,14 @@
-from ui_layout_runtime import build_responsive_window_plan, dialog_identity, responsive_grid_columns
+import re
+from pathlib import Path
+
+from ui_layout_runtime import (
+    LAUNCHER_TOP,
+    LAUNCHER_SECTIONS,
+    build_responsive_window_plan,
+    dialog_identity,
+    launcher_plan,
+    responsive_grid_columns,
+)
 
 
 def test_responsive_window_plan_preserves_preferred_size_on_large_screen():
@@ -41,3 +51,24 @@ def test_dialog_identity_assigns_scientific_context():
     assert "simulations" in openmm["subtitle"]
     assert docking["category"] == "MOLECULAR DOCKING"
     assert modeler["category"] == "PROTEIN MODELING"
+
+
+def test_launcher_plan_keeps_section_order_and_drops_missing_buttons():
+    plan = launcher_plan({"btn_open_qmmm", "btn_open_protein_prep", "btn_open_psi4_cluster", "btn_unrelated"})
+    assert plan == [
+        ("Structures & Sequences", ["btn_open_protein_prep"]),
+        ("Quantum Chemistry & QM/MM", ["btn_open_psi4_cluster", "btn_open_qmmm"]),
+    ]
+    assert launcher_plan(()) == []
+
+
+def test_every_workflow_window_button_has_one_launcher_card():
+    # a new "btn_open_*" window button must be placed in LAUNCHER_SECTIONS, or it never reaches the main window
+    source = (Path(__file__).resolve().parents[1] / "legacy" / "code_v2.py").read_text(encoding="utf-8")
+    created = set(re.findall(r"self\.(btn_open_[a-z0-9_]+) = QtWidgets\.QPushButton\(", source))
+    # step buttons inside the Protein Modeling and Pocket & Docking windows, and the button inside the main
+    # window's Open Molecules card, are not launcher entries
+    inner = {n for n in created if n.endswith("_popup")} | {"btn_open_interaction_workspace"}
+    placed = [n for _, names in LAUNCHER_SECTIONS for n in names]
+    assert len(placed) == len(set(placed))
+    assert set(placed) | set(LAUNCHER_TOP) == created - inner
