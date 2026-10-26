@@ -2508,8 +2508,12 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
             scroll.setWidget(content)
             for widget in pinned_widgets:
                 old_layout.addWidget(widget)
-            old_layout.addWidget(scroll)
+            old_layout.addWidget(scroll, 1)
             self._main_scroll_area = scroll
+            # the theme's polish must not wrap this window in a second scroll area: the outer one takes the
+            # whole window and leaves this one at its size hint, with an empty band below it (Qt 6)
+            self._leonardo_scroll_body = True
+            self._leonardo_responsive_scroll = scroll
         except Exception as e:
             print(f"Main scroll setup warning: {e}")
     def _take_top_level_layout(self, target_layout):
