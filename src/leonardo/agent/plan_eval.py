@@ -16,6 +16,7 @@ the benchmark with the provider and model of the assistant's settings.
 
 import json
 import os
+import threading
 import time
 
 from . import plan_check
@@ -93,8 +94,12 @@ class _CaptureUI:
         return {"approved": False}
 
 
-def run_case(case, provider, registry, execute, state_facts=None, state_summary=None, max_tool_calls=40):
-    """Run the planning phase of one case; returns the grade with usage, questions and time."""
+def run_case(case, provider, registry, execute, state_facts=None, state_summary=None, max_tool_calls=40,
+             timeout=300.0):
+    """Run the planning phase of one case; returns the grade with usage, questions and time.
+
+    A case still running after ``timeout`` seconds is cancelled and fails with outcome "timeout".
+    """
     ui = _CaptureUI()
     called = []
 
@@ -105,12 +110,23 @@ def run_case(case, provider, registry, execute, state_facts=None, state_summary=
     session = AgentSession(provider, registry, ui, execute=tracked, max_tool_calls=max_tool_calls,
                            state_facts=state_facts, state_summary=state_summary)
     started = time.time()
+    timer = threading.Timer(timeout, session.cancel) if timeout else None
+    if timer:
+        timer.daemon = True
+        timer.start()
     try:
         outcome = session.send(case["request"])
     except Exception as exc:          # a provider or harness failure counts against the case, not the run
         outcome = f"error: {type(exc).__name__}: {exc}"
+    finally:
+        if timer:
+            timer.cancel()
+    if session.cancelled():
+        outcome = "timeout"
     problems = plan_check.check_plan(ui.plan, registry, set(state_facts() if state_facts else ())) if ui.plan else []
     result = grade(case, called, ui.plan, problems)
+    if outcome == "timeout":
+        result["passed"] = False
     result.update({"outcome": outcome, "questions": ui.questions, "usage": dict(session.usage),
                    "seconds": round(time.time() - started, 1), "plan": ui.plan})
     return result

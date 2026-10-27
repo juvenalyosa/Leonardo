@@ -10,6 +10,7 @@ calculation starts. It uses the API key and the provider/model of AI Assistant >
 """
 
 import argparse
+import faulthandler
 import json
 import os
 import sys
@@ -34,6 +35,7 @@ def main():
     ap.add_argument("--model")
     ap.add_argument("--effort")
     ap.add_argument("--budget", type=float, default=5.0, help="stop once this many USD are spent (Claude only)")
+    ap.add_argument("--timeout", type=float, default=300.0, help="cancel a case after this many seconds")
     ap.add_argument("--label", default="", help="name of this run in the report")
     ap.add_argument("--no-recipes", action="store_true", help="without suggest_workflow (A/B baseline)")
     ap.add_argument("--no-state", action="store_true", help="without the session-state summary (A/B baseline)")
@@ -85,10 +87,14 @@ def main():
         if args.no_recipes:
             registry._tools.pop("suggest_workflow", None)
         provider = config.make_provider(settings, prompt, tools=[])
+        # a case that ignores the cancel (e.g. a stalled connection) leaves a stack trace on stderr
+        faulthandler.dump_traceback_later(args.timeout + 120, exit=False)
         result = plan_eval.run_case(case, provider, registry, lambda name, a: registry.call(name, a, context),
                                     state_facts=lambda d=dlg: plan_check.scene_facts(d),
                                     state_summary=None if args.no_state else
-                                    (lambda d=dlg, c=context: session_state.describe(d, c.jobs)))
+                                    (lambda d=dlg, c=context: session_state.describe(d, c.jobs)),
+                                    timeout=args.timeout)
+        faulthandler.cancel_dump_traceback_later()
         cost = config.usage_cost(model, result["usage"]) if settings.get("provider", "anthropic") == "anthropic" else None
         result["cost_usd"] = None if cost is None else round(cost, 4)
         spent += cost or 0.0
@@ -99,6 +105,7 @@ def main():
             f"order {result['bad_order']}" if result["bad_order"] else "",
             f"unwanted {result['unwanted']}" if result["unwanted"] else "",
             "no plan" if not result["has_plan"] else "",
+            "timeout" if result["outcome"] == "timeout" else "",
             f"outcome {result['outcome']}" if str(result["outcome"]).startswith("error") else ""]))
         print(f"[{n}/{len(cases)}] {flag} {case['id']} ({result['seconds']} s"
               + (f", ${cost:.3f}" if cost is not None else "") + ")" + (f": {extra}" if extra else ""), flush=True)
