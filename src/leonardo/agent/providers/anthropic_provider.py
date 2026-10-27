@@ -55,6 +55,9 @@ class AnthropicProvider(Provider):
             "system": self.system,
             "tools": self.tools,
             "messages": self.messages,
+            # the tool catalog and the system prompt are the same every turn: cache them (and the
+            # conversation so far) instead of paying for ~30k input tokens at the full price each turn
+            "cache_control": {"type": "ephemeral"},
         }
         if not self.model.startswith(_NO_ADAPTIVE):
             kw["thinking"] = {"type": "adaptive", "display": "summarized"}
@@ -95,8 +98,8 @@ class AnthropicProvider(Provider):
 
         # the full content (thinking, fallback and tool_use blocks included) goes back unchanged
         self.messages.append({"role": "assistant", "content": response.content})
-        usage = {"input_tokens": int(getattr(response.usage, "input_tokens", 0) or 0),
-                 "output_tokens": int(getattr(response.usage, "output_tokens", 0) or 0)}
+        usage = {key: int(getattr(response.usage, key, 0) or 0)
+                 for key in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")}
         if response.stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
             yield TurnEnd("refusal", usage, str(getattr(details, "explanation", "") or "declined by the model"))

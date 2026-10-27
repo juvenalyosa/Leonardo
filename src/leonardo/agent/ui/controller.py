@@ -6,7 +6,7 @@ chat window (a separate window, so PyMOL's viewer keeps its size).
 
 from pymol.Qt import QtCore, QtWidgets
 
-from .. import config, pipelines, presentation
+from .. import config, pipelines, plan_check, presentation
 from ..mcp_server import ExternalMcpServer, McpToolClient, build_server
 from ..orchestrator import SYSTEM_PROMPT, AgentSession
 from ..providers.base import ProviderError
@@ -15,12 +15,6 @@ from ..tools import AgentContext, _headless, build_registry
 from .bridge import AgentWorker, MainThreadRunner, UiAdapter
 from .chat_panel import ChatPanel
 from .settings_dialog import AssistantSettingsDialog
-
-# $ per million tokens (input, output), first-party Claude API list prices
-CLAUDE_PRICES = {
-    "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0), "claude-fable-5-1": (10.0, 50.0),
-    "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0),
-}
 
 
 class _ChatWindow(QtWidgets.QWidget):
@@ -224,7 +218,8 @@ class AssistantController(QtCore.QObject):
         if policy not in APPROVAL_POLICIES:
             policy = "heavy"
         return AgentSession(provider, self.registry, self.adapter, execute=self.mcp_client.call_tool,
-                            approval_policy=policy, max_tool_calls=int(self.settings.get("max_tool_calls", 300)))
+                            approval_policy=policy, max_tool_calls=int(self.settings.get("max_tool_calls", 300)),
+                            state_facts=lambda: self.runner.run(lambda: plan_check.scene_facts(self.dlg)))
 
     def new_chat(self):
         if self.worker is not None and self.worker.isRunning():
@@ -349,11 +344,10 @@ class AssistantController(QtCore.QObject):
 
     # -- orchestrator events / questions -------------------------------------------- #
     def _cost_text(self, usage):
-        prices = CLAUDE_PRICES.get(config.model_for(self.settings))
-        if self.settings.get("provider") != "anthropic" or not prices:
+        if self.settings.get("provider") != "anthropic":
             return ""
-        cost = usage.get("input_tokens", 0) / 1e6 * prices[0] + usage.get("output_tokens", 0) / 1e6 * prices[1]
-        return f"≈ ${cost:.3f}"
+        cost = config.usage_cost(config.model_for(self.settings), usage)
+        return "" if cost is None else f"≈ ${cost:.3f}"
 
     def _on_event(self, kind, payload):
         p = self.panel

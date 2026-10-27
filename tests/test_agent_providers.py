@@ -66,6 +66,7 @@ def test_anthropic_turns_tool_results_and_refusal():
     assert isinstance(events[3], TurnEnd) and events[3].stop_reason == "tool_use"
     assert client.calls[0]["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert client.calls[0]["output_config"] == {"effort": "high"}
+    assert client.calls[0]["cache_control"] == {"type": "ephemeral"}      # tools + system cached every turn
     prov.add_tool_results([{"id": "tu_1", "content": "{}", "is_error": False}])
     assert prov.messages[1]["role"] == "assistant" and prov.messages[2]["content"][0]["tool_use_id"] == "tu_1"
     end = list(prov.stream_turn())[-1]
