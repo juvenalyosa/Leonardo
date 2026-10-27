@@ -130,11 +130,15 @@ class ChatPanel(QtWidgets.QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         holder = QtWidgets.QWidget()
+        self._holder = holder
         self.feed = QtWidgets.QVBoxLayout(holder)
         self.feed.setContentsMargins(12, 12, 12, 12)
         self.feed.setSpacing(10)
         self.feed.addStretch(1)
         self.scroll.setWidget(holder)
+        # the feed is as wide as the window: a long unbreakable text is clipped in its own card instead of
+        # widening every card past the edge (there is no horizontal scroll bar)
+        self.scroll.viewport().installEventFilter(self)
         root.addWidget(self.scroll, 1)
 
         # composer
@@ -176,6 +180,11 @@ class ChatPanel(QtWidgets.QWidget):
         self._open_asks = []
 
     # -- helpers -------------------------------------------------------------- #
+    def eventFilter(self, obj, event):
+        if obj is self.scroll.viewport() and event.type() == QtCore.QEvent.Resize:
+            self._holder.setFixedWidth(event.size().width())
+        return super().eventFilter(obj, event)
+
     def _add(self, widget):
         self.feed.insertWidget(self.feed.count() - 1, widget)
         QtCore.QTimer.singleShot(30, lambda: self.scroll.verticalScrollBar().setValue(
@@ -330,12 +339,11 @@ class ChatPanel(QtWidgets.QWidget):
     def show_plan(self, plan, interactive=True):
         self._end_text()
         card, lay = _card("cardPlan")
-        top = QtWidgets.QHBoxLayout()
-        top.addWidget(_label("Proposed plan", "title", wrap=False))
-        top.addStretch(1)
-        if plan.get("estimated_time"):
-            top.addWidget(_pill(f"⏱ {plan['estimated_time']}", ACCENT))
-        lay.addLayout(top)
+        lay.addWidget(_label("Proposed plan", "title", wrap=False))
+        if plan.get("estimated_time"):       # can be a sentence: wrapped, never a one-line pill
+            estimate = _label(f"⏱ {plan['estimated_time']}")
+            estimate.setStyleSheet(f"color: {ACCENT};")
+            lay.addWidget(estimate)
         lay.addWidget(_label(str(plan.get("goal", ""))))
         for i, st in enumerate(plan.get("steps", []) or [], start=1):
             row = QtWidgets.QHBoxLayout()
