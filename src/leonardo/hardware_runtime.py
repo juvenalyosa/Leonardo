@@ -22,11 +22,14 @@ import time
 CACHE_PATH = os.path.join(os.path.expanduser("~"), ".leonardo", "hardware.json")
 CACHE_VERSION = 2
 GPU_PLATFORMS = ("CUDA", "HIP", "Metal", "OpenCL")
+# solvation + minimization of a water box cost about as much as this much dynamics (~10k steps of 2 fs)
+SETUP_NS = {"explicit": 0.02}
 
-# reference speeds (ns/day at REF_ATOMS atoms) used until the user's own runs calibrate them
+# reference speeds (ns/day at REF_ATOMS atoms) used until the user's own runs calibrate them;
+# CPU explicit: 1AKI in TIP3P (~21k atoms) ran 5.6 ns/day on a 6-core i7-8850H (~38 at 3000 atoms)
 REF_ATOMS = 3000.0
 DEFAULT_NS_PER_DAY = {
-    ("CPU", "implicit"): 15.0, ("CPU", "gas"): 30.0, ("CPU", "explicit"): 6.0,
+    ("CPU", "implicit"): 15.0, ("CPU", "gas"): 30.0, ("CPU", "explicit"): 30.0,
     ("GPU", "implicit"): 250.0, ("GPU", "gas"): 400.0, ("GPU", "explicit"): 120.0,
 }
 
@@ -282,6 +285,34 @@ def _fmt(minutes):
     return f"{minutes / 1440:.1f} days"
 
 
+_WATER_RESN = "HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC"
+
+
+def solvated_atoms(n_solute, extent_nm, padding_nm=1.0):
+    """Atoms of OpenMM's cubic water box (addSolvent with padding): edge = largest solute dimension + 2 x
+    padding, 33.4 waters/nm3 minus ~0.93 per solute atom displaced (fitted on 1AKI: 20524 atoms)."""
+    edge = max(0.0, float(extent_nm)) + 2.0 * float(padding_nm)
+    waters = max(0.0, 33.4 * edge ** 3 - 0.93 * float(n_solute))
+    return int(n_solute + 3 * waters)
+
+
+def md_system_atoms(cmd, obj, solvent="implicit", padding_a=10.0):
+    """Atoms OpenMM will simulate for a PyMOL object: the solute with hydrogens (added before MD when the
+    structure has none), plus the water box for explicit solvent."""
+    solute = f"({obj}) and not (solvent and resn {_WATER_RESN})"
+    n = int(cmd.count_atoms(solute))
+    if n and int(cmd.count_atoms(f"({solute}) and elem H")) == 0:
+        n *= 2
+    if solvent != "explicit" or not n:
+        return n
+    try:
+        lo, hi = cmd.get_extent(solute)
+        extent_nm = max(b - a for a, b in zip(lo, hi)) / 10.0
+    except Exception:
+        return n * 10
+    return solvated_atoms(n, extent_nm, float(padding_a or 10.0) / 10.0)
+
+
 def estimate_md(n_atoms, ns, solvent="implicit", platform_name=None, prof=None):
     """Wall time of an OpenMM run (production + heating/equilibration overhead)."""
     prof = prof or _load_cache() or {}
@@ -293,14 +324,15 @@ def estimate_md(n_atoms, ns, solvent="implicit", platform_name=None, prof=None):
     # implicit solvent (GB) scales ~N^1.3 at these sizes; explicit (PME) ~N
     expo = 1.3 if solvent == "implicit" else 1.0
     ns_day = float(ref) / (atoms / REF_ATOMS) ** expo
-    minutes = float(ns) / ns_day * 1440.0 + 1.0
+    minutes = (float(ns) + SETUP_NS.get(solvent, 0.0)) / ns_day * 1440.0 + 1.0
     out = {"platform": plat, "kind": kind, "ns_per_day": round(ns_day, 2), "minutes": round(minutes, 1),
            "text": f"~{_fmt(minutes)} on {plat} ({ns_day:.1f} ns/day for {int(atoms)} atoms, {solvent})",
            "calibrated": bool(cal.get(f"md:{kind}:{solvent}"))}
     if kind == "CPU":
         gpu = (prof.get("md_platform") or {})
         gpu_ref = cal.get(f"md:GPU:{solvent}") or DEFAULT_NS_PER_DAY.get(("GPU", solvent), 100.0)
-        gpu_minutes = float(ns) / (float(gpu_ref) / (atoms / REF_ATOMS) ** expo) * 1440.0 + 1.0
+        gpu_minutes = ((float(ns) + SETUP_NS.get(solvent, 0.0)) / (float(gpu_ref) / (atoms / REF_ATOMS) ** expo)
+                       * 1440.0 + 1.0)
         out["gpu_minutes"] = round(gpu_minutes, 1)
         if minutes > 30:
             out["advice"] = (f"long on CPU; a CUDA GPU would take ~{_fmt(gpu_minutes)}"
