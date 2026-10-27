@@ -86,3 +86,27 @@ def test_tool_values_and_errors_are_shown_literally(panel):
     p.tool_event({"tool": "t", "title": "T", "status": "failed", "error": "'<' not supported between 'a' and <int>"})
     labels = [w.text() for w in p.findChildren(QtWidgets.QLabel)]
     assert any("&lt;int&gt;" in t for t in labels)
+
+
+def test_long_plan_and_tool_cards_fit_the_chat_width(app):
+    """A long time estimate or long tool arguments must wrap, never widen the feed past the window."""
+    p = ChatPanel()
+    p.resize(500, 700)
+    p.show()
+    long_estimate = ("~10-30 min en este i7-8850H (6 núcleos, sin GPU relevante para Psi4); Leonardo no tiene "
+                     "una estimación propia para optimizaciones DFT")
+    p.show_plan({"goal": "Optimizar la cafeína con DFT y mostrar HOMO y LUMO", "estimated_time": long_estimate,
+                 "steps": [{"title": "Optimización DFT con Psi4", "heavy": True,
+                            "detail": "B3LYP-D3BJ/def2-SVP en fase gas, molécula completa (24 átomos), 6 hilos"}]})
+    p.tool_event({"tool": "run_psi4", "title": "Quantum chemistry (Psi4)", "permission": "compute_heavy",
+                  "status": "running", "args": {"operation": "optimize", "object": "dock_ligand_preview",
+                                                "method": "b3lyp-d3bj", "basis": "def2-SVP", "threads": 6},
+                  "estimate": "~4 min with 6 threads (246 basis functions, ~12 gradient(s))"})
+    for _ in range(5):
+        app.processEvents()
+    viewport = p.scroll.viewport().width()
+    assert p.scroll.widget().width() <= viewport
+    cards = [w for w in p.scroll.widget().findChildren(QtWidgets.QFrame) if w.objectName() in ("cardPlan", "card")]
+    assert cards and all(c.width() <= viewport for c in cards)
+    assert any(long_estimate in lab.text() for lab in p.findChildren(QtWidgets.QLabel) if lab.wordWrap())
+    p.close()
