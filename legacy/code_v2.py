@@ -13537,8 +13537,7 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                     cmd.load(final_pdb, result_obj)
                 if dcd_path and os.path.isfile(dcd_path):
                     cmd.load_traj(dcd_path, result_obj)
-                cmd.show("cartoon", f"({result_obj}) and polymer")
-                self._apply_ball_and_stick_style(f"({result_obj}) and not polymer", sphere_scale=0.22, stick_radius=0.16)
+                self._style_md_result(result_obj)
                 self._openmm_last_output_object = str(result_obj)
                 self._openmm_sync_object_to_analysis_context(result_obj)
                 try:
@@ -13585,6 +13584,19 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
                 + (f"\nNotes: {' | '.join(str(n) for n in notes[:3])}" if notes else "")
             ),
         )
+    def _style_md_result(self, result_obj):
+        """Protein as cartoon, ligands/cofactors/structural ions as ball-and-stick; the water box and the
+        counter-ions added by solvation stay loaded but hidden, and the view frames the protein."""
+        water = (f"({result_obj}) and (solvent or resn HOH+WAT+H2O+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC"
+                 "+NA+CL+K+SOD+CLA+POT)")
+        cmd.hide("everything", water)
+        cmd.show("cartoon", f"({result_obj}) and polymer")
+        self._apply_ball_and_stick_style(f"({result_obj}) and not polymer and not ({water})",
+                                         sphere_scale=0.22, stick_radius=0.16)
+        try:
+            cmd.zoom(f"({result_obj}) and polymer", 4)
+        except Exception:
+            pass
     def _openmm_confirm_structure_health(self, payload):
         """Check the input structure before MD (gaps bonded across, missing atoms, overlapping atoms...);
         when something would make the simulation wrong, say what and how to fix it, and ask."""
@@ -48914,12 +48926,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         try:
             hw = self._hardware_mod()
             obj = str(payload.get("object_name", "") or "")
-            n_atoms = int(cmd.count_atoms(f"({obj}) and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)")) if obj else 0
             mode = str(payload.get("mode", "implicit") or "implicit")
-            if mode == "explicit":
-                n_atoms = int(n_atoms * 8)            # rough solvated box
-            elif cmd.count_atoms(f"({obj}) and not elem H") == cmd.count_atoms(f"({obj})"):
-                n_atoms = int(n_atoms * 2)            # hydrogens will be added
+            n_atoms = hw.md_system_atoms(cmd, obj, mode, payload.get("padding_a", 10.0)) if obj else 0
             dt_fs = float(payload.get("timestep_fs", 2.0) or 2.0)
             steps = sum(int(payload.get(k, 0) or 0) for k in ("heat_steps", "equil_steps", "prod_steps"))
             ns = steps * dt_fs * 1e-6

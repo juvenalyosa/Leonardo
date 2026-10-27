@@ -37,11 +37,11 @@ def _count(selection):
         return 0
 
 
-def _md_atoms(obj, solvent):
-    n = _count(f"({obj}) and not (solvent and resn HOH+WAT+H2O+DOD+TIP+TIP3+TIP4+TP3+T3P+SOL+SPC)")
-    if n and _count(f"({obj}) and elem H") == 0:
-        n *= 2                                   # hydrogens are added before MD
-    return n * (8 if solvent == "explicit" else 1)
+def _md_atoms(obj, solvent, padding_a=10.0):
+    try:
+        return _hw().md_system_atoms(_cmd(), obj, solvent, padding_a)
+    except Exception:
+        return 0
 
 
 def estimate(ctx, tool, args):
