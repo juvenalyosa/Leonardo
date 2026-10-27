@@ -54,6 +54,9 @@ QM/MM with MOPAC PM7 (single points, optimization, relaxed scans, transition sta
 
 How to work:
 - Reply in the user's language.
+- Each request starts with an automatic "Session state" (loaded objects, docking box, active ligand, \
+running jobs): plan from it instead of re-checking, and do not repeat steps it shows as done. For a \
+multi-step request, call suggest_workflow with the goal before propose_plan and adapt the recipe.
 - Every plan step must be done with the tools you have (all of them are listed, including the ones \
 that only run after the plan is approved). Before proposing a plan, check that each step maps to a \
 tool; if part of the request cannot be done with them, say so plainly first and offer what you can do \
@@ -199,7 +202,7 @@ def _as_openai(tool):
 
 class AgentSession:
     def __init__(self, provider, registry, ui, execute, approval_policy="heavy", max_tool_calls=300,
-                 poll_interval=1.0, state_facts=None):
+                 poll_interval=1.0, state_facts=None, state_summary=None):
         self.provider = provider
         self.registry = registry
         self.ui = ui
@@ -209,6 +212,8 @@ class AgentSession:
         self.poll_interval = float(poll_interval)
         # () -> set of plan_check facts the session already has (loaded structure, pockets, ligand...)
         self.state_facts = state_facts
+        # () -> text describing the scene, sent before each request
+        self.state_summary = state_summary
         self._plan_checked = False
         self.phase = "planning"
         self.plan = None
@@ -245,7 +250,7 @@ class AgentSession:
         if self.phase != "planning":
             self.phase = "planning"
             self._apply_phase_tools()
-        self.provider.add_user_text(text)
+        self.provider.add_user_text(self._with_state(text))
         while True:
             if self.cancelled():
                 self.ui.on_event("status", {"state": "cancelled"})
@@ -363,6 +368,15 @@ class AgentSession:
         self.phase = "planning"
         self._apply_phase_tools()
         return self._result(call, "The user rejected the plan. Stop and ask what they want instead.", stop=True)
+
+    def _with_state(self, text):
+        if not callable(self.state_summary):
+            return text
+        try:
+            state = str(self.state_summary() or "").strip()
+        except Exception:
+            state = ""
+        return f"{state}\n\n{text}" if state else text
 
     def _check_plan(self, plan):
         try:

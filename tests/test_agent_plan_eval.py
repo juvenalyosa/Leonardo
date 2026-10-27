@@ -58,3 +58,11 @@ def test_run_case_captures_the_plan_and_runs_nothing_heavy(registry):
     assert result["passed"] and result["questions"] == 1 and result["plan_problems"] == []
     assert result["tools"][:2] == ["list_objects", "fetch_structure"]
     assert PE.summary([result])["pass_rate"] == 1.0
+
+
+def test_run_case_cancels_a_case_that_never_ends(registry):
+    case = {"id": "stuck", "request": "dock", "expect": {"all": [["run_docking"]]}}
+    prov = ScriptedProvider([[("tool", "list_objects", {})]])
+    stuck = lambda n, a: {"job_id": "j1", "status": "running"} if n != "job_cancel" else {}
+    result = PE.run_case(case, prov, registry, stuck, timeout=0.3)
+    assert result["outcome"] == "timeout" and not result["passed"]

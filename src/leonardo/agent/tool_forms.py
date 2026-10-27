@@ -22,6 +22,7 @@ WINDOWLESS_GROUPS = (
     ("MD Components & Enhanced Sampling", "md_advanced"),
     ("QM Analysis & Spectra", "qmanalysis"),
     ("Pipelines & Projects", "pipeline_tools"),
+    ("Workflow Recipes", "workflows"),
 )
 # the same tools as a workflow window (handy for scripting a step with exact parameters)
 WINDOWED_GROUPS = (

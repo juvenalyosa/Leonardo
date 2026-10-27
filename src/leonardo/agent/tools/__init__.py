@@ -74,11 +74,12 @@ def build_registry(context):
         structure,
         trajectory,
         view,
+        workflows,
     )
 
     for module in (structure, view, pockets, cryptic, pka, protein_prep, ligands, ligand_editor, docking, redocking, screening, md,
                    md_advanced, components, trajectory, modeling, alphafold, bioseq, psi4, mopac, qmanalysis, qmmm, plots,
-                   estimates, extras, pipeline_tools, diagnostics, membrane, materials, design, macro_interactions):
+                   estimates, extras, pipeline_tools, diagnostics, membrane, materials, design, macro_interactions, workflows):
         module.register(reg)
     components.register_qm(reg)
     return reg
