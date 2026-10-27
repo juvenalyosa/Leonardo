@@ -6,7 +6,7 @@ chat window (a separate window, so PyMOL's viewer keeps its size).
 
 from pymol.Qt import QtCore, QtWidgets
 
-from .. import config, pipelines, plan_check, presentation
+from .. import config, pipelines, plan_check, presentation, session_state
 from ..mcp_server import ExternalMcpServer, McpToolClient, build_server
 from ..orchestrator import SYSTEM_PROMPT, AgentSession
 from ..providers.base import ProviderError
@@ -219,7 +219,9 @@ class AssistantController(QtCore.QObject):
             policy = "heavy"
         return AgentSession(provider, self.registry, self.adapter, execute=self.mcp_client.call_tool,
                             approval_policy=policy, max_tool_calls=int(self.settings.get("max_tool_calls", 300)),
-                            state_facts=lambda: self.runner.run(lambda: plan_check.scene_facts(self.dlg)))
+                            state_facts=lambda: self.runner.run(lambda: plan_check.scene_facts(self.dlg)),
+                            state_summary=lambda: self.runner.run(
+                                lambda: session_state.describe(self.dlg, self.context.jobs)))
 
     def new_chat(self):
         if self.worker is not None and self.worker.isRunning():

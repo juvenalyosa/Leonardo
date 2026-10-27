@@ -14,6 +14,8 @@ PYTHONPATH=src:legacy python scripts/eval_agent_planning.py --cases dock_cox2_ib
 - It uses the API key and the provider/model of AI Assistant > Settings (`--provider`, `--model` and
   `--effort` override them).
 - Every case costs tokens; the run stops once `--budget` USD (default 5) are spent.
+- A case still planning after `--timeout` seconds (default 300) is cancelled and fails as `timeout`; this
+  limit is for the benchmark only, never for calculations started from Leonardo.
 - The report (`dist/agent_planning_eval/plan_eval_<label>.json` by default) has, for each case, the plan, the
   tools in order, the missing groups, order errors, unwanted tools and the plan-check findings.
 
