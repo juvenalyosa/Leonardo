@@ -148,6 +148,8 @@ def focus(sel, animate=0.0, buffer=5.0):
     """
     Camera onto ``sel`` (atoms, or a CGO object such as the search box). Instant by default so the
     step scene stored right after holds the final view; recalling scenes animates the transitions.
+    Only what is shown counts: the displayed state (over a whole trajectory the drifting protein would be a
+    speck) and the visible atoms (a hidden water box would leave the protein small in the middle).
     """
     cmd = _cmd()
     if sel in cmd.get_names("objects") and cmd.get_type(sel) == "object:cgo":
@@ -155,8 +157,10 @@ def focus(sel, animate=0.0, buffer=5.0):
         return {"ok": True}
     if cmd.count_atoms(sel) <= 0:
         return {"ok": False, "reason": "empty selection"}
-    cmd.orient(sel, animate=0)
-    cmd.zoom(sel, buffer=float(buffer), complete=1, animate=float(animate))
+    if cmd.count_atoms(f"({sel}) and visible") > 0:
+        sel = f"({sel}) and visible"
+    cmd.orient(sel, state=-1, animate=0)
+    cmd.zoom(sel, buffer=float(buffer), state=-1, complete=1, animate=float(animate))
     return {"ok": True}
 
 
