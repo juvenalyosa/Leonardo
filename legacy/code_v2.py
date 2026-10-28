@@ -13594,7 +13594,8 @@ class ProtLigInteractDialog(QtWidgets.QDialog):
         self._apply_ball_and_stick_style(f"({result_obj}) and not polymer and not ({water})",
                                          sphere_scale=0.22, stick_radius=0.16)
         try:
-            cmd.zoom(f"({result_obj}) and polymer", 4)
+            # current frame only: over hundreds of frames the drifting protein would end up as a speck
+            cmd.zoom(f"({result_obj}) and polymer", 4, state=-1)
         except Exception:
             pass
     def _openmm_confirm_structure_health(self, payload):

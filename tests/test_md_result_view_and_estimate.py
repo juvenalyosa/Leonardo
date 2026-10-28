@@ -68,3 +68,49 @@ def test_md_result_hides_the_water_box_and_frames_the_protein():
         assert cmd.count_atoms("md_result and resn NA and (rep sticks or rep spheres)") == 0
     finally:
         cmd.delete("all")
+
+
+def test_md_result_frames_the_current_frame_not_the_whole_drift():
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    import code_v2
+
+    class Dlg:
+        def _apply_ball_and_stick_style(self, selection, sphere_scale=0.22, stick_radius=0.16):
+            pass
+
+    cmd.delete("all")
+    cmd.load(os.path.join(ROOT, "examples", "3ptb_ben", "3PTB.pdb"), "md_result")
+    try:
+        cmd.create("md_result", "md_result", 1, 2)
+        cmd.translate([150.0, 0.0, 0.0], "md_result", state=2, camera=0)    # the protein drifted away
+        cmd.frame(1)
+        code_v2.ProtLigInteractDialog._style_md_result(Dlg(), "md_result")
+        framed = abs(cmd.get_view()[11])
+        cmd.zoom("md_result and polymer", 4, state=0)
+        assert framed < 0.6 * abs(cmd.get_view()[11])
+    finally:
+        cmd.delete("all")
+
+
+def test_assistant_md_focus_frames_the_protein_not_the_water_box():
+    pytest.importorskip("pymol")
+    from pymol import cmd
+
+    from leonardo.agent import presentation
+
+    cmd.delete("all")
+    cmd.load(os.path.join(ROOT, "examples", "3ptb_ben", "3PTB.pdb"), "md_out")
+    try:
+        cmd.pseudoatom("md_out", pos=[60.0, 60.0, 60.0], resn="HOH", name="O")      # a corner of the box
+        cmd.hide("everything", "md_out and resn HOH")
+        cmd.orient("md_out", animate=0)
+        cmd.zoom("md_out", buffer=2.0, complete=1)
+        whole = abs(cmd.get_view()[11])
+        presentation.focus("(md_out) and polymer", buffer=2.0)
+        assert abs(cmd.get_view()[11]) < 0.8 * whole
+        presentation.focus("md_out")                     # e.g. trajectory_rmsd_rmsf: the hidden water is ignored
+        assert abs(cmd.get_view()[11]) < 0.8 * whole
+    finally:
+        cmd.delete("all")

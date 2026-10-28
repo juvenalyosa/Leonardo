@@ -204,7 +204,7 @@ def register(reg):
                 presentation.declutter(keep=(out_obj,))
                 cmd.disable(object)            # the trajectory sits on top of the input structure
                 cmd.hide("labels", "all")
-                presentation.focus(out_obj, buffer=2.0)
+                presentation.focus(f"({out_obj}) and polymer", buffer=2.0)   # not the (hidden) water box
                 info["scene"] = ctx.scene(f"MD trajectory {out_obj} ({production_ns} ns, {solvent})")
             r = info.get("ca_rmsd_vs_first_frame") or {}
             info["_card"] = (f"MD **{production_ns} ns** ({solvent}, {info.get('force_field')}, {info.get('platform')}); "
@@ -301,7 +301,7 @@ def register(reg):
                     pass
                 presentation.style_protein(out_obj)
                 cmd.disable(object)
-                presentation.focus(out_obj, buffer=2.0)
+                presentation.focus(f"({out_obj}) and polymer", buffer=2.0)   # not the (hidden) water box
                 info["scene"] = ctx.scene(f"{object} minimized ({out_obj})")
             e = info.get("energy_kJ_mol")
             info["_card"] = (f"**{object}** minimized → **{out_obj}** ({solvent}, {info.get('force_field')})"
