@@ -58,7 +58,7 @@ def test_cpp_and_numpy_agree(lysozyme):
 
 def test_lysozyme_active_site_cleft_is_found(lysozyme):
     """Lysozyme's substrate cleft (Glu35, Asp52, Trp62/63, Asp101, Trp108) is a pocket in the structure."""
-    res = cp.analyze(lysozyme)
+    res = cp.analyze(lysozyme, model="physics")
     prob = dict(zip(res["residues"], res["probability"]))
     assert all(0.0 <= p <= 1.0 for p in prob.values())
     cleft = ["A_35", "A_52", "A_62", "A_63", "A_101", "A_108"]
@@ -95,7 +95,7 @@ def test_agent_tool(tmp_path):
     ctx.workspace = workspace
     reg = build_registry(ctx)
     assert reg.get("find_cryptic_pockets").permission == "compute_light"
-    job = reg.call("find_cryptic_pockets", {"object": "lyz", "top": 3}, ctx)
+    job = reg.call("find_cryptic_pockets", {"object": "lyz", "top": 3, "model": "physics"}, ctx)
     t0 = time.time()
     while True:
         st = reg.call("job_status", {"job_id": job["job_id"]}, ctx)
@@ -133,7 +133,7 @@ def test_agent_chain_cryptic_site_to_docking_box(tmp_path):
 
     ctx.workspace = workspace
     reg = build_registry(ctx)
-    job = reg.call("find_cryptic_pockets", {"object": "lyz"}, ctx)
+    job = reg.call("find_cryptic_pockets", {"object": "lyz", "model": "physics"}, ctx)
     t0 = time.time()
     while True:
         st = reg.call("job_status", {"job_id": job["job_id"]}, ctx)
@@ -152,3 +152,53 @@ def test_agent_chain_cryptic_site_to_docking_box(tmp_path):
                  "analyze_interface", "run_enhanced_sampling", "docking_box"):
         assert name in SYSTEM_PROMPT, name
     dlg.close()
+
+
+def test_crypsis_copy_and_its_models():
+    from leonardo.crypsis import __version__, descriptors, pipeline
+
+    assert __version__ == "0.2.0"
+    n = 22 + len(descriptors.DESCRIPTORS) + len(descriptors.ENSEMBLE)
+    assert pipeline._load("physics").n_features == n
+    for esm, pcs in (("650M", 256), ("150M", 128)):
+        hyb = pipeline._load(f"hybrid_{esm}")
+        assert hyb.n_features == n + pcs and hyb.extra["pca_components"].shape[1] == pipeline.ESM_MODELS[esm][2]
+
+
+def test_physics_and_v1_models(lysozyme):
+    res = cp.analyze(lysozyme, model="physics")
+    assert res["model"] == "physics" and res["esm"] is None and "0.864" in res["benchmark"]
+    assert abs((res["probability"] >= res["threshold"]).mean() - 0.1) < 0.02      # the top 10% are called
+    v1 = cp.analyze(lysozyme, model="v1")
+    assert v1["model"] == "v1" and v1["threshold"] == cp.THRESHOLD
+    with pytest.raises(ValueError):
+        cp.analyze(lysozyme, model="nonsense")
+
+
+def test_agent_tool_asks_for_fair_esm_before_the_hybrid(tmp_path):
+    if cp.have_esm():
+        pytest.skip("fair-esm is installed here")
+    pytest.importorskip("pymol.Qt")
+    from pymol import cmd
+
+    from leonardo.agent.registry import ToolError
+    from leonardo.agent.tools import AgentContext, build_registry
+
+    cmd.reinitialize()
+    cmd.load(os.path.join(DATA, "2LZT.pdb"), "lyz")
+    ctx = AgentContext(dlg=None)
+    ctx.workspace = lambda sub="": str(tmp_path)
+    reg = build_registry(ctx)
+    with pytest.raises(ToolError, match="fair-esm"):
+        reg.call("find_cryptic_pockets", {"object": "lyz", "model": "hybrid"}, ctx)
+
+
+def test_auto_model_follows_the_computer(monkeypatch):
+    monkeypatch.setattr(cp, "have_esm", lambda: True)
+    for mem, expected in ((32.0, ("hybrid", "650M")), (17.2, ("hybrid", "650M")), (8.6, ("hybrid", "150M")),
+                          (4.0, ("physics", "650M"))):
+        monkeypatch.setattr(cp, "total_memory_gb", lambda m=mem: m)
+        assert cp.default_model() == expected, mem
+    monkeypatch.setattr(cp, "have_esm", lambda: False)
+    monkeypatch.setattr(cp, "total_memory_gb", lambda: 64.0)
+    assert cp.default_model() == ("physics", "650M")

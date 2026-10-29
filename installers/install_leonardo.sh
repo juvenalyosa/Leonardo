@@ -25,6 +25,8 @@
 #   --skip-env             do not create/update the conda environment (repair shortcuts only)
 #   --no-shortcuts         do not create the app / menu entries
 #   --no-ml                skip the leonardo-ml environment (OpenMM-ML / ANI potentials, ~150 MB)
+#   --no-esm-weights       do not download the ESM-2 weights of the cryptic-pocket hybrid model (~3.2 GB;
+#                          they are then downloaded on its first use)
 #   -h, --help             this help
 #
 # Environment variables: KEY_MODELLER, LEONARDO_HOME (default ~/.leonardo),
@@ -44,6 +46,7 @@ COPY_SOURCE=0
 SKIP_ENV=0
 SHORTCUTS=1
 WITH_ML=1
+ESM_WEIGHTS=1
 MODELLER_KEY="${KEY_MODELLER:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -56,8 +59,9 @@ while [[ $# -gt 0 ]]; do
     --skip-env) SKIP_ENV=1; shift ;;
     --no-shortcuts) SHORTCUTS=0; shift ;;
     --no-ml) WITH_ML=0; shift ;;
+    --no-esm-weights) ESM_WEIGHTS=0; shift ;;
     -h|--help)
-      if [[ -f "${BASH_SOURCE[0]:-}" ]]; then sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      if [[ -f "${BASH_SOURCE[0]:-}" ]]; then sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       else echo "See https://github.com/juvenalyosa/Leonardo/blob/main/docs/INSTALL.md"; fi
       exit 0 ;;
     *) echo "Unknown option: $1 (use --help)"; exit 2 ;;
@@ -474,6 +478,22 @@ fi
 step "Building the cryptic-pocket C++ extension"
 PYTHONPATH="$APP_LINK/src" "$CONDA" run -n "$ENV_NAME" python -m leonardo.cryptic_build \
   || warn "the C++ extension was not built; cryptic-pocket analysis will use its numpy version (same results, slower)."
+
+# ------------------------------------------------------------------ cryptic-pocket hybrid model (optional)
+# fair-esm comes with the environment (environments/environment.yml); an environment kept with --skip-env may
+# predate it, so it is added here when missing (PyTorch is already there). The ESM-2 weights (650M ~2.6 GB, 150M
+# ~0.6 GB) go to PyTorch's cache, so the first hybrid run does not stop to download them.
+step "ESM-2 for the cryptic-pocket hybrid model"
+if ! "$CONDA" run -n "$ENV_NAME" python -c "import esm, torch" >/dev/null 2>&1; then
+  "$CONDA" run -n "$ENV_NAME" python -m pip install --no-deps "fair-esm==2.0.0" \
+    || warn "fair-esm was not installed; cryptic pockets will use the physics model (pip install fair-esm adds the hybrid)."
+fi
+if [[ "$ESM_WEIGHTS" -eq 1 ]]; then
+  PYTHONPATH="$APP_LINK/src" "$CONDA" run -n "$ENV_NAME" python -m leonardo.cryptic_pocket_runtime --download-esm \
+    || warn "the ESM-2 weights were not downloaded; the hybrid model downloads them on its first use."
+else
+  echo "Skipped the ESM-2 weights (--no-esm-weights): the hybrid model downloads them on its first use."
+fi
 
 # ------------------------------------------------------------------ check
 step "Final check"
