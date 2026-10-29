@@ -81,7 +81,8 @@ From a clone of the repository: `bash installers/install_leonardo.sh` installs t
 and points Leonardo at your working copy. When the repository is public, users can also run
 `curl -fsSL https://github.com/juvenalyosa/Leonardo/releases/download/<tag>/install_leonardo.sh | bash`.
 Options: `--yes` (unattended), `--modeller-key KEY`, `--skip-env`, `--no-shortcuts`, `--no-ml`
-(no OpenMM-ML environment), `--help`. To check a GPU install: `bash scripts/gpu_validation.sh`
+(no OpenMM-ML environment), `--no-esm-weights` (do not download the ESM-2 weights of the cryptic-pocket hybrid
+model, ~3.2 GB; it downloads them on first use), `--help`. To check a GPU install: `bash scripts/gpu_validation.sh`
 (docs/GPU_VALIDATION.md).
 
 ---

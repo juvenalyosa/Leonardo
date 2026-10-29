@@ -1,5 +1,5 @@
 """
-Cryptic Pockets window: run Leonardo's cryptic-site analysis on a PyMOL object and browse the sites (click
+Cryptic Pockets window: run the cryptic-site analysis (Crypsis 0.2) on a PyMOL object and browse the sites (click
 one to show it).  The analysis is ``cryptic_pocket_runtime``; the object is coloured by probability.
 """
 from __future__ import annotations
@@ -13,6 +13,11 @@ from . import cryptic_pocket_runtime as cp
 from .protein_prep_dialog import _polymer_objects
 
 TITLE = "Cryptic Pockets"
+# (label, model, esm): the hybrid entries need PyTorch + fair-esm
+MODEL_CHOICES = [("Physics (fast, no extra packages)", "physics", "650M"),
+                 ("Hybrid + ESM-2 650M (most accurate, ~5.4 GB)", "hybrid", "650M"),
+                 ("Hybrid + ESM-2 150M (~1.4 GB)", "hybrid", "150M"),
+                 ("v1 (Leonardo's original logistic model)", "v1", "650M")]
 
 
 class CrypticPocketDialog(QtWidgets.QDialog):
@@ -26,10 +31,11 @@ class CrypticPocketDialog(QtWidgets.QDialog):
         self._result = None
         outer = QtWidgets.QVBoxLayout(self)
         intro = QtWidgets.QLabel(
-            "Finds where pockets can open with the protein's motions: an ensemble from the normal modes of an "
-            "elastic network, a buried-pocket grid in every conformation, and a probability per residue "
-            "(calibrated on CryptoBench). Sites are ranked; each says whether it is already open, grows or forms "
-            "with motion. Predictions to follow up with MD or docking, not proof.")
+            "Finds where pockets can open with the protein's motions (Crypsis 0.2): ensembles from the normal "
+            "modes of an elastic network, a buried-pocket grid in every conformation, physical descriptors of "
+            "each residue and a probability from models trained on CryptoBench (test AUC 0.86 physics, 0.89 "
+            "hybrid). Sites are ranked; each says whether it is already open, grows or forms with motion. "
+            "Predictions to follow up with MD or docking, not proof.")
         intro.setWordWrap(True)
         outer.addWidget(intro)
         row = QtWidgets.QHBoxLayout()
@@ -45,6 +51,21 @@ class CrypticPocketDialog(QtWidgets.QDialog):
         self.edit_chains.setPlaceholderText("all (or A,B)")
         self.edit_chains.setMaximumWidth(110)
         row.addWidget(self.edit_chains)
+        row.addWidget(QtWidgets.QLabel("Model:"))
+        self.cmb_model = QtWidgets.QComboBox()
+        for label, _model, _esm in MODEL_CHOICES:
+            self.cmb_model.addItem(label)
+        if not cp.have_esm():
+            for i, (_label, model, _esm) in enumerate(MODEL_CHOICES):
+                if model == "hybrid":
+                    item = self.cmb_model.model().item(i)
+                    item.setEnabled(False)
+                    item.setToolTip("needs fair-esm in Leonardo's environment: run the installer again, or "
+                                    "pip install fair-esm")
+        best = cp.default_model()
+        self.cmb_model.setCurrentIndex(next(i for i, c in enumerate(MODEL_CHOICES)
+                                            if (c[1], c[2]) == best or (c[1] == best[0] == "physics")))
+        row.addWidget(self.cmb_model)
         self.btn_run = QtWidgets.QPushButton("Find cryptic pockets")
         self.btn_run.setDefault(True)
         self.btn_run.clicked.connect(self._on_run)
@@ -101,11 +122,13 @@ class CrypticPocketDialog(QtWidgets.QDialog):
         path = os.path.join(folder, time.strftime(f"{obj}_%Y%m%d_%H%M%S.pdb"))
         cmd.save(path, sel, state=1)
         self._object = obj
+        _label, model, esm = MODEL_CHOICES[max(0, self.cmb_model.currentIndex())]
         self.btn_run.setEnabled(False)
-        self.lbl_status.setText("Computing the ensemble and its pockets…")
+        self.lbl_status.setText("Computing the ensembles and their pockets…"
+                                + (" then ESM-2 (the first run downloads its weights)" if model == "hybrid" else ""))
 
         def work():
-            return cp.analyze(cp.read_chain(path))
+            return cp.analyze(cp.read_chain(path), model=model, esm=esm)
 
         if self._submit_task is None:
             try:
@@ -127,9 +150,10 @@ class CrypticPocketDialog(QtWidgets.QDialog):
         self._result = result
         show_result(self._object, result, top=len(result["sites"]))
         engine = "C++ grid" if result["extension"] else "numpy grid (build the C++ one: python -m leonardo.cryptic_build)"
+        model = f"hybrid + ESM-2 {result['esm']}" if result.get("esm") else result.get("model", "")
         self.lbl_status.setText(
-            f"<b>{self._object}</b>: {len(result['sites'])} candidate site(s); coloured by probability "
-            f"(blue → red); selections {self._object}_cryptic_N. {engine}.")
+            f"<b>{self._object}</b>: {len(result['sites'])} candidate site(s), {model} model; coloured by "
+            f"probability (blue → red); selections {self._object}_cryptic_N. {engine}.")
         self.table.setRowCount(0)
         for s in result["sites"]:
             r = self.table.rowCount()

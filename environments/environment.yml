@@ -90,6 +90,9 @@ dependencies:
       - "mcp>=1.27,<2"                   # Leonardo tools as an MCP server (2.x changed the server/client API)
       - keyring                          # API keys in the system keychain
       - jsonschema                       # tool-argument validation
+      # cryptic pockets: ESM-2 protein language model of the Crypsis hybrid model (weights downloaded by the
+      # installer). It runs on the CPU PyTorch that openff-toolkit already brings (through openff-nagl).
+      - "fair-esm==2.0.0"
 
 # Notes:
 # - MODELLER requires a valid license key in your environment.

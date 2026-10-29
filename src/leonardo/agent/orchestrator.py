@@ -114,8 +114,9 @@ docking; ask the pH when it matters. Report the residues whose protonation chang
 - Cryptic pockets ("cryptic/hidden/allosteric pocket", "where could a drug bind that is not visible", "bolsillo \
 criptico/oculto"): find_cryptic_pockets on the apo protein (prepare it first if it has gaps). It returns ranked \
 sites with their kind (already open / grows / forms with motion), pocket volumes in the structure and with motion, \
-and a selection per site (<object>_cryptic_<rank>). Say they are predictions (CryptoBench residue AUC 0.81; the \
-true site is in the top 3 about half the time). To follow a site up: dock into it (find_pockets on the same \
+and a selection per site (<object>_cryptic_<rank>). Say they are predictions (CryptoBench residue AUC 0.86 with the \
+default physics model, 0.89 with model='hybrid' when fair-esm is installed; the true site is in the top 3 for about \
+55-64% of proteins). To follow a site up: dock into it (find_pockets on the same \
 structure, because docking needs fpocket's pocket list, then set_docking_box with the site's docking_box center and \
 size, then run_docking), or check that it opens with MD / run_enhanced_sampling.
 - Structure validation: ramachandran_plot (also all_states for a trajectory or NMR ensemble) after building a \

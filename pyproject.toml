@@ -22,6 +22,7 @@ package-dir = {"" = "legacy", "leonardo" = "src/leonardo", "leonardo_benchmarks"
 packages = [
   "leonardo",
   "leonardo.agent",
+  "leonardo.crypsis",
   "leonardo.agent.providers",
   "leonardo.agent.tools",
   "leonardo.agent.ui",
@@ -84,8 +85,8 @@ py-modules = [
 "share/leonardo" = ["assets/logo.png", "assets/protliginteract.ui"]
 
 [tool.setuptools.package-data]
-leonardo = ["abfe_deploy_models.json", "pka_calibration.json", "component_library.json", "rama_reference.npz",
-            "cryptic_pocket_model.json"]
+leonardo = ["abfe_deploy_models.json", "pka_calibration.json", "component_library.json", "rama_reference.npz"]
+"leonardo.crypsis" = ["models/*.json", "models/*.npz"]
 
 [tool.black]
 line-length = 120

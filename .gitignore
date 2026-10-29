@@ -89,6 +89,7 @@ artifacts/
 examples/gpu_validation/last_report.json
 examples/enhanced_sampling/last_report.json
 !src/leonardo/rama_reference.npz
+!src/leonardo/crypsis/models/*.npz
 
 # compiled on each computer by python -m leonardo.cryptic_build
 src/leonardo/_cryptic*.so
