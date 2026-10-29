@@ -88,6 +88,14 @@ jobs:
         run: |
           python -m pip install -e . --no-build-isolation
 
+      - name: smina in its own environment, linked into the main one (as scripts/install_envs.sh does)
+        run: |
+          conda env create -f environments/environment-smina.yml
+          smina_prefix="$(conda env list --json | python -c "import json,sys; print([e for e in json.load(sys.stdin)['envs'] if e.endswith('/leonardo-smina')][0])")"
+          printf '#!/bin/sh\nexec "%s" "$@"\n' "$smina_prefix/bin/smina" > "$CONDA_PREFIX/bin/smina"
+          chmod +x "$CONDA_PREFIX/bin/smina"
+          command -v smina
+
       - name: Run full reviewer release checks
         run: |
           leonardo-readiness --strict

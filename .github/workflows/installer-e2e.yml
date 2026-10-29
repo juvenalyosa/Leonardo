@@ -42,6 +42,8 @@ jobs:
           # hide the runner's own conda so the installer has to fetch Miniforge, like on a new laptop
           export PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -i conda | paste -sd: -)"
           unset CONDA CONDA_PREFIX CONDA_EXE
+          # (the Ubuntu image also keeps one in /usr/share/miniconda, which the installer still found)
+          if [ -d /usr/share/miniconda ]; then sudo mv /usr/share/miniconda /usr/share/miniconda.hidden; fi
           bash Leonardo-Installer-*/install-leonardo-linux.sh --yes
 
       - name: Check the installation
@@ -50,7 +52,11 @@ jobs:
           LEONARDO_NO_DIALOG: "1"
         run: |
           set -e
-          CONDA="$RUNNER_TEMP/miniforge3/bin/conda"
+          # the conda the installer used, as it wrote it into the MODELLER license helper
+          CONDA="$(sed -n 's/^CONDA="\(.*\)"$/\1/p' "$HOME/.leonardo/bin/leonardo-modeller-license")"
+          echo "conda: $CONDA"
+          test -x "$CONDA"
+          echo "LEONARDO_CONDA=$CONDA" >> "$GITHUB_ENV"
           test -x "$HOME/.leonardo/bin/leonardo"
           test -f "$HOME/.pymol/startup/leonardo.py"
           "$CONDA" run -n protliginteract-full python -c "import gemmi, networkx, psutil, openmm, rdkit, pymol, psi4, ase, mcp, anthropic; print('imports OK')"
@@ -68,7 +74,7 @@ jobs:
       - name: Smoke tests in the installed copy
         run: |
           cd "$HOME/.leonardo/app"
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$RUNNER_TEMP/miniforge3/bin/conda" run -n protliginteract-full \
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$LEONARDO_CONDA" run -n protliginteract-full \
             python -m pytest -q -p no:cacheprovider tests/test_component_library_runtime.py tests/test_materials_runtime.py \
             -k "not mopac" -x
 
