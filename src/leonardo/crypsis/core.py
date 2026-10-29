@@ -186,7 +186,21 @@ def anm_modes(ca_xyz, cutoff=15.0, n_modes=30):
         vals, vecs = eigsh(hess, k=k + 6, sigma=-1e-3, which="LM")
         order = np.argsort(vals)[6:6 + k]
         vals, vecs = vals[order], vecs[:, order]
-    return vals, vecs.T.reshape(k, n, 3)
+    return vals, canonical_signs(vecs.T).reshape(k, n, 3)
+
+
+def canonical_signs(vecs):
+    """Flip each mode (row) so that the sum of the cubes of its components is positive (its largest component
+    when that sum is ~0).  An eigenvector's sign is arbitrary and the LAPACK build decides it; without a fixed
+    sign, two computers sample different ensembles from the same modes."""
+    vecs = np.array(vecs, dtype=float)
+    for v in vecs:
+        skew = float((v ** 3).sum())
+        if abs(skew) < 1e-6 * float((np.abs(v) ** 3).sum()):
+            skew = v[int(np.argmax(np.abs(v)))]
+        if skew < 0:
+            v *= -1.0
+    return vecs
 
 
 def conformers(chain, vals, modes, n_conf=40, rmsd=1.5, seed=7):

@@ -1,7 +1,7 @@
 # Cryptic pockets
 
 Cryptic pockets are sites that the structure does not show: they open when the protein moves. Leonardo uses
-**Crypsis 0.2** (<https://github.com/juvenalyosa/crypsis>), which grew out of Leonardo's original method and is
+**Crypsis 0.2.1** (<https://github.com/juvenalyosa/crypsis>), which grew out of Leonardo's original method and is
 copied into `src/leonardo/crypsis`. The method is physics first, and the grid work is in C++.
 
 1. **Motions.** An anisotropic network model (ANM) is built on the Cα atoms, with a 15 Å cutoff and a sparse
@@ -28,9 +28,9 @@ copied into `src/leonardo/crypsis`. The method is physics first, and the grid wo
 
    | Model | Inputs | CryptoBench test AUC / AUPRC | Memory |
    |---|---|---|---|
-   | `hybrid` | + ESM-2 650M embeddings | 0.889 / 0.388 | ~5.4 GB |
-   | `hybrid`, ESM-2 150M | + ESM-2 150M embeddings | 0.884 / 0.368 | ~1.4 GB |
-   | `physics` | the 49 descriptors | 0.864 / 0.312 | < 0.3 GB |
+   | `hybrid` | + ESM-2 650M embeddings | 0.889 / 0.393 | ~5.4 GB |
+   | `hybrid`, ESM-2 150M | + ESM-2 150M embeddings | 0.884 / 0.371 | ~1.4 GB |
+   | `physics` | the 49 descriptors | 0.864 / 0.320 | < 0.3 GB |
    | `v1` | Leonardo's original 3-weight logistic model | 0.807 / 0.179 | < 0.3 GB |
 
    The installer adds fair-esm (the ESM-2 code) and downloads the weights of both language models (~3.2 GB;
@@ -71,13 +71,14 @@ The benchmark is CryptoBench (Škrhák et al., *Bioinformatics* 2025). Its test 
 - a residue is positive when it lines the cryptic site of any of its holo structures;
 - AUC and AUPRC are computed over all residues pooled, with 95% confidence intervals from resampling proteins.
 
-Only the four training folds were used to choose and fit the models; the test split was scored once. The Crypsis
-repository rebuilds every model and number from the public data (`scripts/cryptobench.py`, `BENCHMARK.md`).
+Only the four training folds were used to choose and fit the models. The test split was scored for the final
+configuration, and once more after Crypsis 0.2.1 fixed the normal-mode signs (a correction, not a model choice:
+residue metrics did not change beyond noise). The Crypsis repository rebuilds every model and number from the public data (`scripts/cryptobench.py`, `BENCHMARK.md`).
 
 | Method | AUC [95% CI] | AUPRC [95% CI] | True site ranked 1st / in top 3 |
 |---|---|---|---|
-| **Crypsis 0.2 hybrid (ESM-2 650M)** | **0.889** [0.871–0.905] | **0.388** [0.344–0.433] | **51% / 64%** |
-| Crypsis 0.2 physics | 0.864 [0.843–0.882] | 0.312 [0.274–0.354] | 41% / 55% |
+| **Crypsis 0.2 hybrid (ESM-2 650M)** | **0.889** [0.871–0.905] | **0.393** [0.347–0.438] | **48% / 60%** |
+| Crypsis 0.2 physics | 0.864 [0.844–0.882] | 0.320 [0.280–0.362] | 39% / 52% |
 | Leonardo v1 (3-weight logistic) | 0.807 | 0.179 | 34% / 53% (earlier site definition) |
 | P2Rank 2.5.1 (run by us) | 0.788 [0.769–0.805] | 0.191 [0.163–0.226] | |
 | PocketMiner (run by us) | 0.762 [0.738–0.783] | 0.173 [0.149–0.202] | |
@@ -94,10 +95,9 @@ repository rebuilds every model and number from the public data (`scripts/crypto
   apo structure are missed. Examples are the PTP1B helix α7, the HIV-1 RT NNRTI pocket and the p38α lipid pocket.
 - The ensembles come from an elastic network, not molecular dynamics.
 - Probabilities rank residues within a protein. Compare sites within one structure.
-- The sign of each normal mode is arbitrary and the LAPACK build decides it, so another computer or environment
-  can sample a different but equivalent ensemble. In Leonardo's environment, for example, 3 of lysozyme's 30 modes
-  come out flipped compared with the environment that trained the models. Probabilities can then differ by up to
-  ~0.1, while the sites stay the same.
+- Site rates are noisy: two equally valid ensembles of the same structures move them by up to 7 points. (Since
+  Crypsis 0.2.1 every mode has a fixed sign, so the ensemble, and the probabilities, are the same on every
+  computer.)
 - These are predictions. Confirm a site with MD (enhanced sampling) or docking.
 
 ## C++ extension

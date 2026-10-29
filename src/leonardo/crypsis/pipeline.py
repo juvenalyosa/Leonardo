@@ -54,8 +54,8 @@ def _load(name):
 
 
 def have_esm():
-    """Whether PyTorch and fair-esm are installed (found, not imported: importing PyTorch before the normal modes are
-    computed can flip the arbitrary sign of some LAPACK eigenvectors, which changes the sampled ensemble)."""
+    """Whether PyTorch and fair-esm are installed (found, not imported: importing PyTorch takes seconds and
+    gigabytes are only needed for the hybrid model)."""
     from importlib.util import find_spec
 
     return find_spec("torch") is not None and find_spec("esm") is not None
@@ -188,10 +188,9 @@ def predict(structure, chains=None, keep_cofactors=None, model="auto", embedding
     Returns a dict: residues, residue_names, probability, sites (best first, each with its residues, kind,
     pocket volumes and a docking box), model, and the per-residue numbers behind them.
 
-    Reproducibility: the sign of each normal mode is arbitrary and the LAPACK build decides it; PyTorch loads its own
-    libraries, so in a session where torch was imported before the first prediction a few modes can flip sign and
-    the ensemble (and the probabilities) differ slightly from a fresh process.  The published numbers come from fresh
-    processes; ESM-2 is imported here only after the physics is done."""
+    Reproducibility: the sign of each normal mode is arbitrary and the LAPACK build decides it; core.anm_modes fixes
+    it (core.canonical_signs), so the ensemble and the probabilities do not depend on the computer, the environment
+    or whether PyTorch was imported first."""
     chain = structure if isinstance(structure, core.Chain) else core.read_chain(
         structure, chains=list(chains) if chains else None, keep_hetero=keep_cofactors)
     if model == "auto":
