@@ -996,8 +996,8 @@ try:
 except ImportError:
     from leonardo import ui_theme
 # Literal aliases are retained for legacy packaging/version inspections.
-PLUGIN_VERSION = "0.2.0a23"
-PLUGIN_BUILD = "2026-10-28-r1"
+PLUGIN_VERSION = "0.2.0a24"
+PLUGIN_BUILD = "2026-10-29-r1"
 print(f"{SUITE_NAME}: LOADED VERSION {PLUGIN_VERSION} ({PLUGIN_BUILD})")
 HAS_RDKIT = False
 HAS_MPL = False
