@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import time
 
-from pymol.Qt import QtCore, QtWidgets
+from pymol.Qt import QtWidgets
 
 from . import cryptic_pocket_runtime as cp
 from .protein_prep_dialog import _polymer_objects
