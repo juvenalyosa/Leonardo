@@ -75,19 +75,29 @@ def _delete_now(widget):
     event: PySide6 then walks every Python-owned widget still alive while the process ends, and a Leonardo
     window still open there crashed the quit (SIGSEGV in Shiboken::BindingManager)."""
     try:
-        import shiboken6
-
-        if shiboken6.isValid(widget):
-            shiboken6.delete(widget)
+        is_valid, delete = _qt_binding_ops(widget)
+        if is_valid(widget):
+            delete(widget)
         return
-    except ImportError:
-        pass
     except Exception:
-        return
+        pass
     try:
         widget.deleteLater()
     except Exception:
         pass
+
+
+def _qt_binding_ops(widget):
+    """(is_valid, delete) of the Qt binding that wraps ``widget``: shiboken for PySide, sip for PyQt (PyMOL
+    builds use either, and both may be installed: shiboken cannot delete a PyQt widget)."""
+    import importlib
+
+    root = next(c.__module__.split(".")[0] for c in type(widget).__mro__ if c.__module__.startswith(("PySide", "PyQt")))
+    if root.startswith("PySide"):
+        shiboken = importlib.import_module("shiboken" + root[-1])
+        return shiboken.isValid, shiboken.delete
+    sip = importlib.import_module(root + ".sip")
+    return (lambda w: not sip.isdeleted(w)), sip.delete
 
 
 def teardown_for_quit():

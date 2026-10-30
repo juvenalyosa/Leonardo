@@ -1659,6 +1659,23 @@ def _cys_link(row):
     return None
 
 
+def _gaff_residue_xml(gen, offmol, tries=2):
+    """GAFF ffxml of one molecule, checked: every residue atom type must be defined.  An incomplete
+    antechamber / parmchk2 run (seen once on a CI runner) gives an ffxml without AtomTypes; it is retried."""
+    import xml.etree.ElementTree as ET
+
+    for _ in range(tries):
+        xml_text = gen.generate_residue_template(offmol)
+        root = ET.fromstring(xml_text)
+        types = root.find("AtomTypes")
+        defined = {t.get("name") for t in types} if types is not None else set()
+        used = {a.get("type") for res in root.iter("Residue") for a in res.findall("Atom")}
+        if used and used <= defined:
+            return xml_text
+    raise RuntimeError(f"GAFF parameters for {offmol.to_smiles()} are incomplete (atom types {sorted(used - defined)} "
+                       "not defined): antechamber / parmchk2 did not finish properly")
+
+
 def _gaff_tables(xml_text):
     """Parse a GAFF ffxml: types, per-class bonded parameters, nonbonded, residue atoms (in molecule order)."""
     import xml.etree.ElementTree as ET
@@ -1776,7 +1793,7 @@ def build_capped_template(mol, cap_classes, resname, keep_names, external, force
     offmol = _openff_molecule(mol)
     gen = GAFFTemplateGenerator(molecules=[offmol], forcefield=forcefield,
                                 cache=os.path.join(_cache_dir(), f"{forcefield}_am1bcc_cache.json"))
-    tab = _gaff_tables(gen.generate_residue_template(offmol))
+    tab = _gaff_tables(_gaff_residue_xml(gen, offmol))
     cls = [tab["types"][a["type"]]["class"] for a in tab["atoms"]]
     q = [float(a["charge"]) for a in tab["atoms"]]
 

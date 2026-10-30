@@ -26,11 +26,8 @@ def test_quit_closes_leonardo_first(monkeypatch):
     cmd._quit(0)
     assert calls == [("pymol quit", (0,))]          # PyMOL still quits, after the teardown
     assert P._dialog is None
-    try:
-        import shiboken6
-    except ImportError:
-        return
-    assert not shiboken6.isValid(dlg) and not shiboken6.isValid(child)   # gone before exit()
+    is_valid, _delete = P._qt_binding_ops(dlg)
+    assert not is_valid(dlg) and not is_valid(child)   # gone before exit()
 
 
 def test_teardown_without_leonardo_open_is_harmless(monkeypatch):

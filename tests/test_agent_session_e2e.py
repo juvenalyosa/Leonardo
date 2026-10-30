@@ -80,7 +80,10 @@ def _decide(kind, payload):
 
 
 def test_session_plan_confirm_jobs_errors_pipeline_and_replay(leo, library, tmp_path):
-    pytest.importorskip("modeller")
+    from leonardo.protein_prep_runtime import modeller_available
+
+    if not modeller_available():
+        pytest.skip("MODELLER not installed or without a valid license key")
     cmd.reinitialize()
     turns = [
         [("tool", "list_objects", {}), ("tool", "load_structure_file", {"path": UBQ, "object_name": "ubq"})],

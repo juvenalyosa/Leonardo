@@ -235,6 +235,27 @@ def test_covalent_ibrutinib_is_detected_and_buildable_only_in_amber():
     assert charmm["source"] == "covalent" and not charmm.get("buildable")
 
 
+def test_incomplete_gaff_output_is_retried_then_reported():
+    good = ('<ForceField><AtomTypes><Type name="ca"/></AtomTypes>'
+            '<Residues><Residue name="x"><Atom name="C1" type="ca"/></Residue></Residues></ForceField>')
+    bad = '<ForceField><Residues><Residue name="x"><Atom name="C1" type="ca"/></Residue></Residues></ForceField>'
+
+    class Gen:
+        def __init__(self, outputs):
+            self.outputs = list(outputs)
+
+        def generate_residue_template(self, mol):
+            return self.outputs.pop(0)
+
+    class Mol:
+        def to_smiles(self):
+            return "c1ccccc1"
+
+    assert cl._gaff_residue_xml(Gen([bad, good]), Mol()) == good
+    with pytest.raises(RuntimeError, match="incomplete"):
+        cl._gaff_residue_xml(Gen([bad, bad]), Mol())
+
+
 def test_covalent_ibrutinib_builds_with_a_real_c_s_bond(tmp_path):
     rep = cl.build_and_validate(os.path.join(DATA, "5P9J_ibrutinib_cys481.pdb"), family="amber14",
                                 minimize_steps=100, out_dir=str(tmp_path))
