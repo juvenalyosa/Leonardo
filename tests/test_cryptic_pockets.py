@@ -157,7 +157,7 @@ def test_agent_chain_cryptic_site_to_docking_box(tmp_path):
 def test_crypsis_copy_and_its_models():
     from leonardo.crypsis import __version__, descriptors, pipeline
 
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.2.1"
     n = 22 + len(descriptors.DESCRIPTORS) + len(descriptors.ENSEMBLE)
     assert pipeline._load("physics").n_features == n
     for esm, pcs in (("650M", 256), ("150M", 128)):

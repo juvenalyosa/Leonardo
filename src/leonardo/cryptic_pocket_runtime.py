@@ -1,7 +1,7 @@
 """
 Cryptic pockets: where a pocket can open that the structure does not show.
 
-The method is Crypsis 0.2 (https://github.com/juvenalyosa/crypsis), developed from Leonardo's original cryptic-pocket
+The method is Crypsis 0.2.1 (https://github.com/juvenalyosa/crypsis), developed from Leonardo's original cryptic-pocket
 code and copied into leonardo.crypsis:
 
   1. Normal modes of an anisotropic network model of the Calpha atoms, and three ensembles of conformers along
@@ -11,8 +11,8 @@ code and copied into leonardo.crypsis:
   3. 49 per-residue descriptors: pockets in the structure and across the ensembles, solvent exposure, Gaussian-
      network hinges and fluctuations, backbone geometry, pockets with side chains cut back.
   4. Gradient-boosted trees fitted on the CryptoBench training folds give each residue a probability:
-       physics  the descriptors only (CryptoBench test AUC 0.864, AUPRC 0.312)
-       hybrid   + ESM-2 650M embeddings (AUC 0.889, AUPRC 0.388; ~5.4 GB of memory), or 150M (esm="150M", AUC
+       physics  the descriptors only (CryptoBench test AUC 0.864, AUPRC 0.320)
+       hybrid   + ESM-2 650M embeddings (AUC 0.889, AUPRC 0.393; ~5.4 GB of memory), or 150M (esm="150M", AUC
                 0.884, ~1.4 GB); the installer adds fair-esm and downloads both sets of weights
        v1       the original 3-weight logistic model of Leonardo (AUC 0.807)
      model="auto" (default) takes the most accurate one this computer can run: default_model().
@@ -47,8 +47,8 @@ from .crypsis.core import (  # noqa: F401  (the module's public API)
 MODELS = ("auto", "physics", "hybrid", "v1")
 ESM_URL = "https://dl.fbaipublicfiles.com/fair-esm"
 ESM_SIZES = tuple(pipeline.ESM_MODELS)
-BENCHMARK = {"physics": "CryptoBench test (222 apo): residue AUC 0.864, AUPRC 0.312",
-             "hybrid": "CryptoBench test (222 apo): residue AUC 0.889, AUPRC 0.388 (ESM-2 650M)",
+BENCHMARK = {"physics": "CryptoBench test (222 apo): residue AUC 0.864, AUPRC 0.320",
+             "hybrid": "CryptoBench test (222 apo): residue AUC 0.889, AUPRC 0.393 (ESM-2 650M)",
              "v1": "CryptoBench test (222 apo): residue AUC 0.807, AUPRC 0.179"}
 
 
@@ -128,7 +128,7 @@ def analyze(chain, params=None, progress=None, model="auto", esm="650M"):
     prob = np.asarray(res["probability"])
     res["threshold"] = THRESHOLD if model == "v1" else float(np.percentile(prob, 90))
     res["benchmark"] = BENCHMARK[model] if model != "hybrid" or esm == "650M" else \
-        "CryptoBench test (222 apo): residue AUC 0.884, AUPRC 0.368 (ESM-2 150M)"
+        "CryptoBench test (222 apo): residue AUC 0.884, AUPRC 0.371 (ESM-2 150M)"
     res.pop("chain", None)
     return res
 

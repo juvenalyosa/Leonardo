@@ -5,4 +5,4 @@ Leonardo builds it (leonardo/_cryptic, python -m leonardo.cryptic_build).  The t
 in the Crypsis repository.  Leonardo calls it through leonardo.cryptic_pocket_runtime.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
