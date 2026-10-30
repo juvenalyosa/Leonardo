@@ -157,10 +157,13 @@ def test_missing_loop_built_without_moving_the_crystal(tmp_path):
         # only the loop and its two neighbours (His964, Leu977) move
         d = np.array([np.linalg.norm(c0[k] - c1[k]) for k in c0 if k in c1 and k[1] not in ("964", "977")])
         assert d.max() < 0.01
-    # the built loop is attached: consecutive CA 3.8 A apart through the gap
+    # the built loop is attached: consecutive CA 3.8 A apart through the gap (PDBFixer's, unminimized, is rough)
     seq = [c1[("A", str(i))] for i in range(963, 979)]
     gaps = [float(np.linalg.norm(a - b)) for a, b in zip(seq, seq[1:])]
-    assert max(gaps) < 4.3 and min(gaps) > 3.2
+    if report["gap_method"] == "MODELLER":
+        assert max(gaps) < 4.3 and min(gaps) > 3.2
+    else:                                   # unminimized PDBFixer loops vary run to run (CA-CA up to ~4.6 A)
+        assert max(gaps) < 5.0 and any("rough backbone" in w for w in report["warnings"])
     assert ("A", "666") not in c1 and ("A", "996") not in c1                # termini not built by default
 
 

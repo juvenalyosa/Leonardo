@@ -235,6 +235,63 @@ def test_covalent_ibrutinib_is_detected_and_buildable_only_in_amber():
     assert charmm["source"] == "covalent" and not charmm.get("buildable")
 
 
+def test_failed_gaff_run_is_retried_then_reported():
+    good = ('<ForceField><AtomTypes><Type name="ca"/></AtomTypes>'
+            '<Residues><Residue name="x"><Atom name="C1" type="ca"/></Residue></Residues></ForceField>')
+    bad = '<ForceField><Residues><Residue name="x"><Atom name="C1" type="ca"/></Residue></Residues></ForceField>'
+
+    class Gen:
+        def __init__(self, outputs):
+            self.outputs = list(outputs)
+
+        def generate_residue_template(self, mol):
+            out = self.outputs.pop(0)
+            if isinstance(out, Exception):
+                raise out
+            return out
+
+    class Mol:
+        def to_smiles(self):
+            return "c1ccccc1"
+
+    assert cl._gaff_residue_xml(Gen([RuntimeError("sqm"), good]), Mol()) == good
+    with pytest.raises(RuntimeError, match="not defined"):
+        cl._gaff_residue_xml(Gen([RuntimeError("sqm"), bad]), Mol())
+
+
+def test_antechamber_guard_repeats_a_run_that_read_zero_atoms(tmp_path):
+    """AmberTools 24.8 (macOS x86_64) reads an SDF as zero atoms at random, silently: the guard runs it again."""
+    import subprocess
+    import sys
+
+    from leonardo import antechamber_guard
+
+    fake = tmp_path / "fake_antechamber.py"          # zero atoms on the first two runs, then the molecule
+    fake.write_text(
+        "import os, sys\n"
+        "n = int(open('count').read()) if os.path.exists('count') else 0\n"
+        "open('count', 'w').write(str(n + 1))\n"
+        "atoms = 0 if n < 2 else 3\n"
+        "open('ANTECHAMBER_AC.AC0', 'w').write('CHARGE 0\\n' + 'ATOM x\\n' * atoms)\n"
+        "out = sys.argv[sys.argv.index('-o') + 1]\n"
+        "open(out, 'w').write('@<TRIPOS>MOLECULE\\nMOL\\n %d 2 1 0 0\\n' % atoms)\n")
+    real = tmp_path / "real"
+    real.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
+    real.chmod(0o755)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "in.sdf").write_text("x\n  RDKit 3D\n\n  3  2  0  0  0  0  0  0  0  0999 V2000\n")
+    bin_dir = antechamber_guard.install(str(real), str(tmp_path / "guard"))
+    args = ["-i", "in.sdf", "-fi", "sdf", "-o", "out.mol2", "-fo", "mol2"]
+    r = subprocess.run([os.path.join(bin_dir, "antechamber")] + args, cwd=work, capture_output=True, text=True)
+    assert r.returncode == 0 and (work / "count").read_text() == "3"
+    assert r.stderr.count("zero atoms") == 2
+    (work / "count").unlink()
+    subprocess.run([os.path.join(bin_dir, "antechamber"), "-i", "in.pdb", "-fi", "pdb", "-o", "o.ac", "-fo", "ac"],
+                   cwd=work, check=True)
+    assert (work / "count").read_text() == "1"        # other input formats run once, untouched
+
+
 def test_covalent_ibrutinib_builds_with_a_real_c_s_bond(tmp_path):
     rep = cl.build_and_validate(os.path.join(DATA, "5P9J_ibrutinib_cys481.pdb"), family="amber14",
                                 minimize_steps=100, out_dir=str(tmp_path))

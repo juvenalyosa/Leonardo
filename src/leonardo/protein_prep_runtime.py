@@ -1028,6 +1028,9 @@ def prepare_protein(pdb_in, pdb_out, *, ph=7.4, fill_gaps=True, fill_termini=Fal
             method = "PDBFixer"
             built = [f"{g['sequence']} ({g['chain']}: {g['after'] or 'start'}-{g['before'] or 'end'})"
                      for g in to_fill]
+            if not minimize:
+                report["warnings"].append("loops built with PDBFixer have a rough backbone (consecutive CA 2-4.4 A "
+                                          "apart) until minimized: keep the minimization on or install MODELLER")
         else:
             fixer.missingResidues = {}
         step("Missing residues", f"{sum(g['length'] for g in to_fill)} residue(s) in {len(to_fill)} gap(s) "
