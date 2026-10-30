@@ -1591,18 +1591,31 @@ def _ligand_topology(resname, chain_id, res_id, mol, heavy_names):
 
 
 def _ensure_ambertools_on_path():
-    """antechamber/sqm (AM1-BCC charges) live in the conda env; PyMOL launched elsewhere may lack them."""
+    """antechamber/sqm (AM1-BCC charges) live in the conda env; PyMOL launched elsewhere may lack them.
+    antechamber is fronted by ``antechamber_guard`` (AmberTools 24.8 sometimes reads an SDF as zero atoms)."""
     import shutil
     import sys
 
-    if shutil.which("antechamber"):
-        return True
-    for cand in (os.path.join(sys.prefix, "bin"), os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")):
-        if cand and os.path.isfile(os.path.join(cand, "antechamber")):
-            os.environ["PATH"] = cand + os.pathsep + os.environ.get("PATH", "")
-            os.environ.setdefault("AMBERHOME", os.path.dirname(cand))
-            return True
-    return False
+    from . import antechamber_guard
+
+    guard_dir = os.path.join(_cache_dir(), "antechamber_guard")
+    path = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p and os.path.abspath(p) != guard_dir]
+    real = shutil.which("antechamber", path=os.pathsep.join(path))
+    if not real:
+        for cand in (os.path.join(sys.prefix, "bin"), os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")):
+            if cand and os.path.isfile(os.path.join(cand, "antechamber")):
+                path.insert(0, cand)
+                os.environ.setdefault("AMBERHOME", os.path.dirname(cand))
+                real = os.path.join(cand, "antechamber")
+                break
+    if not real:
+        return False
+    try:
+        path.insert(0, antechamber_guard.install(real, guard_dir))
+    except OSError:
+        pass
+    os.environ["PATH"] = os.pathsep.join(path)
+    return True
 
 
 def install_gaff_components(modeller, plan, ph=7.4, forcefield="gaff-2.11", fetch_ccd=True):
@@ -1660,20 +1673,26 @@ def _cys_link(row):
 
 
 def _gaff_residue_xml(gen, offmol, tries=2):
-    """GAFF ffxml of one molecule, checked: every residue atom type must be defined.  An incomplete
-    antechamber / parmchk2 run (seen once on a CI runner) gives an ffxml without AtomTypes; it is retried."""
+    """GAFF ffxml of one molecule, checked: every residue atom type must be defined (an antechamber run that
+    read no atoms gives an ffxml without AtomTypes, see ``antechamber_guard``).  A failed try is repeated."""
     import xml.etree.ElementTree as ET
 
+    problem = ""
     for _ in range(tries):
-        xml_text = gen.generate_residue_template(offmol)
+        try:
+            xml_text = gen.generate_residue_template(offmol)
+        except Exception as exc:
+            problem = f"{type(exc).__name__}: {str(exc)[:300]}"
+            continue
         root = ET.fromstring(xml_text)
         types = root.find("AtomTypes")
         defined = {t.get("name") for t in types} if types is not None else set()
         used = {a.get("type") for res in root.iter("Residue") for a in res.findall("Atom")}
         if used and used <= defined:
             return xml_text
-    raise RuntimeError(f"GAFF parameters for {offmol.to_smiles()} are incomplete (atom types {sorted(used - defined)} "
-                       "not defined): antechamber / parmchk2 did not finish properly")
+        problem = f"atom types {sorted(used - defined)} not defined"
+    raise RuntimeError(f"GAFF parameters for {offmol.to_smiles()} could not be built (antechamber / sqm / "
+                       f"parmchk2): {problem}")
 
 
 def _gaff_tables(xml_text):
